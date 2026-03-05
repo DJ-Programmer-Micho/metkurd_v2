@@ -10,6 +10,7 @@ use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rule;
 use App\Models\Customer;
 use App\Models\CustomerProfile;
+use App\Support\CustomerOnboarding;
 
 new #[Layout('app::layouts.app-auth')] class extends Component
 {
@@ -65,6 +66,9 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             );
         });
 
+        // ✅ Provision defaults (usage, wallet, free subscriptions, monthly credits)
+        CustomerOnboarding::provision($customer);
+
         Auth::guard('app')->login($customer);
         request()->session()->regenerate();
 
@@ -81,7 +85,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         return $digits ? ('+' . $digits) : '';
     }
 };
-
 ?>
 
 @push('styles')

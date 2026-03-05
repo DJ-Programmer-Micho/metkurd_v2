@@ -86,16 +86,16 @@ Route::middleware('auth:app')->group(function () {
 | App (auth) - localized (THIS is your main app)
 |--------------------------------------------------------------------------
 */
-Route::prefix('{locale}')
-    ->middleware(['auth:app', 'app.active', LocalizationMainMiddleware::class])
+Route::middleware(['auth:app', 'app.active', LocalizationMainMiddleware::class])
     ->group(function () {
-
         // account state
         Route::livewire('/app/email', 'app::auth.email-otp')->name('app.email.otp');
         Route::livewire('/app/phone', 'app::auth.phone-otp')->name('app.phone.otp');
         Route::livewire('/app/suspended-301', 'app::auth.suspend-one')->name('app.suspended');
-
-
+});
+Route::prefix('{locale}')
+    ->middleware(['auth:app', 'app.active', LocalizationMainMiddleware::class])
+    ->group(function () {
         // pages
         Route::livewire('/app/home', 'app::pages.home.app-home')->name('app.home');
         Route::livewire('/app/profile', 'app::pages.profile.app-profile')->name('app.profile');
