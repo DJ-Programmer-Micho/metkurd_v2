@@ -10,17 +10,14 @@ return new class extends Migration {
         Schema::create('voices', function (Blueprint $table) {
             $table->bigIncrements('id');
 
-            $table->string('code', 80)->unique(); // liza, taha_fathi, etc.
-            $table->string('name', 160);
+            $table->string('code')->unique();
+            $table->string('name');
 
-            // which tool/model uses it (usually xtts)
-            $table->string('tool_code', 60)->default('xtts')->index();
-            $table->string('model_code', 120)->nullable()->index();
+            $table->boolean('is_public')->default(true);
+            $table->boolean('is_active')->default(true);
 
-            $table->boolean('is_public')->default(true)->index(); // built-in public voice
-            $table->boolean('is_active')->default(true)->index();
-
-            $table->json('meta')->nullable(); // gender, language, tags, etc.
+            $table->unsignedInteger('sort_order')->default(0);
+            $table->json('meta')->nullable();
 
             $table->timestamps();
         });

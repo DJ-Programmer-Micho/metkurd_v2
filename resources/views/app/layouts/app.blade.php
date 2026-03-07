@@ -34,10 +34,14 @@
 
     <title>{{ $title ?? 'APP | METKURD' }}</title>
 
-    @stack('styles')
     @vite('resources/js/app.js')
     @livewireStyles
-
+    @stack('styles')
+    <style>
+        .simplebar-offset{
+            bottom: 80px!important;
+        }
+    </style>
     <style>.ar-shift{direction:rtl;text-align:right;}</style>
 
     {{-- keep layout.js here if it only sets html data-attributes --}}
@@ -59,7 +63,9 @@
     <div class="vertical-overlay"></div>
 
     <div class="main-content">
+        <div class="page-content">
         {{ $slot }}
+        </div>
 
         @if (view()->exists('app.partials.footer-one'))
             @include('app.partials.footer-one')

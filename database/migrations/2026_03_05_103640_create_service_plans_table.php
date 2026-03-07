@@ -10,18 +10,24 @@ return new class extends Migration {
         Schema::create('service_plans', function (Blueprint $table) {
             $table->bigIncrements('id');
 
-            $table->string('code', 40)->unique(); // free, student, pro, premium
-            $table->string('name', 80);
+            $table->string('code', 50)->unique();            // free, creator, pro, premium
+            $table->string('name', 120);
+            $table->string('billing_interval', 20)->default('monthly')->index(); // monthly, yearly, lifetime
 
-            $table->unsignedInteger('monthly_credits')->default(0); // Free=50, Student=2000, etc.
-
+            $table->unsignedBigInteger('monthly_credits')->default(0); // Free => 10000
+            $table->boolean('is_free')->default(false)->index();
             $table->boolean('is_active')->default(true)->index();
             $table->unsignedSmallInteger('sort_order')->default(0);
 
-            // Optional: UI flags only (not primary gating logic)
+            $table->decimal('price_usd_monthly', 10, 2)->nullable();
+            $table->decimal('price_usd_yearly', 10, 2)->nullable();
+
             $table->json('ui_features')->nullable();
+            $table->json('meta')->nullable();
 
             $table->timestamps();
+
+            $table->index(['is_active', 'sort_order']);
         });
     }
 

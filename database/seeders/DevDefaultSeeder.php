@@ -11,6 +11,7 @@ use App\Models\Tool;
 use App\Models\ToolAction;
 use App\Models\PlanEntitlement;
 use App\Models\PricingRule;
+use App\Models\CreditProduct;
 use App\Models\Voice;
 use App\Models\PlanVoiceAccess;
 
@@ -19,33 +20,13 @@ class DevDefaultSeeder extends Seeder
     public function run(): void
     {
         DB::transaction(function () {
-
-            // ------------------------------------------------------------
-            // 1) Plans
-            // ------------------------------------------------------------
             $plans = $this->seedServicePlans();
-            $storagePlans = $this->seedStoragePlans();
-
-            // ------------------------------------------------------------
-            // 2) Tools + Actions
-            // ------------------------------------------------------------
+            $this->seedStoragePlans();
+            $this->seedCreditProducts();
             [$tools, $actions] = $this->seedToolsAndActions();
-
-            // ------------------------------------------------------------
-            // 3) Entitlements (permissions)
-            // ------------------------------------------------------------
             $this->seedPlanEntitlements($plans, $actions);
-
-            // ------------------------------------------------------------
-            // 4) Pricing rules (credits)
-            // ------------------------------------------------------------
             $this->seedPricingRules($actions);
-
-            // ------------------------------------------------------------
-            // 5) Voices + voice access per plan
-            // ------------------------------------------------------------
             $this->seedVoicesAndAccess($plans);
-
         });
     }
 
@@ -55,133 +36,140 @@ class DevDefaultSeeder extends Seeder
             [
                 'code' => 'free',
                 'name' => 'Free',
-                'monthly_credits' => 50,
+                'monthly_credits' => 10000,
                 'is_active' => true,
                 'sort_order' => 1,
-                'ui_features' => [
-                    'badge' => 'FREE',
-                ],
+                'ui_features' => ['badge' => 'FREE'],
             ],
             [
                 'code' => 'student',
                 'name' => 'Student',
-                'monthly_credits' => 2000,
+                'monthly_credits' => 50000,
                 'is_active' => true,
                 'sort_order' => 2,
-                'ui_features' => [
-                    'badge' => 'STUDENT',
-                ],
+                'ui_features' => ['badge' => 'STUDENT'],
             ],
             [
                 'code' => 'pro',
                 'name' => 'Pro',
-                'monthly_credits' => 5000,
+                'monthly_credits' => 100000,
                 'is_active' => true,
                 'sort_order' => 3,
-                'ui_features' => [
-                    'badge' => 'PRO',
-                ],
+                'ui_features' => ['badge' => 'PRO'],
             ],
             [
                 'code' => 'premium',
                 'name' => 'Premium',
-                'monthly_credits' => 10000,
+                'monthly_credits' => 250000,
                 'is_active' => true,
                 'sort_order' => 4,
-                'ui_features' => [
-                    'badge' => 'PREMIUM',
-                ],
+                'ui_features' => ['badge' => 'PREMIUM'],
             ],
         ];
 
         $out = [];
-        foreach ($rows as $r) {
-            $out[$r['code']] = ServicePlan::updateOrCreate(
-                ['code' => $r['code']],
-                $r
+
+        foreach ($rows as $row) {
+            $out[$row['code']] = ServicePlan::updateOrCreate(
+                ['code' => $row['code']],
+                $row
             );
         }
+
         return $out;
     }
 
-    private function seedStoragePlans(): array
+    private function seedStoragePlans(): void
     {
         $rows = [
-            ['code' => 'free-512',     'name' => 'Free (512MB)',     'quota_mb' => 512,   'is_active' => true, 'sort_order' => 1],
-            ['code' => 'student-3072', 'name' => 'Student (3GB)',    'quota_mb' => 3072,  'is_active' => true, 'sort_order' => 2],
-            ['code' => 'pro-5120',     'name' => 'Pro (5GB)',        'quota_mb' => 5120,  'is_active' => true, 'sort_order' => 3],
-            ['code' => 'premium-10240','name' => 'Premium (10GB)',   'quota_mb' => 10240, 'is_active' => true, 'sort_order' => 4],
+            ['code' => 'free-512',      'name' => 'Free (512MB)',   'quota_mb' => 512,   'is_active' => true, 'sort_order' => 1],
+            ['code' => 'student-3072',  'name' => 'Student (3GB)',  'quota_mb' => 3072,  'is_active' => true, 'sort_order' => 2],
+            ['code' => 'pro-5120',      'name' => 'Pro (5GB)',      'quota_mb' => 5120,  'is_active' => true, 'sort_order' => 3],
+            ['code' => 'premium-10240', 'name' => 'Premium (10GB)', 'quota_mb' => 10240, 'is_active' => true, 'sort_order' => 4],
         ];
 
-        $out = [];
-        foreach ($rows as $r) {
-            $out[$r['code']] = StoragePlan::updateOrCreate(
-                ['code' => $r['code']],
-                $r
+        foreach ($rows as $row) {
+            StoragePlan::updateOrCreate(
+                ['code' => $row['code']],
+                $row
             );
         }
-        return $out;
+    }
+
+    private function seedCreditProducts(): void
+    {
+        $rows = [
+            ['code' => 'addon_10000',  'name' => 'Add-on 10,000 Credits',  'credits_amount' => 10000,  'price_usd' => 5.00,  'is_active' => true, 'sort_order' => 1],
+            ['code' => 'addon_50000',  'name' => 'Add-on 50,000 Credits',  'credits_amount' => 50000,  'price_usd' => 20.00, 'is_active' => true, 'sort_order' => 2],
+            ['code' => 'addon_100000', 'name' => 'Add-on 100,000 Credits', 'credits_amount' => 100000, 'price_usd' => 35.00, 'is_active' => true, 'sort_order' => 3],
+        ];
+
+        foreach ($rows as $row) {
+            CreditProduct::updateOrCreate(
+                ['code' => $row['code']],
+                $row
+            );
+        }
     }
 
     private function seedToolsAndActions(): array
     {
-        // Tools
         $toolRows = [
-            ['code' => 'xtts',            'name' => 'XTTS Text-to-Speech',          'sort_order' => 1],
-            ['code' => 'clone_xtts',      'name' => 'Clone XTTS (Voice Cloning)',  'sort_order' => 2],
-            ['code' => 'asr',             'name' => 'ASR Speech-to-Text',          'sort_order' => 3],
-            ['code' => 'ocr',             'name' => 'OCR',                         'sort_order' => 4],
-            ['code' => 'audio_isolation', 'name' => 'Audio Isolation',             'sort_order' => 5],
-            ['code' => 'yt_downloader',   'name' => 'YouTube Downloader',          'sort_order' => 6],
+            ['code' => 'tts',            'name' => 'Text To Speech',        'sort_order' => 1],
+            ['code' => 'clone_tts',      'name' => 'Clone Text To Speech',  'sort_order' => 2],
+            ['code' => 'asr',            'name' => 'Automatic Speech Recognition', 'sort_order' => 3],
+            ['code' => 'stem',           'name' => 'Stem Separation',       'sort_order' => 4],
+            ['code' => 'ocr',            'name' => 'OCR',                   'sort_order' => 5],
+            ['code' => 'youtube_audio',  'name' => 'YouTube Audio Downloader', 'sort_order' => 6],
+            ['code' => 'youtube_video',  'name' => 'YouTube Video Downloader', 'sort_order' => 7],
         ];
 
         $tools = [];
-        foreach ($toolRows as $r) {
-            $tools[$r['code']] = Tool::updateOrCreate(
-                ['code' => $r['code']],
+        foreach ($toolRows as $row) {
+            $tools[$row['code']] = Tool::updateOrCreate(
+                ['code' => $row['code']],
                 [
-                    'name' => $r['name'],
+                    'name' => $row['name'],
                     'is_active' => true,
-                    'sort_order' => $r['sort_order'],
+                    'sort_order' => $row['sort_order'],
                     'meta' => null,
                 ]
             );
         }
 
-        // Actions
         $actionRows = [
-            // XTTS
-            ['tool' => 'xtts', 'code' => 'generate', 'name' => 'Generate Speech'],
+            ['tool_code' => 'tts',           'action_code' => 'standard', 'name' => 'TTS Standard',         'metric' => 'character'],
 
-            // Clone XTTS
-            ['tool' => 'clone_xtts', 'code' => 'generate', 'name' => 'Generate Cloned Speech'],
+            ['tool_code' => 'clone_tts',     'action_code' => 'standard', 'name' => 'Clone TTS Standard',   'metric' => 'character'],
 
-            // ASR
-            ['tool' => 'asr', 'code' => 'transcribe', 'name' => 'Transcribe Audio'],
+            ['tool_code' => 'asr',           'action_code' => 'standard', 'name' => 'ASR Standard',         'metric' => 'minute'],
 
-            // OCR
-            ['tool' => 'ocr', 'code' => 'extract_text', 'name' => 'Extract Text'],
+            ['tool_code' => 'stem',          'action_code' => 'sep2',     'name' => 'Stem Separation 2',    'metric' => 'stem_output'],
+            ['tool_code' => 'stem',          'action_code' => 'sep4',     'name' => 'Stem Separation 4',    'metric' => 'stem_output'],
 
-            // Audio Isolation
-            ['tool' => 'audio_isolation', 'code' => 'separate', 'name' => 'Separate Stems'],
+            ['tool_code' => 'ocr',           'action_code' => 'standard', 'name' => 'OCR Standard',         'metric' => 'page'],
 
-            // YouTube
-            ['tool' => 'yt_downloader', 'code' => 'download_audio', 'name' => 'Download Audio'],
-            ['tool' => 'yt_downloader', 'code' => 'download_video', 'name' => 'Download Video'],
+            ['tool_code' => 'youtube_audio', 'action_code' => 'mp3',      'name' => 'YouTube Audio MP3',    'metric' => 'minute'],
+            ['tool_code' => 'youtube_audio', 'action_code' => 'wav',      'name' => 'YouTube Audio WAV',    'metric' => 'minute'],
+
+            ['tool_code' => 'youtube_video', 'action_code' => 'p480',     'name' => 'YouTube Video 480p',   'metric' => 'minute'],
+            ['tool_code' => 'youtube_video', 'action_code' => 'p720',     'name' => 'YouTube Video 720p',   'metric' => 'minute'],
+            ['tool_code' => 'youtube_video', 'action_code' => 'p1080',    'name' => 'YouTube Video 1080p',  'metric' => 'minute'],
+            ['tool_code' => 'youtube_video', 'action_code' => 'p4k',      'name' => 'YouTube Video 4K',     'metric' => 'minute'],
         ];
 
         $actions = [];
-        foreach ($actionRows as $r) {
-            $tool = $tools[$r['tool']];
 
-            $fullCode = $r['tool'].'.'.$r['code'];
+        foreach ($actionRows as $row) {
+            $fullCode = $row['tool_code'] . '.' . $row['action_code'];
 
             $actions[$fullCode] = ToolAction::updateOrCreate(
                 ['full_code' => $fullCode],
                 [
-                    'tool_id' => $tool->id,
-                    'code' => $r['code'],
-                    'name' => $r['name'],
+                    'tool_code' => $row['tool_code'],
+                    'action_code' => $row['action_code'],
+                    'name' => $row['name'],
+                    'default_metric_code' => $row['metric'],
                     'is_active' => true,
                     'meta' => null,
                 ]
@@ -193,25 +181,19 @@ class DevDefaultSeeder extends Seeder
 
     private function seedPlanEntitlements(array $plans, array $actions): void
     {
-        // All plans can use all tools, except:
-        // - YouTube video: Free denied, Student/Pro/Premium allowed
-        // - YouTube audio: allowed for all
-
-        $planCodes = array_keys($plans);
-
-        foreach ($planCodes as $planCode) {
-            $plan = $plans[$planCode];
-
+        foreach ($plans as $planCode => $plan) {
             foreach ($actions as $fullCode => $action) {
                 $allowed = true;
 
-                if ($fullCode === 'yt_downloader.download_video') {
-                    $allowed = ($planCode !== 'free');
-                }
-
                 PlanEntitlement::updateOrCreate(
-                    ['service_plan_id' => $plan->id, 'tool_action_id' => $action->id],
-                    ['allowed' => $allowed, 'limits' => null]
+                    [
+                        'service_plan_id' => $plan->id,
+                        'tool_action_id' => $action->id,
+                    ],
+                    [
+                        'allowed' => $allowed,
+                        'limits' => null,
+                    ]
                 );
             }
         }
@@ -219,146 +201,170 @@ class DevDefaultSeeder extends Seeder
 
     private function seedPricingRules(array $actions): void
     {
-        // Your default costs:
-        // XTTS: 10
-        // Clone XTTS: 20
-        // ASR: 15
-        // OCR: 10
-        // Audio Isolation: 10
-        // YT audio: 5
-        // YT video: 10 BUT free for Pro+Premium
-
-        $fixed = [
-            'xtts.generate' => 10,
-            'clone_xtts.generate' => 20,
-            'asr.transcribe' => 15,
-            'ocr.extract_text' => 10,
-            'audio_isolation.separate' => 10,
-            'yt_downloader.download_audio' => 5,
+        $rules = [
+            'tts.standard' => [
+                'metric_code' => 'character',
+                'unit_size' => 1,
+                'credits_per_unit' => 1.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 1,
+            ],
+            'clone_tts.standard' => [
+                'metric_code' => 'character',
+                'unit_size' => 1,
+                'credits_per_unit' => 1.2,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 1,
+            ],
+            'asr.standard' => [
+                'metric_code' => 'minute',
+                'unit_size' => 1,
+                'credits_per_unit' => 1000.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 1000,
+            ],
+            'stem.sep2' => [
+                'metric_code' => 'stem_output',
+                'unit_size' => 1,
+                'credits_per_unit' => 500.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 500,
+                'conditions' => ['separation_mode' => 2],
+            ],
+            'stem.sep4' => [
+                'metric_code' => 'stem_output',
+                'unit_size' => 1,
+                'credits_per_unit' => 500.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 500,
+                'conditions' => ['separation_mode' => 4],
+            ],
+            'ocr.standard' => [
+                'metric_code' => 'page',
+                'unit_size' => 1,
+                'credits_per_unit' => 250.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 250,
+            ],
+            'youtube_audio.mp3' => [
+                'metric_code' => 'minute',
+                'unit_size' => 1,
+                'credits_per_unit' => 100.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 100,
+            ],
+            'youtube_audio.wav' => [
+                'metric_code' => 'minute',
+                'unit_size' => 1,
+                'credits_per_unit' => 150.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 150,
+            ],
+            'youtube_video.p480' => [
+                'metric_code' => 'minute',
+                'unit_size' => 1,
+                'credits_per_unit' => 100.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 100,
+            ],
+            'youtube_video.p720' => [
+                'metric_code' => 'minute',
+                'unit_size' => 1,
+                'credits_per_unit' => 200.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 200,
+            ],
+            'youtube_video.p1080' => [
+                'metric_code' => 'minute',
+                'unit_size' => 1,
+                'credits_per_unit' => 250.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 250,
+            ],
+            'youtube_video.p4k' => [
+                'metric_code' => 'minute',
+                'unit_size' => 1,
+                'credits_per_unit' => 300.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 300,
+            ],
         ];
 
-        foreach ($fixed as $fullCode => $cost) {
+        foreach ($rules as $fullCode => $rule) {
             $action = $actions[$fullCode];
 
             PricingRule::updateOrCreate(
                 [
                     'tool_action_id' => $action->id,
-                    'rule_type' => 'fixed',
                     'priority' => 100,
                 ],
                 [
-                    'conditions' => null,
-                    'cost_credits' => $cost,
+                    'metric_code' => $rule['metric_code'],
+                    'unit_size' => $rule['unit_size'],
+                    'credits_per_unit' => $rule['credits_per_unit'],
+                    'rounding_mode' => $rule['rounding_mode'],
+                    'rounding_step' => $rule['rounding_step'],
+                    'minimum_credits' => $rule['minimum_credits'],
+                    'conditions' => $rule['conditions'] ?? null,
                     'config' => null,
                     'is_active' => true,
                 ]
             );
         }
-
-        // YT video: rule 1 => free for Pro/Premium
-        $ytVideo = $actions['yt_downloader.download_video'];
-
-        PricingRule::updateOrCreate(
-            [
-                'tool_action_id' => $ytVideo->id,
-                'rule_type' => 'conditional',
-                'priority' => 1000,
-            ],
-            [
-                'conditions' => ['plan_codes' => ['pro', 'premium']],
-                'cost_credits' => 0,
-                'config' => null,
-                'is_active' => true,
-            ]
-        );
-
-        // YT video: fallback fixed 10 credits
-        PricingRule::updateOrCreate(
-            [
-                'tool_action_id' => $ytVideo->id,
-                'rule_type' => 'fixed',
-                'priority' => 100,
-            ],
-            [
-                'conditions' => null,
-                'cost_credits' => 10,
-                'config' => null,
-                'is_active' => true,
-            ]
-        );
     }
 
     private function seedVoicesAndAccess(array $plans): void
     {
-        // Example: Free has 4 voices. Paid plans have 20+.
-        // You can replace codes/names with your real XTTS voice list.
-
         $voiceList = [
-            // Free 4
-            ['code' => 'liza',         'name' => 'Liza',         'is_free' => true],
-            ['code' => 'taha_fathi',   'name' => 'Taha Fathi',   'is_free' => true],
-            ['code' => 'shwan',        'name' => 'Shwan',        'is_free' => true],
-            ['code' => 'johan',        'name' => 'Johan',        'is_free' => true],
-
-            // Extra paid voices (example)
-            ['code' => 'serok_barzani','name' => 'Serok Barzani','is_free' => false],
+            ['code' => 'female_1',      'name' => '👩 Female 1', 'is_public' => true, 'sort_order' => 1, 'meta' => ['engine' => 'xtts', 'gender' => 'female']],
+            ['code' => 'female_2',      'name' => '👩 Female 2', 'is_public' => true, 'sort_order' => 2, 'meta' => ['engine' => 'xtts', 'gender' => 'female']],
+            ['code' => 'female_3',      'name' => '👩 Female 3', 'is_public' => true, 'sort_order' => 3, 'meta' => ['engine' => 'xtts', 'gender' => 'female']],
+            ['code' => 'liza',          'name' => '👩 Female 4', 'is_public' => true, 'sort_order' => 4, 'meta' => ['engine' => 'xtts', 'gender' => 'female']],
+            ['code' => 'taha_fathi',    'name' => '👨 Male 1',   'is_public' => true, 'sort_order' => 5, 'meta' => ['engine' => 'xtts', 'gender' => 'male']],
+            ['code' => 'shwan',         'name' => '👨 Male 2',   'is_public' => true, 'sort_order' => 6, 'meta' => ['engine' => 'xtts', 'gender' => 'male']],
+            ['code' => 'rudaw',         'name' => '👨 Male 3',   'is_public' => true, 'sort_order' => 7, 'meta' => ['engine' => 'xtts', 'gender' => 'male']],
+            ['code' => 'serok_barzani', 'name' => '👨 Male 4',   'is_public' => true, 'sort_order' => 8, 'meta' => ['engine' => 'xtts', 'gender' => 'male']],
         ];
 
-        $voiceModels = [];
-        foreach ($voiceList as $v) {
-            $voiceModels[$v['code']] = Voice::updateOrCreate(
-                ['code' => $v['code']],
+        $voices = [];
+
+        foreach ($voiceList as $row) {
+            $voices[$row['code']] = Voice::updateOrCreate(
+                ['code' => $row['code']],
                 [
-                    'name' => $v['name'],
-                    'tool_code' => 'xtts',
-                    'model_code' => 'xtts_ckb', // change if you want
-                    'is_public' => true,
+                    'name' => $row['name'],
+                    'is_public' => $row['is_public'],
                     'is_active' => true,
-                    'meta' => [
-                        'tier' => $v['is_free'] ? 'free' : 'paid',
-                    ],
+                    'sort_order' => $row['sort_order'],
+                    'meta' => $row['meta'] ?? null,
                 ]
             );
         }
 
-        // Clear old access mapping (dev seeding convenience)
-        PlanVoiceAccess::query()->delete();
-
-        $free = $plans['free'];
-        $student = $plans['student'];
-        $pro = $plans['pro'];
-        $premium = $plans['premium'];
-
-        foreach ($voiceList as $v) {
-            $voice = $voiceModels[$v['code']];
-
-            // Free: only 4 voices
-            if ($v['is_free']) {
-                PlanVoiceAccess::create([
-                    'service_plan_id' => $free->id,
-                    'voice_id' => $voice->id,
-                    'allowed' => true,
-                ]);
+        foreach ($plans as $plan) {
+            foreach ($voices as $voice) {
+                PlanVoiceAccess::updateOrCreate(
+                    [
+                        'service_plan_id' => $plan->id,
+                        'voice_id' => $voice->id,
+                    ],
+                    [
+                        'is_active' => true,
+                    ]
+                );
             }
-
-            // Paid: all voices
-            PlanVoiceAccess::create([
-                'service_plan_id' => $student->id,
-                'voice_id' => $voice->id,
-                'allowed' => true,
-            ]);
-
-            PlanVoiceAccess::create([
-                'service_plan_id' => $pro->id,
-                'voice_id' => $voice->id,
-                'allowed' => true,
-            ]);
-
-            PlanVoiceAccess::create([
-                'service_plan_id' => $premium->id,
-                'voice_id' => $voice->id,
-                'allowed' => true,
-            ]);
         }
     }
 }

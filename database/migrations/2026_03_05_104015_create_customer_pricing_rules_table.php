@@ -13,15 +13,21 @@ return new class extends Migration {
             $table->unsignedBigInteger('customer_id')->index();
             $table->unsignedBigInteger('tool_action_id')->index();
 
-            $table->string('rule_type', 30)->index(); // fixed/free/conditional
-            $table->unsignedSmallInteger('priority')->default(1)->index(); // customer overrides should win
+            $table->string('rule_type', 20)->default('unit')->index();
+            $table->unsignedSmallInteger('priority')->default(1000)->index(); // customer override should win
+
+            $table->string('metric_code', 50)->index();
+            $table->decimal('unit_size', 12, 4)->default(1.0000);
+            $table->decimal('credits_per_unit', 12, 4)->nullable();
+            $table->string('rounding_mode', 20)->default('ceil')->index();
+            $table->decimal('rounding_step', 12, 4)->default(1.0000);
+            $table->unsignedBigInteger('minimum_credits')->default(0);
 
             $table->json('conditions')->nullable();
-            $table->unsignedInteger('cost_credits')->nullable();
+            $table->json('config')->nullable();
 
-            $table->timestamp('starts_at')->nullable();
-            $table->timestamp('ends_at')->nullable();
-
+            $table->timestamp('starts_at')->nullable()->index();
+            $table->timestamp('ends_at')->nullable()->index();
             $table->boolean('is_active')->default(true)->index();
             $table->json('meta')->nullable();
 
@@ -30,11 +36,7 @@ return new class extends Migration {
             $table->foreign('customer_id')->references('id')->on('customers')->cascadeOnDelete();
             $table->foreign('tool_action_id')->references('id')->on('tool_actions')->cascadeOnDelete();
 
-            // ✅ short index name to avoid MySQL 64-char limit
-            $table->index(
-                ['customer_id','tool_action_id','is_active','priority'],
-                'cpr_cust_action_active_pri_idx'
-            );
+            $table->index(['customer_id', 'tool_action_id', 'is_active', 'priority'], 'cpr_lookup_idx');
         });
     }
 

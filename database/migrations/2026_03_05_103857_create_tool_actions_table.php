@@ -10,20 +10,18 @@ return new class extends Migration {
         Schema::create('tool_actions', function (Blueprint $table) {
             $table->bigIncrements('id');
 
-            $table->unsignedBigInteger('tool_id')->index();
-            $table->string('code', 80); // generate, transcribe, download_audio, download_video
-            $table->string('full_code', 160)->unique(); // xtts.generate, yt_downloader.download_video
-
+            $table->string('tool_code', 60)->index();       // tts, clone_tts, asr, stem, ocr, youtube_audio, youtube_video
+            $table->string('action_code', 60)->index();     // standard, happy, mp3, wav, p480, p720, p1080, p4k, sep2, sep4
+            $table->string('full_code', 130)->unique();     // tts.standard, clone_tts.happy, youtube_video.p720
             $table->string('name', 160);
-            $table->boolean('is_active')->default(true)->index();
 
+            $table->string('default_metric_code', 50)->nullable()->index(); // character, minute, page, stem_output
+            $table->boolean('is_active')->default(true)->index();
             $table->json('meta')->nullable();
 
             $table->timestamps();
 
-            $table->foreign('tool_id')->references('id')->on('tools')->cascadeOnDelete();
-
-            $table->index(['tool_id','code']);
+            $table->index(['tool_code', 'action_code'], 'ta_tool_action_idx');
         });
     }
 

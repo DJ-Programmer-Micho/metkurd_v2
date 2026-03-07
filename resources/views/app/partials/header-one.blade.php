@@ -131,7 +131,6 @@
         </div>
 
         <div class="d-flex align-items-center">
-
             {{-- <div class="dropdown d-md-none topbar-head-dropdown header-item">
                 <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle" id="page-header-search-dropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                     <i class="bx bx-search fs-22"></i>
@@ -329,7 +328,7 @@ $notifications = [];
                             </div>
 
                         </div>
-{{-- 
+                    {{-- 
                         <div class="tab-pane fade py-2 ps-2" id="messages-tab" role="tabpanel" aria-labelledby="messages-tab">
                             <div data-simplebar style="max-height: 300px;" class="pe-2">
                                 <div class="text-reset notification-item d-block dropdown-item">
@@ -442,29 +441,71 @@ $notifications = [];
                     </div>
                 </div>
             </div>
+            
+            <livewire:partials.process-slots />
+            @php
+                $c =  auth('app')->user();
+                $planCode = $c?->serviceCode() ?? 'free';
+                $planName = strtoupper($planCode);
+
+                $planClass = match ($planCode) {
+                    'premium' => 'bg-warning text-dark',
+                    'pro'     => 'bg-success',
+                    'student' => 'bg-info',
+                    default   => 'bg-secondary',
+                };
+            @endphp
             <div class="dropdown ms-sm-3 header-item topbar-user" wire:ignore>
-                <button type="button" class="btn" id="page-header-user-dropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                <button type="button" class="btn" id="page-header-user-dropdown"
+                        data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                     <span class="d-flex align-items-center">
-                        <img class="rounded-circle header-profile-user" src="{{ auth('app')->user()->profile->avatar_url ?? app('userImg') }}" alt="{{auth()->guard('app')->user()->profile->first_name . ' ' . auth()->guard('app')->user()->profile->last_name}}">
-                        <span class="text-start ms-xl-2">
-                            <span class="d-none d-xl-inline-block ms-1 fw-medium user-name-text">{{auth()->guard('app')->user()->profile->first_name . ' ' . auth()->guard('app')->user()->profile->last_name}}</span>
-                            {{-- <span class="d-none d-xl-block ms-1 fs-12 user-name-sub-text">Plan: <b>{{ auth('app')->user()->serviceCode() }}</b></span> --}}
+
+                        <div class="position-relative me-2">
+                            <img class="rounded-circle header-profile-user"
+                                style="width:38px;height:38px;object-fit:cover;"
+                                src="{{ auth('app')->user()->profile->avatar_url ?? app('userImg') }}"
+                                alt="{{ auth('app')->user()->profile->first_name ?? 'User' }}">
+
+                            {{-- ✅ badge position fixed --}}
+                            <span class="position-absolute badge rounded-pill {{ $planClass }}"
+                                style="right:-8px; font-size:10px; padding:4px 6px; margin-top:27px;">
+                                {{ $planName }}
+                            </span>
+                        </div>
+
+                        <span class="text-start">
+                            <span class="d-none d-xl-inline-block fw-medium user-name-text">
+                                {{ auth('app')->user()->profile->first_name }} {{ auth('app')->user()->profile->last_name }}
+                            </span>
                         </span>
+
                     </span>
                 </button>
                 <div class="dropdown-menu dropdown-menu-end">
-                    <!-- item-->
-                    <h6 class="dropdown-header">{{__('Welcome')}} {{auth()->guard('app')->user()->profile->first_name}}</h6>
-                    <a wire:navigate.hover class="dropdown-item" href="{{ route('app.profile',['locale' => app()->getLocale()]) }}"><i class="mdi mdi-account-circle text-muted fs-16 align-middle me-1"></i> <span class="align-middle">{{__('Profile')}}</span></a>
-                    {{-- <a class="dropdown-item" href="apps-chat.html"><i class="mdi mdi-message-text-outline text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Messages</span></a>
-                    <a class="dropdown-item" href="apps-tasks-kanban.html"><i class="mdi mdi-calendar-check-outline text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Taskboard</span></a>
-                    <a class="dropdown-item" href="pages-faqs.html"><i class="mdi mdi-lifebuoy text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Help</span></a> --}}
-                    {{-- @if (hasRole([1, 2, 6])) --}}
-                    {{-- <a class="dropdown-item" href="pages-profile.html"><i class="mdi mdi-wallet text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Balance : <b>$5971.67</b></span></a> --}}
-                    {{-- @endif --}}
-                    {{-- <a class="dropdown-item" href="pages-profile-settings.html"><span class="badge bg-success-subtle text-success mt-1 float-end">New</span><i class="mdi mdi-cog-outline text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Settings</span></a> --}}
-                    {{-- <a class="dropdown-item" href="{{ route('app.lock') }}"><i class="mdi mdi-lock text-warning fs-16 align-middle me-1"></i> <span class="align-middle text-warning">{{__('Lock screen')}}</span></a> --}}
-                    <a class="dropdown-item" href="#" onclick="event.preventDefault(); document.getElementById('logout-form').submit();"><i class="mdi mdi-logout text-danger fs-16 align-middle me-1"></i> <span class="align-middle text-danger" data-key="t-logout">{{__('Logout')}}</span></a>
+                    <h6 class="dropdown-header">{{__('Welcome')}} {{ auth('app')->user()->profile->first_name }}</h6>
+                    <a wire:navigate.hover class="dropdown-item" href="{{ route('app.profile',['locale' => app()->getLocale()]) }}">
+                        <i class="mdi mdi-account-circle text-muted fs-16 align-middle me-1"></i>
+                        <span class="align-middle">{{__('Profile')}}</span>
+                    </a>
+                    <hr class="my-1">
+                    <a wire:navigate.hover class="dropdown-item" href="{{ route('subscription-plan',['locale' => app()->getLocale()]) }}">
+                        <i class="mdi mdi-star-shooting-outline text-info fs-16 align-middle me-1"></i>
+                        <span class="align-middle">{{__('Upgrade Plan')}}</span>
+                    </a>
+                    <a wire:navigate.hover class="dropdown-item" href="{{ route('storage-plan',['locale' => app()->getLocale()]) }}">
+                        <i class="mdi mdi-harddisk-plus fs-16 text-primary align-middle me-1"></i>
+                        <span class="align-middle">{{__('Upgrade Storage')}}</span>
+                    </a>
+                    <a wire:navigate.hover class="dropdown-item" href="{{ route('addon-credits',['locale' => app()->getLocale()]) }}">
+                        <i class="mdi mdi-plus-circle-multiple-outline text-warning fs-16 align-middle me-1"></i>
+                        <span class="align-middle">{{__('Buy Credits')}}</span>
+                    </a>
+                    <hr class="my-1">
+                    <a class="dropdown-item" href="#"
+                    onclick="event.preventDefault(); document.getElementById('logout-form').submit();">
+                        <i class="mdi mdi-logout text-danger fs-16 align-middle me-1"></i>
+                        <span class="align-middle text-danger">{{__('Logout')}}</span>
+                    </a>
                 </div>
             </div>
         </div>

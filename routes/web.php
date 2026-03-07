@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\Pages\AdminController;
 use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
 use App\Http\Controllers\App\Pages\AppController;
+use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
 
@@ -106,11 +107,26 @@ Route::prefix('{locale}')
         Route::livewire('/app/stem', 'app::pages.stem.app-stem')->name('app.stem');
         Route::livewire('/app/ocr', 'app::pages.ocr.app-ocr')->name('app.ocr');
 
-        // feature gates (same as old)
-        // Route::livewire('/app/xtts', 'app::pages.xtts.app-xtts')
-        //     ->middleware('feature:tts.active')
-        //     ->name('app.xtts');
-    });
+/*
+|--------------------------------------------------------------------------
+| Billing Route
+|--------------------------------------------------------------------------
+*/
+    Route::livewire('/app/subscription-plans', 'app::pages.subscription-plan.subscription-plan')->name('subscription-plan');
+    Route::livewire('/app/storage-plans', 'app::pages.storage-plan.storage-plan')->name('storage-plan');
+    Route::livewire('/app/addon-credits', 'app::pages.addon-credits.addon-credits')->name('addon-credits');
+
+/*
+|--------------------------------------------------------------------------
+| ML Stream - Download
+|--------------------------------------------------------------------------
+*/
+    Route::get('/app/renders/xtts/{jobId}/stream', [XttsRenderController::class, 'stream'])
+        ->name('app.renders.xtts.stream');
+
+    Route::get('/app/renders/xtts/{jobId}/download', [XttsRenderController::class, 'download'])
+        ->name('app.renders.xtts.download');
+});
 /*
 |--------------------------------------------------------------------------
 | Localized App (auth)

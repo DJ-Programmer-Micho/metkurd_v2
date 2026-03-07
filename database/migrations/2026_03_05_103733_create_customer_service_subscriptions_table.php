@@ -12,29 +12,31 @@ return new class extends Migration {
 
             $table->unsignedBigInteger('customer_id')->index();
             $table->unsignedBigInteger('service_plan_id')->index();
+            $table->unsignedBigInteger('previous_service_plan_id')->nullable()->index();
 
-            $table->string('status', 20)->default('active')->index(); // active, canceled, expired, paused
+            $table->string('status', 20)->default('active')->index(); // trialing, active, canceled, expired, paused, ended
+            $table->string('source', 40)->nullable()->index();         // manual, areeba, zaincash, fib, fake
+            $table->string('provider_ref', 190)->nullable()->index();
 
             $table->timestamp('starts_at')->nullable();
             $table->timestamp('ends_at')->nullable();
-
-            // billing cycle anchor
-            $table->date('cycle_started_on')->nullable()->index();
-            $table->date('cycle_ends_on')->nullable()->index();
-
-            // upgrade tracking
-            $table->unsignedBigInteger('previous_service_plan_id')->nullable();
+            $table->timestamp('canceled_at')->nullable();
             $table->timestamp('upgraded_at')->nullable();
 
+            $table->date('cycle_started_on')->nullable()->index();
+            $table->date('cycle_ends_on')->nullable()->index();
+            $table->date('next_renewal_on')->nullable()->index();
+
+            $table->boolean('auto_renew')->default(true)->index();
             $table->json('meta')->nullable();
 
             $table->timestamps();
 
             $table->foreign('customer_id')->references('id')->on('customers')->cascadeOnDelete();
-            $table->foreign('service_plan_id')->references('id')->on('service_plans');
-            $table->foreign('previous_service_plan_id')->references('id')->on('service_plans');
+            $table->foreign('service_plan_id')->references('id')->on('service_plans')->restrictOnDelete();
+            $table->foreign('previous_service_plan_id')->references('id')->on('service_plans')->nullOnDelete();
 
-            $table->index(['customer_id','status']);
+            $table->index(['customer_id', 'status', 'cycle_ends_on'], 'css_customer_status_cycle_idx');
         });
     }
 

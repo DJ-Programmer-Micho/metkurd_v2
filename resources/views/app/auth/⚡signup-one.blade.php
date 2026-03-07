@@ -1,4 +1,3 @@
-{{-- resources/views/app/auth/⚡signup-one.blade.php --}}
 <?php
 
 use Livewire\Component;
@@ -43,12 +42,10 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
         ]);
 
-        $customer = null;
-
-        DB::transaction(function () use (&$customer) {
+        $customer = DB::transaction(function () {
             $customer = Customer::create([
-                'username'     => $this->username,
-                'email'        => $this->email,
+                'username'     => trim($this->username),
+                'email'        => strtolower(trim($this->email)),
                 'password'     => Hash::make($this->password),
                 'status'       => 1,
                 'email_verify' => false,
@@ -58,30 +55,36 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             CustomerProfile::updateOrCreate(
                 ['customer_id' => $customer->id],
                 [
-                    'first_name'   => $this->first_name,
-                    'last_name'    => $this->last_name,
-                    'job_title'    => $this->job_title ?: null,
+                    'first_name'   => trim($this->first_name),
+                    'last_name'    => trim($this->last_name),
+                    'job_title'    => $this->job_title !== '' ? trim($this->job_title) : null,
                     'phone_number' => $this->normalizePhone($this->phone_number),
                 ]
             );
-        });
 
-        // ✅ Provision defaults (usage, wallet, free subscriptions, monthly credits)
-        CustomerOnboarding::provision($customer);
+            // Single source of truth for defaults:
+            // wallet, usage, free subscriptions, free monthly credits, etc.
+            CustomerOnboarding::provision($customer);
+
+            return $customer->fresh(['profile', 'wallet', 'usage']);
+        });
 
         Auth::guard('app')->login($customer);
         request()->session()->regenerate();
 
         $this->dispatch('alert', type: 'success', message: 'Account created! Please verify your email.');
+
         return redirect()->to(route('app.email.otp'));
     }
 
     private function normalizePhone(string $phone): string
     {
         $digits = preg_replace('/\D+/', '', $phone);
+
         if (str_starts_with($digits, '00')) {
             $digits = substr($digits, 2);
         }
+
         return $digits ? ('+' . $digits) : '';
     }
 };

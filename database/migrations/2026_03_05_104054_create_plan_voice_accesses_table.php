@@ -13,8 +13,10 @@ return new class extends Migration {
             $table->unsignedBigInteger('service_plan_id')->index();
             $table->unsignedBigInteger('voice_id')->index();
 
-            $table->boolean('allowed')->default(true);
-
+            $table->boolean('is_public')->default(true);
+            $table->boolean('is_active')->default(true);
+            $table->unsignedInteger('sort_order')->default(0);
+            $table->json('meta')->nullable();
             $table->timestamps();
 
             $table->foreign('service_plan_id')->references('id')->on('service_plans')->cascadeOnDelete();

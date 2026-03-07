@@ -159,7 +159,14 @@
                  --}}
             </ul>
         </div>
+    </div>
+    <!-- Sidebar -->
+    <div class="navbar-brand-box">
+        <div class="position-absolute bottom-0">
+
+            <livewire:partials.components.header-account-chip />
         </div>
-        <!-- Sidebar -->
+    </div>
+
     <div class="sidebar-background"></div>
 </div>

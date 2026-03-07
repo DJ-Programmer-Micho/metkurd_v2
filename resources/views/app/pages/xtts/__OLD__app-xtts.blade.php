@@ -90,7 +90,6 @@ class extends Component
     {
         $this->syncWallet();
         $this->syncCostPreview();
-        $this->hydrateCurrentJobFromDb();
         $this->rendersRefreshKey++;
     }
 
@@ -103,7 +102,7 @@ class extends Component
         }
 
         $this->syncCostPreview();
-        $this->hydrateCurrentJobFromDb();
+        // $this->loadLatestFinishedRender();
     }
 
     public function updatedText(): void
@@ -291,7 +290,7 @@ class extends Component
         $parts = preg_split('/\s+/u', $text, -1, PREG_SPLIT_NO_EMPTY);
         return is_array($parts) ? count($parts) : 0;
     }
-
+    
     protected function syncWallet(): void
     {
         $c = auth('app')->user();
@@ -385,7 +384,7 @@ class extends Component
         $this->showJobStatus = true;
         $c = auth('app')->user();
         $actionCode = $this->fullActionCode;
-        $this->hydrateCurrentJobFromDb();
+
         if (method_exists($c, 'isAllowed') && !$c->isAllowed($actionCode)) {
             $this->dispatch('alert', type: 'error', message: __('Your plan does not allow XTTS.'));
             return;
@@ -463,7 +462,7 @@ class extends Component
         $this->jobFinished = false;
         $this->currentProgress = 10;
         $this->completedNoAudioTicks = 0;
-        $this->dispatch('header:refresh');
+
         try {
             $endpointId = data_get($tool->meta, 'runpod_endpoint_id') ?: config('runpod.endpoints.xtts');
             if (!$endpointId) {
@@ -499,24 +498,25 @@ class extends Component
             $this->providerJobId = $rpId;
             $this->currentStatus = 'running';
             $this->currentProgress = 20;
-            $this->dispatch('header:refresh');
+
             $this->syncWallet();
 
             $this->dispatch('customerPlanUpdated');
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('xtts-renders-refresh');
 
-            // Persist SPA job state to JS
-            $this->dispatch('xtts-job-started', [
-                'jobId'       => $jobId,
-                'providerJobId' => $rpId,
-                'status'      => 'running',
-                'progress'    => 20,
-            ]);
-
             $this->dispatch('alert', type: 'success', message: 'RunPod job started.');
         } catch (\Throwable $e) {
-            $this->dispatch('header:refresh');
+            Log::error('XTTS ERROR fired', $e);
+            Log::error('XTTS postXtts fired', [
+                'customer_id' => auth('app')->id(),
+                'speaker_id' => $this->speaker_id,
+                'available_speakers' => $this->availableSpeakers,
+                'chars' => $this->currentChars,
+                'creditsCost' => $this->creditsCost,
+                'walletBalance' => $this->walletBalance,
+                'canGenerate' => $this->canGenerate,
+            ]);
             $credits->refund((int) $c->id, $cost, 'tts_refund', [
                 'related_type' => 'ml_job',
                 'related_id'   => $jobId,
@@ -535,7 +535,6 @@ class extends Component
             $this->currentProgress = 100;
             $this->syncWallet();
 
-            $this->dispatch('xtts-job-state-clear');
             $this->dispatch('alert', type: 'error', message: 'RunPod failed: ' . $e->getMessage());
         }
     }
@@ -617,7 +616,6 @@ class extends Component
                     $this->jobFinished = true;
                     $this->currentProgress = 100;
 
-                    $this->dispatch('xtts-job-state-clear');
                     $this->dispatch('alert', type: 'error', message: 'Completed but output audio missing.');
                     return;
                 }
@@ -636,20 +634,12 @@ class extends Component
                 $this->jobFinished = true;
                 $this->currentProgress = 100;
 
-                $this->dispatch('xtts-job-state-clear');
                 $this->dispatch('alert', type: 'error', message: $err);
                 return;
             }
 
             MlJob::where('id', $this->currentJobId)->update([
                 'status' => $mapped,
-            ]);
-
-            // Sync SPA state
-            $this->dispatch('xtts-job-state-sync', [
-                'jobId'    => $this->currentJobId,
-                'status'   => $mapped,
-                'progress' => $this->currentProgress,
             ]);
 
             if ($wavB64 !== '') {
@@ -697,7 +687,6 @@ class extends Component
                 $this->dispatch('customerStorageUpdated');
                 $this->dispatch('xtts-renders-refresh');
                 $this->dispatch('xtts-job-completed');
-                $this->dispatch('xtts-job-state-clear');
 
                 $this->dispatch('alert', type: 'success', message: 'Done');
                 return;
@@ -719,7 +708,6 @@ class extends Component
             $this->jobFinished = true;
             $this->currentProgress = 100;
 
-            $this->dispatch('xtts-job-state-clear');
             $this->dispatch('alert', type: 'error', message: 'Polling failed: ' . $e->getMessage());
         }
     }
@@ -846,61 +834,36 @@ class extends Component
         $this->syncCostPreview();
     }
 
+    // protected function loadLatestFinishedRender(): void
+    // {
+    //     $customerId = auth('app')->id();
+    //     $toolId = Tool::where('code', $this->toolCode)->value('id');
+
+    //     $latest = MlJob::query()
+    //         ->where('customer_id', $customerId)
+    //         ->when($toolId, fn ($q) => $q->where('tool_id', $toolId))
+    //         ->where('status', 'done')
+    //         ->orderByDesc('finished_at')
+    //         ->first();
+
+    //     if (!$latest) {
+    //         return;
+    //     }
+
+    //     $this->currentJobId = (string) $latest->id;
+    //     $this->audioUrl = route('app.renders.xtts.stream', [
+    //         'locale' => app()->getLocale(),
+    //         'jobId'  => $latest->id,
+    //     ]);
+
+    //     $this->currentStatus = 'done';
+    //     $this->jobFinished = true;
+    //     $this->currentProgress = 100;
+    // }
+
     public function render()
     {
         return view('app.pages.xtts.⚡app-xtts');
-    }
-
-    protected function hydrateCurrentJobFromDb(): void
-    {
-        $customerId = auth('app')->id();
-        $toolId = Tool::where('code', $this->toolCode)->value('id');
-
-        if (!$customerId || !$toolId) {
-            return;
-        }
-
-        $job = MlJob::query()
-            ->where('customer_id', $customerId)
-            ->where('tool_id', $toolId)
-            ->whereIn('status', ['queued', 'running', 'saving', 'done', 'failed'])
-            ->orderByRaw("
-                CASE
-                    WHEN status IN ('queued','running','saving') THEN 0
-                    WHEN status = 'done' THEN 1
-                    WHEN status = 'failed' THEN 2
-                    ELSE 3
-                END
-            ")
-            ->orderByDesc('updated_at')
-            ->first();
-
-        if (!$job) {
-            return;
-        }
-
-        $this->applyJobStateFromModel($job);
-    }
-
-    protected function applyJobStateFromModel(MlJob $job): void
-    {
-        $status = (string) $job->status;
-
-        $this->currentJobId = (string) $job->id;
-        $this->providerJobId = (string) ($job->provider_job_id ?? '');
-        $this->currentStatus = $status;
-        $this->showJobStatus = true;
-
-        $this->jobFinished = in_array($status, ['done', 'failed', 'deleted'], true);
-
-        $this->currentProgress = match ($status) {
-            'queued'  => 10,
-            'running' => 40,
-            'saving'  => 90,
-            'done'    => 100,
-            'failed'  => 100,
-            default   => 0,
-        };
     }
 };
 ?>
@@ -923,9 +886,8 @@ class extends Component
         }
     }"
 >
-    {{-- Poll only when a job is actively running --}}
     @if($currentJobId && !$jobFinished)
-        {{-- <div wire:poll.keep-alive.2000ms="pollJob"></div> --}}
+        <div wire:poll.keep-alive.2000ms="pollJob"></div>
     @endif
 
     @php
@@ -953,7 +915,7 @@ class extends Component
     @endphp
 
     @if($currentJobId && $showJobStatus)
-        {{-- <div
+        <div
             class="card glass-load {{ $glassClass }} mb-3"
             wire:key="xtts-job-status-{{ $currentJobId }}"
             @if($jobFinished) wire:poll.3s="hideJobStatus" @endif
@@ -991,7 +953,7 @@ class extends Component
                         aria-valuemax="100"></div>
                 </div>
             </div>
-        </div> --}}
+        </div>
     @endif
 
     <div class="row g-3">
@@ -1104,39 +1066,16 @@ class extends Component
                                 </div>
                             </div>
 
-                            {{-- =====================================================
-                                 SLIDERS — Alpine handles the UI, $wire.set syncs to Livewire
-                                 wire:ignore prevents Livewire re-renders from resetting slider position
-                                 ===================================================== --}}
                             <div class="row g-3 mt-1">
                                 @foreach($this->sliders as $s)
-                                    <div
-                                        class="col-md-6"
-                                        wire:key="slider-{{ $s['key'] }}"
-                                        wire:ignore
-                                        x-data="{
-                                            key: '{{ $s['key'] }}',
-                                            val: {{ $s['val'] }},
-                                            min: {{ $s['min'] }},
-                                            max: {{ $s['max'] }},
-                                            step: {{ $s['step'] }},
-                                            debounceTimer: null,
-                                            updateLivewire(v) {
-                                                clearTimeout(this.debounceTimer);
-                                                this.debounceTimer = setTimeout(() => {
-                                                    $wire.set(this.key, parseFloat(v));
-                                                }, 180);
-                                            },
-                                            get displayVal() {
-                                                return parseFloat(this.val).toFixed(
-                                                    this.step < 1 ? 2 : 0
-                                                );
-                                            }
-                                        }"
-                                    >
+                                    <div class="col-md-6" wire:key="slider-{{ $s['key'] }}">
                                         <div class="d-flex justify-content-between align-items-center">
                                             <label class="form-label mb-1">{{ $s['label'] }}</label>
-                                            <span class="badge text-bg-light tts-badge" x-text="displayVal"></span>
+                                            <span class="badge text-bg-light tts-badge"
+                                                  id="xtts-badge-{{ $s['key'] }}"
+                                                  data-key="{{ $s['key'] }}">
+                                                {{ $s['val'] }}
+                                            </span>
                                         </div>
 
                                         <div class="d-flex justify-content-between small text-muted" style="margin-top:-2px;">
@@ -1145,15 +1084,18 @@ class extends Component
                                         </div>
 
                                         <div class="position-relative">
-                                            <input
-                                                type="range"
-                                                class="form-range tts-range"
-                                                :min="min"
-                                                :max="max"
-                                                :step="step"
-                                                x-model="val"
-                                                @input="updateLivewire($event.target.value)"
-                                            />
+                                            <input type="range"
+                                                   class="form-range tts-range"
+                                                   min="{{ $s['min'] }}"
+                                                   max="{{ $s['max'] }}"
+                                                   step="{{ $s['step'] }}"
+                                                   value="{{ $s['val'] }}"
+                                                   wire:ignore
+                                                   data-xtts-range="{{ $s['key'] }}"
+                                                   data-min="{{ $s['min'] }}"
+                                                   data-max="{{ $s['max'] }}"
+                                                   data-step="{{ $s['step'] }}" />
+                                            <div class="tts-bubble" id="xtts-bubble-{{ $s['key'] }}" wire:ignore></div>
                                         </div>
 
                                         @error($s['key'])
@@ -1185,7 +1127,16 @@ class extends Component
                                 <button class="btn btn-outline-secondary" wire:click="resetToDefaults" type="button">
                                     Reset
                                 </button>
-
+                                {{-- <div class="mt-2 small">
+                                    <div>canGenerate: <strong>{{ $this->canGenerate ? 'true' : 'false' }}</strong></div>
+                                    <div>blockedReason: <strong>{{ $this->generateBlockedReason ?? 'none' }}</strong></div>
+                                    <div>chars: <strong>{{ $this->currentChars }}</strong></div>
+                                    <div>maxPerSubmit: <strong>{{ $this->maxPerSubmit }}</strong></div>
+                                    <div>creditsCost: <strong>{{ $this->creditsCost }}</strong></div>
+                                    <div>walletBalance: <strong>{{ $this->walletBalance }}</strong></div>
+                                    <div>speaker_id: <strong>{{ $this->speaker_id }}</strong></div>
+                                    <div>availableSpeakers: <strong>{{ count($this->availableSpeakers) }}</strong></div>
+                                </div> --}}
                                 @if($walletBalance < $creditsCost && $creditsCost > 0)
                                     <span class="small text-danger align-self-center">
                                         Not enough credits for this generation.
@@ -1214,11 +1165,7 @@ class extends Component
                                 <div class="text-muted">No renders yet.</div>
                             @else
                                 @foreach($this->renders as $r)
-                                    <div
-                                        class="border rounded p-2 mb-2 render-card"
-                                        wire:key="xtts-render-{{ $r['id'] }}"
-                                        id="render-card-{{ $r['id'] }}"
-                                    >
+                                    <div class="border rounded p-2 mb-2 render-card" wire:key="xtts-render-{{ $r['id'] }}">
                                         <div class="d-flex justify-content-between gap-2">
                                             <div>
                                                 <div class="small text-muted">
@@ -1242,12 +1189,7 @@ class extends Component
 
                                         <div class="mt-2 small">{{ $r['text_snippet'] }}</div>
 
-                                        {{--
-                                            wire:ignore on the entire audio block so Livewire re-renders
-                                            (including those triggered during generation polling) do NOT
-                                            destroy active WaveSurfer instances or interrupt playback.
-                                        --}}
-                                        <div class="mt-2" wire:ignore>
+                                        <div class="mt-2">
                                             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                                                 <span class="small text-muted" id="xtts-time-{{ $r['id'] }}">--:-- / --:--</span>
 
@@ -1269,19 +1211,19 @@ class extends Component
                                                 </div>
                                             </div>
 
-                                            <div id="xtts-wrap-{{ $r['id'] }}" class="mt-1">
+                                            <div id="xtts-wrap-{{ $r['id'] }}" class="mt-1" wire:ignore>
                                                 <div id="xtts-ph-{{ $r['id'] }}" class="border rounded bg-dark" style="height:90px; opacity:.25;"></div>
                                                 <div id="xtts-wave-{{ $r['id'] }}" class="border rounded" style="height:90px; display:none;"></div>
                                             </div>
+                                        </div>
 
-                                            <div class="mt-2">
-                                                <a class="btn btn-sm btn-outline-primary"
-                                                   href="{{ $r['download_url'] }}"
-                                                   target="_blank"
-                                                   rel="noopener">
-                                                    Download
-                                                </a>
-                                            </div>
+                                        <div class="mt-2" wire:ignore>
+                                            <a class="btn btn-sm btn-outline-primary"
+                                               href="{{ $r['download_url'] }}"
+                                               target="_blank"
+                                               rel="noopener">
+                                                Download
+                                            </a>
                                         </div>
                                     </div>
                                 @endforeach
@@ -1302,215 +1244,158 @@ class extends Component
 <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
 <script>
 (function () {
-    'use strict';
-
-    // ─── Singleton namespace ──────────────────────────────────────────────────
     if (!window.__XTTS_WAVE__) window.__XTTS_WAVE__ = {};
     const S = window.__XTTS_WAVE__;
 
-    S.previewWS     = S.previewWS     || new Map(); // jobId → WaveSurfer
-    S.previewMeta   = S.previewMeta   || new Map(); // jobId → { url, blobUrl }
-    S.previewInit   = S.previewInit   || new Set(); // jobIds already preloaded
-    S.pendingFetch  = S.pendingFetch  || new Map(); // url → Promise<Blob>  (dedup in-flight)
+    S.previewWS = S.previewWS || new Map();
+    S.previewMeta = S.previewMeta || new Map();
+    S.previewInit = S.previewInit || new Set();
 
-    // ─── Cache config ─────────────────────────────────────────────────────────
-    const CACHE_NAME    = 'xtts-audio-v4';
-    const CACHE_MAX     = 30;          // keep at most N entries
-    const PRELOAD_LIMIT = 10;          // eagerly preload top N renders
+    const AUDIO_CACHE_NAME = "xtts-audio-v3";
+    const PRELOAD_LIMIT = 10;
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
     function formatTime(sec) {
         sec = Math.max(0, sec || 0);
-        const m = String(Math.floor(sec / 60)).padStart(2, '0');
-        const s = String(Math.floor(sec % 60)).padStart(2, '0');
+        const m = String(Math.floor(sec / 60)).padStart(2, "0");
+        const s = String(Math.floor(sec % 60)).padStart(2, "0");
         return `${m}:${s}`;
     }
 
-    function primaryColor(isLatest = false) {
-        if (isLatest) return '#dc3545';
-        return (getComputedStyle(document.documentElement)
-            .getPropertyValue('--bs-primary') || '#0d6efd').trim();
-    }
-
     function buildWaveOptions(container, isLatest = false) {
-        const c = primaryColor(isLatest);
+        const primary = isLatest
+            ? "#dc3545"
+            : (getComputedStyle(document.documentElement).getPropertyValue("--bs-primary") || "#0d6efd").trim();
+
         return {
             container,
             height: 90,
             normalize: true,
             responsive: true,
-            backend: 'MediaElement',
-            waveColor: c,
-            progressColor: c,
-            cursorColor: c,
+            backend: "MediaElement",
+            waveColor: primary,
+            progressColor: primary,
+            cursorColor: primary,
         };
     }
 
-    // ─── Audio Cache ──────────────────────────────────────────────────────────
-    async function openCache() {
-        return caches.open(CACHE_NAME);
+    function stopWS(ws) {
+        if (!ws) return;
+        try { ws.pause(); ws.setTime(0); } catch (e) {}
     }
 
-    /**
-     * Prune oldest entries beyond CACHE_MAX so the cache doesn't grow unbounded.
-     */
-    async function pruneCache() {
+    function stopAll(exceptKey = null) {
+        S.previewWS.forEach((ws, jobId) => {
+            if (jobId !== exceptKey) stopWS(ws);
+        });
+    }
+
+    async function cacheMatch(url) {
         try {
-            const cache = await openCache();
-            const keys  = await cache.keys();
-            if (keys.length > CACHE_MAX) {
-                const toDelete = keys.slice(0, keys.length - CACHE_MAX);
-                await Promise.all(toDelete.map(k => cache.delete(k)));
-            }
+            const cache = await caches.open(AUDIO_CACHE_NAME);
+            return await cache.match(url);
         } catch (e) {
-            // non-fatal
+            return null;
         }
     }
 
-    /**
-     * Returns a Blob for the given URL.
-     * Strategy: memory dedup → Cache API → network (then cache).
-     * Multiple concurrent callers for the same URL share one fetch.
-     */
-    async function getBlob(url) {
-        // 1. Deduplicate in-flight fetches
-        if (S.pendingFetch.has(url)) {
-            return S.pendingFetch.get(url);
-        }
-
-        const promise = (async () => {
-            // 2. Check Cache API
-            try {
-                const cache = await openCache();
-                const hit   = await cache.match(url);
-                if (hit) {
-                    return hit.blob();
-                }
-            } catch (_) {}
-
-            // 3. Fetch from network
-            const res = await fetch(url, {
-                method: 'GET',
-                cache: 'no-cache',
-                credentials: 'same-origin',
-            });
-            if (!res.ok) throw new Error('Fetch failed ' + res.status);
-
-            // 4. Store in Cache API (clone before consuming)
-            try {
-                const cache = await openCache();
-                await cache.put(url, res.clone());
-                // async prune — don't block caller
-                pruneCache().catch(() => {});
-            } catch (_) {}
-
-            return res.blob();
-        })();
-
-        S.pendingFetch.set(url, promise);
-        promise.finally(() => S.pendingFetch.delete(url));
-
-        return promise;
+    async function cachePut(url, response) {
+        const cache = await caches.open(AUDIO_CACHE_NAME);
+        await cache.put(url, response);
     }
 
-    // ─── Blob URL management ─────────────────────────────────────────────────
-    /**
-     * Return a blob: URL for the given job+url combo.
-     * Re-uses an existing one when the source URL hasn't changed.
-     */
-    async function getBlobUrl(jobId, url) {
-        const meta = S.previewMeta.get(jobId);
-        if (meta && meta.url === url && meta.blobUrl) {
-            return meta.blobUrl;
-        }
+    async function fetchAndCache(url) {
+        const hit = await cacheMatch(url);
+        if (hit) return hit;
 
-        // Revoke stale blob URL
-        if (meta?.blobUrl) {
-            try { URL.revokeObjectURL(meta.blobUrl); } catch (_) {}
-        }
+        const res = await fetch(url, {
+            method: "GET",
+            cache: "no-cache",
+            credentials: "same-origin",
+        });
 
-        const blob    = await getBlob(url);
-        const blobUrl = URL.createObjectURL(blob);
-        S.previewMeta.set(jobId, { url, blobUrl });
-        return blobUrl;
+        if (!res.ok) throw new Error("Fetch failed " + res.status);
+        await cachePut(url, res.clone());
+        return res;
     }
 
-    // ─── WaveSurfer lifecycle ─────────────────────────────────────────────────
+    async function getBlobFromCacheOrFetch(url) {
+        const res = await fetchAndCache(url);
+        return await res.blob();
+    }
+
     function destroyPreview(jobId) {
         const ws = S.previewWS.get(jobId);
         if (ws) {
-            try { ws.destroy(); } catch (_) {}
+            try { ws.destroy(); } catch (e) {}
             S.previewWS.delete(jobId);
         }
 
         const meta = S.previewMeta.get(jobId);
         if (meta?.blobUrl) {
-            try { URL.revokeObjectURL(meta.blobUrl); } catch (_) {}
+            try { URL.revokeObjectURL(meta.blobUrl); } catch (e) {}
         }
+
         S.previewMeta.delete(jobId);
-        S.previewInit.delete(jobId);
 
-        const wave = document.getElementById('xtts-wave-' + jobId);
-        if (wave) wave.innerHTML = '';
+        const wave = document.getElementById("xtts-wave-" + jobId);
+        if (wave) wave.innerHTML = "";
     }
 
-    function stopWS(ws) {
-        if (!ws) return;
-        try { ws.pause(); ws.setTime(0); } catch (_) {}
+    async function ensurePreviewBlobUrl(jobId, url) {
+        const meta = S.previewMeta.get(jobId);
+        if (meta && meta.url === url && meta.blobUrl) return meta.blobUrl;
+
+        if (meta?.blobUrl) {
+            try { URL.revokeObjectURL(meta.blobUrl); } catch (e) {}
+        }
+
+        const blob = await getBlobFromCacheOrFetch(url);
+        const blobUrl = URL.createObjectURL(blob);
+        S.previewMeta.set(jobId, { url, blobUrl });
+        return blobUrl;
     }
 
-    function stopAll(exceptJobId = null) {
-        S.previewWS.forEach((ws, jobId) => {
-            if (jobId !== exceptJobId) stopWS(ws);
-        });
-    }
-
-    /**
-     * Create (or return existing) WaveSurfer instance for a render card.
-     * Safe to call multiple times — returns existing instance if already created.
-     */
     function initPreview(jobId, url, isLatest = false) {
-        if (S.previewWS.has(jobId)) return S.previewWS.get(jobId);
-
-        const ph   = document.getElementById('xtts-ph-'   + jobId);
-        const wave = document.getElementById('xtts-wave-' + jobId);
-        const time = document.getElementById('xtts-time-' + jobId);
+        const ph = document.getElementById("xtts-ph-" + jobId);
+        const wave = document.getElementById("xtts-wave-" + jobId);
+        const time = document.getElementById("xtts-time-" + jobId);
 
         if (!wave || !url) return null;
 
-        // Reset placeholder visibility
-        if (ph) { ph.style.display = ''; }
-        wave.style.display = 'none';
+        const existing = S.previewWS.get(jobId);
+        if (existing) return existing;
+
+        destroyPreview(jobId);
+
+        if (ph) ph.style.display = "";
+        wave.style.display = "none";
 
         const ws = WaveSurfer.create(buildWaveOptions(wave, isLatest));
 
-        ws.on('ready', () => {
-            if (ph) ph.style.display = 'none';
-            wave.style.display = '';
+        ws.on("ready", () => {
+            if (ph) ph.style.display = "none";
+            wave.style.display = "";
             if (time) time.textContent = `00:00 / ${formatTime(ws.getDuration())}`;
         });
 
-        ws.on('timeupdate', () => {
-            if (time) {
-                time.textContent = `${formatTime(ws.getCurrentTime())} / ${formatTime(ws.getDuration())}`;
-            }
+        ws.on("timeupdate", () => {
+            if (time) time.textContent = `${formatTime(ws.getCurrentTime())} / ${formatTime(ws.getDuration())}`;
         });
 
-        ws.on('finish', () => {
-            try { ws.setTime(0); } catch (_) {}
+        ws.on("finish", () => {
+            try { ws.setTime(0); } catch (e) {}
         });
 
-        ws.on('error', (e) => {
-            console.error('[XTTS] WaveSurfer error', jobId, e);
+        ws.on("error", (e) => {
+            console.error("XTTS preview load failed:", jobId, e);
         });
 
-        // Load audio — prefer blob URL for instant decode
         (async () => {
             try {
-                const blobUrl = await getBlobUrl(jobId, url);
+                const blobUrl = await ensurePreviewBlobUrl(jobId, url);
                 ws.load(blobUrl);
             } catch (e) {
-                console.warn('[XTTS] Falling back to direct URL', jobId, e);
+                console.error("XTTS preview fetch failed:", jobId, e);
                 ws.load(url);
             }
         })();
@@ -1519,223 +1404,79 @@ class extends Component
         return ws;
     }
 
-    // ─── Button binding ───────────────────────────────────────────────────────
     function bindPreviewButtons() {
-        document.querySelectorAll('.btn-xtts-preview[data-job][data-url]').forEach(btn => {
-            if (btn.dataset.bound === '1') return;
-            btn.dataset.bound = '1';
+        document.querySelectorAll(".btn-xtts-preview[data-job][data-url]").forEach((btn) => {
+            if (btn.dataset.bound === "1") return;
+            btn.dataset.bound = "1";
 
-            btn.addEventListener('click', () => {
-                const jobId    = btn.getAttribute('data-job');
-                const url      = btn.getAttribute('data-url');
-                const isLatest = btn.getAttribute('data-latest') === '1';
+            btn.addEventListener("click", () => {
+                const jobId = btn.getAttribute("data-job");
+                const url = btn.getAttribute("data-url");
+                const isLatest = btn.getAttribute("data-latest") === "1";
 
-                // Ensure instance exists (creates if needed)
-                const ws = initPreview(jobId, url, isLatest);
+                const ws = S.previewWS.get(jobId) || initPreview(jobId, url, isLatest);
                 if (!ws) return;
 
-                stopAll(jobId);   // pause all other players
+                stopAll(jobId);
                 ws.playPause();
             });
         });
 
-        document.querySelectorAll('.btn-xtts-stop[data-job]').forEach(btn => {
-            if (btn.dataset.bound === '1') return;
-            btn.dataset.bound = '1';
+        document.querySelectorAll(".btn-xtts-stop[data-job]").forEach((btn) => {
+            if (btn.dataset.bound === "1") return;
+            btn.dataset.bound = "1";
 
-            btn.addEventListener('click', () => {
-                stopWS(S.previewWS.get(btn.getAttribute('data-job')));
+            btn.addEventListener("click", () => {
+                const jobId = btn.getAttribute("data-job");
+                stopWS(S.previewWS.get(jobId));
             });
         });
     }
 
-    // ─── Preload + render waveforms eagerly ───────────────────────────────────
     async function preloadAndRenderRecentAudio() {
-        const buttons = Array.from(
-            document.querySelectorAll('.btn-xtts-preview[data-job][data-url]')
-        )
-        .sort((a, b) =>
-            Number(a.getAttribute('data-preload-rank') ?? 9999) -
-            Number(b.getAttribute('data-preload-rank') ?? 9999)
-        )
-        .slice(0, PRELOAD_LIMIT);
+        const buttons = Array.from(document.querySelectorAll(".btn-xtts-preview[data-job][data-url]"))
+            .sort((a, b) => {
+                const ra = Number(a.getAttribute("data-preload-rank") ?? 9999);
+                const rb = Number(b.getAttribute("data-preload-rank") ?? 9999);
+                return ra - rb;
+            })
+            .slice(0, PRELOAD_LIMIT);
 
         for (const btn of buttons) {
-            const jobId    = btn.getAttribute('data-job');
-            const url      = btn.getAttribute('data-url');
-            const isLatest = btn.getAttribute('data-latest') === '1';
+            const jobId = btn.getAttribute("data-job");
+            const url = btn.getAttribute("data-url");
+            const isLatest = btn.getAttribute("data-latest") === "1";
 
             if (!jobId || !url) continue;
-            if (S.previewWS.has(jobId)) continue;   // already initialised
+            if (S.previewInit.has(jobId)) continue;
 
             try {
-                // Pre-warm cache without blocking
-                getBlob(url).catch(() => {});
+                await fetchAndCache(url);
                 initPreview(jobId, url, isLatest);
                 S.previewInit.add(jobId);
             } catch (e) {
-                console.error('[XTTS] Preload failed', jobId, e);
+                console.error("XTTS preload/render failed:", jobId, e);
             }
         }
     }
 
-    // ─── Auto-scroll & highlight latest render after job completes ────────────
-    function highlightLatestRender() {
-        // The first .render-card in the list is the newest after Livewire refreshes
-        const firstCard = document.querySelector('.render-card');
-        if (!firstCard) return;
-
-        firstCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-        // Brief highlight flash
-        firstCard.style.transition = 'box-shadow 0.3s ease';
-        firstCard.style.boxShadow  = '0 0 0 3px var(--bs-success, #198754)';
-        setTimeout(() => {
-            firstCard.style.boxShadow = '';
-        }, 2500);
-
-        // Auto-init the waveform for the latest card
-        const btn = firstCard.querySelector('.btn-xtts-preview[data-job][data-url]');
-        if (btn) {
-            const jobId    = btn.getAttribute('data-job');
-            const url      = btn.getAttribute('data-url');
-            if (jobId && url && !S.previewWS.has(jobId)) {
-                initPreview(jobId, url, true);
-            }
-        }
-    }
-
-    // ─── SPA / navigation persistence via localStorage ────────────────────────
-    const SPA_KEY = 'xtts_spa_job';
-
-    function spaSave(data) {
-        try {
-            localStorage.setItem(SPA_KEY, JSON.stringify({ ...data, ts: Date.now() }));
-        } catch (_) {}
-    }
-
-    function spaLoad() {
-        try {
-            const raw = localStorage.getItem(SPA_KEY);
-            if (!raw) return null;
-            const data = JSON.parse(raw);
-            // Expire after 30 minutes of inactivity
-            if (Date.now() - (data.ts || 0) > 30 * 60 * 1000) {
-                localStorage.removeItem(SPA_KEY);
-                return null;
-            }
-            return data;
-        } catch (_) {
-            return null;
-        }
-    }
-
-    function spaClear() {
-        try { localStorage.removeItem(SPA_KEY); } catch (_) {}
-    }
-
-    /**
-     * After Livewire navigation, if a job was in-progress restore the
-     * component state so polling resumes automatically.
-     */
-    function spaRestoreIfNeeded() {
-        const saved = spaLoad();
-        if (!saved || !saved.jobId) return;
-
-        // Only restore if the job is still mid-flight
-        const activeStatuses = ['queued', 'running', 'saving'];
-        if (!activeStatuses.includes(saved.status)) return;
-
-        // Restore Livewire component state
-        try {
-            window.Livewire.find(
-                document.querySelector('[wire\\:id]')?.getAttribute('wire:id')
-            )?.set('currentJobId',  saved.jobId)
-              ?.set('providerJobId', saved.providerJobId || null)
-              ?.set('currentStatus', saved.status)
-              ?.set('jobFinished',   false)
-              ?.set('showJobStatus', true)
-              ?.set('currentProgress', saved.progress || 10);
-        } catch (e) {
-            console.warn('[XTTS] SPA restore failed', e);
-        }
-    }
-
-    // ─── Livewire event listeners ─────────────────────────────────────────────
-    function registerLivewireEvents() {
-        // Persist job state to localStorage whenever Livewire tells us it changed
-        Livewire.on('xtts-job-started', (data) => {
-            spaSave(data);
-        });
-
-        Livewire.on('xtts-job-state-sync', (data) => {
-            const saved = spaLoad();
-            if (saved && saved.jobId === data.jobId) {
-                spaSave({ ...saved, ...data });
-            }
-        });
-
-        Livewire.on('xtts-job-state-clear', () => {
-            spaClear();
-        });
-
-        // When a job finishes: bind new buttons, highlight latest
-        Livewire.on('xtts-job-completed', () => {
-            spaClear();
-            // Give the DOM a tick to update with the new render card
-            requestAnimationFrame(() => {
-                bindPreviewButtons();
-                highlightLatestRender();
-            });
-        });
-
-        // After any Livewire update re-bind buttons (covers pagination, refresh, delete)
-        Livewire.hook('commit', ({ component, succeed }) => {
-            succeed(() => {
-                requestAnimationFrame(() => {
-                    bindPreviewButtons();
-                });
-            });
-        });
-    }
-
-    // ─── Page boot ────────────────────────────────────────────────────────────
     function bootXttsPage() {
-        registerLivewireEvents();
         bindPreviewButtons();
-        spaRestoreIfNeeded();
 
-        const idle = 'requestIdleCallback' in window
-            ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
-            : (cb) => setTimeout(cb, 500);
-
-        idle(() => preloadAndRenderRecentAudio());
+        if ("requestIdleCallback" in window) {
+            requestIdleCallback(() => preloadAndRenderRecentAudio(), { timeout: 2000 });
+        } else {
+            setTimeout(() => preloadAndRenderRecentAudio(), 500);
+        }
     }
 
-    // ─── Cleanup on navigation ────────────────────────────────────────────────
-    function teardownXttsPage() {
-        // Destroy WaveSurfer instances that are NOT currently playing
-        // (playing ones are already paused by the browser on unload anyway,
-        //  but we keep the Map so they can resume if navigating back within SPA)
-        S.previewWS.forEach((ws, jobId) => {
-            if (ws.isPlaying && ws.isPlaying()) return; // keep playing instances in memory
-            try { ws.destroy(); } catch (_) {}
-            S.previewWS.delete(jobId);
-            const meta = S.previewMeta.get(jobId);
-            if (meta?.blobUrl) {
-                try { URL.revokeObjectURL(meta.blobUrl); } catch (_) {}
-            }
-            S.previewMeta.delete(jobId);
+    document.addEventListener("livewire:initialized", bootXttsPage);
+    document.addEventListener("livewire:navigated", bootXttsPage);
+
+    window.addEventListener("beforeunload", () => {
+        S.previewWS.forEach((ws) => {
+            try { ws.destroy(); } catch (e) {}
         });
-    }
-
-    // ─── Initialise ───────────────────────────────────────────────────────────
-    document.addEventListener('livewire:initialized', bootXttsPage);
-    document.addEventListener('livewire:navigated',   bootXttsPage);
-    document.addEventListener('livewire:navigating',  teardownXttsPage);
-
-    window.addEventListener('beforeunload', () => {
-        S.previewWS.forEach(ws => { try { ws.destroy(); } catch (_) {} });
         S.previewWS.clear();
     });
 })();

@@ -6,8 +6,31 @@ use Illuminate\Database\Eloquent\Model;
 
 class CreditLedger extends Model
 {
-    public $timestamps = false; // we used created_at only
-    protected $table = 'credit_ledger';
-    protected $fillable = ['customer_id','type','credits_delta','balance_after','related_type','related_id','meta','created_at'];
-    protected $casts = ['meta'=>'array','created_at'=>'datetime'];
+    protected $table = 'credit_ledgers';
+
+    const UPDATED_AT = null;
+
+    protected $fillable = [
+        'customer_id',
+        'type',
+        'bucket',
+        'credits_delta',
+        'balance_after',
+        'subscription_balance_after',
+        'addon_balance_after',
+        'related_type',
+        'related_id',
+        'reference_code',
+        'meta',
+    ];
+
+    protected $casts = [
+        'meta' => 'array',
+        'created_at' => 'datetime',
+    ];
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
+    }
 }

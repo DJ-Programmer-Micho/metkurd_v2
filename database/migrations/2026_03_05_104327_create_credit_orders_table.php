@@ -12,18 +12,30 @@ return new class extends Migration {
 
             $table->unsignedBigInteger('customer_id')->index();
 
-            $table->string('status', 30)->default('pending')->index(); // pending, paid, failed, refunded
-            $table->unsignedInteger('credits_amount');
-            $table->decimal('amount_usd', 10, 4)->nullable();
+            $table->string('order_type', 30)->index(); // subscription, addon, adjustment
+            $table->string('status', 30)->default('pending')->index(); // pending, paid, failed, refunded, canceled
 
-            $table->string('provider', 60)->nullable()->index(); // areeba, fib, zaincash etc.
+            // source object
+            $table->string('source_type', 60)->nullable()->index(); // service_plan, credit_product
+            $table->unsignedBigInteger('service_plan_id')->nullable()->index();
+            $table->unsignedBigInteger('credit_product_id')->nullable()->index();
+
+            $table->unsignedBigInteger('credits_amount')->default(0);
+            $table->decimal('amount_usd', 12, 2)->nullable();
+            $table->char('currency', 3)->default('USD');
+
+            $table->string('provider', 60)->nullable()->index();
             $table->string('provider_ref', 190)->nullable()->index();
+            $table->timestamp('paid_at')->nullable()->index();
 
             $table->json('meta')->nullable();
-
             $table->timestamps();
 
             $table->foreign('customer_id')->references('id')->on('customers')->cascadeOnDelete();
+            $table->foreign('service_plan_id')->references('id')->on('service_plans')->nullOnDelete();
+            $table->foreign('credit_product_id')->references('id')->on('credit_products')->nullOnDelete();
+
+            $table->index(['customer_id', 'status', 'created_at'], 'co_customer_status_created_idx');
         });
     }
 

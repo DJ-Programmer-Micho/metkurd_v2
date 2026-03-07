@@ -12,20 +12,20 @@ return new class extends Migration {
 
             $table->unsignedBigInteger('customer_id')->index();
             $table->unsignedBigInteger('service_plan_id')->index();
+            $table->unsignedBigInteger('subscription_id')->nullable()->index();
 
-            // e.g. "2026-03"
-            $table->char('year_month', 7)->index();
+            $table->char('year_month', 7)->index(); // 2026-03
+            $table->unsignedBigInteger('granted_credits');
+            $table->timestamp('granted_at')->useCurrent()->index();
 
-            $table->unsignedInteger('granted_credits');
-
-            $table->timestamp('granted_at')->useCurrent();
-
+            $table->json('meta')->nullable();
             $table->timestamps();
 
             $table->foreign('customer_id')->references('id')->on('customers')->cascadeOnDelete();
-            $table->foreign('service_plan_id')->references('id')->on('service_plans');
+            $table->foreign('service_plan_id')->references('id')->on('service_plans')->restrictOnDelete();
+            $table->foreign('subscription_id')->references('id')->on('customer_service_subscriptions')->nullOnDelete();
 
-            $table->unique(['customer_id','year_month']);
+            $table->unique(['customer_id', 'year_month'], 'cmg_customer_month_uq');
         });
     }
 
