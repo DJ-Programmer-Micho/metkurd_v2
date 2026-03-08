@@ -4,7 +4,6 @@ use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\Admin\Pages\AdminController;
 use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
-use App\Http\Controllers\App\Pages\AppController;
 use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
@@ -126,6 +125,12 @@ Route::prefix('{locale}')
 
     Route::get('/app/renders/xtts/{jobId}/download', [XttsRenderController::class, 'download'])
         ->name('app.renders.xtts.download');
+
+    Route::get('/app/renders/clone-xtts/{jobId}/stream', [XttsRenderController::class, 'cloneStream'])
+        ->name('app.renders.clone_xtts.stream');
+
+    Route::get('/app/renders/clone-xtts/{jobId}/download', [XttsRenderController::class, 'cloneDownload'])
+        ->name('app.renders.clone_xtts.download');
 });
 /*
 |--------------------------------------------------------------------------

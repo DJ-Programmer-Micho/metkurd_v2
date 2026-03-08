@@ -11,31 +11,21 @@ use Illuminate\Support\Facades\Storage;
 
 class XttsRenderController extends Controller
 {
-    protected function jobOrFail(string $jobId, array|string $toolCodes = ['tts']): MlJob
+    protected function jobOrFail(string $jobId): MlJob
     {
-        $toolCodes = array_values(array_filter((array) $toolCodes));
-
-        $toolIds = Tool::query()
-            ->whereIn('code', $toolCodes)
-            ->pluck('id')
-            ->filter()
-            ->values()
-            ->all();
+        $toolId = Tool::where('code', 'tts')->value('id');
 
         return MlJob::query()
             ->where('id', $jobId)
             ->where('customer_id', auth('app')->id())
-            ->when(
-                !empty($toolIds),
-                fn ($q) => $q->whereIn('tool_id', $toolIds)
-            )
+            ->when($toolId, fn($q) => $q->where('tool_id', $toolId))
             ->where('status', 'done')
             ->firstOrFail();
     }
 
-    protected function streamJob(Request $request, string $jobId, array|string $toolCodes)
+    public function stream(Request $request, string $locale, string $jobId)
     {
-        $job = $this->jobOrFail($jobId, $toolCodes);
+        $job = $this->jobOrFail($jobId);
 
         $disk = (string) data_get($job->output, 'disk', 's3');
         $key  = (string) data_get($job->output, 'path', '');
@@ -57,7 +47,7 @@ class XttsRenderController extends Controller
             if (!$forceProxy && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $tmpUrl = Storage::disk($disk)->temporaryUrl($key, now()->addMinutes(20), [
                     'ResponseContentType' => $mime,
-                    'ResponseContentDisposition' => 'inline; filename="' . $filename . '"',
+                    'ResponseContentDisposition' => 'inline; filename="'.$filename.'"',
                 ]);
 
                 return redirect()->away($tmpUrl);
@@ -78,38 +68,32 @@ class XttsRenderController extends Controller
                     }
                 }
             }, 200, [
-                'Content-Type'        => $mime,
-                'Content-Disposition' => 'inline; filename="' . $filename . '"',
-                'Cache-Control'       => 'private, max-age=3600',
-                'Accept-Ranges'       => 'bytes',
+                'Content-Type' => $mime,
+                'Content-Disposition' => 'inline; filename="'.$filename.'"',
+                'Cache-Control' => 'private, max-age=3600',
+                'Accept-Ranges' => 'bytes',
             ]);
         } catch (\Throwable $e) {
             Log::error('XTTS_STREAM_500', [
-                'job_id'  => $jobId,
-                'disk'    => $disk,
-                'key'     => $key,
+                'job_id' => $jobId,
+                'disk' => $disk,
+                'key' => $key,
                 'message' => $e->getMessage(),
-                'tools'   => (array) $toolCodes,
             ]);
 
             abort(500, 'Audio stream failed.');
         }
     }
 
-    protected function downloadJob(string $jobId, array|string $toolCodes)
+    public function download(Request $request, string $locale, string $jobId)
     {
-        $job = $this->jobOrFail($jobId, $toolCodes);
+        $job = $this->jobOrFail($jobId);
 
         $disk = (string) data_get($job->output, 'disk', 's3');
         $key  = (string) data_get($job->output, 'path', '');
 
-        if ($key === '') {
-            abort(404, 'Audio key missing in job output.');
-        }
-
-        if (!Storage::disk($disk)->exists($key)) {
-            abort(404, 'Audio file not found on storage.');
-        }
+        if ($key === '') abort(404, 'Audio key missing in job output.');
+        if (!Storage::disk($disk)->exists($key)) abort(404, 'Audio file not found on storage.');
 
         $mime = (string) data_get($job->output, 'mime', 'audio/wav');
         $filename = basename($key) ?: 'out.wav';
@@ -117,25 +101,5 @@ class XttsRenderController extends Controller
         return Storage::disk($disk)->download($key, $filename, [
             'Content-Type' => $mime,
         ]);
-    }
-
-    public function stream(Request $request, string $locale, string $jobId)
-    {
-        return $this->streamJob($request, $jobId, ['tts']);
-    }
-
-    public function download(Request $request, string $locale, string $jobId)
-    {
-        return $this->downloadJob($jobId, ['tts']);
-    }
-
-    public function cloneStream(Request $request, string $locale, string $jobId)
-    {
-        return $this->streamJob($request, $jobId, ['clone_tts']);
-    }
-
-    public function cloneDownload(Request $request, string $locale, string $jobId)
-    {
-        return $this->downloadJob($jobId, ['clone_tts']);
     }
 }

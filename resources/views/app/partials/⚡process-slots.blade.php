@@ -1,7 +1,6 @@
 <?php
 
 use Livewire\Component;
-use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 
 use Illuminate\Support\Facades\DB;
@@ -17,9 +16,13 @@ new class extends Component
 {
     public int $refreshKey = 0;
 
+    public int $maxSlots = 5;
+    public int $allowedSlots = 2;
+    public array $slotsData = [];
+
     public function mount(): void
     {
-        $this->refreshKey++;
+        $this->hydrateBoard();
     }
 
     #[On('header:refresh')]
@@ -28,7 +31,7 @@ new class extends Component
     #[On('xtts-renders-refresh')]
     public function refreshSlots(): void
     {
-        $this->refreshKey++;
+        $this->hydrateBoard();
     }
 
     public function pollJobs(RunPodProvider $runpod, CustomerOutputStorage $storage): void
@@ -41,8 +44,8 @@ new class extends Component
         $jobs = MlJob::query()
             ->where('customer_id', (int) $customer->id)
             ->whereIn('status', ['queued', 'running', 'saving'])
-            ->orderByDesc('created_at')
-            ->limit(10)
+            ->orderBy('created_at')
+            ->limit($this->maxSlots)
             ->get();
 
         foreach ($jobs as $job) {
@@ -53,19 +56,130 @@ new class extends Component
                     continue;
                 }
 
-                // Phase 1: XTTS only
                 if ((string) $tool->code === 'tts') {
                     $this->syncXttsJob($job, $tool, $runpod, $storage);
                 }
             } catch (\Throwable $e) {
                 Log::warning('PROCESS_SLOT_SYNC_FAIL', [
                     'job_id' => $job->id,
-                    'error'  => $e->getMessage(),
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
 
+        $this->hydrateBoard();
+    }
+
+    protected function hydrateBoard(): void
+    {
+        $customer = auth('app')->user();
+
+        if (!$customer) {
+            $this->allowedSlots = 2;
+            $this->slotsData = $this->buildEmptySlots(2);
+            $this->refreshKey++;
+            return;
+        }
+
+        $this->allowedSlots = $this->resolveAllowedSlots($customer);
+
+        $jobs = MlJob::query()
+            ->where('customer_id', (int) $customer->id)
+            ->where(function ($q) {
+                $q->whereIn('status', ['queued', 'running', 'saving'])
+                ->orWhere(function ($q2) {
+                    $q2->whereIn('status', ['done', 'failed'])
+                        ->where('finished_at', '>=', now()->subSeconds(3));
+                });
+            })
+            ->orderBy('created_at')
+            ->limit($this->allowedSlots)
+            ->get();
+
+        $items = $jobs->map(function ($job) {
+            $tool = Tool::find($job->tool_id);
+            $toolCode = (string) ($tool?->code ?? '');
+
+            $route = match ($toolCode) {
+                'tts'   => route('app.xtts', ['locale' => app()->getLocale()]),
+                'wasr'  => route('app.wasr', ['locale' => app()->getLocale()]),
+                'ocr'   => route('app.ocr', ['locale' => app()->getLocale()]),
+                'stem'  => route('app.stem', ['locale' => app()->getLocale()]),
+                default => route('app.home', ['locale' => app()->getLocale()]),
+            };
+
+            return [
+                'route'       => $route,
+                'title'       => strtoupper($toolCode ?: 'JOB') . ' • ' . strtoupper((string) $job->status),
+                'isClickable' => true,
+                'cellClass'   => match ((string) $job->status) {
+                    'queued'  => 'mk-slot-queued',
+                    'running' => 'mk-slot-running',
+                    'saving'  => 'mk-slot-saving',
+                    'done'    => 'mk-slot-done',
+                    'failed'  => 'mk-slot-failed',
+                    default   => 'mk-slot-idle',
+                },
+            ];
+        })->values()->all();
+
+        $slots = [];
+
+        for ($i = 0; $i < $this->maxSlots; $i++) {
+            if ($i < $this->allowedSlots) {
+                $slots[] = $items[$i] ?? [
+                    'route'       => null,
+                    'title'       => 'Available slot',
+                    'isClickable' => false,
+                    'cellClass'   => 'mk-slot-idle',
+                ];
+            } else {
+                $slots[] = [
+                    'route'       => null,
+                    'title'       => 'Locked by plan',
+                    'isClickable' => false,
+                    'cellClass'   => 'mk-slot-locked',
+                ];
+            }
+        }
+
+        $this->slotsData = $slots;
         $this->refreshKey++;
+    }
+
+    protected function resolveAllowedSlots($customer): int
+    {
+        $planCode = strtolower((string) ($customer?->serviceCode() ?? 'free'));
+
+        return match ($planCode) {
+            'student' => 2,
+            'pro'     => 3,
+            'premium' => 5,
+            default   => 2,
+        };
+    }
+
+    protected function buildEmptySlots(int $allowed): array
+    {
+        $slots = [];
+
+        for ($i = 0; $i < $this->maxSlots; $i++) {
+            $slots[] = $i < $allowed
+                ? [
+                    'route' => null,
+                    'title' => 'Available slot',
+                    'isClickable' => false,
+                    'cellClass' => 'mk-slot-idle',
+                ]
+                : [
+                    'route' => null,
+                    'title' => 'Locked by plan',
+                    'isClickable' => false,
+                    'cellClass' => 'mk-slot-locked',
+                ];
+        }
+
+        return $slots;
     }
 
     protected function syncXttsJob(
@@ -91,7 +205,7 @@ new class extends Component
         $st = $runpod->status($endpointId, $rpId);
 
         $rawStatus = strtoupper((string) data_get($st, 'status', ''));
-        $out       = (array) data_get($st, 'output', []);
+        $out = (array) data_get($st, 'output', []);
 
         $wavB64 = (string) (
             data_get($out, 'wav_b64', '')
@@ -103,11 +217,11 @@ new class extends Component
         );
 
         $mapped = match ($rawStatus) {
-            'IN_QUEUE', 'QUEUED'              => 'queued',
-            'IN_PROGRESS', 'RUNNING'          => 'running',
-            'COMPLETED'                       => 'saving',
+            'IN_QUEUE', 'QUEUED'                => 'queued',
+            'IN_PROGRESS', 'RUNNING'            => 'running',
+            'COMPLETED'                         => 'saving',
             'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
-            default                           => 'running',
+            default                             => 'running',
         };
 
         if ($mapped === 'failed') {
@@ -118,13 +232,11 @@ new class extends Component
             );
 
             MlJob::where('id', $job->id)->update([
-                'status'      => 'failed',
-                'error'       => ['message' => $err],
+                'status' => 'failed',
+                'error' => ['message' => $err],
                 'finished_at' => now(),
             ]);
 
-            $this->dispatch('xtts-renders-refresh');
-            $this->dispatch('header:refresh');
             return;
         }
 
@@ -133,7 +245,6 @@ new class extends Component
         ]);
 
         if ($rawStatus === 'COMPLETED' && $wavB64 === '') {
-            // keep waiting; RunPod sometimes completes slightly before output is readable
             return;
         }
 
@@ -157,22 +268,23 @@ new class extends Component
 
         $saved = $storage->saveWavB64ToS3((int) $customer->id, $fileKey, $wavB64, [
             'job_id' => $job->id,
-            'tool'   => 'tts',
+            'tool' => 'tts',
         ]);
 
         DB::transaction(function () use ($job, $saved, $customer) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
             if (!$fresh || (string) $fresh->status === 'done') {
+                $this->dispatch('alert', type: 'success', message: 'Job Done!');
                 return;
             }
 
             $fresh->status = 'done';
             $fresh->output = [
-                'disk'  => $saved['disk'],
-                'path'  => $saved['path'],
+                'disk' => $saved['disk'],
+                'path' => $saved['path'],
                 'bytes' => $saved['bytes'],
-                'mime'  => 'audio/wav',
+                'mime' => 'audio/wav',
             ];
             $fresh->storage_out_bytes = (int) $saved['bytes'];
             $fresh->finished_at = now();
@@ -196,138 +308,91 @@ new class extends Component
         $this->dispatch('header:refresh');
     }
 
-    #[Computed]
-    public function jobs()
-    {
-        $customerId = auth('app')->id();
-
-        if (!$customerId) {
-            return collect();
-        }
-
-        return MlJob::query()
-            ->where('customer_id', $customerId)
-            ->orderByRaw("
-                CASE
-                    WHEN status IN ('queued','running','saving') THEN 0
-                    WHEN status = 'done' THEN 1
-                    WHEN status = 'failed' THEN 2
-                    ELSE 3
-                END
-            ")
-            ->orderByDesc('updated_at')
-            ->limit(10)
-            ->get()
-            ->map(function ($job) {
-                $tool = Tool::find($job->tool_id);
-                $toolCode = (string) ($tool?->code ?? '');
-
-                $route = match ($toolCode) {
-                    'tts' => route('app.xtts', ['locale' => app()->getLocale()]),
-                    default => route('app.home', ['locale' => app()->getLocale()]),
-                };
-
-                $label = match ($toolCode) {
-                    'tts' => 'XTTS',
-                    default => strtoupper($toolCode ?: 'JOB'),
-                };
-
-                return [
-                    'id'         => (string) $job->id,
-                    'tool_code'  => $toolCode,
-                    'label'      => $label,
-                    'status'     => (string) $job->status,
-                    'route'      => $route,
-                    'created_at' => optional($job->created_at)->format('H:i'),
-                ];
-            });
-    }
-
-    #[Computed]
-    public function slots(): array
-    {
-        $jobs = $this->jobs->values();
-
-        return collect(range(0, 9))->map(function ($i) use ($jobs) {
-            $job = $jobs->get($i);
-
-            if (!$job) {
-                return [
-                    'idle'       => true,
-                    'status'     => 'idle',
-                    'label'      => 'Idle',
-                    'title'      => 'Empty slot',
-                    'route'      => null,
-                    'dotClass'   => 'bg-secondary-subtle border border-secondary-subtle',
-                    'cardClass'  => 'border-secondary-subtle bg-secondary-subtle bg-opacity-10',
-                    'textClass'  => 'text-muted',
-                ];
-            }
-
-            [$dotClass, $cardClass, $textClass] = match ($job['status']) {
-                'queued'  => ['bg-warning', 'border-warning-subtle', 'text-warning'],
-                'running' => ['bg-info', 'border-info-subtle', 'text-info'],
-                'saving'  => ['bg-primary', 'border-primary-subtle', 'text-primary'],
-                'done'    => ['bg-success', 'border-success-subtle', 'text-success'],
-                'failed'  => ['bg-danger', 'border-danger-subtle', 'text-danger'],
-                default   => ['bg-secondary', 'border-secondary-subtle', 'text-muted'],
-            };
-
-            return [
-                'idle'       => false,
-                'status'     => $job['status'],
-                'label'      => $job['label'],
-                'title'      => "{$job['label']} • {$job['status']}",
-                'route'      => $job['route'],
-                'dotClass'   => $dotClass,
-                'cardClass'  => $cardClass,
-                'textClass'  => $textClass,
-            ];
-        })->all();
-    }
-
     public function render()
     {
-        
         return view('app.partials.⚡process-slots');
     }
 };
 ?>
 
-<div wire:key="process-slots-{{ $refreshKey }}">
-    <div wire:poll.keep-alive.3000ms="pollJobs"></div>
+<div wire:key="process-slots-{{ $refreshKey }}" class="d-flex align-items-center">
+    <div wire:poll.keep-alive.2500ms="pollJobs"></div>
 
-    <div class="d-none d-xl-block me-2">
-        <div class="px-2 py-1 rounded-3 border border-secondary-subtle"
-             style="min-width: 220px; background: rgba(255,255,255,.03);">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-                <small class="text-muted">Processes</small>
-                <small class="text-muted">{{ collect($this->slots)->where('idle', false)->count() }}/10</small>
-            </div>
-
-            <div class="row g-1">
-                @foreach($this->slots as $slot)
-                    <div class="col-2">
-                        @if($slot['route'])
-                            <a href="{{ $slot['route'] }}"
-                               wire:navigate.hover
-                               class="d-flex align-items-center justify-content-center rounded-2 border {{ $slot['cardClass'] }} text-decoration-none"
-                               title="{{ $slot['title'] }}"
-                               style="height: 26px;">
-                                <span class="rounded-circle {{ $slot['dotClass'] }}"
-                                      style="width:10px;height:10px;display:inline-block;"></span>
-                            </a>
-                        @else
-                            <div class="d-flex align-items-center justify-content-center rounded-2 border {{ $slot['cardClass'] }}"
-                                 title="{{ $slot['title'] }}"
-                                 style="height: 26px;">
-                                <span class="rounded-circle {{ $slot['dotClass'] }}"
-                                      style="width:10px;height:10px;display:inline-block;"></span>
-                            </div>
-                        @endif
-                    </div>
-                @endforeach
-            </div>
-        </div>
+    <div class="d-flex align-items-center gap-2 px-2 py-2 rounded-4"
+         style="background: rgba(0,0,0,.22); box-shadow: inset 0 1px 0 rgba(255,255,255,.04);">
+        @foreach($slotsData as $slot)
+            @if($slot['isClickable'] && $slot['route'])
+                <a href="{{ $slot['route'] }}"
+                   wire:navigate.hover
+                   title="{{ $slot['title'] }}"
+                   aria-label="{{ $slot['title'] }}"
+                   class="{{ $slot['cellClass'] }}"
+                   style="
+                        width:16px;
+                        height:30px;
+                        border-radius:7px;
+                        display:inline-block;
+                        flex:0 0 auto;
+                        text-decoration:none;
+                        border:1px solid rgba(255,255,255,.06);
+                   "></a>
+            @else
+                <div title="{{ $slot['title'] }}"
+                     aria-label="{{ $slot['title'] }}"
+                     class="{{ $slot['cellClass'] }}"
+                     style="
+                        width:16px;
+                        height:30px;
+                        border-radius:7px;
+                        display:inline-block;
+                        flex:0 0 auto;
+                        border:1px solid rgba(255,255,255,.06);
+                     "></div>
+            @endif
+        @endforeach
     </div>
 </div>
+
+<style>
+    .mk-slot-done{
+        background:#37c759;
+        box-shadow:0 0 0 1px rgba(55,199,89,.18), 0 3px 10px rgba(55,199,89,.18);
+    }
+    .mk-slot-queued{
+        background:#ffd60a;
+        box-shadow:0 0 0 1px rgba(255,214,10,.18), 0 3px 10px rgba(255,214,10,.14);
+    }
+    .mk-slot-running{
+        background:#0a84ff;
+        box-shadow:0 0 0 1px rgba(10,132,255,.18), 0 3px 10px rgba(10,132,255,.18);
+        animation: mkSlotPulse 1.25s ease-in-out infinite;
+    }
+    .mk-slot-saving{
+        background:#5e5ce6;
+        box-shadow:0 0 0 1px rgba(94,92,230,.18), 0 3px 10px rgba(94,92,230,.18);
+    }
+    .mk-slot-failed{
+        background:#ff453a;
+        box-shadow:0 0 0 1px rgba(255,69,58,.18), 0 3px 10px rgba(255,69,58,.18);
+    }
+    .mk-slot-idle{
+        background:#f2f2f7;
+        box-shadow:0 0 0 1px rgba(255,255,255,.04);
+    }
+    .mk-slot-locked{
+        background:#48484a;
+        opacity:.82;
+        box-shadow:0 0 0 1px rgba(255,255,255,.03);
+    }
+
+    @keyframes mkSlotPulse{
+        0%,100%{
+            transform:scaleY(1);
+            box-shadow:0 0 0 1px rgba(10,132,255,.18), 0 3px 10px rgba(10,132,255,.18);
+        }
+        50%{
+            transform:scaleY(1.06);
+            box-shadow:0 0 0 2px rgba(10,132,255,.28), 0 5px 14px rgba(10,132,255,.24);
+        }
+    }
+</style>

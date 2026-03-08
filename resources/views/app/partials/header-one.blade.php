@@ -35,7 +35,7 @@
                 </a>
             </div>
 
-            <button type="button" class="btn btn-sm px-3 fs-16 header-item vertical-menu-btn topnav-hamburger" id="topnav-hamburger-icon">
+            <button type="button" class="btn btn-sm px-3 fs-16 header-item vertical-menu-btn topnav-hamburger" id="topnav-hamburger-icon" wire:ignore>
                 <span class="hamburger-icon">
                     <span></span>
                     <span></span>
@@ -190,10 +190,10 @@ $notifications = [];
             </div>
             
             <div class="dropdown topbar-head-dropdown ms-1 header-item" id="notificationDropdown">
-                <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle" id="page-header-notifications-dropdown" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-haspopup="true" aria-expanded="false">
+                {{-- <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle" id="page-header-notifications-dropdown" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-haspopup="true" aria-expanded="false">
                     <i class='bx bx-bell fs-22'></i>
                     <span class="position-absolute topbar-badge fs-10 translate-middle badge rounded-pill bg-danger">{{$notificationsCount}}<span class="visually-hidden">unread messages</span></span>
-                </button>
+                </button> --}}
                 <div class="dropdown-menu dropdown-menu-lg dropdown-menu-end p-0" aria-labelledby="page-header-notifications-dropdown">
 
                     <div class="dropdown-head bg-primary bg-pattern rounded-top">

@@ -70,6 +70,89 @@ class extends Component
     public float $speed = 1.0;
 
     // =========================================================
+    // Presets
+    // =========================================================
+    public string $selectedPreset = 'balanced';
+
+    public array $presets = [
+        'balanced'        => 'Balanced',
+        'natural'         => 'Natural Voice',
+        'clear'           => 'Clear & Stable',
+        'expressive'      => 'Expressive',
+        'fast_generation' => 'Fast Generation',
+    ];
+
+    public function updatedSelectedPreset(string $preset): void
+    {
+        $this->applyPreset($preset);
+    }
+
+    protected function applyPreset(string $preset): void
+    {
+        match ($preset) {
+            'natural' => $this->setPresetValues(
+                temperature: 0.55,
+                top_k: 45,
+                top_p: 0.82,
+                repetition_penalty: 2.0,
+                length_penalty: 1.0,
+                speed: 1.0,
+            ),
+
+            'clear' => $this->setPresetValues(
+                temperature: 0.35,
+                top_k: 30,
+                top_p: 0.70,
+                repetition_penalty: 2.4,
+                length_penalty: 1.1,
+                speed: 0.96,
+            ),
+
+            'expressive' => $this->setPresetValues(
+                temperature: 0.85,
+                top_k: 65,
+                top_p: 0.90,
+                repetition_penalty: 1.8,
+                length_penalty: 1.0,
+                speed: 1.02,
+            ),
+
+            'fast_generation' => $this->setPresetValues(
+                temperature: 0.45,
+                top_k: 20,
+                top_p: 0.65,
+                repetition_penalty: 2.2,
+                length_penalty: 0.95,
+                speed: 1.12,
+            ),
+
+            default => $this->setPresetValues(
+                temperature: 0.65,
+                top_k: 50,
+                top_p: 0.80,
+                repetition_penalty: 2.0,
+                length_penalty: 1.0,
+                speed: 1.0,
+            ),
+        };
+    }
+
+    protected function setPresetValues(
+        float $temperature,
+        int $top_k,
+        float $top_p,
+        float $repetition_penalty,
+        float $length_penalty,
+        float $speed
+    ): void {
+        $this->temperature = $temperature;
+        $this->top_k = $top_k;
+        $this->top_p = $top_p;
+        $this->repetition_penalty = $repetition_penalty;
+        $this->length_penalty = $length_penalty;
+        $this->speed = $speed;
+    }
+    // =========================================================
     // Credits UI
     // =========================================================
     public int $maxPerSubmit = 400;
@@ -102,6 +185,7 @@ class extends Component
             $this->speaker_id = array_key_first($this->availableSpeakers) ?? '';
         }
 
+        $this->applyPreset($this->selectedPreset);
         $this->syncCostPreview();
         $this->hydrateCurrentJobFromDb();
     }
@@ -196,7 +280,11 @@ class extends Component
     public function generateBlockedReason(): ?string
     {
         if ($this->isGenerating()) {
-            return 'A generation is already in progress.';
+            return 'A generation is already in progress on this page.';
+        }
+
+        if ($this->currentActiveJobsCount() >= $this->allowedConcurrentJobs()) {
+            return 'You reached your concurrent job limit for the current plan.';
         }
 
         if ($this->currentChars <= 0) {
@@ -241,7 +329,7 @@ class extends Component
             ->when($toolId, fn ($q) => $q->where('tool_id', $toolId))
             ->where('status', 'done')
             ->orderByDesc('finished_at')
-            ->paginate(10);
+            ->paginate(3);
 
         $paginator->setCollection(
             $paginator->getCollection()->values()->map(function ($j, $index) use ($locale) {
@@ -332,6 +420,33 @@ class extends Component
         $this->creditsCost = (int) ceil($chars * 1.0);
     }
 
+    protected function allowedConcurrentJobs(): int
+    {
+        $c = auth('app')->user();
+        $planCode = strtolower((string) ($c?->serviceCode() ?? 'free'));
+
+        return match ($planCode) {
+            'student' => 4,
+            'pro'     => 8,
+            'premium' => 10,
+            default   => 2,
+        };
+    }
+
+    protected function currentActiveJobsCount(): int
+    {
+        $customerId = auth('app')->id();
+
+        if (!$customerId) {
+            return 0;
+        }
+
+        return MlJob::query()
+            ->where('customer_id', $customerId)
+            ->whereIn('status', ['queued', 'running', 'saving'])
+            ->count();
+    }
+
     protected function rules(): array
     {
         return [
@@ -382,10 +497,15 @@ class extends Component
 
     public function postXtts(RunPodProvider $runpod, CreditService $credits): void
     {
+        
         $this->showJobStatus = true;
         $c = auth('app')->user();
         $actionCode = $this->fullActionCode;
         $this->hydrateCurrentJobFromDb();
+        if ($this->currentActiveJobsCount() >= $this->allowedConcurrentJobs()) {
+            $this->dispatch('alert', type: 'warning', message: 'You reached your concurrent job limit for the current plan.');
+            return;
+        }
         if (method_exists($c, 'isAllowed') && !$c->isAllowed($actionCode)) {
             $this->dispatch('alert', type: 'error', message: __('Your plan does not allow XTTS.'));
             return;
@@ -529,12 +649,12 @@ class extends Component
                 'error' => ['message' => $e->getMessage()],
                 'finished_at' => now(),
             ]);
-
             $this->currentStatus = 'failed';
             $this->jobFinished = true;
             $this->currentProgress = 100;
             $this->syncWallet();
-
+            
+            $this->dispatch('header:refresh');
             $this->dispatch('xtts-job-state-clear');
             $this->dispatch('alert', type: 'error', message: 'RunPod failed: ' . $e->getMessage());
         }
@@ -612,11 +732,11 @@ class extends Component
                         'error' => ['message' => 'Completed but audio base64 missing.'],
                         'finished_at' => now(),
                     ]);
-
                     $this->currentStatus = 'failed';
                     $this->jobFinished = true;
                     $this->currentProgress = 100;
-
+                    
+                    $this->dispatch('header:refresh');
                     $this->dispatch('xtts-job-state-clear');
                     $this->dispatch('alert', type: 'error', message: 'Completed but output audio missing.');
                     return;
@@ -631,11 +751,11 @@ class extends Component
                     'error'  => ['message' => $err],
                     'finished_at' => now(),
                 ]);
-
                 $this->currentStatus = 'failed';
                 $this->jobFinished = true;
                 $this->currentProgress = 100;
 
+                $this->dispatch('header:refresh');
                 $this->dispatch('xtts-job-state-clear');
                 $this->dispatch('alert', type: 'error', message: $err);
                 return;
@@ -714,11 +834,11 @@ class extends Component
                 'error'  => ['message' => 'Polling failed: ' . $e->getMessage()],
                 'finished_at' => now(),
             ]);
-
             $this->currentStatus = 'failed';
             $this->jobFinished = true;
             $this->currentProgress = 100;
-
+            
+            $this->dispatch('header:refresh');
             $this->dispatch('xtts-job-state-clear');
             $this->dispatch('alert', type: 'error', message: 'Polling failed: ' . $e->getMessage());
         }
@@ -831,19 +951,19 @@ class extends Component
 
     public function resetToDefaults(): void
     {
+        $this->text = '';
         $this->speaker_id = array_key_first($this->availableSpeakers) ?? 'liza';
         $this->language = 'ar';
         $this->split = true;
         $this->max_words = 25;
         $this->fade_ms = 80;
-        $this->temperature = 0.65;
-        $this->top_k = 50;
-        $this->top_p = 0.8;
-        $this->repetition_penalty = 2.0;
-        $this->length_penalty = 1.0;
-        $this->speed = 1.0;
+
+        $this->selectedPreset = 'balanced';
+        $this->applyPreset($this->selectedPreset);
 
         $this->syncCostPreview();
+
+        $this->dispatch('xtts-form-state-clear');
     }
 
     public function render()
@@ -905,24 +1025,11 @@ class extends Component
 };
 ?>
 
-<div
-    x-data="{
-        text: $wire.entangle('text').live,
-        chars: 0,
-        words: 0,
-        init() {
-            this.$watch('text', value => {
-                const v = (value || '').trim();
-                this.chars = v.length;
-                this.words = v ? v.split(/\s+/u).filter(Boolean).length : 0;
-            });
-
-            const v = (this.text || '').trim();
-            this.chars = v.length;
-            this.words = v ? v.split(/\s+/u).filter(Boolean).length : 0;
-        }
-    }"
->
+    <div
+        id="xtts-page-root"
+        x-data="xttsFormCache()"
+        x-init="init()"
+    >
     {{-- Poll only when a job is actively running --}}
     @if($currentJobId && !$jobFinished)
         {{-- <div wire:poll.keep-alive.2000ms="pollJob"></div> --}}
@@ -951,48 +1058,6 @@ class extends Component
 
         $progress = (int) ($currentProgress ?? 0);
     @endphp
-
-    @if($currentJobId && $showJobStatus)
-        {{-- <div
-            class="card glass-load {{ $glassClass }} mb-3"
-            wire:key="xtts-job-status-{{ $currentJobId }}"
-            @if($jobFinished) wire:poll.3s="hideJobStatus" @endif
-        >
-            <div class="card-body py-2 px-3 d-flex align-items-center justify-content-between flex-wrap">
-                <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-{{ $badge }} text-uppercase">{{ $status }}</span>
-
-                    @if(!$jobFinished)
-                        <small class="tts-status-muted">
-                            <span class="spinner-border spinner-border-sm me-1"></span>
-                            Working...
-                        </small>
-                    @else
-                        <small class="tts-status-muted">Finished</small>
-                    @endif
-                </div>
-
-                <div class="small text-muted">
-                    Job: <span class="fw-semibold">{{ Str::limit($currentJobId, 12, '...') }}</span>
-                </div>
-            </div>
-
-            <div class="px-3 pb-3">
-                <div class="d-flex justify-content-between small text-muted mb-1">
-                    <span>Progress</span>
-                    <span><strong>{{ $progress }}%</strong></span>
-                </div>
-
-                <div class="progress" style="height:10px; border-radius:999px; overflow:hidden;">
-                    <div class="progress-bar bg-{{ $badge }}"
-                        style="width: {{ $progress }}%;"
-                        aria-valuenow="{{ $progress }}"
-                        aria-valuemin="0"
-                        aria-valuemax="100"></div>
-                </div>
-            </div>
-        </div> --}}
-    @endif
 
     <div class="row g-3">
         <div class="col-lg-7">
@@ -1068,7 +1133,7 @@ class extends Component
                                     @enderror
                                 </div>
 
-                                <div class="col-md-4">
+                                {{-- <div class="col-md-4">
                                     <label class="form-label">Language</label>
                                     <input type="text"
                                            class="form-control"
@@ -1078,6 +1143,15 @@ class extends Component
                                     @error('language')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
                                     @enderror
+                                </div> --}}
+
+                                <div class="col-md-3">
+                                    <label class="form-label">Preset</label>
+                                    <select class="form-select" wire:model.live="selectedPreset">
+                                        @foreach($presets as $k => $v)
+                                            <option value="{{ $k }}">{{ $v }}</option>
+                                        @endforeach
+                                    </select>
                                 </div>
 
                                 <div class="col-md-2">
@@ -1112,11 +1186,10 @@ class extends Component
                                 @foreach($this->sliders as $s)
                                     <div
                                         class="col-md-6"
-                                        wire:key="slider-{{ $s['key'] }}"
-                                        wire:ignore
+                                        wire:key="slider-{{ $s['key'] }}-{{ $selectedPreset }}-{{ $s['val'] }}"
                                         x-data="{
                                             key: '{{ $s['key'] }}',
-                                            val: {{ $s['val'] }},
+                                            val: @js($s['val']),
                                             min: {{ $s['min'] }},
                                             max: {{ $s['max'] }},
                                             step: {{ $s['step'] }},
@@ -1124,13 +1197,11 @@ class extends Component
                                             updateLivewire(v) {
                                                 clearTimeout(this.debounceTimer);
                                                 this.debounceTimer = setTimeout(() => {
-                                                    $wire.set(this.key, parseFloat(v));
+                                                    $wire.set(this.key, this.step < 1 ? parseFloat(v) : parseInt(v));
                                                 }, 180);
                                             },
                                             get displayVal() {
-                                                return parseFloat(this.val).toFixed(
-                                                    this.step < 1 ? 2 : 0
-                                                );
+                                                return parseFloat(this.val).toFixed(this.step < 1 ? 2 : 0);
                                             }
                                         }"
                                     >
@@ -1299,6 +1370,125 @@ class extends Component
 </div>
 
 @push('scripts')
+<script>
+function xttsFormCache() {
+    return {
+        cacheKey: 'xtts_form_state_v1',
+
+        text: @entangle('text').live,
+        speaker_id: @entangle('speaker_id').live,
+        language: @entangle('language').live,
+        split: @entangle('split').live,
+        max_words: @entangle('max_words').live,
+        fade_ms: @entangle('fade_ms').live,
+        temperature: @entangle('temperature').live,
+        top_k: @entangle('top_k').live,
+        top_p: @entangle('top_p').live,
+        repetition_penalty: @entangle('repetition_penalty').live,
+        length_penalty: @entangle('length_penalty').live,
+        speed: @entangle('speed').live,
+        selectedPreset: @entangle('selectedPreset').live,
+
+        chars: 0,
+        words: 0,
+
+        init() {
+            this.restore();
+
+            this.updateCounts();
+
+            this.$watch('text', () => {
+                this.updateCounts();
+                this.save();
+            });
+
+            this.$watch('speaker_id', () => this.save());
+            this.$watch('language', () => this.save());
+            this.$watch('split', () => this.save());
+            this.$watch('max_words', () => this.save());
+            this.$watch('fade_ms', () => this.save());
+            this.$watch('temperature', () => this.save());
+            this.$watch('top_k', () => this.save());
+            this.$watch('top_p', () => this.save());
+            this.$watch('repetition_penalty', () => this.save());
+            this.$watch('length_penalty', () => this.save());
+            this.$watch('speed', () => this.save());
+            this.$watch('selectedPreset', () => this.save());
+
+            window.addEventListener('beforeunload', () => this.save());
+
+            window.addEventListener('xtts-form-state-clear', () => {
+                this.clear();
+            });
+        },
+
+        updateCounts() {
+            const v = (this.text || '').trim();
+            this.chars = v.length;
+            this.words = v ? v.split(/\s+/u).filter(Boolean).length : 0;
+        },
+
+        save() {
+            try {
+                const payload = {
+                    text: this.text ?? '',
+                    speaker_id: this.speaker_id ?? 'liza',
+                    language: this.language ?? 'ar',
+                    split: !!this.split,
+                    max_words: parseInt(this.max_words ?? 25, 10),
+                    fade_ms: parseInt(this.fade_ms ?? 80, 10),
+                    temperature: parseFloat(this.temperature ?? 0.65),
+                    top_k: parseInt(this.top_k ?? 50, 10),
+                    top_p: parseFloat(this.top_p ?? 0.8),
+                    repetition_penalty: parseFloat(this.repetition_penalty ?? 2.0),
+                    length_penalty: parseFloat(this.length_penalty ?? 1.0),
+                    speed: parseFloat(this.speed ?? 1.0),
+                    selectedPreset: this.selectedPreset ?? 'balanced',
+                    ts: Date.now(),
+                };
+
+                localStorage.setItem(this.cacheKey, JSON.stringify(payload));
+            } catch (e) {
+                console.warn('[XTTS] save failed', e);
+            }
+        },
+
+        restore() {
+            try {
+                const raw = localStorage.getItem(this.cacheKey);
+                if (!raw) return;
+
+                const data = JSON.parse(raw);
+                if (!data) return;
+
+                this.text = data.text ?? this.text ?? '';
+                this.speaker_id = data.speaker_id ?? this.speaker_id ?? 'liza';
+                this.language = data.language ?? this.language ?? 'ar';
+                this.split = typeof data.split === 'boolean' ? data.split : this.split;
+                this.max_words = parseInt(data.max_words ?? this.max_words ?? 25, 10);
+                this.fade_ms = parseInt(data.fade_ms ?? this.fade_ms ?? 80, 10);
+                this.temperature = parseFloat(data.temperature ?? this.temperature ?? 0.65);
+                this.top_k = parseInt(data.top_k ?? this.top_k ?? 50, 10);
+                this.top_p = parseFloat(data.top_p ?? this.top_p ?? 0.8);
+                this.repetition_penalty = parseFloat(data.repetition_penalty ?? this.repetition_penalty ?? 2.0);
+                this.length_penalty = parseFloat(data.length_penalty ?? this.length_penalty ?? 1.0);
+                this.speed = parseFloat(data.speed ?? this.speed ?? 1.0);
+                this.selectedPreset = data.selectedPreset ?? this.selectedPreset ?? 'balanced';
+            } catch (e) {
+                console.warn('[XTTS] restore failed', e);
+            }
+        },
+
+        clear() {
+            try {
+                localStorage.removeItem(this.cacheKey);
+            } catch (e) {
+                console.warn('[XTTS] clear failed', e);
+            }
+        }
+    };
+}
+</script>
 <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
 <script>
 (function () {
@@ -1311,12 +1501,19 @@ class extends Component
     S.previewWS     = S.previewWS     || new Map(); // jobId → WaveSurfer
     S.previewMeta   = S.previewMeta   || new Map(); // jobId → { url, blobUrl }
     S.previewInit   = S.previewInit   || new Set(); // jobIds already preloaded
-    S.pendingFetch  = S.pendingFetch  || new Map(); // url → Promise<Blob>  (dedup in-flight)
+    S.pendingFetch  = S.pendingFetch  || new Map(); // url → Promise<Blob>
+    S.eventsBound   = S.eventsBound   || false;
+    S.commitHooked  = S.commitHooked  || false;
+    S.formWatchBoot = S.formWatchBoot || false;
 
     // ─── Cache config ─────────────────────────────────────────────────────────
     const CACHE_NAME    = 'xtts-audio-v4';
-    const CACHE_MAX     = 30;          // keep at most N entries
-    const PRELOAD_LIMIT = 10;          // eagerly preload top N renders
+    const CACHE_MAX     = 30;
+    const PRELOAD_LIMIT = 10;
+
+    // ─── SPA / navigation persistence via localStorage ────────────────────────
+    const SPA_KEY  = 'xtts_spa_job';
+    const FORM_KEY = 'xtts_form_state_v1';
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
     function formatTime(sec) {
@@ -1346,61 +1543,61 @@ class extends Component
         };
     }
 
+    function getLivewireComponent() {
+        if (!window.Livewire) return null;
+
+        const root = document.getElementById('xtts-page-root');
+        if (!root) return null;
+
+        const wireId = root.getAttribute('wire:id');
+        if (!wireId) return null;
+
+        try {
+            return window.Livewire.find(wireId);
+        } catch (_) {
+            return null;
+        }
+    }
+
     // ─── Audio Cache ──────────────────────────────────────────────────────────
     async function openCache() {
         return caches.open(CACHE_NAME);
     }
 
-    /**
-     * Prune oldest entries beyond CACHE_MAX so the cache doesn't grow unbounded.
-     */
     async function pruneCache() {
         try {
             const cache = await openCache();
-            const keys  = await cache.keys();
+            const keys = await cache.keys();
             if (keys.length > CACHE_MAX) {
                 const toDelete = keys.slice(0, keys.length - CACHE_MAX);
                 await Promise.all(toDelete.map(k => cache.delete(k)));
             }
-        } catch (e) {
-            // non-fatal
-        }
+        } catch (_) {}
     }
 
-    /**
-     * Returns a Blob for the given URL.
-     * Strategy: memory dedup → Cache API → network (then cache).
-     * Multiple concurrent callers for the same URL share one fetch.
-     */
     async function getBlob(url) {
-        // 1. Deduplicate in-flight fetches
         if (S.pendingFetch.has(url)) {
             return S.pendingFetch.get(url);
         }
 
         const promise = (async () => {
-            // 2. Check Cache API
             try {
                 const cache = await openCache();
-                const hit   = await cache.match(url);
-                if (hit) {
-                    return hit.blob();
-                }
+                const hit = await cache.match(url);
+                if (hit) return hit.blob();
             } catch (_) {}
 
-            // 3. Fetch from network
             const res = await fetch(url, {
                 method: 'GET',
                 cache: 'no-cache',
                 credentials: 'same-origin',
             });
+
             if (!res.ok) throw new Error('Fetch failed ' + res.status);
 
-            // 4. Store in Cache API (clone before consuming)
             try {
                 const cache = await openCache();
                 await cache.put(url, res.clone());
-                // async prune — don't block caller
                 pruneCache().catch(() => {});
             } catch (_) {}
 
@@ -1414,24 +1611,20 @@ class extends Component
     }
 
     // ─── Blob URL management ─────────────────────────────────────────────────
-    /**
-     * Return a blob: URL for the given job+url combo.
-     * Re-uses an existing one when the source URL hasn't changed.
-     */
     async function getBlobUrl(jobId, url) {
         const meta = S.previewMeta.get(jobId);
         if (meta && meta.url === url && meta.blobUrl) {
             return meta.blobUrl;
         }
 
-        // Revoke stale blob URL
         if (meta?.blobUrl) {
             try { URL.revokeObjectURL(meta.blobUrl); } catch (_) {}
         }
 
-        const blob    = await getBlob(url);
+        const blob = await getBlob(url);
         const blobUrl = URL.createObjectURL(blob);
         S.previewMeta.set(jobId, { url, blobUrl });
+
         return blobUrl;
     }
 
@@ -1447,6 +1640,7 @@ class extends Component
         if (meta?.blobUrl) {
             try { URL.revokeObjectURL(meta.blobUrl); } catch (_) {}
         }
+
         S.previewMeta.delete(jobId);
         S.previewInit.delete(jobId);
 
@@ -1456,7 +1650,10 @@ class extends Component
 
     function stopWS(ws) {
         if (!ws) return;
-        try { ws.pause(); ws.setTime(0); } catch (_) {}
+        try {
+            ws.pause();
+            ws.setTime(0);
+        } catch (_) {}
     }
 
     function stopAll(exceptJobId = null) {
@@ -1465,21 +1662,16 @@ class extends Component
         });
     }
 
-    /**
-     * Create (or return existing) WaveSurfer instance for a render card.
-     * Safe to call multiple times — returns existing instance if already created.
-     */
     function initPreview(jobId, url, isLatest = false) {
         if (S.previewWS.has(jobId)) return S.previewWS.get(jobId);
 
-        const ph   = document.getElementById('xtts-ph-'   + jobId);
+        const ph = document.getElementById('xtts-ph-' + jobId);
         const wave = document.getElementById('xtts-wave-' + jobId);
         const time = document.getElementById('xtts-time-' + jobId);
 
         if (!wave || !url) return null;
 
-        // Reset placeholder visibility
-        if (ph) { ph.style.display = ''; }
+        if (ph) ph.style.display = '';
         wave.style.display = 'none';
 
         const ws = WaveSurfer.create(buildWaveOptions(wave, isLatest));
@@ -1504,7 +1696,6 @@ class extends Component
             console.error('[XTTS] WaveSurfer error', jobId, e);
         });
 
-        // Load audio — prefer blob URL for instant decode
         (async () => {
             try {
                 const blobUrl = await getBlobUrl(jobId, url);
@@ -1526,15 +1717,14 @@ class extends Component
             btn.dataset.bound = '1';
 
             btn.addEventListener('click', () => {
-                const jobId    = btn.getAttribute('data-job');
-                const url      = btn.getAttribute('data-url');
+                const jobId = btn.getAttribute('data-job');
+                const url = btn.getAttribute('data-url');
                 const isLatest = btn.getAttribute('data-latest') === '1';
 
-                // Ensure instance exists (creates if needed)
                 const ws = initPreview(jobId, url, isLatest);
                 if (!ws) return;
 
-                stopAll(jobId);   // pause all other players
+                stopAll(jobId);
                 ws.playPause();
             });
         });
@@ -1561,15 +1751,14 @@ class extends Component
         .slice(0, PRELOAD_LIMIT);
 
         for (const btn of buttons) {
-            const jobId    = btn.getAttribute('data-job');
-            const url      = btn.getAttribute('data-url');
+            const jobId = btn.getAttribute('data-job');
+            const url = btn.getAttribute('data-url');
             const isLatest = btn.getAttribute('data-latest') === '1';
 
             if (!jobId || !url) continue;
-            if (S.previewWS.has(jobId)) continue;   // already initialised
+            if (S.previewWS.has(jobId)) continue;
 
             try {
-                // Pre-warm cache without blocking
                 getBlob(url).catch(() => {});
                 initPreview(jobId, url, isLatest);
                 S.previewInit.add(jobId);
@@ -1581,33 +1770,28 @@ class extends Component
 
     // ─── Auto-scroll & highlight latest render after job completes ────────────
     function highlightLatestRender() {
-        // The first .render-card in the list is the newest after Livewire refreshes
         const firstCard = document.querySelector('.render-card');
         if (!firstCard) return;
 
         firstCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-        // Brief highlight flash
         firstCard.style.transition = 'box-shadow 0.3s ease';
-        firstCard.style.boxShadow  = '0 0 0 3px var(--bs-success, #198754)';
+        firstCard.style.boxShadow = '0 0 0 3px var(--bs-success, #198754)';
+
         setTimeout(() => {
             firstCard.style.boxShadow = '';
         }, 2500);
 
-        // Auto-init the waveform for the latest card
         const btn = firstCard.querySelector('.btn-xtts-preview[data-job][data-url]');
         if (btn) {
-            const jobId    = btn.getAttribute('data-job');
-            const url      = btn.getAttribute('data-url');
+            const jobId = btn.getAttribute('data-job');
+            const url = btn.getAttribute('data-url');
             if (jobId && url && !S.previewWS.has(jobId)) {
                 initPreview(jobId, url, true);
             }
         }
     }
 
-    // ─── SPA / navigation persistence via localStorage ────────────────────────
-    const SPA_KEY = 'xtts_spa_job';
-
+    // ─── SPA state helpers ────────────────────────────────────────────────────
     function spaSave(data) {
         try {
             localStorage.setItem(SPA_KEY, JSON.stringify({ ...data, ts: Date.now() }));
@@ -1618,12 +1802,13 @@ class extends Component
         try {
             const raw = localStorage.getItem(SPA_KEY);
             if (!raw) return null;
+
             const data = JSON.parse(raw);
-            // Expire after 30 minutes of inactivity
             if (Date.now() - (data.ts || 0) > 30 * 60 * 1000) {
                 localStorage.removeItem(SPA_KEY);
                 return null;
             }
+
             return data;
         } catch (_) {
             return null;
@@ -1634,38 +1819,153 @@ class extends Component
         try { localStorage.removeItem(SPA_KEY); } catch (_) {}
     }
 
-    /**
-     * After Livewire navigation, if a job was in-progress restore the
-     * component state so polling resumes automatically.
-     */
     function spaRestoreIfNeeded() {
         const saved = spaLoad();
         if (!saved || !saved.jobId) return;
 
-        // Only restore if the job is still mid-flight
         const activeStatuses = ['queued', 'running', 'saving'];
         if (!activeStatuses.includes(saved.status)) return;
 
-        // Restore Livewire component state
         try {
-            window.Livewire.find(
-                document.querySelector('[wire\\:id]')?.getAttribute('wire:id')
-            )?.set('currentJobId',  saved.jobId)
-              ?.set('providerJobId', saved.providerJobId || null)
-              ?.set('currentStatus', saved.status)
-              ?.set('jobFinished',   false)
-              ?.set('showJobStatus', true)
-              ?.set('currentProgress', saved.progress || 10);
+            const lw = getLivewireComponent();
+            if (!lw) return;
+            if (typeof lw.set !== 'function') return;
+
+            lw.set('currentJobId', saved.jobId);
+            lw.set('providerJobId', saved.providerJobId || null);
+            lw.set('currentStatus', saved.status);
+            lw.set('jobFinished', false);
+            lw.set('showJobStatus', true);
+            lw.set('currentProgress', saved.progress || 10);
         } catch (e) {
             console.warn('[XTTS] SPA restore failed', e);
         }
     }
 
+    // ─── Form persistence helpers ─────────────────────────────────────────────
+    function formSave() {
+        try {
+            const lw = getLivewireComponent();
+            if (!lw) return;
+
+            const state = {
+                text: lw.get('text') ?? '',
+                speaker_id: lw.get('speaker_id') ?? 'liza',
+                language: lw.get('language') ?? 'ar',
+                split: !!lw.get('split'),
+                max_words: parseInt(safeNumber(lw.get('max_words'), 25), 10),
+                fade_ms: parseInt(safeNumber(lw.get('fade_ms'), 80), 10),
+                temperature: safeNumber(lw.get('temperature'), 0.65),
+                top_k: parseInt(safeNumber(lw.get('top_k'), 50), 10),
+                top_p: safeNumber(lw.get('top_p'), 0.80),
+                repetition_penalty: safeNumber(lw.get('repetition_penalty'), 2.0),
+                length_penalty: safeNumber(lw.get('length_penalty'), 1.0),
+                speed: safeNumber(lw.get('speed'), 1.0),
+                selectedPreset: lw.get('selectedPreset') ?? 'balanced',
+                ts: Date.now(),
+            };
+
+            localStorage.setItem(FORM_KEY, JSON.stringify(state));
+        } catch (_) {}
+    }
+
+    function formLoad() {
+        try {
+            const raw = localStorage.getItem(FORM_KEY);
+            if (!raw) return null;
+
+            const data = JSON.parse(raw);
+            if (!data) return null;
+
+            if (Date.now() - (data.ts || 0) > 7 * 24 * 60 * 60 * 1000) {
+                localStorage.removeItem(FORM_KEY);
+                return null;
+            }
+
+            return data;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function formClear() {
+        try { localStorage.removeItem(FORM_KEY); } catch (_) {}
+    }
+
+    function formRestoreIfNeeded() {
+        const saved = formLoad();
+        if (!saved) return;
+
+        const lw = getLivewireComponent();
+        if (!lw) return;
+
+        try {
+            if (typeof lw.get !== 'function' || typeof lw.set !== 'function') return;
+
+            const currentText = String(lw.get('text') ?? '').trim();
+            if (currentText.length > 0) return;
+
+            lw.set('text', saved.text ?? '');
+            lw.set('speaker_id', saved.speaker_id ?? 'liza');
+            lw.set('language', saved.language ?? 'ar');
+            lw.set('split', !!saved.split);
+            lw.set('max_words', parseInt(safeNumber(saved.max_words, 25), 10));
+            lw.set('fade_ms', parseInt(safeNumber(saved.fade_ms, 80), 10));
+            lw.set('selectedPreset', saved.selectedPreset ?? 'balanced');
+            lw.set('temperature', safeNumber(saved.temperature, 0.65));
+            lw.set('top_k', parseInt(safeNumber(saved.top_k, 50), 10));
+            lw.set('top_p', safeNumber(saved.top_p, 0.80));
+            lw.set('repetition_penalty', safeNumber(saved.repetition_penalty, 2.0));
+            lw.set('length_penalty', safeNumber(saved.length_penalty, 1.0));
+            lw.set('speed', safeNumber(saved.speed, 1.0));
+        } catch (e) {
+            console.warn('[XTTS] Form restore failed', e);
+        }
+    }
+
+    function watchAndPersistForm() {
+        if (S.formWatchBoot) return;
+
+        const lw = getLivewireComponent();
+        if (!lw || typeof lw.$watch !== 'function') return;
+
+        S.formWatchBoot = true;
+
+        let timer = null;
+        const debouncedSave = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => formSave(), 250);
+        };
+
+        [
+            'text',
+            'speaker_id',
+            'language',
+            'split',
+            'max_words',
+            'fade_ms',
+            'temperature',
+            'top_k',
+            'top_p',
+            'repetition_penalty',
+            'length_penalty',
+            'speed',
+            'selectedPreset',
+        ].forEach((field) => {
+            try {
+                lw.$watch(field, debouncedSave);
+            } catch (_) {}
+        });
+    }
+
     // ─── Livewire event listeners ─────────────────────────────────────────────
     function registerLivewireEvents() {
-        // Persist job state to localStorage whenever Livewire tells us it changed
+        if (!window.Livewire || S.eventsBound) return;
+        S.eventsBound = true;
+
         Livewire.on('xtts-job-started', (data) => {
             spaSave(data);
+            formSave();
         });
 
         Livewire.on('xtts-job-state-sync', (data) => {
@@ -1679,65 +1979,93 @@ class extends Component
             spaClear();
         });
 
-        // When a job finishes: bind new buttons, highlight latest
+        Livewire.on('xtts-form-state-clear', () => {
+            formClear();
+        });
+
         Livewire.on('xtts-job-completed', () => {
             spaClear();
-            // Give the DOM a tick to update with the new render card
             requestAnimationFrame(() => {
                 bindPreviewButtons();
                 highlightLatestRender();
             });
         });
 
-        // After any Livewire update re-bind buttons (covers pagination, refresh, delete)
-        Livewire.hook('commit', ({ component, succeed }) => {
-            succeed(() => {
-                requestAnimationFrame(() => {
-                    bindPreviewButtons();
+        if (!S.commitHooked && typeof Livewire.hook === 'function') {
+            S.commitHooked = true;
+
+            Livewire.hook('commit', ({ succeed }) => {
+                succeed(() => {
+                    requestAnimationFrame(() => {
+                        bindPreviewButtons();
+                        formSave();
+                    });
                 });
             });
-        });
+        }
     }
 
     // ─── Page boot ────────────────────────────────────────────────────────────
     function bootXttsPage() {
-        registerLivewireEvents();
-        bindPreviewButtons();
-        spaRestoreIfNeeded();
+        const runBoot = () => {
+            const root = document.getElementById('xtts-page-root');
+            if (!root) return;
 
-        const idle = 'requestIdleCallback' in window
-            ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
-            : (cb) => setTimeout(cb, 500);
+            registerLivewireEvents();
+            bindPreviewButtons();
+            spaRestoreIfNeeded();
+            formRestoreIfNeeded();
+            watchAndPersistForm();
 
-        idle(() => preloadAndRenderRecentAudio());
+            const idle = 'requestIdleCallback' in window
+                ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
+                : (cb) => setTimeout(cb, 500);
+
+            idle(() => preloadAndRenderRecentAudio());
+        };
+
+        setTimeout(runBoot, 0);
     }
 
     // ─── Cleanup on navigation ────────────────────────────────────────────────
     function teardownXttsPage() {
-        // Destroy WaveSurfer instances that are NOT currently playing
-        // (playing ones are already paused by the browser on unload anyway,
-        //  but we keep the Map so they can resume if navigating back within SPA)
+        formSave();
+
         S.previewWS.forEach((ws, jobId) => {
-            if (ws.isPlaying && ws.isPlaying()) return; // keep playing instances in memory
+            if (ws.isPlaying && ws.isPlaying()) return;
             try { ws.destroy(); } catch (_) {}
             S.previewWS.delete(jobId);
+
             const meta = S.previewMeta.get(jobId);
             if (meta?.blobUrl) {
                 try { URL.revokeObjectURL(meta.blobUrl); } catch (_) {}
             }
             S.previewMeta.delete(jobId);
         });
+
+        S.formWatchBoot = false;
     }
 
     // ─── Initialise ───────────────────────────────────────────────────────────
     document.addEventListener('livewire:initialized', bootXttsPage);
-    document.addEventListener('livewire:navigated',   bootXttsPage);
-    document.addEventListener('livewire:navigating',  teardownXttsPage);
+    document.addEventListener('livewire:navigated', bootXttsPage);
+    document.addEventListener('livewire:navigating', teardownXttsPage);
 
     window.addEventListener('beforeunload', () => {
-        S.previewWS.forEach(ws => { try { ws.destroy(); } catch (_) {} });
+        formSave();
+
+        S.previewWS.forEach(ws => {
+            try { ws.destroy(); } catch (_) {}
+        });
         S.previewWS.clear();
     });
 })();
+</script>
+<script>
+window.addEventListener('xtts-form-state-clear', () => {
+    try {
+        localStorage.removeItem('xtts_form_state_v1');
+    } catch (_) {}
+});
 </script>
 @endpush
