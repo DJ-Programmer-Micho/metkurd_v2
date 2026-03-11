@@ -80,7 +80,7 @@
                 />
 
                 <livewire:partials.components.nav-feature-link 
-                    :route="'app.clone_xtts'"
+                    :route="'app.clone-xtts'"
                     icon="bx bx-user-voice"
                     label="Clone Speech"
                     feature="clone_tts.active"

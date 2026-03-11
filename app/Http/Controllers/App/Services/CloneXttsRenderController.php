@@ -9,11 +9,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-class XttsRenderController extends Controller
+class CloneXttsRenderController extends Controller
 {
     protected function jobOrFail(string $jobId): MlJob
     {
-        $toolId = Tool::query()->where('code', 'tts')->value('id');
+        $toolId = Tool::query()->where('code', 'clone_tts')->value('id');
 
         return MlJob::query()
             ->where('id', $jobId)
@@ -63,7 +63,7 @@ class XttsRenderController extends Controller
                 'Accept-Ranges' => 'bytes',
             ]);
         } catch (\Throwable $e) {
-            Log::error('XTTS_STREAM_FAIL', ['job_id' => $jobId, 'message' => $e->getMessage()]);
+            Log::error('CLONE_XTTS_STREAM_FAIL', ['job_id' => $jobId, 'message' => $e->getMessage()]);
             abort(500, 'Audio stream failed.');
         }
     }

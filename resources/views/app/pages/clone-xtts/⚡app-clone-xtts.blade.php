@@ -23,6 +23,8 @@ use App\Services\Providers\RunPodProvider;
 use App\Services\Billing\CreditService;
 use App\Services\Storage\CustomerOutputStorage;
 
+use App\Services\XTTS\XttsJobSyncService;
+use App\Services\Security\JobExecutionLockService;
 new
 #[Layout('app::layouts.app')]
 #[Title('Clone XTTS | METKURD')]
@@ -49,7 +51,7 @@ class extends Component
     public bool $jobFinished = false;
     public bool $showJobStatus = false;
     public int $currentProgress = 0;
-
+    public ?string $dismissedJobStatusFor = null;
     // =========================================================
     // Inputs
     // =========================================================
@@ -68,7 +70,7 @@ class extends Component
     public float $speed = 1.0;
 
     // uploaded cloning sample
-    public $reference_audio = null;
+    public $referenceAudio = null;
     public ?string $referenceAudioName = null;
     public ?int $referenceAudioBytes = null;
     public ?string $referenceAudioMime = null;
@@ -197,6 +199,7 @@ class extends Component
         $this->syncWallet();
         $this->applyPreset($this->selectedPreset);
         $this->syncCostPreview();
+        $this->dismissedJobStatusFor = session('clone-xtts.dismissed_job_status_for');
         $this->hydrateCurrentJobFromDb();
     }
 
@@ -212,17 +215,27 @@ class extends Component
 
     public function updatedReferenceAudio(): void
     {
-        $this->validateOnly('reference_audio');
+        $this->validateOnly('referenceAudio');
 
-        if ($this->reference_audio) {
-            $this->referenceAudioName = $this->reference_audio->getClientOriginalName();
-            $this->referenceAudioBytes = (int) $this->reference_audio->getSize();
-            $this->referenceAudioMime = $this->reference_audio->getMimeType();
+        if ($this->referenceAudio) {
+            $this->referenceAudioName = $this->referenceAudio->getClientOriginalName();
+            $this->referenceAudioBytes = (int) $this->referenceAudio->getSize();
+            $this->referenceAudioMime = $this->referenceAudio->getMimeType();
         } else {
             $this->referenceAudioName = null;
             $this->referenceAudioBytes = null;
             $this->referenceAudioMime = null;
         }
+    }
+
+    public function removeReferenceAudio(): void
+    {
+        $this->referenceAudio = null;
+        $this->referenceAudioName = null;
+        $this->referenceAudioBytes = null;
+        $this->referenceAudioMime = null;
+
+        $this->dispatch('clone-xtts-reference-audio-cleared');
     }
 
     #[Computed]
@@ -281,7 +294,7 @@ class extends Component
             return 'Text exceeds the max characters per submit.';
         }
 
-        if (!$this->reference_audio) {
+        if (!$this->referenceAudio) {
             return 'Please upload a reference voice sample.';
         }
 
@@ -432,7 +445,7 @@ class extends Component
     {
         return [
             'text' => ['required', 'string', 'min:1', 'max:' . $this->maxPerSubmit],
-            'reference_audio' => 'required|file|mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm|max:20480',
+            'referenceAudio' => 'required|file|mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm|max:20480',
             'language' => 'required|string|min:1|max:8',
             'split' => 'boolean',
             'max_words' => 'required|integer|min:5|max:80',
@@ -455,9 +468,17 @@ class extends Component
 
     public function hideJobStatus(): void
     {
-        if ($this->jobFinished) {
-            $this->showJobStatus = false;
+        if ($this->currentJobId) {
+            $this->dismissedJobStatusFor = $this->currentJobId;
+            session(['clone-xtts.dismissed_job_status_for' => $this->currentJobId]);
         }
+
+        $this->showJobStatus = false;
+        $this->currentJobId = null;
+        $this->providerJobId = null;
+        $this->currentStatus = null;
+        $this->jobFinished = false;
+        $this->currentProgress = 0;
     }
 
     protected function findToolAndAction(): array
@@ -532,10 +553,11 @@ class extends Component
 
         [$tool, $action] = $this->findToolAndAction();
         $jobId = (string) Str::uuid();
-
-        $referenceName = $this->reference_audio?->getClientOriginalName() ?: 'reference_audio';
-        $referenceMime = $this->reference_audio?->getMimeType() ?: 'audio/wav';
-        $referenceSize = (int) ($this->reference_audio?->getSize() ?? 0);
+        $this->dismissedJobStatusFor = null;
+        session()->forget('clone_xtts.dismissed_job_status_for');
+        $referenceName = $this->referenceAudio?->getClientOriginalName() ?: 'reference_audio';
+        $referenceMime = $this->referenceAudio?->getMimeType() ?: 'audio/wav';
+        $referenceSize = (int) ($this->referenceAudio?->getSize() ?? 0);
 
         MlJob::create([
             'id'             => $jobId,
@@ -564,6 +586,27 @@ class extends Component
             'started_at' => now(),
         ]);
 
+        $lock = app(JobExecutionLockService::class)->acquireCloneLock(
+            customerId: (int) $c->id,
+            jobId: $jobId,
+            session: request()->session(),
+            agent: request()->userAgent(),
+            ip: request()->ip(),
+        );
+
+        if (!($lock['ok'] ?? false)) {
+            MlJob::where('id', $jobId)->delete();
+            $credits->refund((int) $c->id, $cost, 'clone_tts_refund', [
+                'related_type' => 'ml_job',
+                'related_id' => $jobId,
+                'tool_action' => $actionCode,
+                'reason' => 'clone_lock_conflict',
+            ]);
+
+            $this->dispatch('alert', type: 'warning', message: $lock['message'] ?? 'Clone XTTS is busy on another device.');
+            return;
+        }
+
         $this->currentJobId = $jobId;
         $this->providerJobId = null;
         $this->currentStatus = 'queued';
@@ -582,7 +625,7 @@ class extends Component
 
             $folder = $this->cloneFolderForCustomer($c);
 
-            $refExt = strtolower($this->reference_audio?->getClientOriginalExtension() ?: 'wav');
+            $refExt = strtolower($this->referenceAudio?->getClientOriginalExtension() ?: 'wav');
             if ($refExt === '') {
                 $refExt = 'wav';
             }
@@ -591,7 +634,7 @@ class extends Component
 
             $savedRef = $storage->saveUploadedFileToS3(
                 (int) $c->id,
-                $this->reference_audio,
+                $this->referenceAudio,
                 $refKey,
                 [
                     'job_id' => $jobId,
@@ -707,7 +750,7 @@ class extends Component
         }
     }
 
-    public function pollJob(RunPodProvider $runpod, CustomerOutputStorage $storage): void
+    public function pollJob(XttsJobSyncService $sync): void
     {
         $this->showJobStatus = true;
 
@@ -715,171 +758,50 @@ class extends Component
             return;
         }
 
-        $job = MlJob::find($this->currentJobId);
-        if (!$job) {
-            return;
-        }
-
-        $tool = Tool::find($job->tool_id);
-        $endpointId = data_get($tool?->meta, 'runpod_endpoint_id') ?: config('runpod.endpoints.xtts');
-        if (!$endpointId) {
-            return;
-        }
-
-        $rpId = $this->providerJobId ?: (string) $job->provider_job_id;
-        if (!$rpId) {
+        $job = MlJob::query()->with('tool')->find($this->currentJobId);
+        if (!$job || !$job->tool) {
             return;
         }
 
         try {
-            $st = $runpod->status($endpointId, $rpId);
+            $result = $sync->sync($job, $job->tool);
 
-            $rawStatus = strtoupper((string) data_get($st, 'status', ''));
-            $out = (array) data_get($st, 'output', []);
+            $this->currentStatus = $result['status'] ?? $this->currentStatus;
+            $this->currentProgress = (int) ($result['progress'] ?? $this->currentProgress);
+            $this->jobFinished = (bool) (($result['done'] ?? false) || ($result['failed'] ?? false));
 
-            $wavB64 =
-                (string) (data_get($out, 'wav_b64', '')
-                ?: data_get($out, 'wav_base64', '')
-                ?: data_get($out, 'audio_b64', '')
-                ?: data_get($out, 'audio_base64', '')
-                ?: data_get($st, 'output.wav_b64', '')
-                ?: data_get($st, 'output.audio_b64', ''));
-
-            $outProgress = (int) (data_get($out, 'progress', 0) ?: data_get($st, 'output.progress', 0));
-
-            $mapped = match ($rawStatus) {
-                'IN_QUEUE', 'QUEUED' => 'queued',
-                'IN_PROGRESS', 'RUNNING' => 'running',
-                'COMPLETED' => 'saving',
-                'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
-                default => 'running',
-            };
-
-            $this->currentStatus = $mapped;
-
-            if ($mapped === 'queued') {
-                $this->currentProgress = max($this->currentProgress, 10);
-            }
-
-            if ($mapped === 'running') {
-                $p = ($outProgress > 0 && $outProgress < 90) ? $outProgress : 40;
-                $this->currentProgress = max($this->currentProgress, $p);
-                $this->completedNoAudioTicks = 0;
-            }
-
-            if ($mapped === 'saving') {
-                $this->currentProgress = max($this->currentProgress, 85);
-            }
-
-            if ($rawStatus === 'COMPLETED' && $wavB64 === '') {
-                $this->completedNoAudioTicks++;
-
-                if ($this->completedNoAudioTicks >= 8) {
-                    MlJob::where('id', $this->currentJobId)->update([
-                        'status' => 'failed',
-                        'error' => ['message' => 'Completed but audio base64 missing.'],
-                        'finished_at' => now(),
-                    ]);
-
-                    $this->currentStatus = 'failed';
-                    $this->jobFinished = true;
-                    $this->currentProgress = 100;
-
-                    $this->dispatch('header:refresh');
-                    $this->dispatch('clone-xtts-job-state-clear');
-                    $this->dispatch('alert', type: 'error', message: 'Completed but output audio missing.');
-                    return;
-                }
-            }
-
-            if ($mapped === 'failed') {
-                $err = (string) (data_get($st, 'error', '') ?: data_get($out, 'error', '') ?: 'RunPod failed');
-
-                MlJob::where('id', $this->currentJobId)->update([
-                    'status' => 'failed',
-                    'error'  => ['message' => $err],
-                    'finished_at' => now(),
-                ]);
-
-                $this->currentStatus = 'failed';
-                $this->jobFinished = true;
-                $this->currentProgress = 100;
-
-                $this->dispatch('header:refresh');
-                $this->dispatch('clone-xtts-job-state-clear');
-                $this->dispatch('alert', type: 'error', message: $err);
-                return;
-            }
-
-            MlJob::where('id', $this->currentJobId)->update([
-                'status' => $mapped,
-            ]);
+            MlJob::query()->where('id', $job->id)->update(['updated_at' => now()]);
 
             $this->dispatch('clone-xtts-job-state-sync', [
-                'jobId'    => $this->currentJobId,
-                'status'   => $mapped,
+                'jobId' => $this->currentJobId,
+                'status' => $this->currentStatus,
                 'progress' => $this->currentProgress,
             ]);
 
-            if ($wavB64 !== '') {
-                $this->currentStatus = 'saving';
-                $this->currentProgress = max($this->currentProgress, 90);
-
-                $c = auth('app')->user();
-
-                $folder = \App\Support\CustomerFolder::make(
-                    (int) $c->id,
-                    $c->profile?->first_name ?? $c->first_name ?? null,
-                    $c->profile?->last_name ?? $c->last_name ?? null,
-                    $c->username ?? null
-                );
-
-                $fileKey = "renders/{$folder}/clone-tts/{$this->currentJobId}/out.wav";
-
-                $saved = $storage->saveWavB64ToS3((int) $c->id, $fileKey, $wavB64, [
-                    'job_id' => $this->currentJobId,
-                    'tool'   => 'clone_tts',
-                ]);
-
-                MlJob::where('id', $this->currentJobId)->update([
-                    'status' => 'done',
-                    'output' => [
-                        'disk' => $saved['disk'],
-                        'path' => $saved['path'],
-                        'bytes' => $saved['bytes'],
-                        'mime' => 'audio/wav',
-                    ],
-                    'storage_out_bytes' => (int) $saved['bytes'],
-                    'finished_at' => now(),
-                    'error' => null,
-                ]);
-
-
-                $this->currentStatus = 'done';
-                $this->jobFinished = true;
-                $this->currentProgress = 100;
-
+            if (!empty($result['done'])) {
                 $this->syncWallet();
-
                 $this->dispatch('customerPlanUpdated');
                 $this->dispatch('customerStorageUpdated');
                 $this->dispatch('clone-xtts-renders-refresh');
                 $this->dispatch('clone-xtts-job-completed');
                 $this->dispatch('clone-xtts-job-state-clear');
-
                 $this->dispatch('alert', type: 'success', message: 'Done');
-                return;
+            }
+
+            if (!empty($result['failed'])) {
+                $this->dispatch('header:refresh');
+                $this->dispatch('clone-xtts-job-state-clear');
+                $this->dispatch('alert', type: 'error', message: $result['message'] ?: 'Job failed.');
             }
         } catch (\Throwable $e) {
-            Log::warning('RUNPOD_CLONE_TTS_STATUS_FAIL', [
+            Log::warning('RUNPOD_TTS_STATUS_FAIL', [
                 'job_id' => $this->currentJobId,
-                'provider_job_id' => $rpId,
                 'err' => $e->getMessage(),
             ]);
 
-            MlJob::where('id', $this->currentJobId)->update([
+            MlJob::query()->where('id', $this->currentJobId)->update([
                 'status' => 'failed',
-                'error'  => ['message' => 'Polling failed: ' . $e->getMessage()],
+                'error' => ['message' => 'Polling failed: ' . $e->getMessage()],
                 'finished_at' => now(),
             ]);
 
@@ -893,44 +815,13 @@ class extends Component
         }
     }
 
-    protected function addStorageUsage(int $customerId, int $bytes): void
-    {
-        if ($bytes <= 0) return;
-
-        DB::transaction(function () use ($customerId, $bytes) {
-            $usage = CustomerUsage::query()->lockForUpdate()->firstOrCreate(
-                ['customer_id' => $customerId],
-                ['storage_used_bytes' => 0, 'jobs_total' => 0, 'jobs_succeeded' => 0, 'jobs_failed' => 0]
-            );
-
-            $usage->storage_used_bytes = (int) $usage->storage_used_bytes + $bytes;
-            $usage->jobs_total = (int) $usage->jobs_total + 1;
-            $usage->jobs_succeeded = (int) $usage->jobs_succeeded + 1;
-            $usage->save();
-        }, 3);
-    }
-
-    protected function subtractStorageUsage(int $customerId, int $bytes): void
-    {
-        if ($bytes <= 0) return;
-
-        DB::transaction(function () use ($customerId, $bytes) {
-            $usage = CustomerUsage::query()->lockForUpdate()->firstOrCreate(
-                ['customer_id' => $customerId],
-                ['storage_used_bytes' => 0, 'jobs_total' => 0, 'jobs_succeeded' => 0, 'jobs_failed' => 0]
-            );
-
-            $usage->storage_used_bytes = max(0, (int) $usage->storage_used_bytes - $bytes);
-            $usage->save();
-        }, 3);
-    }
-
-    public function deleteRender(string $jobId): void
+    public function deleteRender(string $jobId, XttsJobSyncService $sync): void
     {
         $customerId = auth('app')->id();
         $toolId = Tool::where('code', $this->toolCode)->value('id');
 
         $job = MlJob::query()
+            ->with('tool')
             ->where('id', $jobId)
             ->where('customer_id', $customerId)
             ->when($toolId, fn ($q) => $q->where('tool_id', $toolId))
@@ -942,52 +833,14 @@ class extends Component
             return;
         }
 
-        $disk = (string) data_get($job->output, 'disk', 's3');
-        $key  = (string) data_get($job->output, 'path', '');
-        $bytes = (int) data_get($job->output, 'bytes', 0);
-
-        if ($key === '') {
-            $this->dispatch('alert', type: 'error', message: 'Missing file key.');
-            return;
-        }
-
         try {
-            DB::transaction(function () use ($jobId) {
-                $fresh = MlJob::query()->lockForUpdate()->find($jobId);
-                if (!$fresh || $fresh->status !== 'done') {
-                    return;
-                }
-
-                $fresh->status = 'deleting';
-                $fresh->save();
-            }, 3);
-
-            if (Storage::disk($disk)->exists($key)) {
-                Storage::disk($disk)->delete($key);
-            }
-
-            DB::transaction(function () use ($jobId, $customerId, $bytes) {
-                $fresh = MlJob::query()->lockForUpdate()->find($jobId);
-                if (!$fresh) {
-                    return;
-                }
-
-                $fresh->status = 'deleted';
-                $fresh->save();
-
-                if ($bytes > 0) {
-                    $this->subtractStorageUsage((int) $customerId, (int) $bytes);
-                }
-            }, 3);
-
+            $sync->deleteFinishedRender($job);
             $this->resetPage();
             $this->rendersRefreshKey++;
-
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('clone-xtts-renders-refresh');
             $this->dispatch('alert', type: 'success', message: 'Deleted.');
         } catch (\Throwable $e) {
-            MlJob::where('id', $jobId)->where('status', 'deleting')->update(['status' => 'done']);
             $this->dispatch('alert', type: 'error', message: 'Delete failed: ' . $e->getMessage());
         }
     }
@@ -998,16 +851,6 @@ class extends Component
         $this->syncCostPreview();
     }
 
-    public function removeReferenceAudio(): void
-    {
-        $this->reference_audio = null;
-        $this->referenceAudioName = null;
-        $this->referenceAudioBytes = null;
-        $this->referenceAudioMime = null;
-
-        $this->dispatch('clone-xtts-reference-audio-cleared');
-    }
-
     public function resetToDefaults(): void
     {
         $this->text = '';
@@ -1015,7 +858,7 @@ class extends Component
         $this->split = true;
         $this->max_words = 25;
         $this->fade_ms = 80;
-        $this->reference_audio = null;
+        $this->referenceAudio = null;
         $this->referenceAudioName = null;
         $this->referenceAudioBytes = null;
         $this->referenceAudioMime = null;
@@ -1055,13 +898,8 @@ class extends Component
         }
 
         $customerId = auth('app')->id();
+        $job = MlJob::query()->where('id', $this->currentJobId)->where('customer_id', $customerId)->first();
 
-        $job = MlJob::query()
-            ->where('id', $this->currentJobId)
-            ->where('customer_id', $customerId)
-            ->first();
-        $refPath = (string) data_get($job?->input, 'reference_audio_path', '');
-        $refBytes = (int) data_get($job?->input, 'reference_audio_bytes', 0);
         if ($job && in_array((string) $job->status, ['queued', 'running', 'saving'], true)) {
             $job->update([
                 'status' => 'failed',
@@ -1071,6 +909,24 @@ class extends Component
                 ],
                 'finished_at' => now(),
             ]);
+
+            $refPath = (string) data_get($job->input, 'reference_audio_path', '');
+            $refBytes = (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'reference_audio_bytes', 0));
+
+            try {
+                if ($refPath !== '') {
+                    app(\App\Services\Storage\CustomerOutputStorage::class)
+                        ->deleteFromS3AndUncount((int) $customerId, $refPath, $refBytes);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('CLONE_TTS_ELIMINATE_REF_DELETE_FAIL', [
+                    'job_id' => (string) $job->id,
+                    'path' => $refPath,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            app(\App\Services\Security\JobExecutionLockService::class)->releaseLock((string) $job->id);
         }
 
         $this->currentJobId = null;
@@ -1081,18 +937,6 @@ class extends Component
         $this->currentProgress = 0;
         $this->completedNoAudioTicks = 0;
 
-        if ($refPath !== '') {
-            try {
-                app(\App\Services\Storage\CustomerOutputStorage::class)
-                    ->deleteFromS3AndUncount((int) $customerId, $refPath, $refBytes);
-            } catch (\Throwable $e) {
-                Log::warning('CLONE_TTS_REF_DELETE_ON_ELIMINATE_FAIL', [
-                    'job_id' => $job?->id,
-                    'path' => $refPath,
-                    'err' => $e->getMessage(),
-                ]);
-            }
-        }
         $this->dispatch('header:refresh');
         $this->dispatch('clone-xtts-job-state-clear');
         $this->dispatch('clone-xtts-form-state-clear');
@@ -1117,7 +961,13 @@ class extends Component
         $job = MlJob::query()
             ->where('customer_id', $customerId)
             ->where('tool_id', $toolId)
-            ->whereIn('status', ['queued', 'running', 'saving', 'done', 'failed'])
+            ->where(function ($q) {
+                $q->whereIn('status', ['queued', 'running', 'saving'])
+                ->orWhere(function ($q2) {
+                    $q2->whereIn('status', ['done', 'failed'])
+                        ->where('finished_at', '>=', now()->subSeconds(3));
+                });
+            })
             ->orderByRaw("
                 CASE
                     WHEN status IN ('queued','running','saving') THEN 0
@@ -1130,6 +980,12 @@ class extends Component
             ->first();
 
         if (!$job) {
+            $this->currentJobId = null;
+            $this->providerJobId = null;
+            $this->currentStatus = null;
+            $this->jobFinished = false;
+            $this->showJobStatus = false;
+            $this->currentProgress = 0;
             return;
         }
 
@@ -1143,7 +999,6 @@ class extends Component
         $this->currentJobId = (string) $job->id;
         $this->providerJobId = (string) ($job->provider_job_id ?? '');
         $this->currentStatus = $status;
-        $this->showJobStatus = true;
 
         $this->jobFinished = in_array($status, ['done', 'failed', 'deleted'], true);
 
@@ -1153,8 +1008,25 @@ class extends Component
             'saving'  => 90,
             'done'    => 100,
             'failed'  => 100,
+            'deleted' => 100,
             default   => 0,
         };
+
+        if (!$this->jobFinished) {
+            $this->showJobStatus = true;
+            return;
+        }
+
+        if ($this->jobFinished) {
+            $finishedAt = $job->finished_at;
+
+            $this->showJobStatus =
+                $this->dismissedJobStatusFor !== (string) $job->id
+                && $finishedAt
+                && $finishedAt->gte(now()->subSeconds(3));
+
+            return;
+        }
     }
 };
 ?>
@@ -1194,32 +1066,25 @@ class extends Component
 
     <div class="row g-3">
         <div class="col-12">
-            @if($showJobStatus && $currentStatus)
-                <div class="glass-load {{ $glassClass }} mb-4">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="badge text-bg-{{ $badge }}">{{ $status }}</span>
-                            <span class="small text-muted">Job ID: {{ $currentJobId }}</span>
+            @if($showJobStatus && $currentJobId && $currentStatus)
+                <div class="glass-load {{ $glassClass }} p-3">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                        <div>
+                            <div class="fw-semibold">XTTS job status</div>
+                            <div class="small text-muted">Job ID: {{ $currentJobId ?: '—' }}</div>
                         </div>
+                        <span class="badge text-bg-{{ $badge }}">{{ $status }}</span>
+                    </div>
 
+                    <div class="progress" role="progressbar" aria-valuenow="{{ $progress }}" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-bar progress-bar-striped {{ !$jobFinished ? 'progress-bar-animated' : '' }} bg-{{ $badge }}" style="width: {{ $progress }}%"></div>
+                    </div>
+
+                    <div class="d-flex align-items-center justify-content-between mt-2 small">
+                        <span>{{ $progress }}%</span>
                         @if($jobFinished)
-                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">
-                                Hide
-                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">Hide</button>
                         @endif
-                    </div>
-
-                    <div class="progress" style="height: 10px;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-{{ $badge }}"
-                                role="progressbar"
-                                style="width: {{ $progress }}%;"
-                                aria-valuenow="{{ $progress }}"
-                                aria-valuemin="0"
-                                aria-valuemax="100"></div>
-                    </div>
-
-                    <div class="small text-muted mt-2">
-                        Progress: {{ $progress }}%
                     </div>
                 </div>
             @endif
@@ -1251,26 +1116,27 @@ class extends Component
                         </div>
 
                         <div class="card-body">
-                            <div>
+                            <div class="mb-3">
                                 <label class="form-label">Reference Voice Sample</label>
 
-                                <input
-                                    type="file"
-                                    class="form-control"
-                                    wire:model="reference_audio"
-                                    accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,audio/*"
-                                >
+                                <div wire:ignore>
+                                    <input
+                                        type="file"
+                                        id="clone-reference-audio-pond"
+                                        accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,audio/*"
+                                    >
+                                </div>
 
                                 <div class="small text-muted mt-2">
                                     Recommended: clean speech, 10–30 seconds, low background noise.
                                 </div>
 
-                                <div wire:loading wire:target="reference_audio" class="small text-primary mt-2">
+                                <div wire:loading wire:target="referenceAudio" class="small text-primary mt-2">
                                     Uploading sample...
                                 </div>
 
                                 @if($referenceAudioName)
-                                    <div class="border rounded p-2 mt-2 bg-light-subtle">
+                                    <div class="border rounded p-2 mt-2 bg-success-subtle">
                                         <div class="fw-semibold small">{{ $referenceAudioName }}</div>
                                         <div class="small text-muted">
                                             {{ $referenceAudioMime ?: 'audio/*' }}
@@ -1280,14 +1146,18 @@ class extends Component
                                         </div>
 
                                         <div class="mt-2">
-                                            <button type="button" class="btn btn-sm btn-outline-danger" wire:click="removeReferenceAudio">
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-danger"
+                                                wire:click="removeReferenceAudio"
+                                            >
                                                 Remove sample
                                             </button>
                                         </div>
                                     </div>
                                 @endif
 
-                                @error('reference_audio')
+                                @error('referenceAudio')
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
                             </div>
@@ -1374,7 +1244,7 @@ class extends Component
                                 @foreach($this->sliders as $s)
                                     <div
                                         class="col-md-6"
-                                        wire:key="clone-slider-{{ $s['key'] }}-{{ $selectedPreset }}-{{ $s['val'] }}"
+                                        wire:key="clone-slider-{{ $s['key'] }}"
                                         x-data="{
                                             key: '{{ $s['key'] }}',
                                             val: @js($s['val']),
@@ -1427,14 +1297,20 @@ class extends Component
                                     class="btn {{ $this->canGenerate ? 'btn-primary' : 'btn-danger' }}"
                                     wire:click="postCloneXtts"
                                     wire:loading.attr="disabled"
-                                    wire:target="postCloneXtts"
+                                    wire:target="postCloneXtts,referenceAudio"
                                     @disabled(!$this->canGenerate)
                                     type="button"
                                     id="btn-clone-xtts-generate"
                                 >
-                                    <span wire:loading.remove wire:target="postCloneXtts">
+                                    <span wire:loading.remove wire:target="postCloneXtts,referenceAudio">
                                         {{ $this->canGenerate ? 'Generate' : ($this->generateBlockedReason ?? 'Generate') }}
                                     </span>
+
+                                    <span wire:loading wire:target="referenceAudio">
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                        Uploading sample...
+                                    </span>
+
                                     <span wire:loading wire:target="postCloneXtts">
                                         <span class="spinner-border spinner-border-sm me-1"></span>
                                         Starting...
@@ -1594,7 +1470,151 @@ class extends Component
         <div class="modal-backdrop fade show"></div>
     @endif
 </div>
+@push('styles')
+<link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet">
+<link href="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.min.css" rel="stylesheet">
+@endpush
+@push('scripts')
+<script src="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.min.js"></script>
+<script src="https://unpkg.com/filepond-plugin-file-validate-size/dist/filepond-plugin-file-validate-size.min.js"></script>
+<script src="https://unpkg.com/filepond@^4/dist/filepond.min.js"></script>
 
+<script>
+(function () {
+    'use strict';
+
+    if (!window.__CLONE_XTTS_POND__) {
+        window.__CLONE_XTTS_POND__ = {
+            pond: null,
+            booted: false,
+        };
+    }
+
+    const S = window.__CLONE_XTTS_POND__;
+
+    FilePond.registerPlugin(
+        FilePondPluginFileValidateType,
+        FilePondPluginFileValidateSize
+    );
+
+    function getCloneComponent() {
+        if (!window.Livewire) return null;
+
+        const root = document.getElementById('clone-xtts-page-root');
+        if (!root) return null;
+
+        const wireId = root.getAttribute('wire:id');
+        if (!wireId) return null;
+
+        try {
+            return window.Livewire.find(wireId);
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function destroyPond() {
+        if (S.pond) {
+            try { S.pond.destroy(); } catch (_) {}
+            S.pond = null;
+        }
+    }
+
+    function bootPond() {
+        const input = document.getElementById('clone-reference-audio-pond');
+        if (!input) return;
+
+        destroyPond();
+
+        const lw = getCloneComponent();
+        if (!lw) return;
+
+        S.pond = FilePond.create(input, {
+            allowMultiple: false,
+            allowReorder: false,
+            allowReplace: true,
+            dropOnPage: false,
+            credits: false,
+            acceptedFileTypes: [
+                'audio/wav',
+                'audio/x-wav',
+                'audio/mpeg',
+                'audio/mp3',
+                'audio/mp4',
+                'audio/x-m4a',
+                'audio/aac',
+                'audio/ogg',
+                'audio/webm'
+            ],
+            maxFileSize: '20MB',
+            labelIdle: `
+                <div class="py-3">
+                    <div class="mb-1"><strong>Drag & Drop</strong> your reference audio here</div>
+                    <div class="small text-muted">or <span class="filepond--label-action">Browse</span></div>
+                </div>
+            `,
+            server: {
+                process: (fieldName, file, metadata, load, error, progress, abort) => {
+                    lw.upload(
+                        'referenceAudio',
+                        file,
+                        () => load(file.name),
+                        (e) => error(typeof e === 'string' ? e : 'Upload failed'),
+                        (event) => {
+                            progress(
+                                event.lengthComputable,
+                                event.loaded,
+                                event.total
+                            );
+                        }
+                    );
+
+                    return {
+                        abort: () => {
+                            lw.removeUpload('referenceAudio', file.name, () => {});
+                            abort();
+                        }
+                    };
+                },
+                revert: (uniqueFileId, load) => {
+                    lw.call('removeReferenceAudio');
+                    load();
+                }
+            }
+        });
+    }
+
+    function bootCloneFilePondPage() {
+        setTimeout(() => bootPond(), 0);
+    }
+
+    document.addEventListener('livewire:initialized', bootCloneFilePondPage);
+    document.addEventListener('livewire:navigated', bootCloneFilePondPage);
+    document.addEventListener('livewire:navigating', destroyPond);
+
+    if (window.Livewire) {
+        Livewire.on('clone-xtts-reference-audio-cleared', () => {
+            if (S.pond) {
+                try { S.pond.removeFiles(); } catch (_) {}
+            }
+        });
+
+        if (typeof Livewire.hook === 'function') {
+            Livewire.hook('commit', ({ succeed }) => {
+                succeed(() => {
+                    requestAnimationFrame(() => {
+                        const input = document.getElementById('clone-reference-audio-pond');
+                        if (input && !S.pond) {
+                            bootPond();
+                        }
+                    });
+                });
+            });
+        }
+    }
+})();
+</script>
+@endpush
 @push('scripts')
 <script>
 function cloneXttsFormCache() {

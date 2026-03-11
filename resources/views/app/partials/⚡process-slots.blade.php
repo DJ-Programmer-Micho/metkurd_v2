@@ -1,21 +1,13 @@
 <?php
 
-use Livewire\Component;
 use Livewire\Attributes\On;
-
-use Illuminate\Support\Facades\DB;
+use Livewire\Component;
 use Illuminate\Support\Facades\Log;
-
 use App\Models\MlJob;
-use App\Models\Tool;
-use App\Models\CustomerUsage;
-use App\Services\Providers\RunPodProvider;
-use App\Services\Storage\CustomerOutputStorage;
+use App\Services\XTTS\XttsJobSyncService;
 
-new class extends Component
-{
+new class extends Component {
     public int $refreshKey = 0;
-
     public int $maxSlots = 5;
     public int $allowedSlots = 2;
     public array $slotsData = [];
@@ -29,46 +21,55 @@ new class extends Component
     #[On('customerPlanUpdated')]
     #[On('customerStorageUpdated')]
     #[On('xtts-renders-refresh')]
+    #[On('clone-xtts-renders-refresh')]
     public function refreshSlots(): void
     {
         $this->hydrateBoard();
     }
 
-    public function pollJobs(RunPodProvider $runpod, CustomerOutputStorage $storage): void
-    {
-        $customer = auth('app')->user();
-        if (!$customer) {
-            return;
-        }
+    // public function pollJobs(XttsJobSyncService $sync): void
+    // {
+    //     $customer = auth('app')->user();
+    //     if (!$customer) {
+    //         return;
+    //     }
 
-        $jobs = MlJob::query()
-            ->where('customer_id', (int) $customer->id)
-            ->whereIn('status', ['queued', 'running', 'saving'])
-            ->orderBy('created_at')
-            ->limit($this->maxSlots)
-            ->get();
+    //     $jobs = MlJob::query()
+    //         ->with('tool:id,code,meta')
+    //         ->where('customer_id', (int) $customer->id)
+    //         ->whereIn('status', ['queued', 'running', 'saving'])
+    //         ->orderBy('created_at')
+    //         ->limit($this->maxSlots)
+    //         ->get();
 
-        foreach ($jobs as $job) {
-            try {
-                $tool = Tool::find($job->tool_id);
+    //     foreach ($jobs as $job) {
+    //         try {
+    //             $tool = $job->tool;
 
-                if (!$tool) {
-                    continue;
-                }
+    //             if (!$tool || !in_array((string) $tool->code, ['tts', 'clone_tts'], true)) {
+    //                 continue;
+    //             }
 
-                if ((string) $tool->code === 'tts') {
-                    $this->syncXttsJob($job, $tool, $runpod, $storage);
-                }
-            } catch (\Throwable $e) {
-                Log::warning('PROCESS_SLOT_SYNC_FAIL', [
-                    'job_id' => $job->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
+    //             $result = $sync->sync($job, $tool);
 
-        $this->hydrateBoard();
-    }
+    //             if (($result['done'] ?? false) === true) {
+    //                 $this->dispatch('customerStorageUpdated');
+    //                 $this->dispatch('customerPlanUpdated');
+    //                 $this->dispatch((string) $tool->code === 'clone_tts'
+    //                     ? 'clone-xtts-renders-refresh'
+    //                     : 'xtts-renders-refresh');
+    //                 $this->dispatch('header:refresh');
+    //             }
+    //         } catch (\Throwable $e) {
+    //             Log::warning('PROCESS_SLOT_SYNC_FAIL', [
+    //                 'job_id' => (string) $job->id,
+    //                 'error' => $e->getMessage(),
+    //             ]);
+    //         }
+    //     }
+
+    //     $this->hydrateBoard();
+    // }
 
     protected function hydrateBoard(): void
     {
@@ -84,28 +85,29 @@ new class extends Component
         $this->allowedSlots = $this->resolveAllowedSlots($customer);
 
         $jobs = MlJob::query()
+            ->with('tool:id,code')
             ->where('customer_id', (int) $customer->id)
             ->where(function ($q) {
                 $q->whereIn('status', ['queued', 'running', 'saving'])
-                ->orWhere(function ($q2) {
-                    $q2->whereIn('status', ['done', 'failed'])
-                        ->where('finished_at', '>=', now()->subSeconds(3));
-                });
+                  ->orWhere(function ($q2) {
+                      $q2->whereIn('status', ['done', 'failed'])
+                         ->where('finished_at', '>=', now()->subSeconds(3));
+                  });
             })
             ->orderBy('created_at')
             ->limit($this->allowedSlots)
             ->get();
 
         $items = $jobs->map(function ($job) {
-            $tool = Tool::find($job->tool_id);
-            $toolCode = (string) ($tool?->code ?? '');
+            $toolCode = (string) ($job->tool?->code ?? '');
 
             $route = match ($toolCode) {
-                'tts'   => route('app.xtts', ['locale' => app()->getLocale()]),
-                'wasr'  => route('app.wasr', ['locale' => app()->getLocale()]),
-                'ocr'   => route('app.ocr', ['locale' => app()->getLocale()]),
-                'stem'  => route('app.stem', ['locale' => app()->getLocale()]),
-                default => route('app.home', ['locale' => app()->getLocale()]),
+                'tts'       => route('app.xtts', ['locale' => app()->getLocale()]),
+                'clone_tts' => route('app.clone-xtts', ['locale' => app()->getLocale()]),
+                'wasr'      => route('app.wasr', ['locale' => app()->getLocale()]),
+                'ocr'       => route('app.ocr', ['locale' => app()->getLocale()]),
+                'stem'      => route('app.stem', ['locale' => app()->getLocale()]),
+                default     => route('app.home', ['locale' => app()->getLocale()]),
             };
 
             return [
@@ -149,9 +151,7 @@ new class extends Component
 
     protected function resolveAllowedSlots($customer): int
     {
-        $planCode = strtolower((string) ($customer?->serviceCode() ?? 'free'));
-
-        return match ($planCode) {
+        return match (strtolower((string) ($customer?->serviceCode() ?? 'free'))) {
             'student' => 2,
             'pro'     => 3,
             'premium' => 5,
@@ -182,132 +182,6 @@ new class extends Component
         return $slots;
     }
 
-    protected function syncXttsJob(
-        MlJob $job,
-        Tool $tool,
-        RunPodProvider $runpod,
-        CustomerOutputStorage $storage
-    ): void {
-        if (in_array((string) $job->status, ['done', 'failed', 'deleted', 'deleting'], true)) {
-            return;
-        }
-
-        $endpointId = data_get($tool->meta, 'runpod_endpoint_id') ?: config('runpod.endpoints.xtts');
-        if (!$endpointId) {
-            return;
-        }
-
-        $rpId = (string) $job->provider_job_id;
-        if ($rpId === '') {
-            return;
-        }
-
-        $st = $runpod->status($endpointId, $rpId);
-
-        $rawStatus = strtoupper((string) data_get($st, 'status', ''));
-        $out = (array) data_get($st, 'output', []);
-
-        $wavB64 = (string) (
-            data_get($out, 'wav_b64', '')
-            ?: data_get($out, 'wav_base64', '')
-            ?: data_get($out, 'audio_b64', '')
-            ?: data_get($out, 'audio_base64', '')
-            ?: data_get($st, 'output.wav_b64', '')
-            ?: data_get($st, 'output.audio_b64', '')
-        );
-
-        $mapped = match ($rawStatus) {
-            'IN_QUEUE', 'QUEUED'                => 'queued',
-            'IN_PROGRESS', 'RUNNING'            => 'running',
-            'COMPLETED'                         => 'saving',
-            'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
-            default                             => 'running',
-        };
-
-        if ($mapped === 'failed') {
-            $err = (string) (
-                data_get($st, 'error', '')
-                ?: data_get($out, 'error', '')
-                ?: 'RunPod failed'
-            );
-
-            MlJob::where('id', $job->id)->update([
-                'status' => 'failed',
-                'error' => ['message' => $err],
-                'finished_at' => now(),
-            ]);
-
-            return;
-        }
-
-        MlJob::where('id', $job->id)->update([
-            'status' => $mapped,
-        ]);
-
-        if ($rawStatus === 'COMPLETED' && $wavB64 === '') {
-            return;
-        }
-
-        if ($wavB64 === '') {
-            return;
-        }
-
-        $customer = auth('app')->user();
-        if (!$customer) {
-            return;
-        }
-
-        $folder = \App\Support\CustomerFolder::make(
-            (int) $customer->id,
-            $customer->profile?->first_name ?? $customer->first_name ?? null,
-            $customer->profile?->last_name ?? $customer->last_name ?? null,
-            $customer->username ?? null
-        );
-
-        $fileKey = "renders/{$folder}/tts/{$job->id}/out.wav";
-
-        $saved = $storage->saveWavB64ToS3((int) $customer->id, $fileKey, $wavB64, [
-            'job_id' => $job->id,
-            'tool' => 'tts',
-        ]);
-
-        DB::transaction(function () use ($job, $saved, $customer) {
-            $fresh = MlJob::query()->lockForUpdate()->find($job->id);
-
-            if (!$fresh || (string) $fresh->status === 'done') {
-                $this->dispatch('alert', type: 'success', message: 'Job Done!');
-                return;
-            }
-
-            $fresh->status = 'done';
-            $fresh->output = [
-                'disk' => $saved['disk'],
-                'path' => $saved['path'],
-                'bytes' => $saved['bytes'],
-                'mime' => 'audio/wav',
-            ];
-            $fresh->storage_out_bytes = (int) $saved['bytes'];
-            $fresh->finished_at = now();
-            $fresh->error = null;
-            $fresh->save();
-
-            $usage = CustomerUsage::query()->lockForUpdate()->firstOrCreate(
-                ['customer_id' => (int) $customer->id],
-                ['storage_used_bytes' => 0, 'jobs_total' => 0, 'jobs_succeeded' => 0, 'jobs_failed' => 0]
-            );
-
-            $usage->storage_used_bytes = (int) $usage->storage_used_bytes + (int) $saved['bytes'];
-            $usage->jobs_total = (int) $usage->jobs_total + 1;
-            $usage->jobs_succeeded = (int) $usage->jobs_succeeded + 1;
-            $usage->save();
-        }, 3);
-
-        $this->dispatch('customerStorageUpdated');
-        $this->dispatch('customerPlanUpdated');
-        $this->dispatch('xtts-renders-refresh');
-        $this->dispatch('header:refresh');
-    }
-
     public function render()
     {
         return view('app.partials.⚡process-slots');
@@ -316,7 +190,7 @@ new class extends Component
 ?>
 
 <div wire:key="process-slots-{{ $refreshKey }}" class="d-flex align-items-center">
-    <div wire:poll.keep-alive.2500ms="pollJobs"></div>
+    {{-- <div wire:poll.keep-alive.2500ms="pollJobs"></div> --}}
 
     <div class="d-flex align-items-center gap-2 px-2 py-2 rounded-4"
          style="background: rgba(0,0,0,.22); box-shadow: inset 0 1px 0 rgba(255,255,255,.04);">

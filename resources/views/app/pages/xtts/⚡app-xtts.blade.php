@@ -23,6 +23,8 @@ use App\Services\Providers\RunPodProvider;
 use App\Services\Billing\CreditService;
 use App\Services\Storage\CustomerOutputStorage;
 
+use App\Services\XTTS\XttsJobSyncService;
+use App\Services\Security\JobExecutionLockService;
 new
 #[Layout('app::layouts.app')]
 #[Title('XTTS | METKURD')]
@@ -48,7 +50,8 @@ class extends Component
     public bool $jobFinished = false;
     public bool $showJobStatus = false;
     public int $currentProgress = 0;
-
+    public ?string $dismissedJobStatusFor = null;
+    public bool $showEliminateModal = false;
 
     // =========================================================
     // Inputs
@@ -187,6 +190,7 @@ class extends Component
 
         $this->applyPreset($this->selectedPreset);
         $this->syncCostPreview();
+        $this->dismissedJobStatusFor = session('xtts.dismissed_job_status_for');
         $this->hydrateCurrentJobFromDb();
     }
 
@@ -478,9 +482,17 @@ class extends Component
 
     public function hideJobStatus(): void
     {
-        if ($this->jobFinished) {
-            $this->showJobStatus = false;
+        if ($this->currentJobId) {
+            $this->dismissedJobStatusFor = $this->currentJobId;
+            session(['xtts.dismissed_job_status_for' => $this->currentJobId]);
         }
+
+        $this->showJobStatus = false;
+        $this->currentJobId = null;
+        $this->providerJobId = null;
+        $this->currentStatus = null;
+        $this->jobFinished = false;
+        $this->currentProgress = 0;
     }
 
     protected function findToolAndAction(): array
@@ -551,7 +563,8 @@ class extends Component
 
         [$tool, $action] = $this->findToolAndAction();
         $jobId = (string) Str::uuid();
-
+        $this->dismissedJobStatusFor = null;
+        session()->forget('xtts.dismissed_job_status_for');
         MlJob::create([
             'id'             => $jobId,
             'customer_id'    => $c->id,
@@ -660,228 +673,78 @@ class extends Component
         }
     }
 
-    public function pollJob(RunPodProvider $runpod, CustomerOutputStorage $storage): void
+    public function pollJob(XttsJobSyncService $sync): void
     {
         $this->showJobStatus = true;
+
         if (!$this->currentJobId || $this->jobFinished) {
             return;
         }
 
-        $job = MlJob::find($this->currentJobId);
-        if (!$job) {
-            return;
-        }
-
-        $tool = Tool::find($job->tool_id);
-        $endpointId = data_get($tool?->meta, 'runpod_endpoint_id') ?: config('runpod.endpoints.xtts');
-        if (!$endpointId) {
-            return;
-        }
-
-        $rpId = $this->providerJobId ?: (string) $job->provider_job_id;
-        if (!$rpId) {
+        $job = MlJob::query()->with('tool')->find($this->currentJobId);
+        if (!$job || !$job->tool) {
             return;
         }
 
         try {
-            $st = $runpod->status($endpointId, $rpId);
+            $result = $sync->sync($job, $job->tool);
 
-            $rawStatus = strtoupper((string) data_get($st, 'status', ''));
-            $out = (array) data_get($st, 'output', []);
+            $this->currentStatus = $result['status'] ?? $this->currentStatus;
+            $this->currentProgress = (int) ($result['progress'] ?? $this->currentProgress);
+            $this->jobFinished = (bool) (($result['done'] ?? false) || ($result['failed'] ?? false));
 
-            $wavB64 =
-                (string) (data_get($out, 'wav_b64', '')
-                ?: data_get($out, 'wav_base64', '')
-                ?: data_get($out, 'audio_b64', '')
-                ?: data_get($out, 'audio_base64', '')
-                ?: data_get($st, 'output.wav_b64', '')
-                ?: data_get($st, 'output.audio_b64', ''));
+            MlJob::query()->where('id', $job->id)->update(['updated_at' => now()]);
 
-            $outProgress = (int) (data_get($out, 'progress', 0) ?: data_get($st, 'output.progress', 0));
-
-            $mapped = match ($rawStatus) {
-                'IN_QUEUE', 'QUEUED' => 'queued',
-                'IN_PROGRESS', 'RUNNING' => 'running',
-                'COMPLETED' => 'saving',
-                'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
-                default => 'running',
-            };
-
-            $this->currentStatus = $mapped;
-
-            if ($mapped === 'queued') {
-                $this->currentProgress = max($this->currentProgress, 10);
-            }
-
-            if ($mapped === 'running') {
-                $p = ($outProgress > 0 && $outProgress < 90) ? $outProgress : 40;
-                $this->currentProgress = max($this->currentProgress, $p);
-                $this->completedNoAudioTicks = 0;
-            }
-
-            if ($mapped === 'saving') {
-                $this->currentProgress = max($this->currentProgress, 85);
-            }
-
-            if ($rawStatus === 'COMPLETED' && $wavB64 === '') {
-                $this->completedNoAudioTicks++;
-
-                if ($this->completedNoAudioTicks >= 8) {
-                    MlJob::where('id', $this->currentJobId)->update([
-                        'status' => 'failed',
-                        'error' => ['message' => 'Completed but audio base64 missing.'],
-                        'finished_at' => now(),
-                    ]);
-                    $this->currentStatus = 'failed';
-                    $this->jobFinished = true;
-                    $this->currentProgress = 100;
-                    
-                    $this->dispatch('header:refresh');
-                    $this->dispatch('xtts-job-state-clear');
-                    $this->dispatch('alert', type: 'error', message: 'Completed but output audio missing.');
-                    return;
-                }
-            }
-
-            if ($mapped === 'failed') {
-                $err = (string) (data_get($st, 'error', '') ?: data_get($out, 'error', '') ?: 'RunPod failed');
-
-                MlJob::where('id', $this->currentJobId)->update([
-                    'status' => 'failed',
-                    'error'  => ['message' => $err],
-                    'finished_at' => now(),
-                ]);
-                $this->currentStatus = 'failed';
-                $this->jobFinished = true;
-                $this->currentProgress = 100;
-
-                $this->dispatch('header:refresh');
-                $this->dispatch('xtts-job-state-clear');
-                $this->dispatch('alert', type: 'error', message: $err);
-                return;
-            }
-
-            MlJob::where('id', $this->currentJobId)->update([
-                'status' => $mapped,
-            ]);
-
-            // Sync SPA state
             $this->dispatch('xtts-job-state-sync', [
-                'jobId'    => $this->currentJobId,
-                'status'   => $mapped,
+                'jobId' => $this->currentJobId,
+                'status' => $this->currentStatus,
                 'progress' => $this->currentProgress,
             ]);
 
-            if ($wavB64 !== '') {
-                $this->currentStatus = 'saving';
-                $this->currentProgress = max($this->currentProgress, 90);
-
-                $c = auth('app')->user();
-
-                $folder = \App\Support\CustomerFolder::make(
-                    (int) $c->id,
-                    $c->profile?->first_name ?? $c->first_name ?? null,
-                    $c->profile?->last_name ?? $c->last_name ?? null,
-                    $c->username ?? null
-                );
-
-                $fileKey = "renders/{$folder}/tts/{$this->currentJobId}/out.wav";
-
-                $saved = $storage->saveWavB64ToS3((int) $c->id, $fileKey, $wavB64, [
-                    'job_id' => $this->currentJobId,
-                    'tool'   => 'tts',
-                ]);
-
-                MlJob::where('id', $this->currentJobId)->update([
-                    'status' => 'done',
-                    'output' => [
-                        'disk' => $saved['disk'],
-                        'path' => $saved['path'],
-                        'bytes' => $saved['bytes'],
-                        'mime' => 'audio/wav',
-                    ],
-                    'storage_out_bytes' => (int) $saved['bytes'],
-                    'finished_at' => now(),
-                    'error' => null,
-                ]);
-
-                $this->addStorageUsage((int) $c->id, (int) $saved['bytes']);
-
-                $this->currentStatus = 'done';
-                $this->jobFinished = true;
-                $this->currentProgress = 100;
-
+            if (!empty($result['done'])) {
                 $this->syncWallet();
-
                 $this->dispatch('customerPlanUpdated');
                 $this->dispatch('customerStorageUpdated');
                 $this->dispatch('xtts-renders-refresh');
                 $this->dispatch('xtts-job-completed');
                 $this->dispatch('xtts-job-state-clear');
-
                 $this->dispatch('alert', type: 'success', message: 'Done');
-                return;
+            }
+
+            if (!empty($result['failed'])) {
+                $this->dispatch('header:refresh');
+                $this->dispatch('xtts-job-state-clear');
+                $this->dispatch('alert', type: 'error', message: $result['message'] ?: 'Job failed.');
             }
         } catch (\Throwable $e) {
             Log::warning('RUNPOD_TTS_STATUS_FAIL', [
                 'job_id' => $this->currentJobId,
-                'provider_job_id' => $rpId,
                 'err' => $e->getMessage(),
             ]);
 
-            MlJob::where('id', $this->currentJobId)->update([
+            MlJob::query()->where('id', $this->currentJobId)->update([
                 'status' => 'failed',
-                'error'  => ['message' => 'Polling failed: ' . $e->getMessage()],
+                'error' => ['message' => 'Polling failed: ' . $e->getMessage()],
                 'finished_at' => now(),
             ]);
+
             $this->currentStatus = 'failed';
             $this->jobFinished = true;
             $this->currentProgress = 100;
-            
+
             $this->dispatch('header:refresh');
             $this->dispatch('xtts-job-state-clear');
             $this->dispatch('alert', type: 'error', message: 'Polling failed: ' . $e->getMessage());
         }
     }
 
-    protected function addStorageUsage(int $customerId, int $bytes): void
-    {
-        if ($bytes <= 0) return;
-
-        DB::transaction(function () use ($customerId, $bytes) {
-            $usage = CustomerUsage::query()->lockForUpdate()->firstOrCreate(
-                ['customer_id' => $customerId],
-                ['storage_used_bytes' => 0, 'jobs_total' => 0, 'jobs_succeeded' => 0, 'jobs_failed' => 0]
-            );
-
-            $usage->storage_used_bytes = (int) $usage->storage_used_bytes + $bytes;
-            $usage->jobs_total = (int) $usage->jobs_total + 1;
-            $usage->jobs_succeeded = (int) $usage->jobs_succeeded + 1;
-            $usage->save();
-        }, 3);
-    }
-
-    protected function subtractStorageUsage(int $customerId, int $bytes): void
-    {
-        if ($bytes <= 0) return;
-
-        DB::transaction(function () use ($customerId, $bytes) {
-            $usage = CustomerUsage::query()->lockForUpdate()->firstOrCreate(
-                ['customer_id' => $customerId],
-                ['storage_used_bytes' => 0, 'jobs_total' => 0, 'jobs_succeeded' => 0, 'jobs_failed' => 0]
-            );
-
-            $usage->storage_used_bytes = max(0, (int) $usage->storage_used_bytes - $bytes);
-            $usage->save();
-        }, 3);
-    }
-
-    public function deleteRender(string $jobId): void
+    public function deleteRender(string $jobId, XttsJobSyncService $sync): void
     {
         $customerId = auth('app')->id();
         $toolId = Tool::where('code', $this->toolCode)->value('id');
 
         $job = MlJob::query()
+            ->with('tool')
             ->where('id', $jobId)
             ->where('customer_id', $customerId)
             ->when($toolId, fn ($q) => $q->where('tool_id', $toolId))
@@ -893,52 +756,14 @@ class extends Component
             return;
         }
 
-        $disk = (string) data_get($job->output, 'disk', 's3');
-        $key  = (string) data_get($job->output, 'path', '');
-        $bytes = (int) data_get($job->output, 'bytes', 0);
-
-        if ($key === '') {
-            $this->dispatch('alert', type: 'error', message: 'Missing file key.');
-            return;
-        }
-
         try {
-            DB::transaction(function () use ($jobId) {
-                $fresh = MlJob::query()->lockForUpdate()->find($jobId);
-                if (!$fresh || $fresh->status !== 'done') {
-                    return;
-                }
-
-                $fresh->status = 'deleting';
-                $fresh->save();
-            }, 3);
-
-            if (Storage::disk($disk)->exists($key)) {
-                Storage::disk($disk)->delete($key);
-            }
-
-            DB::transaction(function () use ($jobId, $customerId, $bytes) {
-                $fresh = MlJob::query()->lockForUpdate()->find($jobId);
-                if (!$fresh) {
-                    return;
-                }
-
-                $fresh->status = 'deleted';
-                $fresh->save();
-
-                if ($bytes > 0) {
-                    $this->subtractStorageUsage((int) $customerId, (int) $bytes);
-                }
-            }, 3);
-
+            $sync->deleteFinishedRender($job);
             $this->resetPage();
             $this->rendersRefreshKey++;
-
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('xtts-renders-refresh');
             $this->dispatch('alert', type: 'success', message: 'Deleted.');
         } catch (\Throwable $e) {
-            MlJob::where('id', $jobId)->where('status', 'deleting')->update(['status' => 'done']);
             $this->dispatch('alert', type: 'error', message: 'Delete failed: ' . $e->getMessage());
         }
     }
@@ -966,6 +791,79 @@ class extends Component
         $this->dispatch('xtts-form-state-clear');
     }
 
+        public function openEliminateModal(): void
+    {
+        if (!$this->currentJobId || $this->jobFinished) {
+            $this->dispatch('alert', type: 'warning', message: 'There is no active job to eliminate.');
+            return;
+        }
+
+        $this->showEliminateModal = true;
+    }
+
+    public function closeEliminateModal(): void
+    {
+        $this->showEliminateModal = false;
+    }
+
+    public function eliminateCurrentJob(): void
+    {
+        $this->showEliminateModal = false;
+
+        if (!$this->currentJobId) {
+            $this->dispatch('alert', type: 'warning', message: 'No current job found.');
+            $this->dispatch('xtts-job-state-clear');
+            $this->dispatch('xtts-form-state-clear');
+            return;
+        }
+
+        $customerId = auth('app')->id();
+        $job = MlJob::query()->where('id', $this->currentJobId)->where('customer_id', $customerId)->first();
+
+        if ($job && in_array((string) $job->status, ['queued', 'running', 'saving'], true)) {
+            $job->update([
+                'status' => 'failed',
+                'error' => [
+                    'message' => 'Eliminated by customer. Credits are not refundable.',
+                    'type' => 'eliminated_by_customer',
+                ],
+                'finished_at' => now(),
+            ]);
+
+            $refPath = (string) data_get($job->input, 'reference_audio_path', '');
+            $refBytes = (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'reference_audio_bytes', 0));
+
+            try {
+                if ($refPath !== '') {
+                    app(\App\Services\Storage\CustomerOutputStorage::class)
+                        ->deleteFromS3AndUncount((int) $customerId, $refPath, $refBytes);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('TTS_ELIMINATE_REF_DELETE_FAIL', [
+                    'job_id' => (string) $job->id,
+                    'path' => $refPath,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            app(\App\Services\Security\JobExecutionLockService::class)->releaseLock((string) $job->id);
+        }
+
+        $this->currentJobId = null;
+        $this->providerJobId = null;
+        $this->currentStatus = null;
+        $this->jobFinished = true;
+        $this->showJobStatus = false;
+        $this->currentProgress = 0;
+        $this->completedNoAudioTicks = 0;
+
+        $this->dispatch('header:refresh');
+        $this->dispatch('xtts-job-state-clear');
+        $this->dispatch('xtts-form-state-clear');
+        $this->dispatch('xtts-renders-refresh');
+        $this->dispatch('alert', type: 'warning', message: 'Current job eliminated. Credits were not refunded.');
+    }
+    
     public function render()
     {
         return view('app.pages.xtts.⚡app-xtts');
@@ -983,7 +881,13 @@ class extends Component
         $job = MlJob::query()
             ->where('customer_id', $customerId)
             ->where('tool_id', $toolId)
-            ->whereIn('status', ['queued', 'running', 'saving', 'done', 'failed'])
+            ->where(function ($q) {
+                $q->whereIn('status', ['queued', 'running', 'saving'])
+                ->orWhere(function ($q2) {
+                    $q2->whereIn('status', ['done', 'failed'])
+                        ->where('finished_at', '>=', now()->subSeconds(3));
+                });
+            })
             ->orderByRaw("
                 CASE
                     WHEN status IN ('queued','running','saving') THEN 0
@@ -996,6 +900,12 @@ class extends Component
             ->first();
 
         if (!$job) {
+            $this->currentJobId = null;
+            $this->providerJobId = null;
+            $this->currentStatus = null;
+            $this->jobFinished = false;
+            $this->showJobStatus = false;
+            $this->currentProgress = 0;
             return;
         }
 
@@ -1009,7 +919,6 @@ class extends Component
         $this->currentJobId = (string) $job->id;
         $this->providerJobId = (string) ($job->provider_job_id ?? '');
         $this->currentStatus = $status;
-        $this->showJobStatus = true;
 
         $this->jobFinished = in_array($status, ['done', 'failed', 'deleted'], true);
 
@@ -1019,8 +928,25 @@ class extends Component
             'saving'  => 90,
             'done'    => 100,
             'failed'  => 100,
+            'deleted' => 100,
             default   => 0,
         };
+
+        if (!$this->jobFinished) {
+            $this->showJobStatus = true;
+            return;
+        }
+
+        if ($this->jobFinished) {
+            $finishedAt = $job->finished_at;
+
+            $this->showJobStatus =
+                $this->dismissedJobStatusFor !== (string) $job->id
+                && $finishedAt
+                && $finishedAt->gte(now()->subSeconds(3));
+
+            return;
+        }
     }
 };
 ?>
@@ -1032,7 +958,7 @@ class extends Component
     >
     {{-- Poll only when a job is actively running --}}
     @if($currentJobId && !$jobFinished)
-        {{-- <div wire:poll.keep-alive.2000ms="pollJob"></div> --}}
+        <div wire:poll.keep-alive.2000ms="pollJob"></div>
     @endif
 
     @php
@@ -1060,6 +986,33 @@ class extends Component
     @endphp
 
     <div class="row g-3">
+        <div class="col-12">
+            {{-- @php
+                dd($showJobStatus, $currentJobId, $currentStatus);
+            @endphp --}}
+            @if($showJobStatus && $currentJobId && $currentStatus)
+                <div class="glass-load {{ $glassClass }} p-3">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                        <div>
+                            <div class="fw-semibold">XTTS job status</div>
+                            <div class="small text-muted">Job ID: {{ $currentJobId ?: '—' }}</div>
+                        </div>
+                        <span class="badge text-bg-{{ $badge }}">{{ $status }}</span>
+                    </div>
+
+                    <div class="progress" role="progressbar" aria-valuenow="{{ $progress }}" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-bar progress-bar-striped {{ !$jobFinished ? 'progress-bar-animated' : '' }} bg-{{ $badge }}" style="width: {{ $progress }}%"></div>
+                    </div>
+
+                    <div class="d-flex align-items-center justify-content-between mt-2 small">
+                        <span>{{ $progress }}%</span>
+                        @if($jobFinished)
+                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">Hide</button>
+                        @endif
+                    </div>
+                </div>
+            @endif
+        </div>
         <div class="col-lg-7">
             <div class="turbo-border mb-3">
                 <div class="turbo-inner">
@@ -1186,7 +1139,7 @@ class extends Component
                                 @foreach($this->sliders as $s)
                                     <div
                                         class="col-md-6"
-                                        wire:key="slider-{{ $s['key'] }}-{{ $selectedPreset }}-{{ $s['val'] }}"
+                                        wire:key="slider-{{ $s['key'] }}"
                                         x-data="{
                                             key: '{{ $s['key'] }}',
                                             val: @js($s['val']),
@@ -1257,6 +1210,14 @@ class extends Component
                                     Reset
                                 </button>
 
+                                <button
+                                    class="btn btn-outline-danger"
+                                    wire:click="openEliminateModal"
+                                    type="button"
+                                    @disabled(!$currentJobId || $jobFinished)
+                                >
+                                    Eliminate
+                                </button>
                                 @if($walletBalance < $creditsCost && $creditsCost > 0)
                                     <span class="small text-danger align-self-center">
                                         Not enough credits for this generation.
@@ -1367,6 +1328,40 @@ class extends Component
             </div>
         </div>
     </div>
+        @if($showEliminateModal)
+        <div class="modal fade show" style="display:block;" tabindex="-1" aria-modal="true" role="dialog">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-danger">
+                    <div class="modal-header">
+                        <h5 class="modal-title text-danger">Eliminate Current Job</h5>
+                        <button type="button" class="btn-close" wire:click="closeEliminateModal"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <p class="mb-2">
+                            Are you sure you want to eliminate the current job?
+                        </p>
+
+                        <div class="alert alert-warning mb-0">
+                            <strong>Warning:</strong> the credit will <strong>not</strong> be refunded and you will lose the charged credit for this job.
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" wire:click="closeEliminateModal">
+                            Cancel
+                        </button>
+
+                        <button type="button" class="btn btn-danger" wire:click="eliminateCurrentJob">
+                            Yes, Eliminate
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-backdrop fade show"></div>
+    @endif
 </div>
 
 @push('scripts')
@@ -1515,6 +1510,10 @@ function xttsFormCache() {
     const SPA_KEY  = 'xtts_spa_job';
     const FORM_KEY = 'xtts_form_state_v1';
 
+    function safeNumber(value, fallback) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+    }
     // ─── Helpers ──────────────────────────────────────────────────────────────
     function formatTime(sec) {
         sec = Math.max(0, sec || 0);

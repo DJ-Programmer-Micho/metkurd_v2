@@ -19,15 +19,15 @@ class CustomerOutputStorage
         }
 
         $disk = 's3';
+        $bytes = strlen($bin);
+        $mime = $meta['mime'] ?? 'audio/wav';
 
         Storage::disk($disk)->put($path, $bin, [
             'visibility' => 'private',
-            'ContentType' => 'audio/wav',
+            'ContentType' => $mime,
         ]);
 
-        $bytes = strlen($bin);
-
-        DB::transaction(function () use ($customerId, $disk, $path, $bytes, $meta) {
+        DB::transaction(function () use ($customerId, $disk, $path, $bytes, $mime, $meta) {
             CustomerFile::create([
                 'customer_id' => $customerId,
                 'purpose' => $meta['purpose'] ?? 'render',
@@ -35,7 +35,7 @@ class CustomerOutputStorage
                 'disk' => $disk,
                 'path' => $path,
                 'size_bytes' => $bytes,
-                'mime' => $meta['mime'] ?? 'audio/wav',
+                'mime' => $mime,
                 'checksum' => null,
                 'status' => 'active',
                 'meta' => $meta,
@@ -55,20 +55,11 @@ class CustomerOutputStorage
             $usage->save();
         }, 3);
 
-        return [
-            'disk' => $disk,
-            'path' => $path,
-            'bytes' => $bytes,
-            'mime' => $meta['mime'] ?? 'audio/wav',
-        ];
+        return compact('disk', 'path', 'bytes', 'mime');
     }
 
-    public function saveUploadedFileToS3(
-        int $customerId,
-        UploadedFile $file,
-        string $path,
-        array $meta = []
-    ): array {
+    public function saveUploadedFileToS3(int $customerId, UploadedFile $file, string $path, array $meta = []): array
+    {
         if (!$file->isValid()) {
             throw new \RuntimeException('Uploaded file is not valid.');
         }
@@ -121,49 +112,48 @@ class CustomerOutputStorage
             $usage->save();
         }, 3);
 
-        return [
-            'disk' => $disk,
-            'path' => $path,
-            'bytes' => $bytes,
-            'mime' => $mime,
-        ];
+        return compact('disk', 'path', 'bytes', 'mime');
     }
 
     public function temporaryUrl(string $path, int $minutes = 60, array $options = []): string
     {
-        $disk = 's3';
-
-        return Storage::disk($disk)->temporaryUrl(
-            $path,
-            now()->addMinutes($minutes),
-            $options
-        );
+        return Storage::disk('s3')->temporaryUrl($path, now()->addMinutes($minutes), $options);
     }
 
     public function deleteFromS3AndUncount(int $customerId, string $path, int $bytes): void
     {
         $disk = 's3';
 
-        Storage::disk($disk)->delete($path);
+        if ($path === '') {
+            return;
+        }
+
+        if (Storage::disk($disk)->exists($path)) {
+            Storage::disk($disk)->delete($path);
+        }
 
         DB::transaction(function () use ($customerId, $disk, $path, $bytes) {
-            CustomerFile::query()
+            $file = CustomerFile::query()
                 ->where('customer_id', $customerId)
                 ->where('disk', $disk)
                 ->where('path', $path)
-                ->update([
-                    'status' => 'deleted',
-                    'deleted_at' => now(),
-                ]);
-
-            $usage = CustomerUsage::query()
                 ->lockForUpdate()
-                ->where('customer_id', $customerId)
                 ->first();
 
-            if ($usage && $bytes > 0) {
-                $usage->storage_used_bytes = max(0, (int) $usage->storage_used_bytes - $bytes);
-                $usage->save();
+            if ($file && (string) $file->status !== 'deleted') {
+                $file->status = 'deleted';
+                $file->deleted_at = now();
+                $file->save();
+
+                $usage = CustomerUsage::query()
+                    ->where('customer_id', $customerId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($usage && $bytes > 0) {
+                    $usage->storage_used_bytes = max(0, (int) $usage->storage_used_bytes - $bytes);
+                    $usage->save();
+                }
             }
         }, 3);
     }

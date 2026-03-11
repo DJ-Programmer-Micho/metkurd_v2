@@ -129,6 +129,7 @@ class DevDefaultSeeder extends Seeder
             $tools[$row['code']] = Tool::updateOrCreate(
                 ['code' => $row['code']],
                 [
+                    'code' => $row['code'],
                     'name' => $row['name'],
                     'is_active' => true,
                     'sort_order' => $row['sort_order'],
@@ -166,6 +167,7 @@ class DevDefaultSeeder extends Seeder
             $actions[$fullCode] = ToolAction::updateOrCreate(
                 ['full_code' => $fullCode],
                 [
+                    'full_code' => $fullCode,
                     'tool_code' => $row['tool_code'],
                     'action_code' => $row['action_code'],
                     'name' => $row['name'],
@@ -353,7 +355,7 @@ class DevDefaultSeeder extends Seeder
             );
         }
 
-        foreach ($plans as $plan) {
+        foreach ($plans as $planCode => $plan) {
             foreach ($voices as $voice) {
                 PlanVoiceAccess::updateOrCreate(
                     [

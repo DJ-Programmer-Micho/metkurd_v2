@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\Admin\Pages\AdminController;
 use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
+use App\Http\Controllers\App\Services\CloneXttsRenderController;
 use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
@@ -101,7 +102,7 @@ Route::prefix('{locale}')
         Route::livewire('/app/profile', 'app::pages.profile.app-profile')->name('app.profile');
 
         Route::livewire('/app/xtts', 'app::pages.xtts.app-xtts')->name('app.xtts');
-        Route::livewire('/app/clone-xtts', 'app::pages.clone-xtts.app-clone-xtts')->name('app.clone_xtts');
+        Route::livewire('/app/clone-xtts', 'app::pages.clone-xtts.app-clone-xtts')->name('app.clone-xtts');
         Route::livewire('/app/wasr', 'app::pages.wasr.app-wasr')->name('app.wasr');
         Route::livewire('/app/stem', 'app::pages.stem.app-stem')->name('app.stem');
         Route::livewire('/app/ocr', 'app::pages.ocr.app-ocr')->name('app.ocr');
@@ -126,10 +127,10 @@ Route::prefix('{locale}')
     Route::get('/app/renders/xtts/{jobId}/download', [XttsRenderController::class, 'download'])
         ->name('app.renders.xtts.download');
 
-    Route::get('/app/renders/clone-xtts/{jobId}/stream', [XttsRenderController::class, 'cloneStream'])
+    Route::get('/app/renders/clone-xtts/{jobId}/stream', [CloneXttsRenderController::class, 'Stream'])
         ->name('app.renders.clone_xtts.stream');
 
-    Route::get('/app/renders/clone-xtts/{jobId}/download', [XttsRenderController::class, 'cloneDownload'])
+    Route::get('/app/renders/clone-xtts/{jobId}/download', [CloneXttsRenderController::class, 'Download'])
         ->name('app.renders.clone_xtts.download');
 });
 /*
