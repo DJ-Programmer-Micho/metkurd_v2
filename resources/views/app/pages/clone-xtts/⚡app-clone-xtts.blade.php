@@ -1257,7 +1257,7 @@ class extends Component
                                 @foreach($this->sliders as $s)
                                     <div
                                         class="col-md-6"
-                                        wire:key="clone-slider-{{ $s['key'] }}"
+                                        wire:key="clone-slider-{{ $s['key'] }}-{{ md5((string) $s['val']) }}"
                                         x-data="{
                                             key: '{{ $s['key'] }}',
                                             val: @js($s['val']),
@@ -1500,6 +1500,7 @@ class extends Component
         window.__CLONE_XTTS_POND__ = {
             pond: null,
             booted: false,
+            bootTimer: null,
         };
     }
 
@@ -1527,20 +1528,40 @@ class extends Component
     }
 
     function destroyPond() {
+        if (S.bootTimer) {
+            clearTimeout(S.bootTimer);
+            S.bootTimer = null;
+        }
+
         if (S.pond) {
             try { S.pond.destroy(); } catch (_) {}
             S.pond = null;
         }
+
+        S.booted = false;
     }
 
-    function bootPond() {
+    function bootPond(attempt = 0) {
         const input = document.getElementById('clone-reference-audio-pond');
-        if (!input) return;
-
-        destroyPond();
-
         const lw = getCloneComponent();
-        if (!lw) return;
+        const maxAttempts = 20;
+
+        if (!input || !lw) {
+            if (attempt >= maxAttempts) return;
+
+            S.bootTimer = setTimeout(() => bootPond(attempt + 1), 75);
+            return;
+        }
+
+        if (S.pond) {
+            try { S.pond.destroy(); } catch (_) {}
+            S.pond = null;
+        }
+
+        if (S.bootTimer) {
+            clearTimeout(S.bootTimer);
+            S.bootTimer = null;
+        }
 
         S.pond = FilePond.create(input, {
             allowMultiple: false,
@@ -1595,12 +1616,20 @@ class extends Component
                 }
             }
         });
+
+        S.booted = true;
     }
 
     function bootCloneFilePondPage() {
-        setTimeout(() => bootPond(), 0);
+        if (S.bootTimer) {
+            clearTimeout(S.bootTimer);
+            S.bootTimer = null;
+        }
+
+        S.bootTimer = setTimeout(() => bootPond(), 0);
     }
 
+    document.addEventListener('DOMContentLoaded', bootCloneFilePondPage);
     document.addEventListener('livewire:initialized', bootCloneFilePondPage);
     document.addEventListener('livewire:navigated', bootCloneFilePondPage);
     document.addEventListener('livewire:navigating', destroyPond);
@@ -1625,6 +1654,8 @@ class extends Component
             });
         }
     }
+
+    bootCloneFilePondPage();
 })();
 </script>
 @endpush

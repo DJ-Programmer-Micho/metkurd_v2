@@ -457,8 +457,6 @@ class extends Component
             ->where('customer_id', $customerId)
             ->where('tool_id', $toolId)
             ->whereIn('status', ['queued', 'running', 'saving'])
-            ->whereNotNull('lock_expires_at')
-            ->where('lock_expires_at', '>', now())
             ->count();
     }
 
@@ -566,7 +564,6 @@ class extends Component
                 'chars'        => $chars,
             ]);
         } catch (\Throwable $e) {
-            Log::info('XTTS postXtts fired222' . $e);
             $this->syncWallet();
             $this->dispatch('alert', type: 'error', message: 'Not enough credits.');
             return;
@@ -581,6 +578,7 @@ class extends Component
             'customer_id'    => $c->id,
             'tool_id'        => $tool->id,
             'tool_action_id' => $action->id,
+            'job_kind'       => 'tts',
             'status'         => 'queued',
             'provider'       => 'runpod',
             'input' => [
@@ -894,8 +892,6 @@ class extends Component
             ->where('tool_id', $toolId)
             ->where(function ($q) {
                 $q->whereIn('status', ['queued', 'running', 'saving'])
-                    ->whereNotNull('lock_expires_at')
-                    ->where('lock_expires_at', '>', now())
                 ->orWhere(function ($q2) {
                     $q2->whereIn('status', ['done', 'failed'])
                         ->where('finished_at', '>=', now()->subSeconds(3));
@@ -1152,7 +1148,7 @@ class extends Component
                                 @foreach($this->sliders as $s)
                                     <div
                                         class="col-md-6"
-                                        wire:key="slider-{{ $s['key'] }}"
+                                        wire:key="slider-{{ $s['key'] }}-{{ md5((string) $s['val']) }}"
                                         x-data="{
                                             key: '{{ $s['key'] }}',
                                             val: @js($s['val']),
