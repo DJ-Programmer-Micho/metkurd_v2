@@ -22,54 +22,12 @@ new class extends Component {
     #[On('customerStorageUpdated')]
     #[On('xtts-renders-refresh')]
     #[On('clone-xtts-renders-refresh')]
+    #[On('wasr-renders-refresh')]
+    #[On('asr-renders-refresh')]
     public function refreshSlots(): void
     {
         $this->hydrateBoard();
     }
-
-    // public function pollJobs(XttsJobSyncService $sync): void
-    // {
-    //     $customer = auth('app')->user();
-    //     if (!$customer) {
-    //         return;
-    //     }
-
-    //     $jobs = MlJob::query()
-    //         ->with('tool:id,code,meta')
-    //         ->where('customer_id', (int) $customer->id)
-    //         ->whereIn('status', ['queued', 'running', 'saving'])
-    //         ->orderBy('created_at')
-    //         ->limit($this->maxSlots)
-    //         ->get();
-
-    //     foreach ($jobs as $job) {
-    //         try {
-    //             $tool = $job->tool;
-
-    //             if (!$tool || !in_array((string) $tool->code, ['tts', 'clone_tts'], true)) {
-    //                 continue;
-    //             }
-
-    //             $result = $sync->sync($job, $tool);
-
-    //             if (($result['done'] ?? false) === true) {
-    //                 $this->dispatch('customerStorageUpdated');
-    //                 $this->dispatch('customerPlanUpdated');
-    //                 $this->dispatch((string) $tool->code === 'clone_tts'
-    //                     ? 'clone-xtts-renders-refresh'
-    //                     : 'xtts-renders-refresh');
-    //                 $this->dispatch('header:refresh');
-    //             }
-    //         } catch (\Throwable $e) {
-    //             Log::warning('PROCESS_SLOT_SYNC_FAIL', [
-    //                 'job_id' => (string) $job->id,
-    //                 'error' => $e->getMessage(),
-    //             ]);
-    //         }
-    //     }
-
-    //     $this->hydrateBoard();
-    // }
 
     protected function hydrateBoard(): void
     {
@@ -88,11 +46,14 @@ new class extends Component {
             ->with('tool:id,code')
             ->where('customer_id', (int) $customer->id)
             ->where(function ($q) {
-                $q->whereIn('status', ['queued', 'running', 'saving'])
-                  ->orWhere(function ($q2) {
-                      $q2->whereIn('status', ['done', 'failed'])
-                         ->where('finished_at', '>=', now()->subSeconds(3));
-                  });
+                $q->where(function ($qa) {
+                    $qa->whereIn('status', ['queued', 'running', 'saving'])
+                    ->whereNotNull('lock_expires_at')
+                    ->where('lock_expires_at', '>', now());
+                })->orWhere(function ($q2) {
+                    $q2->whereIn('status', ['done', 'failed'])
+                    ->where('finished_at', '>=', now()->subSeconds(3));
+                });
             })
             ->orderBy('created_at')
             ->limit($this->allowedSlots)
@@ -104,7 +65,7 @@ new class extends Component {
             $route = match ($toolCode) {
                 'tts'       => route('app.xtts', ['locale' => app()->getLocale()]),
                 'clone_tts' => route('app.clone-xtts', ['locale' => app()->getLocale()]),
-                'wasr'      => route('app.wasr', ['locale' => app()->getLocale()]),
+                'wasr','asr'=> route('app.wasr', ['locale' => app()->getLocale()]),
                 'ocr'       => route('app.ocr', ['locale' => app()->getLocale()]),
                 'stem'      => route('app.stem', ['locale' => app()->getLocale()]),
                 default     => route('app.home', ['locale' => app()->getLocale()]),
@@ -188,7 +149,36 @@ new class extends Component {
     }
 };
 ?>
+@php
+    $type = $type ?? null;
+    $status = $status ?? null;
+    $jobId = $jobId ?? null;
 
+    $label = match ($type) {
+        'stem' => 'STEM job status',
+        'wasr', 'asr' => 'ASR job status',
+        'tts', 'clone_tts' => 'TTS job status',
+        default => 'Job status',
+    };
+
+    $message = match ($status) {
+        'queued'  => 'Queued...',
+        'running' => $type === 'stem' ? 'Separating Audio...' : 'Running...',
+        'saving'  => 'Saving output...',
+        'done'    => 'Completed.',
+        'failed'  => 'Failed.',
+        default   => 'Processing...',
+    };
+
+    $glassClass = match ($status) {
+        'queued'  => 'glass-warning',
+        'running' => 'glass-info',
+        'saving'  => 'glass-primary',
+        'done'    => 'glass-success',
+        'failed'  => 'glass-danger',
+        default   => 'glass-info',
+    };
+@endphp
 <div wire:key="process-slots-{{ $refreshKey }}" class="d-flex align-items-center">
     {{-- <div wire:poll.keep-alive.2500ms="pollJobs"></div> --}}
 

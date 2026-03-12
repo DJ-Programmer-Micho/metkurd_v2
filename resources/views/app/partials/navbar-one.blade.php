@@ -87,7 +87,15 @@
                     badge="PRO"
                 />
 
-                <livewire:partials.components.nav-multi-feature-link
+                <livewire:partials.components.nav-feature-link 
+                    :route="'app.wasr'"
+                    icon="bx bxs-microphone-alt"
+                    :label="__('SPEECH_TO_TEXT')"
+                    feature="asr.active"
+                    badge="PRO"
+                />
+
+                {{-- <livewire:partials.components.nav-multi-feature-link
                     id="sidebarAsr"
                     icon="bx bx-microphone"
                     :label="__('SPEECH-TO-TEXT')"
@@ -109,7 +117,7 @@
                         feature="asr2.active"
                         badge="PRO"
                     />
-                </livewire:partials.components.nav-multi-feature-link>
+                </livewire:partials.components.nav-multi-feature-link> --}}
 
                 <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">MUSIC TOOLS</span></li>
                     <livewire:partials.components.nav-feature-link

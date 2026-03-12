@@ -435,9 +435,20 @@ class extends Component
             return 0;
         }
 
+        $toolId = Tool::query()
+            ->where('code', $this->toolCode)
+            ->value('id');
+
+        if (!$toolId) {
+            return 0;
+        }
+
         return MlJob::query()
             ->where('customer_id', $customerId)
+            ->where('tool_id', $toolId)
             ->whereIn('status', ['queued', 'running', 'saving'])
+            ->whereNotNull('lock_expires_at')
+            ->where('lock_expires_at', '>', now())
             ->count();
     }
 
@@ -554,7 +565,7 @@ class extends Component
         [$tool, $action] = $this->findToolAndAction();
         $jobId = (string) Str::uuid();
         $this->dismissedJobStatusFor = null;
-        session()->forget('clone_xtts.dismissed_job_status_for');
+        session()->forget('clone-xtts.dismissed_job_status_for');
         $referenceName = $this->referenceAudio?->getClientOriginalName() ?: 'reference_audio';
         $referenceMime = $this->referenceAudio?->getMimeType() ?: 'audio/wav';
         $referenceSize = (int) ($this->referenceAudio?->getSize() ?? 0);
@@ -963,6 +974,8 @@ class extends Component
             ->where('tool_id', $toolId)
             ->where(function ($q) {
                 $q->whereIn('status', ['queued', 'running', 'saving'])
+                    ->whereNotNull('lock_expires_at')
+                    ->where('lock_expires_at', '>', now())
                 ->orWhere(function ($q2) {
                     $q2->whereIn('status', ['done', 'failed'])
                         ->where('finished_at', '>=', now()->subSeconds(3));
@@ -1055,7 +1068,7 @@ class extends Component
         $glassClass = match($currentStatus) {
             'queued' => 'glass-load--warning',
             'running' => 'glass-load--info',
-            'saving' => 'glass-load--info',
+            'saving' => 'glass-load--primary',
             'done' => 'glass-load--success',
             'failed' => 'glass-load--danger',
             default => 'glass-load--secondary',

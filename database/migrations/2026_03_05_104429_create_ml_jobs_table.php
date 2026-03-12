@@ -29,6 +29,7 @@ return new class extends Migration {
             // Provider tracking
             $table->string('provider', 40)->nullable()->index(); // runpod
             $table->string('provider_job_id', 190)->nullable()->index();
+            $table->string('input_hash', 64)->nullable();
 
             $table->decimal('provider_cost_usd', 12, 6)->nullable();
             $table->unsignedInteger('cold_start_ms')->nullable();
@@ -59,6 +60,7 @@ return new class extends Migration {
             $table->index(['customer_id', 'status', 'created_at']);
             $table->index(['customer_id', 'job_kind', 'status']);
             $table->index(['customer_id', 'job_kind', 'lock_expires_at']);
+            $table->index(['customer_id', 'job_kind', 'input_hash'], 'ml_jobs_customer_kind_input_hash_idx');
         });
     }
 

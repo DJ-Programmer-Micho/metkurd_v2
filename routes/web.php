@@ -5,6 +5,8 @@ use App\Http\Controllers\Admin\Pages\AdminController;
 use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
 use App\Http\Controllers\App\Services\CloneXttsRenderController;
+use App\Http\Controllers\App\Services\StemRenderController;
+use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
@@ -132,6 +134,27 @@ Route::prefix('{locale}')
 
     Route::get('/app/renders/clone-xtts/{jobId}/download', [CloneXttsRenderController::class, 'Download'])
         ->name('app.renders.clone_xtts.download');
+
+    Route::get('/app/renders/wasr/{jobId}/txt', [WasrRenderController::class, 'downloadTxt'])
+        ->name('app.renders.wasr.txt');
+        
+    Route::get('/app/renders/wasr/{jobId}/json', [WasrRenderController::class, 'downloadJson'])
+        ->name('app.renders.wasr.json');
+
+    Route::get('/app/renders/wasr/{jobId}/input-audio', [WasrRenderController::class, 'inputAudio'])
+        ->name('app.renders.wasr.input-audio');
+
+    Route::get('/app/renders/stem/{jobId}/stream/{track}', [StemRenderController::class, 'stream'])
+        ->name('app.renders.stem.stream');
+
+    Route::get('/app/renders/stem/{jobId}/download/{track}', [StemRenderController::class, 'download'])
+        ->name('app.renders.stem.download');
+
+    Route::get('/app/renders/stem/{jobId}/zip', [StemRenderController::class, 'zip'])
+        ->name('app.renders.stem.zip');
+
+    // Route::get('/app/renders/wasr/{jobId}/json/view', [WasrRenderController::class, 'viewJson'])
+    //     ->name('app.renders.wasr.json.view');
 });
 /*
 |--------------------------------------------------------------------------

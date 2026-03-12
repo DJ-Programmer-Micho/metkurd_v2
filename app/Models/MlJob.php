@@ -26,6 +26,7 @@ class MlJob extends Model
         'storage_out_bytes',
         'provider',
         'provider_job_id',
+        'input_hash',
         'provider_cost_usd',
         'cold_start_ms',
         'runtime_ms',
@@ -39,13 +40,13 @@ class MlJob extends Model
     ];
 
     protected $casts = [
-        'input' => 'array',
-        'output' => 'array',
-        'error' => 'array',
+        'input'             => 'array',
+        'output'            => 'array',
+        'error'             => 'array',
         'provider_cost_usd' => 'decimal:6',
-        'started_at' => 'datetime',
-        'finished_at' => 'datetime',
-        'lock_expires_at' => 'datetime',
+        'started_at'        => 'datetime',
+        'finished_at'       => 'datetime',
+        'lock_expires_at'   => 'datetime',
     ];
 
     public function customer(): BelongsTo

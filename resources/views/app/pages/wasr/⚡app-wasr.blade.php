@@ -1,18 +1,1642 @@
 <?php
 
 use Livewire\Component;
-
+use Livewire\WithFileUploads;
+use Livewire\WithPagination;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Title;
+use Livewire\Attributes\On;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Url;
 
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
-new #[Layout('app::layouts.app')] class extends Component
+use App\Models\Tool;
+use App\Models\ToolAction;
+use App\Models\MlJob;
+
+use App\Services\Providers\RunPodProvider;
+use App\Services\Billing\CreditService;
+use App\Services\Storage\CustomerOutputStorage;
+use App\Services\ASR\AsrJobSyncService;
+use App\Services\Security\JobExecutionLockService;
+use App\Services\Media\AudioProbeService;
+
+new
+#[Layout('app::layouts.app')]
+#[Title('SPEECH-TO-TEXT | METKURD')]
+class extends Component
 {
-    //
+    use WithPagination;
+    use WithFileUploads;
+
+    protected $paginationTheme = 'bootstrap';
+
+    protected string $toolCode = 'wasr';
+    protected string $fallbackToolCode = 'asr';
+    protected string $actionCode = 'standard';
+    protected string $fullActionCode = 'asr.standard';
+
+    #[Url(as: 'page', except: 1)]
+    public int $page = 1;
+
+    // =========================================================
+    // UI State
+    // =========================================================
+    public ?string $currentJobId = null;
+    public ?string $providerJobId = null;
+    public ?string $currentStatus = null;
+    public bool $jobFinished = false;
+    public bool $showJobStatus = false;
+    public int $currentProgress = 0;
+    public ?string $dismissedJobStatusFor = null;
+
+    public bool $showEliminateModal = false;
+
+    // =========================================================
+    // Inputs
+    // =========================================================
+    public string $language = 'ckb';
+
+    public int $chunkLengthS = 30;
+    public int $strideLeftS = 5;
+    public int $strideRightS = 5;
+    public int $beamSize = 5;
+
+    public $audioFile = null;
+    public ?string $audioFileName = null;
+    public ?int $audioFileBytes = null;
+    public ?string $audioFileMime = null;
+    public ?float $audioDurationSec = null;
+    public ?float $audioDurationMin = null;
+    public int $audioBillableMin = 0;
+    public ?string $audioExt = null;
+    public ?string $audioHash = null;
+
+    // =========================================================
+    // Output
+    // =========================================================
+    public string $transcriptionText = '';
+    public ?string $latestFinishedJobId = null;
+
+    // =========================================================
+    // Credits UI
+    // =========================================================
+    public int $walletBalance = 0;
+    public int $creditsCost = 0;
+
+    // =========================================================
+    // Internal
+    // =========================================================
+    public int $transcriptionsRefreshKey = 0;
+
+    public array $languageOptions = [
+        'ckb' => 'سۆرانی (Sorani Kurdish)',
+        'ar'  => 'Arabic (عربي)',
+        'en'  => 'English',
+    ];
+
+    // =========================================================
+    // Lifecycle
+    // =========================================================
+    public function mount(): void
+    {
+        $this->syncWallet();
+        $this->syncCostPreview();
+        $this->dismissedJobStatusFor = session('wasr.dismissed_job_status_for');
+        $this->hydrateCurrentJobFromDb();
+        $this->hydrateLatestFinishedResult();
+    }
+
+    #[On('header:refresh')]
+    #[On('customerPlanUpdated')]
+    #[On('customerStorageUpdated')]
+    #[On('wasr-transcriptions-refresh')]
+    #[On('wasr-renders-refresh')]
+    #[On('asr-renders-refresh')]
+    public function refreshUi(): void
+    {
+        $this->syncWallet();
+        $this->syncCostPreview();
+        $this->hydrateCurrentJobFromDb();
+        $this->hydrateLatestFinishedResult();
+        $this->transcriptionsRefreshKey++;
+    }
+
+    // =========================================================
+    // Watchers
+    // =========================================================
+    public function updatedLanguage(): void
+    {
+        $this->syncCostPreview();
+    }
+
+    public function updatedAudioFile(AudioProbeService $probe): void
+    {
+        $this->validateOnly('audioFile');
+
+        if (!$this->audioFile) {
+            return;
+        }
+
+        $info = $probe->probeUploadedFile($this->audioFile);
+
+        $this->audioFileName    = $this->audioFile->getClientOriginalName();
+        $this->audioFileBytes   = (int) $this->audioFile->getSize();
+        $this->audioFileMime    = $this->audioFile->getMimeType() ?: 'audio/*';
+        $this->audioDurationSec = (float) $info['duration_sec'];
+        $this->audioDurationMin = (float) $info['duration_min'];
+        $this->audioBillableMin = (int) $info['billable_min'];
+        $this->audioExt         = (string) $info['audio_ext'];
+
+        $realPath = $this->audioFile->getRealPath();
+        $this->audioHash = $realPath && is_file($realPath)
+            ? hash_file('sha256', $realPath)
+            : sha1(($this->audioFileName ?? '') . '|' . ($this->audioFileBytes ?? 0));
+
+        $this->syncCostPreview();
+    }
+
+    public function removeAudioFile(): void
+    {
+        $this->audioFile = null;
+        $this->audioFileName = null;
+        $this->audioFileBytes = null;
+        $this->audioFileMime = null;
+        $this->audioDurationSec = null;
+        $this->audioDurationMin = null;
+        $this->audioBillableMin = 0;
+        $this->audioExt = null;
+        $this->audioHash = null;
+        $this->creditsCost = 0;
+
+        $this->dispatch('wasr-audio-file-cleared');
+    }
+
+    // =========================================================
+    // Computed
+    // =========================================================
+    #[Computed]
+    public function sliders(): array
+    {
+        return [
+            [
+                'key'   => 'beamSize',
+                'label' => 'Beam Size',
+                'min'   => 1,
+                'max'   => 20,
+                'step'  => 1,
+                'val'   => $this->beamSize,
+            ],
+            [
+                'key'   => 'chunkLengthS',
+                'label' => 'Chunk Length (s)',
+                'min'   => 5,
+                'max'   => 120,
+                'step'  => 5,
+                'val'   => $this->chunkLengthS,
+            ],
+            [
+                'key'   => 'strideLeftS',
+                'label' => 'Stride Left (s)',
+                'min'   => 0,
+                'max'   => 30,
+                'step'  => 1,
+                'val'   => $this->strideLeftS,
+            ],
+            [
+                'key'   => 'strideRightS',
+                'label' => 'Stride Right (s)',
+                'min'   => 0,
+                'max'   => 30,
+                'step'  => 1,
+                'val'   => $this->strideRightS,
+            ],
+        ];
+    }
+
+    #[Computed]
+    public function canTranscribe(): bool
+    {
+        return $this->transcribeBlockedReason === null;
+    }
+
+    #[Computed]
+    public function transcribeBlockedReason(): ?string
+    {
+        if ($this->isProcessing()) {
+            return 'A transcription is already in progress.';
+        }
+
+        if ($this->currentActiveJobsCount() >= $this->allowedConcurrentJobs()) {
+            return 'You reached your concurrent job limit for the current plan.';
+        }
+
+        if (!$this->audioFile) {
+            return 'Please upload an audio file.';
+        }
+
+        if ($this->audioBillableMin <= 0) {
+            return 'Could not determine audio duration.';
+        }
+
+        if ($this->creditsCost <= 0) {
+            return 'Pricing could not be calculated.';
+        }
+
+        if ($this->walletBalance < $this->creditsCost) {
+            return 'Not enough credits.';
+        }
+
+        return null;
+    }
+
+    #[Computed]
+    public function transcriptions()
+    {
+        $this->transcriptionsRefreshKey;
+
+        $customerId = auth('app')->id();
+        $locale = app()->getLocale();
+
+        if (!$customerId) {
+            return MlJob::query()->whereRaw('1=0')->paginate(5);
+        }
+
+        $toolIds = Tool::query()
+            ->whereIn('code', [$this->toolCode, $this->fallbackToolCode])
+            ->pluck('id')
+            ->all();
+
+        $paginator = MlJob::query()
+            ->where('customer_id', $customerId)
+            ->when(!empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
+            ->whereIn('status', ['done', 'delete_failed', 'deleted'])
+            ->orderByDesc('finished_at')
+            ->paginate(5);
+
+        $paginator->setCollection(
+            $paginator->getCollection()->values()->map(function ($j, $index) use ($locale) {
+                $jobId = (string) $j->id;
+                $text = (string) data_get($j->output, 'text', '');
+
+                $snippet = mb_strlen($text) > 280
+                    ? mb_substr($text, 0, 220) . '…'
+                    : $text;
+
+            return [
+                'id'              => $jobId,
+                'audio_name'      => data_get($j->input, 'audio_name', 'Uploaded Audio'),
+                'language'        => data_get($j->input, 'lang', 'ckb'),
+                'created_at'      => optional($j->finished_at ?? $j->created_at)->format('Y-m-d H:i'),
+                'text'            => $text,
+                'snippet'         => $snippet,
+                'word_count'      => (int) data_get($j->output, 'word_count', 0),
+                'char_count'      => (int) data_get($j->output, 'char_count', mb_strlen($text)),
+                'duration_mins'   => (float) data_get($j->input, 'audio_duration_min', 0),
+                'credits_charged' => (int) ($j->credits_charged ?? 0),
+                'download_url'    => route('app.renders.wasr.txt', [
+                    'locale' => $locale,
+                    'jobId'  => $jobId,
+                ]),
+                'audio_url'       => route('app.renders.wasr.input-audio', [
+                    'locale' => $locale,
+                    'jobId'  => $jobId,
+                ]) . '?proxy=1',
+                'is_latest'       => $index === 0,
+            ];
+            })
+        );
+
+        return $paginator;
+    }
+
+    // =========================================================
+    // Billing / Wallet
+    // =========================================================
+    protected function syncWallet(): void
+    {
+        $c = auth('app')->user();
+        $wallet = $c?->wallet()->first();
+
+        $subscription = (int) ($wallet?->subscription_balance_credits ?? 0);
+        $addon = (int) ($wallet?->addon_balance_credits ?? 0);
+
+        $this->walletBalance = $subscription + $addon;
+    }
+
+    protected function syncCostPreview(): void
+    {
+        $c = auth('app')->user();
+
+        if (!$c || !$this->audioFile || $this->audioBillableMin <= 0) {
+            $this->creditsCost = 0;
+            return;
+        }
+
+        if (method_exists($c, 'priceCreditsFor')) {
+            $this->creditsCost = (int) $c->priceCreditsFor($this->fullActionCode, [
+                'minutes'     => $this->audioBillableMin,
+                'metric_code' => 'minute',
+                'language'    => $this->language,
+            ]);
+            return;
+        }
+
+        $this->creditsCost = $this->audioBillableMin * 1000;
+    }
+
+    protected function allowedConcurrentJobs(): int
+    {
+        $c = auth('app')->user();
+        $planCode = strtolower((string) ($c?->serviceCode() ?? 'free'));
+
+        return match ($planCode) {
+            'student' => 2,
+            'pro'     => 3,
+            'premium' => 5,
+            default   => 1,
+        };
+    }
+
+    protected function currentActiveJobsCount(): int
+    {
+        $customerId = auth('app')->id();
+        if (!$customerId) {
+            return 0;
+        }
+
+        $toolIds = Tool::query()
+            ->whereIn('code', [$this->toolCode, $this->fallbackToolCode])
+            ->pluck('id')
+            ->all();
+
+        return MlJob::query()
+            ->where('customer_id', $customerId)
+            ->when(!empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
+            ->whereIn('status', ['queued', 'running', 'saving'])
+            ->whereNotNull('lock_expires_at')
+            ->where('lock_expires_at', '>', now())
+            ->count();
+    }
+
+    // =========================================================
+    // Rules
+    // =========================================================
+    protected function rules(): array
+    {
+        return [
+            'audioFile'     => 'required|file|mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac,audio/x-flac|max:102400',
+            'language'      => 'required|string|in:ckb,ar,en',
+            'chunkLengthS'  => 'required|integer|min:5|max:120',
+            'strideLeftS'   => 'required|integer|min:0|max:30',
+            'strideRightS'  => 'required|integer|min:0|max:30',
+            'beamSize'      => 'required|integer|min:1|max:20',
+        ];
+    }
+
+    // =========================================================
+    // Helpers
+    // =========================================================
+    protected function isProcessing(): bool
+    {
+        return (bool) $this->currentJobId
+            && !$this->jobFinished
+            && in_array($this->currentStatus, ['queued', 'running', 'saving'], true);
+    }
+
+    protected function findToolAndAction(): array
+    {
+        $tool = Tool::query()
+            ->whereIn('code', [$this->toolCode, $this->fallbackToolCode])
+            ->orderByRaw("FIELD(code, 'wasr', 'asr')")
+            ->first();
+
+        $action = ToolAction::query()
+            ->where('full_code', $this->fullActionCode)
+            ->first();
+
+        if (!$tool || !$action) {
+            throw new \RuntimeException("Tool or ToolAction missing ({$this->toolCode}/{$this->fallbackToolCode} / {$this->fullActionCode}).");
+        }
+
+        return [$tool, $action];
+    }
+
+    protected function currentFolderForCustomer($c): string
+    {
+        return \App\Support\CustomerFolder::make(
+            (int) $c->id,
+            $c->profile?->first_name ?? $c->first_name ?? null,
+            $c->profile?->last_name ?? $c->last_name ?? null,
+            $c->username ?? null
+        );
+    }
+
+    // =========================================================
+    // Hydration
+    // =========================================================
+    public function hideJobStatus(): void
+    {
+        if ($this->currentJobId) {
+            $this->dismissedJobStatusFor = $this->currentJobId;
+            session(['wasr.dismissed_job_status_for' => $this->currentJobId]);
+        }
+
+        $this->showJobStatus = false;
+        $this->currentJobId = null;
+        $this->providerJobId = null;
+        $this->currentStatus = null;
+        $this->jobFinished = false;
+        $this->currentProgress = 0;
+    }
+
+    protected function hydrateCurrentJobFromDb(): void
+    {
+        $customerId = auth('app')->id();
+        if (!$customerId) {
+            return;
+        }
+
+        $toolIds = Tool::query()
+            ->whereIn('code', [$this->toolCode, $this->fallbackToolCode])
+            ->pluck('id')
+            ->all();
+
+        $job = MlJob::query()
+            ->where('customer_id', $customerId)
+            ->when(!empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
+            ->where(function ($q) {
+                $q->where(function ($q1) {
+                    $q1->whereIn('status', ['queued', 'running', 'saving'])
+                        ->whereNotNull('lock_expires_at')
+                        ->where('lock_expires_at', '>', now());
+                })->orWhere(function ($q2) {
+                    $q2->whereIn('status', ['done', 'failed'])
+                        ->where('finished_at', '>=', now()->subSeconds(3));
+                });
+            })
+            ->orderByRaw("
+                CASE
+                    WHEN status IN ('queued','running','saving') THEN 0
+                    WHEN status = 'done' THEN 1
+                    WHEN status = 'failed' THEN 2
+                    ELSE 3
+                END
+            ")
+            ->orderByDesc('updated_at')
+            ->first();
+
+        if (!$job) {
+            $this->currentJobId = null;
+            $this->providerJobId = null;
+            $this->currentStatus = null;
+            $this->jobFinished = false;
+            $this->showJobStatus = false;
+            $this->currentProgress = 0;
+            return;
+        }
+
+        $status = (string) $job->status;
+
+        $this->currentJobId = (string) $job->id;
+        $this->providerJobId = (string) ($job->provider_job_id ?? '');
+        $this->currentStatus = $status;
+        $this->jobFinished = in_array($status, ['done', 'failed', 'deleted'], true);
+
+        $this->currentProgress = match ($status) {
+            'queued'  => 10,
+            'running' => 45,
+            'saving'  => 90,
+            'done'    => 100,
+            'failed'  => 100,
+            'deleted' => 100,
+            default   => 0,
+        };
+
+        if ($status === 'done') {
+            $this->transcriptionText = (string) data_get($job->output, 'text', '');
+            $this->latestFinishedJobId = (string) $job->id;
+        }
+
+        if (!$this->jobFinished) {
+            $this->showJobStatus = true;
+            return;
+        }
+
+        $finishedAt = $job->finished_at;
+        $this->showJobStatus =
+            $this->dismissedJobStatusFor !== (string) $job->id
+            && $finishedAt
+            && $finishedAt->gte(now()->subSeconds(3));
+    }
+
+    protected function hydrateLatestFinishedResult(): void
+    {
+        $customerId = auth('app')->id();
+        if (!$customerId) {
+            return;
+        }
+
+        $toolIds = Tool::query()
+            ->whereIn('code', [$this->toolCode, $this->fallbackToolCode])
+            ->pluck('id')
+            ->all();
+
+        $job = MlJob::query()
+            ->where('customer_id', $customerId)
+            ->when(!empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
+            ->where('status', 'done')
+            ->orderByDesc('finished_at')
+            ->first();
+
+        if ($job) {
+            $this->latestFinishedJobId = (string) $job->id;
+
+            if ($this->transcriptionText === '') {
+                $this->transcriptionText = (string) data_get($job->output, 'text', '');
+            }
+        }
+    }
+
+    // =========================================================
+    // Actions
+    // =========================================================
+    public function postWasr(
+        RunPodProvider $runpod,
+        CreditService $credits,
+        CustomerOutputStorage $storage,
+        JobExecutionLockService $locks
+    ): void {
+        $this->showJobStatus = true;
+        $this->hydrateCurrentJobFromDb();
+
+        if ($this->isProcessing()) {
+            $this->dispatch('alert', type: 'warning', message: 'A transcription is already in progress.');
+            return;
+        }
+
+        $this->validate();
+
+        $customer = auth('app')->user();
+        if (!$customer) {
+            $this->dispatch('alert', type: 'error', message: 'You must be logged in.');
+            return;
+        }
+
+        [$tool, $action] = $this->findToolAndAction();
+
+        if (method_exists($customer, 'isAllowed') && !$customer->isAllowed($action->full_code)) {
+            $this->dispatch('alert', type: 'error', message: 'Your plan does not allow WASR.');
+            return;
+        }
+
+        if ($this->creditsCost <= 0 || $this->audioBillableMin <= 0) {
+            $this->dispatch('alert', type: 'error', message: 'Could not calculate billing for this file.');
+            return;
+        }
+
+        try {
+            $credits->charge((int) $customer->id, $this->creditsCost, 'asr_charge', [
+                'related_type' => 'ml_job',
+                'related_id'   => null,
+                'tool_action'  => $action->full_code,
+                'minutes'      => $this->audioBillableMin,
+                'seconds'      => $this->audioDurationSec,
+                'language'     => $this->language,
+            ]);
+        } catch (\Throwable $e) {
+            $this->syncWallet();
+            $this->dispatch('alert', type: 'error', message: 'Not enough credits.');
+            return;
+        }
+
+        $jobId = (string) Str::uuid();
+        $savedAudio = null;
+
+        try {
+            $customerFresh = auth('app')->user()->loadMissing('profile');
+            $folder = $this->currentFolderForCustomer($customerFresh);
+
+            $audioExt = strtolower((string) ($this->audioExt ?: $this->audioFile?->getClientOriginalExtension() ?: 'wav'));
+            $audioKey = "transcriptions/{$folder}/wasr/{$jobId}/input.{$audioExt}";
+
+            DB::transaction(function () use ($jobId, $tool, $action, $customer) {
+                MlJob::create([
+                    'id'               => $jobId,
+                    'customer_id'      => (int) $customer->id,
+                    'tool_id'          => (int) $tool->id,
+                    'tool_action_id'   => (int) $action->id,
+                    'job_kind'         => 'wasr',
+                    'status'           => 'queued',
+                    'provider'         => 'runpod',
+                    'provider_job_id'  => null,
+                    'input_hash'       => $this->audioHash,
+                    'credits_charged'  => (int) $this->creditsCost,
+                    'input'            => [
+                        'lang'               => $this->language,
+                        'chunk_length_s'     => $this->chunkLengthS,
+                        'stride_left_s'      => $this->strideLeftS,
+                        'stride_right_s'     => $this->strideRightS,
+                        'beam_size'          => $this->beamSize,
+                        'audio_name'         => $this->audioFileName,
+                        'audio_mime'         => $this->audioFileMime,
+                        'audio_bytes'        => $this->audioFileBytes,
+                        'audio_duration_sec' => $this->audioDurationSec,
+                        'audio_duration_min' => $this->audioDurationMin,
+                        'audio_billable_min' => $this->audioBillableMin,
+                    ],
+                    'output'           => null,
+                    'error'            => null,
+                    'started_at'       => now(),
+                    'finished_at'      => null,
+                    'storage_in_bytes' => 0,
+                    'storage_out_bytes'=> 0,
+                ]);
+            }, 3);
+
+            $savedAudio = $storage->saveUploadedFileToS3(
+                (int) $customer->id,
+                $this->audioFile,
+                $audioKey,
+                [
+                    'job_id'        => $jobId,
+                    'tool'          => 'wasr',
+                    'purpose'       => 'input_audio',
+                    'role'          => 'source_audio',
+                    'checksum'      => $this->audioHash,
+                    'original_name' => $this->audioFileName,
+                ]
+            );
+
+            $audioUrl = $storage->temporaryUrl($savedAudio['path'], 120, [
+                'ResponseContentType' => $savedAudio['mime'] ?? $this->audioFileMime,
+            ]);
+
+            MlJob::query()->where('id', $jobId)->update([
+                'input' => array_merge((array) (MlJob::find($jobId)?->input ?? []), [
+                    'audio_disk' => $savedAudio['disk'],
+                    'audio_path' => $savedAudio['path'],
+                    'audio_url'  => $audioUrl,
+                    'audio_ext'  => $audioExt,
+                ]),
+                'storage_in_bytes' => (int) $savedAudio['bytes'],
+            ]);
+
+            $lock = $locks->acquireAsrLock(
+                (int) $customer->id,
+                $jobId,
+                (string) $this->audioHash,
+                request()->session(),
+                request()->userAgent(),
+                request()->ip()
+            );
+
+            if (!($lock['ok'] ?? false)) {
+                throw new \RuntimeException((string) ($lock['message'] ?? 'Could not acquire ASR lock.'));
+            }
+
+            $endpointId = (string) (
+                data_get($tool->meta, 'runpod_endpoint_id')
+                ?: config('runpod.endpoints.wasr')
+                ?: env('RUNPOD_ENDPOINT_ID_WASR')
+            );
+
+            if ($endpointId === '') {
+                throw new \RuntimeException('RUNPOD_ENDPOINT_ID_WASR is missing.');
+            }
+
+            $timeout = (int) (data_get($tool->meta, 'runpod_timeout') ?: config('runpod.timeout', 60));
+
+            $resp = $runpod->run($endpointId, [
+                'audio_url'       => $audioUrl,
+                'audio_ext'       => $audioExt,
+                'lang'            => $this->language,
+                'chunk_length_s'  => (int) $this->chunkLengthS,
+                'stride_left_s'   => (int) $this->strideLeftS,
+                'stride_right_s'  => (int) $this->strideRightS,
+                'beam_size'       => (int) $this->beamSize,
+            ], $timeout);
+
+            $providerJobId = (string) data_get($resp, 'id', '');
+            if ($providerJobId === '') {
+                throw new \RuntimeException('RunPod did not return job id.');
+            }
+
+            MlJob::query()->where('id', $jobId)->update([
+                'status'          => 'running',
+                'provider_job_id' => $providerJobId,
+                'updated_at'      => now(),
+            ]);
+
+            $this->currentJobId = $jobId;
+            $this->providerJobId = $providerJobId;
+            $this->currentStatus = 'running';
+            $this->jobFinished = false;
+            $this->currentProgress = 15;
+            $this->showJobStatus = true;
+
+            $this->dispatch('header:refresh');
+            $this->dispatch('customerPlanUpdated');
+            $this->dispatch('customerStorageUpdated');
+            $this->dispatch('wasr-transcriptions-refresh');
+            $this->dispatch('wasr-renders-refresh');
+            $this->dispatch('alert', type: 'info', message: 'WASR job started.');
+
+            $this->syncWallet();
+        } catch (\Throwable $e) {
+            Log::warning('WASR_START_FAIL', [
+                'job_id' => $jobId,
+                'error'  => $e->getMessage(),
+            ]);
+
+            try {
+                if ($savedAudio && !empty($savedAudio['path'])) {
+                    $storage->deleteFromS3AndUncount(
+                        (int) $customer->id,
+                        (string) $savedAudio['path'],
+                        (int) ($savedAudio['bytes'] ?? 0)
+                    );
+                }
+            } catch (\Throwable $cleanup) {
+                Log::warning('WASR_START_CLEANUP_FAIL', [
+                    'job_id' => $jobId,
+                    'error'  => $cleanup->getMessage(),
+                ]);
+            }
+
+            MlJob::query()->where('id', $jobId)->update([
+                'status'      => 'failed',
+                'error'       => ['message' => $e->getMessage()],
+                'finished_at' => now(),
+                'updated_at'  => now(),
+            ]);
+
+            $locks->releaseLock($jobId);
+
+            $this->dispatch('alert', type: 'error', message: $e->getMessage());
+            $this->syncWallet();
+            $this->hydrateCurrentJobFromDb();
+        }
+    }
+
+    public function pollJob(AsrJobSyncService $sync): void
+    {
+        if (!$this->currentJobId) {
+            return;
+        }
+
+        $job = MlJob::query()
+            ->with('tool')
+            ->where('id', $this->currentJobId)
+            ->where('customer_id', auth('app')->id())
+            ->first();
+
+        if (!$job || !$job->tool) {
+            return;
+        }
+
+        try {
+            $result = $sync->sync($job, $job->tool);
+
+            $this->currentStatus = (string) ($result['status'] ?? $this->currentStatus);
+            $this->currentProgress = (int) ($result['progress'] ?? $this->currentProgress);
+
+            if (($result['done'] ?? false) === true) {
+                $this->jobFinished = true;
+                $this->transcriptionText = (string) ($result['text'] ?? '');
+                $this->showJobStatus = true;
+                $this->latestFinishedJobId = $this->currentJobId;
+
+                $this->dispatch('customerPlanUpdated');
+                $this->dispatch('customerStorageUpdated');
+                $this->dispatch('wasr-transcriptions-refresh');
+                $this->dispatch('wasr-renders-refresh');
+                $this->dispatch('header:refresh');
+                $this->dispatch('alert', type: 'success', message: 'Transcription completed.');
+            }
+
+            if (($result['failed'] ?? false) === true) {
+                $this->jobFinished = true;
+                $this->showJobStatus = true;
+
+                $msg = (string) ($result['message'] ?? 'Transcription failed.');
+                $this->dispatch('header:refresh');
+                $this->dispatch('alert', type: 'error', message: $msg);
+            }
+
+            $this->hydrateLatestFinishedResult();
+        } catch (\Throwable $e) {
+            Log::warning('WASR_POLL_FAIL', [
+                'job_id' => $this->currentJobId,
+                'error'  => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function copyTranscript(): void
+    {
+        if (trim($this->transcriptionText) === '') {
+            $this->dispatch('alert', type: 'warning', message: 'No transcription to copy.');
+            return;
+        }
+
+        $this->dispatch('wasr-copy-text', text: $this->transcriptionText);
+        $this->dispatch('alert', type: 'success', message: 'Transcription copied.');
+    }
+
+    public function openEliminateModal(): void
+    {
+        $this->showEliminateModal = true;
+    }
+
+    public function closeEliminateModal(): void
+    {
+        $this->showEliminateModal = false;
+    }
+
+    public function eliminateCurrentJob(JobExecutionLockService $locks, CustomerOutputStorage $storage): void
+    {
+        $this->closeEliminateModal();
+
+        if (!$this->currentJobId) {
+            return;
+        }
+
+        $customerId = auth('app')->id();
+
+        $job = MlJob::query()
+            ->where('id', $this->currentJobId)
+            ->where('customer_id', $customerId)
+            ->first();
+
+        if ($job && in_array((string) $job->status, ['queued', 'running', 'saving'], true)) {
+            $job->update([
+                'status' => 'failed',
+                'error' => [
+                    'message' => 'Eliminated by customer. Credits are not refundable.',
+                    'type' => 'eliminated_by_customer',
+                ],
+                'finished_at' => now(),
+            ]);
+
+            $audioPath  = (string) data_get($job->input, 'audio_path', '');
+            $audioBytes = (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'audio_bytes', 0));
+
+            try {
+                if ($audioPath !== '') {
+                    $storage->deleteFromS3AndUncount((int) $customerId, $audioPath, $audioBytes);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('WASR_ELIMINATE_AUDIO_DELETE_FAIL', [
+                    'job_id' => (string) $job->id,
+                    'path'   => $audioPath,
+                    'error'  => $e->getMessage(),
+                ]);
+            }
+
+            $locks->releaseLock((string) $job->id);
+        }
+
+        $this->currentJobId = null;
+        $this->providerJobId = null;
+        $this->currentStatus = null;
+        $this->jobFinished = true;
+        $this->showJobStatus = false;
+        $this->currentProgress = 0;
+
+        $this->dispatch('header:refresh');
+        $this->dispatch('wasr-transcriptions-refresh');
+        $this->dispatch('wasr-renders-refresh');
+        $this->dispatch('alert', type: 'warning', message: 'Current WASR job eliminated. Credits were not refunded.');
+    }
+
+    public function deleteTranscription(string $jobId, AsrJobSyncService $sync): void
+    {
+        $job = MlJob::query()
+            ->where('id', $jobId)
+            ->where('customer_id', auth('app')->id())
+            ->firstOrFail();
+
+        $sync->deleteFinishedTranscription($job);
+
+        if ($this->latestFinishedJobId === $jobId) {
+            $this->latestFinishedJobId = null;
+            $this->transcriptionText = '';
+        }
+
+        $this->dispatch('customerStorageUpdated');
+        $this->dispatch('header:refresh');
+        $this->dispatch('wasr-transcriptions-refresh');
+        $this->dispatch('wasr-renders-refresh');
+        $this->dispatch('alert', type: 'success', message: 'Transcription deleted.');
+    }
+
+    public function resetForm(): void
+    {
+        $this->removeAudioFile();
+
+        $this->language = 'ckb';
+        $this->chunkLengthS = 30;
+        $this->strideLeftS = 5;
+        $this->strideRightS = 5;
+        $this->beamSize = 5;
+
+        $this->dispatch('wasr-form-reset');
+    }
+
+    public function render()
+    {
+        return view('app.pages.wasr.⚡app-wasr');
+    }
 };
 ?>
 
-<div>
-    
-    <h1>WASR Page</h1>
-    
+<div
+    id="wasr-page-root"
+    x-data="wasrFormCache()"
+    x-init="init()"
+>
+    @if($currentJobId && !$jobFinished)
+        <div wire:poll.keep-alive.3000ms="pollJob"></div>
+    @endif
+
+    @php
+        $status = strtoupper($currentStatus ?? 'IDLE');
+        $badge = match($currentStatus) {
+            'queued'  => 'warning',
+            'running' => 'info',
+            'saving'  => 'primary',
+            'done'    => 'success',
+            'failed'  => 'danger',
+            default   => 'secondary',
+        };
+        $glassClass = match($currentStatus) {
+            'queued'  => 'glass-load--warning',
+            'running' => 'glass-load--info',
+            'saving'  => 'glass-load--info',
+            'done'    => 'glass-load--success',
+            'failed'  => 'glass-load--danger',
+            default   => 'glass-load--secondary',
+        };
+        $progress = (int) ($currentProgress ?? 0);
+    @endphp
+
+    <div class="row g-3">
+        <div class="col-12">
+            @if($showJobStatus && $currentJobId && $currentStatus)
+                <div class="glass-load {{ $glassClass }} p-3">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                        <div>
+                            <div class="fw-semibold">ASR transcription status</div>
+                            <div class="small text-muted">Job ID: {{ $currentJobId ?: '—' }}</div>
+                        </div>
+                        <span class="badge text-bg-{{ $badge }} fs-6 px-3 py-2">{{ $status }}</span>
+                    </div>
+
+                    <div class="progress" role="progressbar"
+                         aria-valuenow="{{ $progress }}" aria-valuemin="0" aria-valuemax="100"
+                         style="height:8px;">
+                        <div class="progress-bar progress-bar-striped {{ !$jobFinished ? 'progress-bar-animated' : '' }} bg-{{ $badge }}"
+                             style="width: {{ $progress }}%"></div>
+                    </div>
+
+                    <div class="d-flex align-items-center justify-content-between mt-2 small">
+                        <span class="text-muted">{{ $progress }}%</span>
+                        @if($jobFinished)
+                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">Hide</button>
+                        @endif
+                    </div>
+                </div>
+            @endif
+        </div>
+
+        <div class="col-lg-7">
+            <div class="turbo-border mb-3">
+                <div class="turbo-inner">
+                    <div class="card mb-0">
+                        <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
+                            <div>
+                                <strong>WASR (RunPod)</strong>
+                                <div class="text-muted small">Upload your audio and generate a full transcription</div>
+                            </div>
+
+                            <div class="d-flex gap-2 flex-wrap text-end small">
+                                <div class="mini-stat">
+                                    <div class="text-muted">Wallet</div>
+                                    <div class="fw-semibold">{{ number_format($walletBalance) }}</div>
+                                </div>
+
+                                <div class="mini-stat">
+                                    <div class="text-muted">Cost</div>
+                                    <div class="fw-semibold">{{ number_format($creditsCost) }}</div>
+                                </div>
+
+                                @if($audioDurationMin)
+                                    <div class="mini-stat">
+                                        <div class="text-muted">Minutes</div>
+                                        <div class="fw-semibold">{{ number_format((float) $audioDurationMin, 2) }}</div>
+                                    </div>
+                                @endif
+
+                                @if($audioBillableMin > 0)
+                                    <div class="mini-stat">
+                                        <div class="text-muted">Billable</div>
+                                        <div class="fw-semibold">{{ $audioBillableMin }}</div>
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Audio File</label>
+
+                                <div wire:ignore>
+                                    <input
+                                        type="file"
+                                        id="wasr-audio-pond"
+                                        accept=".wav,.mp3,.m4a,.aac,.ogg,.flac,.webm,audio/*"
+                                    >
+                                </div>
+
+                                <div class="small text-muted mt-2">
+                                    Supported: WAV, MP3, M4A, AAC, OGG, FLAC, WebM — max 100 MB
+                                </div>
+
+                                <div wire:loading wire:target="audioFile" class="small text-primary mt-2">
+                                    Uploading audio...
+                                </div>
+
+                                @if($audioFileName)
+                                    <div class="border rounded p-2 mt-2 bg-success-subtle">
+                                        <div class="fw-semibold small">{{ $audioFileName }}</div>
+                                        <div class="small text-muted">
+                                            {{ $audioFileMime ?: 'audio/*' }}
+
+                                            @if($audioFileBytes)
+                                                • {{ number_format($audioFileBytes) }} bytes
+                                            @endif
+
+                                            @if($audioDurationMin)
+                                                • {{ number_format((float) $audioDurationMin, 2) }} min
+                                            @endif
+                                        </div>
+
+                                        <div class="mt-2">
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-danger"
+                                                wire:click="removeAudioFile"
+                                            >
+                                                Remove file
+                                            </button>
+                                        </div>
+                                    </div>
+                                @endif
+
+                                @error('audioFile')
+                                    <div class="text-danger small mt-1">{{ $message }}</div>
+                                @enderror
+                            </div>
+
+                            <hr>
+
+                            <div class="row g-3 align-items-end mb-1">
+                                <div class="col-md-6">
+                                    <label class="form-label">Language</label>
+                                    <select class="form-select" wire:model.live="language">
+                                        @foreach($languageOptions as $code => $label)
+                                            <option value="{{ $code }}">{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('language')
+                                        <div class="text-danger small mt-1">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            </div>
+
+                            <div class="row g-3 mt-1">
+                                @foreach($this->sliders as $s)
+                                    <div
+                                        class="col-md-6"
+                                        wire:key="wasr-slider-{{ $s['key'] }}"
+                                        x-data="{
+                                            key: '{{ $s['key'] }}',
+                                            val: @js($s['val']),
+                                            min: {{ $s['min'] }},
+                                            max: {{ $s['max'] }},
+                                            step: {{ $s['step'] }},
+                                            debounceTimer: null,
+                                            updateLivewire(v) {
+                                                clearTimeout(this.debounceTimer);
+                                                this.debounceTimer = setTimeout(() => {
+                                                    $wire.set(this.key, this.step < 1 ? parseFloat(v) : parseInt(v));
+                                                }, 180);
+                                            },
+                                            get displayVal() {
+                                                return parseFloat(this.val).toFixed(this.step < 1 ? 2 : 0);
+                                            }
+                                        }"
+                                    >
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <label class="form-label mb-1">{{ $s['label'] }}</label>
+                                            <span class="badge text-bg-light tts-badge" x-text="displayVal"></span>
+                                        </div>
+
+                                        <div class="d-flex justify-content-between small text-muted" style="margin-top:-2px;">
+                                            <span>{{ $s['min'] }}</span>
+                                            <span>{{ $s['max'] }}</span>
+                                        </div>
+
+                                        <div class="position-relative">
+                                            <input
+                                                type="range"
+                                                class="form-range tts-range"
+                                                :min="min"
+                                                :max="max"
+                                                :step="step"
+                                                x-model="val"
+                                                @input="updateLivewire($event.target.value)"
+                                            />
+                                        </div>
+
+                                        @error($s['key'])
+                                            <div class="text-danger small">{{ $message }}</div>
+                                        @enderror
+                                    </div>
+                                @endforeach
+                            </div>
+
+                            @if($audioDurationMin && $creditsCost > 0)
+                                <div class="wasr-cost-preview rounded-3 p-3 mt-3 small">
+                                    Exact duration: <strong>{{ number_format((float) $audioDurationMin, 2) }} min</strong>
+                                    → billed as <strong>{{ $audioBillableMin }} min</strong>
+                                    = <strong>{{ number_format($creditsCost) }} credits</strong>
+                                </div>
+                            @endif
+
+                            <div class="d-flex gap-2 mt-4 flex-wrap">
+                                <button
+                                    class="btn {{ $this->canTranscribe ? 'btn-primary' : 'btn-danger' }}"
+                                    wire:click="postWasr"
+                                    wire:loading.attr="disabled"
+                                    wire:target="postWasr,audioFile"
+                                    @disabled(!$this->canTranscribe)
+                                    type="button"
+                                    id="btn-wasr-transcribe"
+                                >
+                                    <span wire:loading.remove wire:target="postWasr,audioFile">
+                                        {{ $this->canTranscribe ? 'Transcribe' : ($this->transcribeBlockedReason ?? 'Transcribe') }}
+                                    </span>
+
+                                    <span wire:loading wire:target="audioFile">
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                        Uploading audio...
+                                    </span>
+
+                                    <span wire:loading wire:target="postWasr">
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                        Starting...
+                                    </span>
+                                </button>
+
+                                <button class="btn btn-outline-secondary" wire:click="resetForm" type="button">
+                                    Reset
+                                </button>
+
+                                <button
+                                    class="btn btn-outline-danger"
+                                    wire:click="openEliminateModal"
+                                    type="button"
+                                    @disabled(!$currentJobId || $jobFinished)
+                                >
+                                    Eliminate
+                                </button>
+
+                                @if($walletBalance < $creditsCost && $creditsCost > 0)
+                                    <span class="small text-danger align-self-center">
+                                        Not enough credits for this transcription.
+                                    </span>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="turbo-border mb-3">
+                <div class="turbo-inner">
+                    <div class="card mb-0">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <strong>Recent Transcriptions</strong>
+
+                            <div class="d-flex gap-2">
+                                @if($latestFinishedJobId)
+                                    <button class="btn btn-sm btn-outline-primary" wire:click="copyTranscript" type="button">
+                                        Copy
+                                    </button>
+                                @endif
+
+                                <button class="btn btn-sm btn-outline-secondary" wire:click="$refresh" type="button">
+                                    Refresh
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="card-body">
+                            @if($transcriptionText !== '')
+                                <div class="wasr-output-text rounded-3 p-3 mb-3 text-right">
+                                    {{ $transcriptionText }}
+                                </div>
+                                @if($latestFinishedJobId)
+                                    <div class="d-flex gap-2 flex-wrap mb-3">
+                                        <a
+                                            class="btn btn-sm btn-outline-success"
+                                            href="{{ route('app.renders.wasr.txt', ['locale' => app()->getLocale(), 'jobId' => $latestFinishedJobId]) }}"
+                                        >
+                                            Download TXT
+                                        </a>
+                                    </div>
+                                @endif
+                            @endif
+
+                            @if($this->transcriptions->count() === 0)
+                                <div class="text-muted">No transcriptions yet.</div>
+                            @else
+                                @foreach($this->transcriptions as $r)
+                                    <div
+                                        class="render-card wasr-transcript-item {{ $r['is_latest'] ? 'wasr-transcript-item--latest' : '' }} mb-3 p-3 rounded-3 border"
+                                        wire:key="wasr-render-{{ $r['id'] }}"
+                                    >
+                                        <div class="d-flex justify-content-between align-items-start gap-3">
+                                            <div class="min-w-0 flex-grow-1">
+                                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                                    <strong class="text-truncate">{{ $r['audio_name'] }}</strong>
+
+                                                    @if($r['is_latest'])
+                                                        <span class="badge text-bg-primary">Latest</span>
+                                                    @endif
+
+                                                    <span class="badge wasr-badge-credits">
+                                                        {{ strtoupper($r['language']) }}
+                                                    </span>
+                                                </div>
+
+                                                <div class="small text-muted mt-1">
+                                                    {{ $r['created_at'] }}
+                                                    @if($r['duration_mins'] > 0)
+                                                        • {{ number_format((float) $r['duration_mins'], 2) }} min
+                                                    @endif
+                                                    @if($r['word_count'] > 0)
+                                                        • {{ number_format($r['word_count']) }} words
+                                                    @endif
+                                                    @if($r['char_count'] > 0)
+                                                        • {{ number_format($r['char_count']) }} chars
+                                                    @endif
+                                                </div>
+                                                    @if(!empty($r['audio_url']))
+                                                        <div class="mt-3">
+                                                            <audio controls preload="none" class="w-100">
+                                                                <source src="{{ $r['audio_url'] }}">
+                                                                Your browser does not support the audio element.
+                                                            </audio>
+                                                        </div>
+                                                    @endif
+                                                <div class="wasr-snippet small mt-2">
+                                                    {{ $r['snippet'] }}
+                                                </div>
+                                            </div>
+
+                                            <div class="d-flex flex-column gap-2">
+                                                <a class="btn btn-xs btn-outline-success" href="{{ $r['download_url'] }}">
+                                                    TXT
+                                                </a>
+                                                <button
+                                                    class="btn btn-xs btn-outline-danger"
+                                                    wire:click="deleteTranscription('{{ $r['id'] }}')"
+                                                    type="button"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            @endif
+
+                            @if($this->transcriptions->hasPages())
+                                <div class="mt-3">
+                                    {{ $this->transcriptions->links() }}
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if($showEliminateModal)
+        <div class="modal fade show" style="display:block;" tabindex="-1" aria-modal="true" role="dialog">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-danger">
+                    <div class="modal-header">
+                        <h5 class="modal-title text-danger">Eliminate Current Job</h5>
+                        <button type="button" class="btn-close" wire:click="closeEliminateModal"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <p class="mb-2">
+                            Are you sure you want to eliminate the current job?
+                        </p>
+
+                        <div class="alert alert-warning mb-0">
+                            <strong>Warning:</strong> the credit will <strong>not</strong> be refunded and you will lose the charged credit for this job.
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" wire:click="closeEliminateModal">
+                            Cancel
+                        </button>
+
+                        <button type="button" class="btn btn-danger" wire:click="eliminateCurrentJob">
+                            Yes, Eliminate
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-backdrop fade show"></div>
+    @endif
 </div>
+
+@push('styles')
+<link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet">
+<link href="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.min.css" rel="stylesheet">
+<style>
+    .wasr-cost-preview{
+        background: rgba(var(--bs-warning-rgb), .08);
+        border: 1px solid rgba(var(--bs-warning-rgb), .22);
+    }
+
+    .wasr-output-text{
+        background: rgba(0,0,0,.04);
+        border: 1px solid rgba(0,0,0,.08);
+        font-size: .9rem;
+        line-height: 1.8;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 380px;
+        overflow-y: auto;
+        direction: rtl;
+        unicode-bidi: plaintext;
+    }
+
+    .wasr-transcript-item{
+        transition: background .15s;
+    }
+
+    .wasr-transcript-item:hover{
+        background: rgba(var(--bs-primary-rgb), .03);
+    }
+
+    .wasr-transcript-item--latest{
+        border-left: 3px solid var(--bs-primary);
+    }
+
+    .wasr-snippet{
+        line-height: 1.7;
+        white-space: pre-line;
+        word-break: break-word;
+        direction: rtl;
+        unicode-bidi: plaintext;
+    }
+
+    .wasr-badge-credits{
+        background: rgba(var(--bs-warning-rgb), .18);
+        color: var(--bs-warning-text-emphasis);
+        border: 1px solid rgba(var(--bs-warning-rgb), .24);
+    }
+
+    .btn-xs{
+        padding: .2rem .4rem;
+        font-size: .72rem;
+        border-radius: .3rem;
+    }
+</style>
+@endpush
+
+@push('scripts')
+<script src="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.min.js"></script>
+<script src="https://unpkg.com/filepond-plugin-file-validate-size/dist/filepond-plugin-file-validate-size.min.js"></script>
+<script src="https://unpkg.com/filepond@^4/dist/filepond.min.js"></script>
+
+<script>
+(function () {
+    'use strict';
+
+    if (!window.__WASR_POND__) {
+        window.__WASR_POND__ = {
+            pond: null,
+            booted: false,
+        };
+    }
+
+    const S = window.__WASR_POND__;
+
+    FilePond.registerPlugin(
+        FilePondPluginFileValidateType,
+        FilePondPluginFileValidateSize
+    );
+
+    function getWasrComponent() {
+        if (!window.Livewire) return null;
+
+        const root = document.getElementById('wasr-page-root');
+        if (!root) return null;
+
+        const wireId = root.getAttribute('wire:id');
+        if (!wireId) return null;
+
+        try {
+            return window.Livewire.find(wireId);
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function destroyPond() {
+        if (S.pond) {
+            try { S.pond.destroy(); } catch (_) {}
+            S.pond = null;
+        }
+    }
+
+    function bootPond() {
+        const input = document.getElementById('wasr-audio-pond');
+        if (!input) return;
+
+        destroyPond();
+
+        const lw = getWasrComponent();
+        if (!lw) return;
+
+        S.pond = FilePond.create(input, {
+            allowMultiple: false,
+            allowReorder: false,
+            allowReplace: true,
+            credits: false,
+            acceptedFileTypes: [
+                'audio/wav',
+                'audio/x-wav',
+                'audio/mpeg',
+                'audio/mp3',
+                'audio/mp4',
+                'audio/x-m4a',
+                'audio/aac',
+                'audio/ogg',
+                'audio/webm',
+                'audio/flac',
+                'audio/x-flac'
+            ],
+            maxFileSize: '100MB',
+            labelIdle: `
+                <div class="py-3">
+                    <div class="mb-1"><strong>Drag & Drop</strong> your audio file here</div>
+                    <div class="small text-muted">or <span class="filepond--label-action">Browse</span></div>
+                </div>
+            `,
+            server: {
+                process: (fieldName, file, metadata, load, error, progress, abort) => {
+                    lw.upload(
+                        'audioFile',
+                        file,
+                        () => load(file.name),
+                        (e) => error(typeof e === 'string' ? e : 'Upload failed'),
+                        (event) => {
+                            progress(
+                                event.lengthComputable,
+                                event.loaded,
+                                event.total
+                            );
+                        }
+                    );
+
+                    return {
+                        abort: () => {
+                            lw.removeUpload('audioFile', file.name, () => {});
+                            abort();
+                        }
+                    };
+                },
+                revert: (uniqueFileId, load) => {
+                    lw.call('removeAudioFile');
+                    load();
+                }
+            }
+        });
+    }
+
+    function bootWasrFilePondPage() {
+        setTimeout(() => bootPond(), 0);
+    }
+
+    document.addEventListener('livewire:initialized', bootWasrFilePondPage);
+    document.addEventListener('livewire:navigated', bootWasrFilePondPage);
+    document.addEventListener('livewire:navigating', destroyPond);
+
+    if (window.Livewire) {
+        Livewire.on('wasr-audio-file-cleared', () => {
+            if (S.pond) {
+                try { S.pond.removeFiles(); } catch (_) {}
+            }
+        });
+
+        Livewire.on('wasr-form-reset', () => {
+            if (S.pond) {
+                try { S.pond.removeFiles(); } catch (_) {}
+            }
+        });
+
+        Livewire.on('wasr-copy-text', (e) => {
+            const text = e?.text || '';
+            if (!text) return;
+            navigator.clipboard?.writeText(text).catch(() => {});
+        });
+
+        if (typeof Livewire.hook === 'function') {
+            Livewire.hook('commit', ({ succeed }) => {
+                succeed(() => {
+                    requestAnimationFrame(() => {
+                        const input = document.getElementById('wasr-audio-pond');
+                        if (input && !S.pond) {
+                            bootPond();
+                        }
+                    });
+                });
+            });
+        }
+    }
+})();
+</script>
+@endpush
+
+@push('scripts')
+<script>
+function wasrFormCache() {
+    return {
+        cacheKey: 'wasr_form_state_v2',
+
+        language: @entangle('language').live,
+        chunkLengthS: @entangle('chunkLengthS').live,
+        strideLeftS: @entangle('strideLeftS').live,
+        strideRightS: @entangle('strideRightS').live,
+        beamSize: @entangle('beamSize').live,
+
+        init() {
+            this.restore();
+
+            this.$watch('language', () => this.save());
+            this.$watch('chunkLengthS', () => this.save());
+            this.$watch('strideLeftS', () => this.save());
+            this.$watch('strideRightS', () => this.save());
+            this.$watch('beamSize', () => this.save());
+        },
+
+        save() {
+            try {
+                localStorage.setItem(this.cacheKey, JSON.stringify({
+                    language: this.language,
+                    chunkLengthS: this.chunkLengthS,
+                    strideLeftS: this.strideLeftS,
+                    strideRightS: this.strideRightS,
+                    beamSize: this.beamSize,
+                }));
+            } catch (_) {}
+        },
+
+        restore() {
+            try {
+                const raw = localStorage.getItem(this.cacheKey);
+                if (!raw) return;
+
+                const data = JSON.parse(raw);
+
+                if (data.language !== undefined) this.language = data.language;
+                if (data.chunkLengthS !== undefined) this.chunkLengthS = data.chunkLengthS;
+                if (data.strideLeftS !== undefined) this.strideLeftS = data.strideLeftS;
+                if (data.strideRightS !== undefined) this.strideRightS = data.strideRightS;
+                if (data.beamSize !== undefined) this.beamSize = data.beamSize;
+            } catch (_) {}
+        }
+    }
+}
+</script>
+@endpush
