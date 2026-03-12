@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\Pages\AdminController;
 use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
 use App\Http\Controllers\App\Services\CloneXttsRenderController;
+use App\Http\Controllers\App\Services\OcrRenderController;
 use App\Http\Controllers\App\Services\StemRenderController;
 use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XttsRenderController;
@@ -152,6 +153,21 @@ Route::prefix('{locale}')
 
     Route::get('/app/renders/stem/{jobId}/zip', [StemRenderController::class, 'zip'])
         ->name('app.renders.stem.zip');
+
+    Route::get('/app/renders/ocr/{jobId}/txt', [OcrRenderController::class, 'downloadText'])
+        ->name('app.renders.ocr.text');
+
+    Route::get('/app/renders/ocr/{jobId}/txt/view', [OcrRenderController::class, 'viewText'])
+        ->name('app.renders.ocr.text.view');
+
+    Route::get('/app/renders/ocr/{jobId}/json', [OcrRenderController::class, 'downloadJson'])
+        ->name('app.renders.ocr.json');
+
+    Route::get('/app/renders/ocr/{jobId}/json/view', [OcrRenderController::class, 'viewJson'])
+        ->name('app.renders.ocr.json.view');
+
+    Route::get('/app/renders/ocr/{jobId}/input', [OcrRenderController::class, 'inputDocument'])
+        ->name('app.renders.ocr.input');
 
     // Route::get('/app/renders/wasr/{jobId}/json/view', [WasrRenderController::class, 'viewJson'])
     //     ->name('app.renders.wasr.json.view');

@@ -321,6 +321,113 @@ class JobExecutionLockService
         });
     }
 
+    public function acquireOcrLock(
+        int $customerId,
+        string $jobId,
+        string $inputHash,
+        Session $session,
+        ?string $agent = null,
+        ?string $ip = null
+    ): array {
+        return DB::transaction(function () use ($customerId, $jobId, $inputHash, $session, $agent, $ip) {
+            $now       = now();
+            $expiresAt = $now->copy()->addMinutes(60);
+
+            $sessionId   = (string) $session->getId();
+            $fingerprint = $this->makeFingerprint($customerId, $agent, $ip, 'ocr');
+
+            MlJob::query()
+                ->where('customer_id', $customerId)
+                ->where('job_kind', 'ocr')
+                ->whereIn('status', ['queued', 'running', 'saving'])
+                ->whereNotNull('lock_expires_at')
+                ->where('lock_expires_at', '<', $now)
+                ->update([
+                    'status'                => 'failed',
+                    'error'                 => ['message' => 'OCR lock expired. Job marked as stale.'],
+                    'finished_at'           => $now,
+                    'execution_scope'       => null,
+                    'locked_by_session_id'  => null,
+                    'locked_by_fingerprint' => null,
+                    'lock_expires_at'       => null,
+                    'updated_at'            => $now,
+                ]);
+
+            MlJob::query()
+                ->where('customer_id', $customerId)
+                ->where('job_kind', 'ocr')
+                ->whereIn('status', ['queued', 'running', 'saving'])
+                ->whereNull('lock_expires_at')
+                ->where('id', '!=', $jobId)
+                ->update([
+                    'status'      => 'failed',
+                    'error'       => ['message' => 'OCR stale job without lock. Auto-cleaned.'],
+                    'finished_at' => $now,
+                    'updated_at'  => $now,
+                ]);
+
+            $sameFileConflict = MlJob::query()
+                ->where('customer_id', $customerId)
+                ->where('job_kind', 'ocr')
+                ->whereIn('status', ['queued', 'running', 'saving'])
+                ->where('id', '!=', $jobId)
+                ->whereNotNull('lock_expires_at')
+                ->where('lock_expires_at', '>', $now)
+                ->where('input_hash', $inputHash)
+                ->first();
+
+            if ($sameFileConflict) {
+                return [
+                    'ok'              => false,
+                    'message'         => 'This same PDF is already being processed.',
+                    'conflict_job_id' => (string) $sameFileConflict->id,
+                ];
+            }
+
+            $activeCount = MlJob::query()
+                ->where('customer_id', $customerId)
+                ->where('job_kind', 'ocr')
+                ->whereIn('status', ['queued', 'running', 'saving'])
+                ->whereNotNull('lock_expires_at')
+                ->where('lock_expires_at', '>', $now)
+                ->count();
+
+            $maxConcurrent = $this->resolveMaxConcurrentOcr($customerId);
+
+            if ($activeCount >= $maxConcurrent) {
+                return [
+                    'ok'      => false,
+                    'message' => "You already have {$activeCount} OCR job(s) in progress. Please wait for one to finish.",
+                ];
+            }
+
+            $updated = MlJob::query()
+                ->where('id', $jobId)
+                ->where('customer_id', $customerId)
+                ->update([
+                    'job_kind'              => 'ocr',
+                    'execution_scope'       => 'customer',
+                    'locked_by_session_id'  => $sessionId,
+                    'locked_by_fingerprint' => $fingerprint,
+                    'lock_expires_at'       => $expiresAt,
+                    'input_hash'            => $inputHash,
+                    'updated_at'            => $now,
+                ]);
+
+            return $updated
+                ? [
+                    'ok'          => true,
+                    'session_id'  => $sessionId,
+                    'fingerprint' => $fingerprint,
+                    'expires_at'  => $expiresAt->toDateTimeString(),
+                ]
+                : [
+                    'ok'      => false,
+                    'message' => 'Could not lock the OCR job.',
+                ];
+        });
+    }
+
     public function refreshLock(string $jobId, int $minutes = 30): void
     {
         MlJob::query()
@@ -363,6 +470,23 @@ class JobExecutionLockService
     }
 
     protected function resolveMaxConcurrentStem(int $customerId): int
+    {
+        try {
+            $customer = \App\Models\Customer::find($customerId);
+            $planCode = strtolower((string) ($customer?->serviceCode() ?? 'free'));
+
+            return match ($planCode) {
+                'student' => 1,
+                'pro'     => 2,
+                'premium' => 3,
+                default   => 1,
+            };
+        } catch (\Throwable) {
+            return 1;
+        }
+    }
+
+    protected function resolveMaxConcurrentOcr(int $customerId): int
     {
         try {
             $customer = \App\Models\Customer::find($customerId);

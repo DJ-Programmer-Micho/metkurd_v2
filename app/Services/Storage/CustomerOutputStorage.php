@@ -412,4 +412,102 @@ class CustomerOutputStorage
             'updated_at'        => now(),
         ]);
     }
+
+    public function ocrDisk(): string
+    {
+        return 's3';
+    }
+
+    public function ocrPaths(MlJob $job, ?string $inputPath = null): array
+    {
+        $inputPath ??= (string) data_get($job->input, 'file_path', '');
+
+        $base = $inputPath !== ''
+            ? str_replace('\\', '/', dirname($inputPath))
+            : "renders/ocr/{$job->id}";
+
+        if ($base === '.' || $base === '/') {
+            $base = "renders/ocr/{$job->id}";
+        }
+
+        return [
+            'text' => "{$base}/text.txt",
+            'json' => "{$base}/result.json",
+        ];
+    }
+
+    public function makeOcrUploadTargets(MlJob $job, ?string $inputPath = null): array
+    {
+        $paths = $this->ocrPaths($job, $inputPath);
+
+        return [
+            'text' => $this->temporaryUploadTarget(
+                disk: $this->ocrDisk(),
+                path: $paths['text'],
+                contentType: 'text/plain; charset=UTF-8'
+            ),
+            'json' => $this->temporaryUploadTarget(
+                disk: $this->ocrDisk(),
+                path: $paths['json'],
+                contentType: 'application/json'
+            ),
+        ];
+    }
+
+    public function registerOcrArtifacts(MlJob $job, array $output, string $toolCode = 'ocr'): int
+    {
+        $disk = (string) data_get($output, 'disk', $this->ocrDisk());
+        $customerId = (int) $job->customer_id;
+        $total = 0;
+
+        $artifacts = array_filter([
+            'text' => data_get($output, 'text.path'),
+            'json' => data_get($output, 'json.path'),
+        ]);
+
+        foreach ($artifacts as $role => $path) {
+            $saved = $this->registerExistingObject($customerId, $disk, (string) $path, [
+                'job_id' => (string) $job->id,
+                'tool' => $toolCode,
+                'purpose' => 'render',
+                'role' => $role,
+                'mime' => $role === 'json' ? 'application/json' : 'text/plain; charset=UTF-8',
+            ]);
+
+            $total += (int) ($saved['bytes'] ?? 0);
+        }
+
+        return $total;
+    }
+
+    public function deleteOcrOutputs(MlJob $job): void
+    {
+        $output = (array) ($job->output ?? []);
+        $outputDisk = (string) data_get($output, 'disk', $this->ocrDisk());
+        $inputDisk = (string) data_get($job->input, 'file_disk', 's3');
+
+        $paths = array_filter([
+            ['disk' => $outputDisk, 'path' => (string) data_get($output, 'text.path', ''), 'bytes' => (int) data_get($output, 'text.bytes', 0)],
+            ['disk' => $outputDisk, 'path' => (string) data_get($output, 'json.path', ''), 'bytes' => (int) data_get($output, 'json.bytes', 0)],
+            ['disk' => $inputDisk, 'path' => (string) data_get($job->input, 'file_path', ''), 'bytes' => (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'file_bytes', 0))],
+        ], fn ($item) => !empty($item['path']));
+
+        foreach ($paths as $file) {
+            $this->deleteFromDiskAndUncount(
+                (int) $job->customer_id,
+                (string) $file['disk'],
+                (string) $file['path'],
+                (int) $file['bytes']
+            );
+        }
+
+        MlJob::query()->where('id', $job->id)->update([
+            'status' => 'deleted',
+            'output' => null,
+            'storage_in_bytes' => 0,
+            'storage_out_bytes' => 0,
+            'error' => null,
+            'updated_at' => now(),
+        ]);
+    }
 }

@@ -133,8 +133,9 @@
         .tts-status-muted{ color: rgba(255,255,255,.65) !important; }
         .tts-status-id{ color: rgba(255,255,255,.85) !important; }
 
+        /* // NAVBAR NAV CONTROL */
         .simplebar-offset{
-            bottom: 80px !important;
+            bottom: 0px !important;
         }
 
         .ar-shift{
