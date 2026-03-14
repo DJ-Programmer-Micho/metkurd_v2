@@ -34,9 +34,18 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+    'youtube' => [
+        'python_target' => env('YOUTUBE_PYTHON_TARGET', 'default'),
+        'python_bin' => env('YOUTUBE_PYTHON_BIN', 'python'),
+        'temp_dir' => env('YOUTUBE_TEMP_DIR', sys_get_temp_dir()),
+        'python_bins' => [
+            'windows_local' => env('YOUTUBE_PYTHON_BIN_WINDOWS_LOCAL'),
+            'linux_aws_ec2' => env('YOUTUBE_PYTHON_BIN_LINUX_AWS_EC2'),
+        ],
+    ],
     'standingtech' => [
-        'base'   => env('STANDINGTECH_BASE_URL'),
-        'token'  => env('STANDINGTECH_TOKEN'),
+        'base' => env('STANDINGTECH_BASE_URL'),
+        'token' => env('STANDINGTECH_TOKEN'),
         'sender' => env('STANDINGTECH_SENDER_ID'),
     ],
     'runpod' => [
@@ -53,14 +62,14 @@ return [
         ],
     ],
     'google' => [
-        'client_id'     => env('GOOGLE_CLIENT_ID'),
+        'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
-        'redirect'      => env('GOOGLE_REDIRECT_URI'),
+        'redirect' => env('GOOGLE_REDIRECT_URI'),
     ],
     'github' => [
-        'client_id'     => env('GITHUB_CLIENT_ID'),
+        'client_id' => env('GITHUB_CLIENT_ID'),
         'client_secret' => env('GITHUB_CLIENT_SECRET'),
-        'redirect'      => env('GITHUB_REDIRECT_URI'),
+        'redirect' => env('GITHUB_REDIRECT_URI'),
     ],
 
 ];

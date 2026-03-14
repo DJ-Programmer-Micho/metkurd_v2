@@ -9,6 +9,7 @@ use App\Http\Controllers\App\Services\OcrRenderController;
 use App\Http\Controllers\App\Services\StemRenderController;
 use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XttsRenderController;
+use App\Http\Controllers\App\Services\YoutubeRenderController;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
 
@@ -109,6 +110,7 @@ Route::prefix('{locale}')
         Route::livewire('/app/wasr', 'app::pages.wasr.app-wasr')->name('app.wasr');
         Route::livewire('/app/stem', 'app::pages.stem.app-stem')->name('app.stem');
         Route::livewire('/app/ocr', 'app::pages.ocr.app-ocr')->name('app.ocr');
+        Route::livewire('/app/youtube', 'app::pages.youtube.app-youtube-downloader')->name('app.youtube');
 
 /*
 |--------------------------------------------------------------------------
@@ -169,6 +171,8 @@ Route::prefix('{locale}')
     Route::get('/app/renders/ocr/{jobId}/input', [OcrRenderController::class, 'inputDocument'])
         ->name('app.renders.ocr.input');
 
+    Route::get('/app/renders/youtube/{jobId}/download', [YoutubeRenderController::class, 'download'])
+        ->name('app.renders.youtube.download');
     // Route::get('/app/renders/wasr/{jobId}/json/view', [WasrRenderController::class, 'viewJson'])
     //     ->name('app.renders.wasr.json.view');
 });
