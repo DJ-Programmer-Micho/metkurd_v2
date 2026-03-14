@@ -105,6 +105,7 @@ Route::prefix('{locale}')
         Route::livewire('/app/home', 'app::pages.home.app-home')->name('app.home');
         Route::livewire('/app/profile', 'app::pages.profile.app-profile')->name('app.profile');
         Route::livewire('/app/my-storage', 'app::pages.my-storage.app-storage')->name('app.storage');
+        Route::livewire('/app/my-billing', 'app::pages.billing.app-billing')->name('app.billing');
 
         Route::livewire('/app/xtts', 'app::pages.xtts.app-xtts')->name('app.xtts');
         Route::livewire('/app/clone-xtts', 'app::pages.clone-xtts.app-clone-xtts')->name('app.clone-xtts');
