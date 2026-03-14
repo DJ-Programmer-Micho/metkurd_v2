@@ -8,6 +8,10 @@ class YoutubePreviewService
 {
     public function preview(string $url): array
     {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(180);
+        }
+
         $raw = $this->runWorker([
             'preview',
             '--url',
@@ -99,10 +103,35 @@ class YoutubePreviewService
 
     protected function tryDecodeJson(string $raw): ?array
     {
-        $normalized = $this->normalizeJsonString($raw);
+        $normalized = trim($this->normalizeJsonString($raw));
+
+        if ($normalized === '') {
+            return null;
+        }
+
         $data = json_decode($normalized, true);
 
-        return is_array($data) ? $data : null;
+        if (is_array($data)) {
+            return $data;
+        }
+
+        $lines = preg_split('/\r\n|\n|\r/', $normalized) ?: [];
+
+        foreach (array_reverse($lines) as $line) {
+            $candidate = trim((string) $line);
+
+            if ($candidate === '' || ! str_starts_with($candidate, '{')) {
+                continue;
+            }
+
+            $decoded = json_decode($candidate, true);
+
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return null;
     }
 
     protected function normalizeJsonString(string $raw): string

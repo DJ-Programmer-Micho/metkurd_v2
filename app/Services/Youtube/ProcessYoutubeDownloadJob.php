@@ -53,7 +53,13 @@ class ProcessYoutubeDownloadJob implements ShouldQueue
         try {
             $result = $cli->download(
                 url: (string) data_get($job->input, 'url', ''),
-                mode: (string) data_get($job->input, 'mode', 'audio'),
+                mode: (string) data_get(
+                    $job->input,
+                    'worker_mode',
+                    data_get($job->input, 'preview_type') === 'playlist'
+                        ? 'playlist'
+                        : data_get($job->input, 'mode', 'audio')
+                ),
                 format: (string) data_get($job->input, 'format', 'mp3'),
                 quality: (string) data_get($job->input, 'quality', 'p720'),
                 jobId: (string) $job->id,

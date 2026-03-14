@@ -210,7 +210,23 @@ def get_info(url: str):
         "skip_download": True,
         "extract_flat": False,
         "noplaylist": False,
+        "no_warnings": True,
     }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        return ydl.extract_info(url, download=False)
+
+
+def get_preview_info(url: str):
+    wants_playlist = "list=" in url or "/playlist" in url
+
+    ydl_opts = {
+        "quiet": True,
+        "skip_download": True,
+        "noplaylist": False,
+        "no_warnings": True,
+        "extract_flat": "in_playlist" if wants_playlist else False,
+    }
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(url, download=False)
 
@@ -220,7 +236,7 @@ def sanitize_filename(name: str) -> str:
 
 
 def preview_url(url: str):
-    info = get_info(url)
+    info = get_preview_info(url)
 
     if "entries" in info and info.get("_type") == "playlist":
         entries = [e for e in info.get("entries", []) if e]
@@ -228,12 +244,21 @@ def preview_url(url: str):
         if not thumb and entries:
             thumb = entries[0].get("thumbnail")
 
+        total_duration = 0
+        billable_minutes = 0
+
+        for entry in entries:
+            duration = int(entry.get("duration") or 0)
+            total_duration += duration
+            billable_minutes += max(1, int((duration + 59) // 60)) if duration > 0 else 1
+
         data = {
             "type": "playlist",
             "title": info.get("title") or "Playlist",
             "uploader": info.get("uploader") or info.get("channel") or "",
             "thumbnail": thumb or "",
-            "duration_sec": 0,
+            "duration_sec": total_duration,
+            "billable_minutes": billable_minutes,
             "entries_count": len(entries),
             "webpage_url": info.get("webpage_url") or url,
             "entries": [
@@ -241,6 +266,7 @@ def preview_url(url: str):
                     "title": e.get("title") or "Untitled",
                     "id": e.get("id"),
                     "thumbnail": e.get("thumbnail"),
+                    "duration_sec": int(e.get("duration") or 0),
                 }
                 for e in entries[:25]
             ],
@@ -258,6 +284,7 @@ def preview_url(url: str):
         "uploader": info.get("uploader") or info.get("channel") or "",
         "thumbnail": info.get("thumbnail") or "",
         "duration_sec": int(info.get("duration") or 0),
+        "billable_minutes": max(1, int(((int(info.get("duration") or 0)) + 59) // 60)) if int(info.get("duration") or 0) > 0 else 1,
         "entries_count": None,
         "webpage_url": info.get("webpage_url") or url,
         "entries": [],
@@ -394,11 +421,12 @@ def download_video(url: str, quality: str, outdir: Path, reporter: ProgressRepor
     }
 
 
-def download_playlist(url: str, fmt: str, outdir: Path, reporter: ProgressReporter | None = None):
-    if fmt not in ("mp3", "mp4"):
+def download_playlist(url: str, fmt: str, quality: str, outdir: Path, reporter: ProgressReporter | None = None):
+    if fmt not in ("mp3", "wav", "mp4"):
         fmt = "mp3"
 
-    if fmt == "mp3":
+    if fmt in ("mp3", "wav"):
+        preferred_quality = "256" if fmt == "wav" else "192"
         ydl_opts = {
             "format": "bestaudio/best",
             "noplaylist": False,
@@ -406,8 +434,8 @@ def download_playlist(url: str, fmt: str, outdir: Path, reporter: ProgressReport
             "outtmpl": str(outdir / "%(playlist_title)s - %(playlist_index)02d - %(title)s.%(ext)s"),
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
+                "preferredcodec": fmt,
+                "preferredquality": preferred_quality,
             }],
             "quiet": True,
             "noprogress": True,
@@ -415,7 +443,7 @@ def download_playlist(url: str, fmt: str, outdir: Path, reporter: ProgressReport
         }
     else:
         ydl_opts = {
-            "format": "bestvideo[height<=720]+bestaudio/best",
+            "format": quality_to_format(quality),
             "noplaylist": False,
             "ignoreerrors": "only_download",
             "outtmpl": str(outdir / "%(playlist_title)s - %(playlist_index)02d - %(title)s.%(ext)s"),
@@ -536,8 +564,8 @@ def main():
                 return ok(download_video(args.url, args.quality, outdir, reporter))
 
             if args.mode == "playlist":
-                playlist_fmt = "mp4" if args.format == "mp4" else "mp3"
-                return ok(download_playlist(args.url, playlist_fmt, outdir, reporter))
+                playlist_fmt = args.format if args.format in ("mp3", "wav", "mp4") else "mp3"
+                return ok(download_playlist(args.url, playlist_fmt, args.quality, outdir, reporter))
 
     except Exception as e:
         if 'reporter' in locals():

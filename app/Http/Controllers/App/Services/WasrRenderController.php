@@ -45,8 +45,8 @@ class WasrRenderController extends Controller
     {
         $job  = $this->jobOrFail($jobId);
         $disk = (string) data_get($job->output, 'disk', 's3');
-        $key  = (string) data_get($job->output, 'json_path', '');
-        $mime = 'application/json';
+        $key  = (string) (data_get($job->output, 'json.path') ?: data_get($job->output, 'json_path', ''));
+        $mime = (string) (data_get($job->output, 'json.mime') ?: data_get($job->output, 'json_mime', 'application/json'));
 
         abort_if($key === '', 404, 'JSON output missing.');
         abort_unless(Storage::disk($disk)->exists($key), 404, 'JSON output not found.');
@@ -60,14 +60,15 @@ class WasrRenderController extends Controller
     {
         $job  = $this->jobOrFail($jobId);
         $disk = (string) data_get($job->output, 'disk', 's3');
-        $key  = (string) data_get($job->output, 'json_path', '');
+        $key  = (string) (data_get($job->output, 'json.path') ?: data_get($job->output, 'json_path', ''));
+        $mime = (string) (data_get($job->output, 'json.mime') ?: data_get($job->output, 'json_mime', 'application/json'));
 
         abort_if($key === '', 404, 'JSON output missing.');
 
         try {
             if (!$request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($key, now()->addMinutes(20), [
-                    'ResponseContentType' => 'application/json',
+                    'ResponseContentType' => $mime,
                     'ResponseContentDisposition' => 'inline; filename="' . (basename($key) ?: 'transcription.json') . '"',
                 ]);
 
@@ -87,7 +88,7 @@ class WasrRenderController extends Controller
                     }
                 }
             }, 200, [
-                'Content-Type' => 'application/json; charset=UTF-8',
+                'Content-Type' => $mime,
                 'Cache-Control' => 'private, max-age=600, stale-while-revalidate=60',
             ]);
         } catch (\Throwable $e) {

@@ -93,15 +93,8 @@ class XttsJobSyncService
                 return $this->payload($fresh, 100);
             }
 
-            $folder = \App\Support\CustomerFolder::make(
-                (int) $fresh->customer_id,
-                data_get($fresh, 'customer.profile.first_name') ?? data_get($fresh, 'customer.first_name'),
-                data_get($fresh, 'customer.profile.last_name') ?? data_get($fresh, 'customer.last_name'),
-                data_get($fresh, 'customer.username')
-            );
-
             $subFolder = (string) $tool->code === 'clone_tts' ? 'clone-tts' : 'tts';
-            $fileKey = "renders/{$folder}/{$subFolder}/{$fresh->id}/out.wav";
+            $fileKey = $this->storage->renderBaseDir($fresh, $subFolder).'/out.wav';
 
             $saved = $this->storage->saveWavB64ToS3((int) $fresh->customer_id, $fileKey, $wavB64, [
                 'job_id' => (string) $fresh->id,

@@ -621,7 +621,7 @@ class extends Component
             $folder = $this->currentFolderForCustomer($customerFresh);
 
             $audioExt = strtolower((string) ($this->audioExt ?: $this->audioFile?->getClientOriginalExtension() ?: 'wav'));
-            $audioKey = "transcriptions/{$folder}/wasr/{$jobId}/input.{$audioExt}";
+            $audioKey = "renders/{$folder}/wasr/{$jobId}/input.{$audioExt}";
 
             DB::transaction(function () use ($jobId, $tool, $action, $customer) {
                 MlJob::create([

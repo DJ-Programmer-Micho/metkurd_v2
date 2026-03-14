@@ -137,6 +137,15 @@
                     badge="PRO"
                 />
 
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">YouTube</span></li>
+                <livewire:partials.components.nav-feature-link
+                    :route="'app.youtube'"
+                    icon="bx bx-video"
+                    :label="__('YOUTUBE DOWNLOADER')"
+                    feature="youtube_video.active"
+                    badge="PRO"
+                />
+
 
                 {{-- <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">OTHER TOOLS</span></li>
                 <x-app.auth.nav-feature-link

@@ -487,6 +487,10 @@ $notifications = [];
                         <i class="mdi mdi-account-circle text-muted fs-16 align-middle me-1"></i>
                         <span class="align-middle">{{__('Profile')}}</span>
                     </a>
+                    <a wire:navigate.hover class="dropdown-item" href="{{ route('app.storage',['locale' => app()->getLocale()]) }}">
+                        <i class="mdi mdi-chart-pie text-muted fs-16 align-middle me-1"></i>
+                        <span class="align-middle">{{__('My Storage')}}</span>
+                    </a>
                     <hr class="my-1">
                     <a wire:navigate.hover class="dropdown-item" href="{{ route('subscription-plan',['locale' => app()->getLocale()]) }}">
                         <i class="mdi mdi-star-shooting-outline text-info fs-16 align-middle me-1"></i>

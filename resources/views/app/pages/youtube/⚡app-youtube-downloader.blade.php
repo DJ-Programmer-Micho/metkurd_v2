@@ -87,7 +87,7 @@ class extends Component
     // =========================================================
     public string $url = '';
 
-    public string $downloadMode = 'audio'; // audio | video | playlist
+    public string $downloadMode = 'audio'; // audio | video
 
     public string $audioFormat = 'mp3';    // mp3 | wav
 
@@ -109,6 +109,8 @@ class extends Component
     public ?string $previewThumbnail = null;
 
     public ?int $previewDurationSec = null;
+
+    public ?int $previewBillableMinutes = null;
 
     public ?int $previewEntriesCount = null;
 
@@ -281,10 +283,10 @@ class extends Component
     {
         return [
             'url' => ['required', 'string', 'max:2000'],
-            'downloadMode' => ['required', 'in:audio,video,playlist'],
+            'downloadMode' => ['required', 'in:audio,video'],
             'audioFormat' => [
                 'nullable',
-                Rule::requiredIf(fn () => in_array($this->downloadMode, ['audio', 'playlist'], true)),
+                Rule::requiredIf(fn () => $this->downloadMode === 'audio'),
                 Rule::in($this->allowedAudioFormats()),
             ],
             'videoQuality' => [
@@ -329,6 +331,9 @@ class extends Component
         $this->normalizeDownloadOptions();
 
         $customer = auth('app')->user();
+        $entries = $this->previewType === 'playlist'
+            ? max(1, (int) ($this->previewEntriesCount ?? 0))
+            : 1;
 
         if (! $customer) {
             $this->creditsCost = 0;
@@ -339,29 +344,26 @@ class extends Component
         // Fallback estimation until exact preview-based billing is finalized.
         if ($this->downloadMode === 'audio') {
             $code = "youtube_audio.{$this->audioFormat}";
-            $fallback = $this->audioFormat === 'wav' ? 1800 : 1000;
-        } elseif ($this->downloadMode === 'video') {
+            $singleFallback = $this->audioFormat === 'wav' ? 1800 : 1000;
+        } else {
             $code = "youtube_video.{$this->videoQuality}";
-            $fallback = match ($this->videoQuality) {
+            $singleFallback = match ($this->videoQuality) {
                 'p480' => 1500,
                 'p720' => 2500,
                 'p1080' => 4000,
                 'p4k' => 7000,
                 default => 2500,
             };
-        } else {
-            // playlist
-            $code = 'youtube_audio.mp3';
-            $entries = max(1, (int) $this->previewEntriesCount);
-            $fallback = 1000 * $entries;
         }
+
+        $fallback = $singleFallback * $entries;
 
         if (method_exists($customer, 'priceCreditsFor')) {
             try {
                 $calculated = (int) $customer->priceCreditsFor($code, [
                     'metric_code' => 'minute',
                     'minutes' => max(1, $this->estimatedBillableMinutes()),
-                    'entries' => max(1, (int) $this->previewEntriesCount),
+                    'entries' => $entries,
                 ]);
 
                 if ($calculated > 0) {
@@ -379,9 +381,7 @@ class extends Component
 
     protected function allowedAudioFormats(): array
     {
-        return $this->downloadMode === 'playlist'
-            ? ['mp3']
-            : ['mp3', 'wav'];
+        return ['mp3', 'wav'];
     }
 
     protected function allowedVideoQualities(): array
@@ -391,18 +391,12 @@ class extends Component
 
     protected function normalizeDownloadOptions(): void
     {
-        if (! in_array($this->downloadMode, ['audio', 'video', 'playlist'], true)) {
+        if (! in_array($this->downloadMode, ['audio', 'video'], true)) {
             $this->downloadMode = 'audio';
         }
 
         if (! in_array($this->videoQuality, $this->allowedVideoQualities(), true)) {
             $this->videoQuality = 'p720';
-        }
-
-        if ($this->downloadMode === 'playlist') {
-            $this->audioFormat = 'mp3';
-
-            return;
         }
 
         if (! in_array($this->audioFormat, $this->allowedAudioFormats(), true)) {
@@ -412,10 +406,12 @@ class extends Component
 
     protected function estimatedBillableMinutes(): int
     {
-        if ($this->downloadMode === 'playlist') {
-            $entries = max(1, (int) $this->previewEntriesCount);
+        if ($this->previewType === 'playlist') {
+            if (($this->previewBillableMinutes ?? 0) > 0) {
+                return (int) $this->previewBillableMinutes;
+            }
 
-            return $entries;
+            return max(1, (int) ($this->previewEntriesCount ?? 0));
         }
 
         $seconds = (int) ($this->previewDurationSec ?? 0);
@@ -458,11 +454,10 @@ class extends Component
     {
         $this->normalizeDownloadOptions();
 
-        if ($this->downloadMode === 'audio' || $this->downloadMode === 'playlist') {
+        if ($this->downloadMode === 'audio') {
             $tool = Tool::query()->where('code', $this->audioToolCode)->first();
-            $actionCode = $this->downloadMode === 'playlist' ? 'mp3' : $this->audioFormat;
             $action = ToolAction::query()
-                ->where('full_code', "youtube_audio.{$actionCode}")
+                ->where('full_code', "youtube_audio.{$this->audioFormat}")
                 ->first();
         } else {
             $tool = Tool::query()->where('code', $this->videoToolCode)->first();
@@ -486,6 +481,7 @@ class extends Component
         $this->previewUploader = null;
         $this->previewThumbnail = null;
         $this->previewDurationSec = null;
+        $this->previewBillableMinutes = null;
         $this->previewEntriesCount = null;
         $this->previewWebpageUrl = null;
         $this->previewEntries = [];
@@ -655,13 +651,10 @@ class extends Component
             $this->previewUploader = (string) ($data['uploader'] ?? '');
             $this->previewThumbnail = (string) ($data['thumbnail'] ?? '');
             $this->previewDurationSec = (int) ($data['duration_sec'] ?? 0);
+            $this->previewBillableMinutes = isset($data['billable_minutes']) ? (int) $data['billable_minutes'] : null;
             $this->previewEntriesCount = isset($data['entries_count']) ? (int) $data['entries_count'] : null;
             $this->previewWebpageUrl = (string) ($data['webpage_url'] ?? trim($this->url));
             $this->previewEntries = (array) ($data['entries'] ?? []);
-
-            if ($this->previewType === 'playlist') {
-                $this->downloadMode = 'playlist';
-            }
 
             $this->syncCostPreview();
 
@@ -673,7 +666,7 @@ class extends Component
             ]);
 
             $this->resetPreview();
-            $this->dispatch('alert', type: 'error', message: 'Could not preview this URL.');
+            $this->dispatch('alert', type: 'error', message: 'Could not preview this URL. Please make sure it is a working YouTube video or playlist link.');
         }
     }
 
@@ -717,10 +710,11 @@ class extends Component
         }
 
         $jobId = (string) Str::uuid();
-        $resolvedFormat = $this->downloadMode === 'playlist' ? 'mp3' : $this->audioFormat;
+        $workerMode = $this->previewType === 'playlist' ? 'playlist' : $this->downloadMode;
+        $resolvedFormat = $this->downloadMode === 'video' ? 'mp4' : $this->audioFormat;
 
         try {
-            DB::transaction(function () use ($jobId, $tool, $action, $customer, $resolvedFormat) {
+            DB::transaction(function () use ($jobId, $tool, $action, $customer, $resolvedFormat, $workerMode) {
                 MlJob::create([
                     'id' => $jobId,
                     'customer_id' => (int) $customer->id,
@@ -734,6 +728,7 @@ class extends Component
                     'input' => [
                         'url' => trim($this->url),
                         'mode' => $this->downloadMode,
+                        'worker_mode' => $workerMode,
                         'format' => $resolvedFormat,
                         'quality' => $this->videoQuality,
                         'include_thumb' => $this->includeThumbnail,
@@ -741,6 +736,7 @@ class extends Component
                         'uploader' => $this->previewUploader,
                         'thumbnail' => $this->previewThumbnail,
                         'duration_sec' => $this->previewDurationSec,
+                        'billable_minutes' => $this->previewBillableMinutes,
                         'entries_count' => $this->previewEntriesCount,
                         'preview_type' => $this->previewType,
                     ],
@@ -772,6 +768,8 @@ class extends Component
                 'related_id' => $jobId,
                 'tool_action' => (string) $action->full_code,
                 'mode' => $this->downloadMode,
+                'worker_mode' => $workerMode,
+                'preview_type' => $this->previewType,
                 'format' => $resolvedFormat,
                 'quality' => $this->videoQuality,
             ]);
@@ -1272,49 +1270,49 @@ class extends Component
 
                     <div class="row g-2 mt-2">
                         <div class="col-6 col-lg-3">
-                            <div class="border rounded-3 p-2 h-100 bg-white bg-opacity-50">
-                                <div class="text-muted small">Phase</div>
+                            <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
+                                <div class="small">Phase</div>
                                 <div class="fw-semibold">{{ $phaseText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
-                            <div class="border rounded-3 p-2 h-100 bg-white bg-opacity-50">
-                                <div class="text-muted small">Speed</div>
+                            <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
+                                <div class="small">Speed</div>
                                 <div class="fw-semibold">{{ $speedText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
-                            <div class="border rounded-3 p-2 h-100 bg-white bg-opacity-50">
-                                <div class="text-muted small">ETA</div>
+                            <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
+                                <div class="small">ETA</div>
                                 <div class="fw-semibold">{{ $etaText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
-                            <div class="border rounded-3 p-2 h-100 bg-white bg-opacity-50">
-                                <div class="text-muted small">Downloaded</div>
+                            <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
+                                <div class="small">Downloaded</div>
                                 <div class="fw-semibold">{{ $downloadedText }} / {{ $totalText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
-                            <div class="border rounded-3 p-2 h-100 bg-white bg-opacity-50">
-                                <div class="text-muted small">{{ $currentStatus === 'queued' ? 'Queued For' : 'Elapsed' }}</div>
+                            <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
+                                <div class="small">{{ $currentStatus === 'queued' ? 'Queued For' : 'Elapsed' }}</div>
                                 <div class="fw-semibold">{{ $currentStatus === 'queued' ? $queuedText : $elapsedText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
-                            <div class="border rounded-3 p-2 h-100 bg-white bg-opacity-50">
-                                <div class="text-muted small">Last Update</div>
+                            <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
+                                <div class="small">Last Update</div>
                                 <div class="fw-semibold">{{ $lastUpdateText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
-                            <div class="border rounded-3 p-2 h-100 bg-white bg-opacity-50">
-                                <div class="text-muted small">Output File</div>
+                            <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
+                                <div class="small">Output File</div>
                                 <div class="fw-semibold text-break">{{ $currentProgressFileName ?: '-' }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
-                            <div class="border rounded-3 p-2 h-100 bg-white bg-opacity-50">
+                            <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
                                 <div class="text-muted small">Playlist</div>
                                 <div class="fw-semibold">
                                     @if($currentPlaylistCount)
@@ -1339,7 +1337,7 @@ class extends Component
                             </div>
                         </div>
 
-                        <div class="border rounded-3 p-2 bg-white bg-opacity-50" style="max-height: 220px; overflow-y: auto;">
+                        <div class="border rounded-3 p-2 bg-dark bg-opacity-50" style="max-height: 220px; overflow-y: auto;">
                             @if($customerLogLines === [])
                                 <div class="small text-muted">{{ $currentStatusMessage ?: 'Waiting for worker updates.' }}</div>
                             @else
@@ -1347,10 +1345,10 @@ class extends Component
                                     @foreach($customerLogLines as $line)
                                         <div class="d-flex align-items-start justify-content-between gap-3 small">
                                             <div style="min-width: 0;">
-                                                <span class="text-muted me-2">{{ $this->humanLogTime($line['ts'] ?? null) }}</span>
+                                                <span class="me-2">{{ $this->humanLogTime($line['ts'] ?? null) }}</span>
                                                 <span>{{ (string) ($line['message'] ?? '') !== '' ? $line['message'] : $this->humanPhase($line['phase'] ?? null) }}</span>
                                             </div>
-                                            <div class="text-muted text-end flex-shrink-0">
+                                            <div class="text-end flex-shrink-0">
                                                 @if(isset($line['percent']) && $line['percent'] !== null)
                                                     <span>{{ (int) $line['percent'] }}%</span>
                                                 @endif
@@ -1523,7 +1521,6 @@ class extends Component
                                     <select class="form-select" wire:model.live="downloadMode">
                                         <option value="audio">Audio</option>
                                         <option value="video">Video</option>
-                                        <option value="playlist">Playlist ZIP</option>
                                     </select>
                                 </div>
 
@@ -1533,11 +1530,6 @@ class extends Component
                                         <select class="form-select" wire:model.live="audioFormat">
                                             <option value="mp3">MP3</option>
                                             <option value="wav">WAV</option>
-                                        </select>
-                                    @elseif($downloadMode === 'playlist')
-                                        <label class="form-label">Playlist Format</label>
-                                        <select class="form-select" wire:model.live="audioFormat">
-                                            <option value="mp3">MP3 ZIP</option>
                                         </select>
                                     @else
                                         <label class="form-label">Video Quality</label>
@@ -1570,11 +1562,17 @@ class extends Component
                                     Estimated cost:
                                     <strong>{{ number_format($creditsCost) }} credits</strong>
 
-                                    @if($downloadMode === 'playlist' && $previewEntriesCount)
-                                        for <strong>{{ number_format($previewEntriesCount) }} item(s)</strong>
+                                    @if($previewType === 'playlist' && $previewEntriesCount)
+                                        for <strong>{{ number_format($previewEntriesCount) }} video(s)</strong>
                                     @elseif($previewDurationSec)
                                         based on <strong>{{ $this->humanDuration($previewDurationSec) }}</strong>
                                     @endif
+                                </div>
+                            @endif
+
+                            @if($previewType === 'playlist')
+                                <div class="small text-muted mt-2">
+                                    Playlist links are detected automatically. We will bundle the selected output type for the whole playlist.
                                 </div>
                             @endif
 

@@ -5,12 +5,32 @@ namespace App\Services\Storage;
 use App\Models\CustomerFile;
 use App\Models\CustomerUsage;
 use App\Models\MlJob;
+use App\Support\CustomerFolder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class CustomerOutputStorage
 {
+    public function customerFolder(MlJob $job): string
+    {
+        $customer = $job->relationLoaded('customer')
+            ? $job->customer
+            : $job->customer()->with('profile')->first();
+
+        return CustomerFolder::make(
+            (int) $job->customer_id,
+            data_get($customer, 'profile.first_name') ?? data_get($customer, 'first_name'),
+            data_get($customer, 'profile.last_name') ?? data_get($customer, 'last_name'),
+            data_get($customer, 'username')
+        );
+    }
+
+    public function renderBaseDir(MlJob $job, string $toolDir): string
+    {
+        return "renders/{$this->customerFolder($job)}/{$toolDir}/{$job->id}";
+    }
+
     public function saveWavB64ToS3(int $customerId, string $path, string $wavB64, array $meta = []): array
     {
         $bin = base64_decode($wavB64, true);
@@ -214,7 +234,7 @@ class CustomerOutputStorage
 
     public function stemBaseDir(MlJob $job): string
     {
-        return "renders/stem/{$job->id}";
+        return $this->renderBaseDir($job, 'stem');
     }
 
     public function stemPaths(MlJob $job, string $codec = 'mp3', int $stemsMode = 4): array
@@ -424,10 +444,10 @@ class CustomerOutputStorage
 
         $base = $inputPath !== ''
             ? str_replace('\\', '/', dirname($inputPath))
-            : "renders/ocr/{$job->id}";
+            : $this->renderBaseDir($job, 'ocr');
 
         if ($base === '.' || $base === '/') {
-            $base = "renders/ocr/{$job->id}";
+            $base = $this->renderBaseDir($job, 'ocr');
         }
 
         return [

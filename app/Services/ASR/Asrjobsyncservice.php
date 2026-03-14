@@ -101,17 +101,9 @@ class AsrJobSyncService
                 return $this->payload($fresh, 100);
             }
 
-            $customer = $fresh->customer()->with('profile')->first();
-
-            $folder = \App\Support\CustomerFolder::make(
-                (int) $fresh->customer_id,
-                $customer?->profile?->first_name ?? $customer?->first_name,
-                $customer?->profile?->last_name ?? $customer?->last_name,
-                $customer?->username
-            );
-
-            $base   = "transcriptions/{$folder}/wasr/{$fresh->id}";
+            $base   = $this->storage->renderBaseDir($fresh, 'wasr');
             $txtKey = "{$base}/transcription.txt";
+            $jsonKey = "{$base}/transcription.json";
 
             $savedTxt = $this->storage->saveTextToS3(
                 (int) $fresh->customer_id,
@@ -125,18 +117,48 @@ class AsrJobSyncService
                 ]
             );
 
+            $jsonPayload = json_encode([
+                'text' => $transcriptionText,
+                'chunks' => array_values($chunks),
+                'word_count' => $this->unicodeWordCount($transcriptionText),
+                'char_count' => mb_strlen($transcriptionText),
+                'provider_output' => data_get($providerPayload, 'output', []),
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            if (!is_string($jsonPayload) || $jsonPayload === '') {
+                throw new \RuntimeException('Failed to encode transcription JSON output.');
+            }
+
+            $savedJson = $this->storage->saveTextToS3(
+                (int) $fresh->customer_id,
+                $jsonKey,
+                $jsonPayload,
+                [
+                    'job_id'  => (string) $fresh->id,
+                    'tool'    => (string) ($tool->code ?: 'wasr'),
+                    'purpose' => 'transcription',
+                    'mime'    => 'application/json',
+                ]
+            );
+
+            $charCount = mb_strlen($transcriptionText);
+            $wordCount = $this->unicodeWordCount($transcriptionText);
+
             $fresh->status = 'done';
             $fresh->output = [
                 'disk'       => $savedTxt['disk'],
                 'path'       => $savedTxt['path'],
                 'bytes'      => $savedTxt['bytes'],
                 'mime'       => $savedTxt['mime'],
+                'json_path'  => $savedJson['path'],
+                'json_bytes' => $savedJson['bytes'],
+                'json_mime'  => $savedJson['mime'],
                 'text'       => $transcriptionText,
                 'chunks'     => $chunks,
-                'char_count' => mb_strlen($transcriptionText),
-                'word_count' => $this->unicodeWordCount($transcriptionText),
+                'char_count' => $charCount,
+                'word_count' => $wordCount,
             ];
-            $fresh->storage_out_bytes = (int) $savedTxt['bytes'];
+            $fresh->storage_out_bytes = (int) $savedTxt['bytes'] + (int) $savedJson['bytes'];
             $fresh->finished_at = now();
             $fresh->error = null;
             $fresh->save();
@@ -183,9 +205,15 @@ class AsrJobSyncService
 
             $txtPath  = (string) data_get($fresh->output, 'path', '');
             $txtBytes = (int) data_get($fresh->output, 'bytes', 0);
+            $jsonPath  = (string) data_get($fresh->output, 'json_path', '');
+            $jsonBytes = (int) data_get($fresh->output, 'json_bytes', 0);
 
             if ($txtPath !== '') {
                 $this->storage->deleteFromS3AndUncount($customerId, $txtPath, $txtBytes);
+            }
+
+            if ($jsonPath !== '') {
+                $this->storage->deleteFromS3AndUncount($customerId, $jsonPath, $jsonBytes);
             }
 
             $audioPath  = (string) data_get($fresh->input, 'audio_path', '');

@@ -1,0 +1,1503 @@
+<?php
+
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Layout;
+use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
+use Livewire\Component;
+use Livewire\WithPagination;
+
+use App\Models\CustomerFile;
+use App\Models\CustomerUsage;
+use App\Models\MlJob;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+new
+#[Layout('app::layouts.app')]
+#[Title('My Storage | METKURD')]
+class extends Component
+{
+    use WithPagination;
+
+    protected $paginationTheme = 'bootstrap';
+
+    #[Url(as: 'q', keep: true)]
+    public string $search = '';
+
+    #[Url(as: 'path', keep: true)]
+    public string $path = '';
+
+    public int $perPage = 12;
+
+    public ?string $selectedFile = null;
+
+    public ?string $pendingDeleteType = null; // file|folder
+    public ?string $pendingDeletePath = null;
+    public ?string $pendingDeleteLabel = null;
+
+    public array $toolRoots = [
+        'tts'       => ['label' => 'TTS',        'icon' => 'ri-volume-up-line',   'color' => 'primary'],
+        'clone-tts' => ['label' => 'Clone TTS',  'icon' => 'ri-mic-line',         'color' => 'info'],
+        'stem'      => ['label' => 'STEM',       'icon' => 'ri-equalizer-line',   'color' => 'success'],
+        'wasr'      => ['label' => 'WASR',       'icon' => 'ri-file-text-line',   'color' => 'warning'],
+        'ocr'       => ['label' => 'OCR',        'icon' => 'ri-scan-2-line',      'color' => 'danger'],
+    ];
+
+    public function mount(): void
+    {
+        $this->path = $this->sanitizePath($this->path);
+
+        if ($this->path !== '' && !$this->pathExists($this->path)) {
+            $this->path = '';
+        }
+
+        $this->syncSelectedFile();
+    }
+
+    public function updatingSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedSearch(): void
+    {
+        $this->syncSelectedFile();
+    }
+
+    public function updatedPath(): void
+    {
+        $this->path = $this->sanitizePath($this->path);
+        $this->resetPage();
+        $this->syncSelectedFile();
+    }
+
+    public function navigateTo(string $path = ''): void
+    {
+        $path = $this->sanitizePath($path);
+
+        if ($path !== '' && !$this->pathExists($path)) {
+            return;
+        }
+
+        $this->path = $path;
+        $this->resetPage();
+        $this->syncSelectedFile();
+    }
+
+    public function selectFile(string $relativePath): void
+    {
+        $file = $this->findFileByRelativePath($relativePath);
+
+        if (!$file || !$this->isPreviewable($file['mime'], $file['extension'])) {
+            return;
+        }
+
+        $this->selectedFile = $file['relative_path'];
+    }
+
+    public function confirmDeleteFile(string $relativePath): void
+    {
+        $file = $this->findFileByRelativePath($relativePath);
+
+        if (!$file) {
+            return;
+        }
+
+        $deletePrefix = $this->resolveDeletePrefixForFile($relativePath);
+        $isCoupled = $deletePrefix !== $relativePath;
+
+        $this->pendingDeleteType = 'file';
+        $this->pendingDeletePath = $relativePath;
+        $this->pendingDeleteLabel = $isCoupled
+            ? basename($deletePrefix) . ' (linked assets)'
+            : basename($relativePath);
+
+        $this->dispatch('storage-delete-modal-open');
+    }
+
+    public function confirmDeleteFolder(string $folderPath): void
+    {
+        $folderPath = $this->sanitizePath($folderPath);
+
+        if ($folderPath === '' || !$this->pathExists($folderPath)) {
+            return;
+        }
+
+        $this->pendingDeleteType = 'folder';
+        $this->pendingDeletePath = $folderPath;
+        $this->pendingDeleteLabel = basename($folderPath);
+
+        $this->dispatch('storage-delete-modal-open');
+    }
+
+    public function cancelDelete(): void
+    {
+        $this->pendingDeleteType = null;
+        $this->pendingDeletePath = null;
+        $this->pendingDeleteLabel = null;
+
+        $this->dispatch('storage-delete-modal-close');
+    }
+
+    public function deleteConfirmed(): void
+    {
+        $customer = auth('app')->user();
+
+        abort_unless($customer, 403);
+
+        if (!$this->pendingDeleteType || !$this->pendingDeletePath) {
+            return;
+        }
+
+        try {
+            DB::transaction(function () use ($customer) {
+                $prefix = $this->pendingDeleteType === 'folder'
+                    ? $this->pendingDeletePath
+                    : $this->resolveDeletePrefixForFile($this->pendingDeletePath);
+
+                $targets = $this->allFiles()
+                    ->filter(function (array $file) use ($prefix) {
+                        return $file['relative_path'] === $prefix
+                            || Str::startsWith($file['relative_path'], $prefix . '/');
+                    })
+                    ->values();
+
+                if ($targets->isEmpty()) {
+                    return;
+                }
+
+                foreach ($targets as $file) {
+                    $disk = (string) ($file['disk'] ?: 's3');
+                    $path = (string) $file['path'];
+
+                    if ($path !== '' && Storage::disk($disk)->exists($path)) {
+                        Storage::disk($disk)->delete($path);
+                    }
+
+                    CustomerFile::query()
+                        ->where('id', $file['id'])
+                        ->update([
+                            'status'     => 'deleted',
+                            'deleted_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                }
+
+                $this->recalculateUsage((int) $customer->id);
+
+                $jobId = $this->extractJobIdFromRelativePrefix($prefix);
+                if ($jobId) {
+                    MlJob::query()
+                        ->where('customer_id', (int) $customer->id)
+                        ->where('id', $jobId)
+                        ->update([
+                            'status'            => 'deleted',
+                            'output'            => null,
+                            'storage_in_bytes'  => 0,
+                            'storage_out_bytes' => 0,
+                            'error'             => null,
+                            'updated_at'        => now(),
+                        ]);
+                }
+            }, 3);
+
+            if ($this->path !== '' && !$this->pathExists($this->path)) {
+                $this->path = $this->parentPath($this->path);
+            }
+
+            $this->syncSelectedFile();
+
+            $this->dispatch('alert', type: 'success', message: 'Storage item deleted successfully.');
+        } catch (\Throwable $e) {
+            Log::error('APP_STORAGE_DELETE_FAILED', [
+                'customer_id' => auth('app')->id(),
+                'type'        => $this->pendingDeleteType,
+                'path'        => $this->pendingDeletePath,
+                'message'     => $e->getMessage(),
+            ]);
+
+            $this->dispatch('alert', type: 'error', message: 'Delete failed. Please try again.');
+        } finally {
+            $this->cancelDelete();
+            $this->resetPage();
+        }
+    }
+
+    #[Computed]
+    public function usage(): array
+    {
+        $customer = auth('app')->user();
+
+        $usage = CustomerUsage::query()
+            ->firstOrCreate(
+                ['customer_id' => (int) $customer->id],
+                [
+                    'storage_used_bytes' => 0,
+                    'jobs_total'         => 0,
+                    'jobs_succeeded'     => 0,
+                    'jobs_failed'        => 0,
+                ]
+            );
+
+        $used = (int) $usage->storage_used_bytes;
+
+        $limitBytes = (int) (
+
+            data_get($customer, 'storagePlan.quota_mb') * 1024 * 1024
+            ?? (20 * 1024 * 1024 * 1024) // fallback 20 GB
+        );
+
+        $percent = $limitBytes > 0
+            ? min(100, (int) round(($used / $limitBytes) * 100))
+            : 0;
+
+        return [
+            'used_bytes'  => $used,
+            'limit_bytes' => $limitBytes,
+            'percent'     => $percent,
+        ];
+    }
+
+    #[Computed]
+    public function allFiles(): Collection
+    {
+        $customer = auth('app')->user();
+
+        $rows = CustomerFile::query()
+            ->where('customer_id', (int) $customer->id)
+            ->where('status', 'active')
+            ->orderByDesc('created_at')
+            ->get();
+
+        return $rows->map(function (CustomerFile $file) {
+            $relative = $this->extractRelativePath((string) $file->path);
+
+            return [
+                'id'            => (int) $file->id,
+                'customer_id'   => (int) $file->customer_id,
+                'tool_code'     => (string) ($file->tool_code ?? ''),
+                'disk'          => (string) ($file->disk ?? 's3'),
+                'path'          => (string) $file->path,
+                'relative_path' => $relative,
+                'size_bytes'    => (int) ($file->size_bytes ?? 0),
+                'mime'          => (string) ($file->mime ?? 'application/octet-stream'),
+                'purpose'       => (string) ($file->purpose ?? 'render'),
+                'meta'          => (array) ($file->meta ?? []),
+                'created_at'    => $file->created_at,
+                'updated_at'    => $file->updated_at,
+                'basename'      => basename($relative ?: $file->path),
+                'extension'     => strtolower(pathinfo($relative ?: $file->path, PATHINFO_EXTENSION)),
+            ];
+        })->filter(fn (array $file) => $file['relative_path'] !== '')->values();
+    }
+
+    #[Computed]
+    public function toolStats(): array
+    {
+        $stats = [];
+        $allFiles = $this->allFiles();
+
+        foreach (array_keys($this->toolRoots) as $tool) {
+            $files = $allFiles
+                ->filter(fn (array $file) => Str::startsWith($file['relative_path'], $tool . '/'));
+
+            $stats[$tool] = [
+                'folder_count' => $files
+                    ->map(fn (array $file) => $this->jobFolderForTool($tool, $file['relative_path']))
+                    ->filter()
+                    ->unique()
+                    ->count(),
+                'file_count'   => $files->count(),
+                'size'         => (int) $files->sum('size_bytes'),
+            ];
+        }
+
+        return $stats;
+    }
+
+    #[Computed]
+    public function storageSegments(): array
+    {
+        $toolStats = $this->toolStats();
+        $usedBytes = max(0, (int) $this->usage()['used_bytes']);
+
+        $segments = collect($this->toolRoots)
+            ->map(function (array $cfg, string $tool) use ($toolStats, $usedBytes) {
+                $stat = $toolStats[$tool] ?? ['folder_count' => 0, 'file_count' => 0, 'size' => 0];
+                $size = (int) $stat['size'];
+
+                if ($size <= 0) {
+                    return null;
+                }
+
+                return [
+                    'tool'            => $tool,
+                    'label'           => $cfg['label'],
+                    'color'           => $cfg['color'],
+                    'folder_count'    => (int) $stat['folder_count'],
+                    'file_count'      => (int) $stat['file_count'],
+                    'size'            => $size,
+                    'percent_of_used' => $usedBytes > 0 ? round(($size / $usedBytes) * 100, 2) : 0,
+                ];
+            })
+            ->filter()
+            ->sortByDesc('size')
+            ->values();
+
+        return $segments->all();
+    }
+
+    #[Computed]
+    public function folderCards(): Collection
+    {
+        if ($this->path === '') {
+            return collect(array_keys($this->toolRoots))
+                ->map(function (string $tool) {
+                    $stats = $this->toolStats()[$tool] ?? ['folder_count' => 0, 'file_count' => 0, 'size' => 0];
+                    $cfg = $this->toolRoots[$tool];
+
+                    return [
+                        'name'        => $tool,
+                        'label'       => $cfg['label'],
+                        'path'        => $tool,
+                        'item_count'  => (int) $stats['folder_count'],
+                        'item_label'  => 'Folders',
+                        'size_bytes'  => (int) $stats['size'],
+                        'icon'        => $cfg['icon'],
+                        'color'       => $cfg['color'],
+                    ];
+                })
+                ->filter(fn (array $item) => $item['item_count'] > 0)
+                ->values();
+        }
+
+        $prefix = $this->path . '/';
+        $search = Str::lower(trim($this->search));
+
+        $folders = [];
+
+        foreach ($this->allFiles() as $file) {
+            $relative = $file['relative_path'];
+
+            if (!Str::startsWith($relative, $prefix)) {
+                continue;
+            }
+
+            $rest = substr($relative, strlen($prefix));
+
+            if ($rest === false || $rest === '' || !str_contains($rest, '/')) {
+                continue;
+            }
+
+            $next = explode('/', $rest)[0];
+
+            if ($search !== '' && !Str::contains(Str::lower($next), $search)) {
+                continue;
+            }
+
+            $folderPath = trim($this->path . '/' . $next, '/');
+
+            if (!isset($folders[$folderPath])) {
+                $folders[$folderPath] = [
+                    'name'       => $next,
+                    'label'      => $next,
+                    'path'       => $folderPath,
+                    'item_count' => 0,
+                    'item_label' => 'Files',
+                    'size_bytes' => 0,
+                    'icon'       => 'ri-folder-2-fill',
+                    'color'      => 'warning',
+                ];
+            }
+
+            $folders[$folderPath]['item_count']++;
+            $folders[$folderPath]['size_bytes'] += (int) $file['size_bytes'];
+        }
+
+        return collect($folders)->sortBy('name')->values();
+    }
+
+    #[Computed]
+    public function currentFolderFiles(): Collection
+    {
+        $prefix = $this->path === '' ? '' : $this->path . '/';
+        $search = Str::lower(trim($this->search));
+
+        return $this->allFiles()
+            ->filter(function (array $file) use ($prefix, $search) {
+                $relative = $file['relative_path'];
+
+                if ($prefix !== '' && !Str::startsWith($relative, $prefix)) {
+                    return false;
+                }
+
+                $rest = $prefix === '' ? $relative : substr($relative, strlen($prefix));
+
+                if ($rest === false || $rest === '' || str_contains($rest, '/')) {
+                    return false;
+                }
+
+                if ($search !== '' && !Str::contains(Str::lower($file['basename']), $search)) {
+                    return false;
+                }
+
+                return true;
+            })
+            ->values();
+    }
+
+    #[Computed]
+    public function pagedFiles(): Collection
+    {
+        return $this->filesPaginator()->getCollection();
+    }
+
+    #[Computed]
+    public function filesPaginator(): LengthAwarePaginator
+    {
+        $items = $this->currentFolderFiles();
+        $currentPage = $this->getPage();
+
+        return new LengthAwarePaginator(
+            items: $items->forPage($currentPage, $this->perPage)->values(),
+            total: $items->count(),
+            perPage: $this->perPage,
+            currentPage: $currentPage,
+            options: [
+                'path' => request()->url(),
+                'pageName' => 'page',
+            ]
+        );
+    }
+
+    #[Computed]
+    public function breadcrumbs(): array
+    {
+        $crumbs = [
+            ['label' => 'My Storage', 'path' => ''],
+        ];
+
+        if ($this->path === '') {
+            return $crumbs;
+        }
+
+        $parts = array_values(array_filter(explode('/', $this->path)));
+        $built = '';
+
+        foreach ($parts as $part) {
+            $built = trim($built . '/' . $part, '/');
+            $crumbs[] = [
+                'label' => $this->toolRoots[$part]['label'] ?? $part,
+                'path'  => $built,
+            ];
+        }
+
+        return $crumbs;
+    }
+
+    #[Computed]
+    public function selectedFileData(): ?array
+    {
+        if (!$this->selectedFile) {
+            return null;
+        }
+
+        $file = $this->findFileByRelativePath($this->selectedFile);
+
+        if (!$file || !$this->isPreviewable($file['mime'], $file['extension'])) {
+            return null;
+        }
+
+        $file['download_url'] = $this->temporaryUrlFor($file, 'attachment');
+        $file['stream_url'] = $this->temporaryUrlFor($file, 'inline');
+        $file['is_audio'] = $this->isAudio($file['mime'], $file['extension']);
+        $file['icon'] = $this->fileIcon($file['mime'], $file['extension']);
+        $file['type_label'] = $this->typeLabel($file['mime'], $file['extension']);
+
+        return $file;
+    }
+
+    #[Computed]
+    public function overviewStats(): array
+    {
+        $groups = [
+            'Documents' => ['count' => 0, 'size' => 0, 'icon' => 'ri-file-text-line', 'color' => 'secondary'],
+            'Audio'     => ['count' => 0, 'size' => 0, 'icon' => 'ri-volume-up-line', 'color' => 'success'],
+            'JSON'      => ['count' => 0, 'size' => 0, 'icon' => 'ri-code-s-slash-line', 'color' => 'info'],
+            'Others'    => ['count' => 0, 'size' => 0, 'icon' => 'ri-folder-line', 'color' => 'warning'],
+        ];
+
+        foreach ($this->allFiles() as $file) {
+            if ($this->isAudio($file['mime'], $file['extension'])) {
+                $key = 'Audio';
+            } elseif (in_array($file['extension'], ['txt', 'doc', 'docx', 'pdf'], true) || Str::contains($file['mime'], 'text/')) {
+                $key = 'Documents';
+            } elseif ($file['extension'] === 'json' || Str::contains($file['mime'], 'json')) {
+                $key = 'JSON';
+            } else {
+                $key = 'Others';
+            }
+
+            $groups[$key]['count']++;
+            $groups[$key]['size'] += (int) $file['size_bytes'];
+        }
+
+        return $groups;
+    }
+
+    protected function sanitizePath(?string $path): string
+    {
+        $path = trim((string) $path);
+        $path = str_replace('\\', '/', $path);
+        $path = preg_replace('#/+#', '/', $path);
+        $path = trim((string) $path, '/');
+
+        $parts = array_values(array_filter(explode('/', $path), fn ($part) => $part !== '' && $part !== '.' && $part !== '..'));
+
+        return implode('/', $parts);
+    }
+
+    protected function syncSelectedFile(): void
+    {
+        $visibleFiles = $this->currentFolderFiles();
+
+        if ($visibleFiles->isEmpty()) {
+            $this->selectedFile = null;
+
+            return;
+        }
+
+        $selectedVisible = $this->selectedFile
+            ? $visibleFiles->first(fn (array $file) => $file['relative_path'] === $this->selectedFile)
+            : null;
+
+        if ($selectedVisible && $this->isPreviewable($selectedVisible['mime'], $selectedVisible['extension'])) {
+            return;
+        }
+
+        $fallback = $visibleFiles->first(
+            fn (array $file) => $this->isPreviewable($file['mime'], $file['extension'])
+        );
+
+        $this->selectedFile = $fallback['relative_path'] ?? null;
+    }
+
+    protected function pathExists(string $path): bool
+    {
+        $path = $this->sanitizePath($path);
+
+        if ($path === '') {
+            return true;
+        }
+
+        if ($this->allFiles()->contains(fn (array $file) => $file['relative_path'] === $path || Str::startsWith($file['relative_path'], $path . '/'))) {
+            return true;
+        }
+
+        return false;
+    }
+
+    protected function parentPath(string $path): string
+    {
+        $parts = array_values(array_filter(explode('/', $this->sanitizePath($path))));
+        array_pop($parts);
+
+        return implode('/', $parts);
+    }
+
+    protected function extractRelativePath(string $absolutePath): string
+    {
+        $absolutePath = str_replace('\\', '/', trim($absolutePath));
+
+        if (preg_match('#^renders/[^/]+/(.+)$#', $absolutePath, $m)) {
+            return trim($m[1], '/');
+        }
+
+        return trim($absolutePath, '/');
+    }
+
+    protected function jobFolderForTool(string $tool, string $relativePath): ?string
+    {
+        $relativePath = $this->sanitizePath($relativePath);
+        $prefix = $tool . '/';
+
+        if (!Str::startsWith($relativePath, $prefix)) {
+            return null;
+        }
+
+        $rest = substr($relativePath, strlen($prefix));
+
+        if ($rest === false || $rest === '' || !str_contains($rest, '/')) {
+            return null;
+        }
+
+        return $tool . '/' . explode('/', $rest)[0];
+    }
+
+    protected function findFileByRelativePath(string $relativePath): ?array
+    {
+        return $this->allFiles()
+            ->first(fn (array $file) => $file['relative_path'] === $this->sanitizePath($relativePath));
+    }
+
+    protected function resolveDeletePrefixForFile(string $relativePath): string
+    {
+        $relativePath = $this->sanitizePath($relativePath);
+        $parts = explode('/', $relativePath);
+
+        if (count($parts) >= 3 && array_key_exists($parts[0], $this->toolRoots)) {
+            // Delete the whole job directory:
+            // tts/{jobId}/...
+            // clone-tts/{jobId}/...
+            // stem/{jobId}/...
+            // wasr/{jobId}/...
+            // ocr/{jobId}/...
+            return $parts[0] . '/' . $parts[1];
+        }
+
+        return $relativePath;
+    }
+
+    protected function extractJobIdFromRelativePrefix(string $prefix): ?string
+    {
+        $parts = explode('/', $this->sanitizePath($prefix));
+
+        if (count($parts) >= 2 && array_key_exists($parts[0], $this->toolRoots)) {
+            return $parts[1];
+        }
+
+        return null;
+    }
+
+    protected function recalculateUsage(int $customerId): void
+    {
+        $bytes = (int) CustomerFile::query()
+            ->where('customer_id', $customerId)
+            ->where('status', 'active')
+            ->sum('size_bytes');
+
+        CustomerUsage::query()->updateOrCreate(
+            ['customer_id' => $customerId],
+            ['storage_used_bytes' => $bytes]
+        );
+    }
+
+    protected function temporaryUrlFor(array $file, string $disposition = 'attachment'): string
+    {
+        $disk = (string) ($file['disk'] ?: 's3');
+        $path = (string) $file['path'];
+        $filename = basename($path) ?: $file['basename'];
+
+        if ($path === '') {
+            return '#';
+        }
+
+        if (method_exists(Storage::disk($disk), 'temporaryUrl')) {
+            return Storage::disk($disk)->temporaryUrl($path, now()->addMinutes(30), [
+                'ResponseContentDisposition' => ($disposition === 'inline' ? 'inline' : 'attachment') . '; filename="' . $filename . '"',
+                'ResponseContentType' => $file['mime'] ?: 'application/octet-stream',
+            ]);
+        }
+
+        return Storage::disk($disk)->url($path);
+    }
+
+    protected function isAudio(?string $mime, ?string $ext): bool
+    {
+        $mime = (string) $mime;
+        $ext = strtolower((string) $ext);
+
+        return Str::startsWith($mime, 'audio/')
+            || in_array($ext, ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'opus'], true);
+    }
+
+    protected function isJsonFile(?string $mime, ?string $ext): bool
+    {
+        return strtolower((string) $ext) === 'json'
+            || Str::contains((string) $mime, 'json');
+    }
+
+    protected function isPreviewable(?string $mime, ?string $ext): bool
+    {
+        return !$this->isJsonFile($mime, $ext);
+    }
+
+    protected function fileIcon(?string $mime, ?string $ext): string
+    {
+        $ext = strtolower((string) $ext);
+
+        if ($this->isAudio($mime, $ext)) {
+            return 'ri-volume-up-fill text-success';
+        }
+
+        return match ($ext) {
+            'txt'   => 'ri-file-text-fill text-secondary',
+            'json'  => 'ri-code-s-slash-fill text-info',
+            'pdf'   => 'ri-file-pdf-fill text-danger',
+            default => 'ri-file-fill text-primary',
+        };
+    }
+
+    protected function typeLabel(?string $mime, ?string $ext): string
+    {
+        $ext = strtolower((string) $ext);
+
+        if ($this->isAudio($mime, $ext)) {
+            return 'Audio';
+        }
+
+        return match ($ext) {
+            'txt', 'pdf', 'doc', 'docx' => 'Document',
+            'json' => 'JSON',
+            default => 'File',
+        };
+    }
+
+    public function formatBytes(int $bytes): string
+    {
+        $bytes = max(0, $bytes);
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+
+        for ($i = 0; $bytes >= 1024 && $i < count($units) - 1; $i++) {
+            $bytes /= 1024;
+        }
+
+        return number_format($bytes, $i === 0 ? 0 : 2) . ' ' . $units[$i];
+    }
+
+    public function render()
+    {
+        return view('app.pages.my-storage.⚡app-storage');
+    }
+};
+?>
+
+<div>
+    <style>
+        .storage-shell {
+            --storage-radius: 1rem;
+        }
+
+        .storage-shell .card,
+        .storage-shell .modal-content {
+            border-radius: var(--storage-radius);
+        }
+
+        .storage-shell .file-manager-sidebar,
+        .storage-shell .file-manager-content,
+        .storage-shell .file-manager-detail-content {
+            background: var(--vz-secondary-bg, var(--bs-body-bg));
+            border-radius: var(--storage-radius);
+            min-height: calc(100vh - 220px);
+        }
+
+        .storage-shell .file-manager-sidebar {
+            width: 280px;
+            flex: 0 0 280px;
+            border: 1px solid var(--vz-border-color, var(--bs-border-color));
+        }
+
+        .storage-shell .file-manager-content {
+            border: 1px solid var(--vz-border-color, var(--bs-border-color));
+        }
+
+        .storage-shell .file-manager-detail-content {
+            width: 360px;
+            flex: 0 0 360px;
+            border: 1px solid var(--vz-border-color, var(--bs-border-color));
+        }
+
+        .storage-shell .folder-tile {
+            cursor: pointer;
+            transition: .2s ease;
+            border: 1px solid var(--vz-border-color, var(--bs-border-color));
+        }
+
+        .storage-shell .folder-tile:hover,
+        .storage-shell .folder-tile.active {
+            transform: translateY(-2px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, .08);
+            border-color: rgba(var(--bs-primary-rgb), .35);
+        }
+
+        .storage-shell .file-row {
+            cursor: default;
+        }
+
+        .storage-shell .file-row.table-active {
+            --bs-table-bg: rgba(var(--bs-primary-rgb), .08);
+        }
+
+        .storage-shell .sticky-pane {
+            position: sticky;
+            top: 1rem;
+        }
+
+        .storage-shell .audio-preview {
+            border: 1px dashed var(--vz-border-color, var(--bs-border-color));
+            border-radius: 1rem;
+            padding: 1rem;
+            background: rgba(var(--bs-secondary-rgb), .05);
+        }
+
+        .storage-shell .storage-status-chart {
+            border: 1px solid var(--vz-border-color, var(--bs-border-color));
+            border-radius: 1rem;
+            padding: .875rem;
+            background: rgba(var(--bs-secondary-rgb), .04);
+        }
+
+        .storage-shell .storage-status-bar {
+            height: .85rem;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(var(--bs-secondary-rgb), .12);
+            display: flex;
+        }
+
+        .storage-shell .storage-status-used {
+            height: 100%;
+            display: flex;
+            overflow: hidden;
+            border-radius: inherit;
+        }
+
+        .storage-shell .storage-status-segment {
+            height: 100%;
+        }
+
+        .storage-shell .storage-status-free {
+            flex: 1 1 auto;
+            background: rgba(var(--bs-secondary-rgb), .08);
+        }
+
+        .storage-shell .storage-status-legend {
+            display: grid;
+            gap: .5rem;
+        }
+
+        .storage-shell .storage-status-item {
+            display: flex;
+            align-items: flex-start;
+            gap: .625rem;
+        }
+
+        .storage-shell .storage-status-swatch {
+            width: .75rem;
+            height: .75rem;
+            border-radius: 999px;
+            margin-top: .2rem;
+            flex: 0 0 auto;
+        }
+
+        .storage-shell .file-row-selectable {
+            cursor: pointer;
+        }
+
+        @media (max-width: 1199.98px) {
+            .storage-shell .file-manager-detail-content {
+                width: 100%;
+                flex: 1 1 100%;
+            }
+        }
+
+        @media (max-width: 991.98px) {
+            .storage-shell .chat-wrapper {
+                flex-direction: column;
+            }
+
+            .storage-shell .file-manager-sidebar,
+            .storage-shell .file-manager-detail-content {
+                width: 100%;
+                flex: 1 1 100%;
+            }
+        }
+    </style>
+
+    @php
+        $usage = $this->usage();
+        $toolStats = $this->toolStats();
+        $storageSegments = $this->storageSegments();
+    @endphp
+
+    <div class="storage-shell">
+        {{-- <div class="page-content"> --}}
+            <div class="container-fluid">
+
+                <div class="chat-wrapper d-lg-flex gap-3 mx-n4 mt-n4 p-3">
+                    <!-- Sidebar -->
+                    
+                    <div class="file-manager-sidebar">
+                        <div class="p-3 d-flex flex-column h-100">
+                            <div class="mb-3">
+                                <h5 class="mb-0 fw-bold">My Storage</h5>
+                                <div class="text-muted small mt-1">Manage your generated AI assets</div>
+                            </div>
+
+                            <div class="search-box mb-3">
+                                <div class="position-relative">
+                                    <input
+                                        type="text"
+                                        class="form-control bg-light border-light ps-5"
+                                        placeholder="Search files or folders..."
+                                        wire:model.live.debounce.300ms="search"
+                                    >
+                                    <i class="ri-search-2-line search-icon position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                                </div>
+                            </div>
+
+                            <div class="mt-2 flex-grow-1">
+                                <h6 class="fs-11 text-muted text-uppercase mb-3">Tools</h6>
+                                <ul class="list-unstyled vstack gap-2">
+                                    <li>
+                                        <button type="button" class="btn btn-sm {{ $path === '' ? 'btn-primary' : 'btn-ghost-dark' }} w-100 text-start" wire:click="navigateTo('')">
+                                            <i class="ri-hard-drive-2-line align-bottom me-2"></i> All Tools
+                                        </button>
+                                    </li>
+
+                                    @foreach($toolRoots as $toolKey => $cfg)
+                                        @php
+                                            $stat = $toolStats[$toolKey] ?? ['folder_count' => 0, 'file_count' => 0, 'size' => 0];
+                                        @endphp
+                                        <li>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm {{ $path === $toolKey || str_starts_with($path, $toolKey . '/') ? 'btn-primary' : 'btn-ghost-dark' }} w-100 text-start d-flex align-items-center justify-content-between"
+                                                wire:click="navigateTo('{{ $toolKey }}')"
+                                            >
+                                                <span>
+                                                    <i class="{{ $cfg['icon'] }} align-bottom me-2"></i> {{ $cfg['label'] }}
+                                                </span>
+                                                <span class="badge bg-secondary-subtle text-secondary">{{ $stat['folder_count'] }}</span>
+                                            </button>
+                                        </li>
+                                    @endforeach
+                                </ul>
+                            </div>
+
+                            <div class="mt-auto pt-3 border-top">
+                                <h6 class="fs-11 text-muted text-uppercase mb-3">Storage Status</h6>
+                                <div class="storage-status-chart">
+                                    <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <i class="ri-database-2-line fs-17"></i>
+                                            <span class="small text-muted">Used by tool</span>
+                                        </div>
+                                        <span class="badge {{ $usage['percent'] >= 85 ? 'bg-danger-subtle text-danger' : ($usage['percent'] >= 60 ? 'bg-warning-subtle text-warning' : 'bg-success-subtle text-success') }}">
+                                            {{ $usage['percent'] }}%
+                                        </span>
+                                    </div>
+
+                                    <div class="storage-status-bar mb-2" role="img" aria-label="Storage usage by tool">
+                                        @if($usage['percent'] > 0 && count($storageSegments))
+                                            <div class="storage-status-used" style="width: {{ $usage['percent'] }}%">
+                                                @foreach($storageSegments as $segment)
+                                                    <div
+                                                        class="storage-status-segment bg-{{ $segment['color'] }}"
+                                                        style="width: {{ $segment['percent_of_used'] }}%"
+                                                        title="{{ $segment['label'] }}: {{ $this->formatBytes($segment['size']) }}"
+                                                    ></div>
+                                                @endforeach
+                                            </div>
+                                        @endif
+
+                                        @if($usage['percent'] < 100)
+                                            <div class="storage-status-free"></div>
+                                        @endif
+                                    </div>
+
+                                    <div class="text-muted fs-12 d-flex justify-content-between gap-2 mb-3">
+                                        <span><b>{{ $this->formatBytes($usage['used_bytes']) }}</b> used</span>
+                                        <span><b>{{ $this->formatBytes($usage['limit_bytes']) }}</b> total</span>
+                                    </div>
+
+                                    @if(count($storageSegments))
+                                        <div class="storage-status-legend">
+                                            @foreach($storageSegments as $segment)
+                                                <div class="storage-status-item">
+                                                    <span class="storage-status-swatch bg-{{ $segment['color'] }}"></span>
+                                                    <div class="flex-grow-1 min-w-0">
+                                                        <div class="d-flex justify-content-between gap-2">
+                                                            <span class="text-truncate">{{ $segment['label'] }}</span>
+                                                            <span class="fw-semibold">{{ $this->formatBytes($segment['size']) }}</span>
+                                                        </div>
+                                                        <div class="text-muted fs-12">
+                                                            {{ number_format($segment['folder_count']) }} folder(s)
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <div class="text-muted fs-12">No generated files are stored yet.</div>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Content -->
+                    <div class="file-manager-content w-100 p-3 py-0">
+                        <div class="mx-n3 pt-4 px-4">
+                            <!-- Breadcrumb -->
+                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                                <nav aria-label="breadcrumb">
+                                    <ol class="breadcrumb breadcrumb-separated mb-0">
+                                        @foreach($this->breadcrumbs() as $index => $crumb)
+                                            @if($loop->last)
+                                                <li class="breadcrumb-item active" aria-current="page">{{ $crumb['label'] }}</li>
+                                            @else
+                                                <li class="breadcrumb-item">
+                                                    <a href="javascript:void(0)" wire:click="navigateTo('{{ $crumb['path'] }}')">{{ $crumb['label'] }}</a>
+                                                </li>
+                                            @endif
+                                        @endforeach
+                                    </ol>
+                                </nav>
+
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge bg-info-subtle text-info">Read Only</span>
+                                    <span class="badge bg-secondary-subtle text-secondary">S3-backed</span>
+                                </div>
+                            </div>
+
+                            <!-- Folders -->
+                            <div id="folder-list" class="mb-4">
+                                <div class="row justify-content-between g-2 mb-3">
+                                    <div class="col">
+                                        <div class="d-flex align-items-center">
+                                            <div class="flex-grow-1">
+                                                <h5 class="fs-16 mb-0">Folders</h5>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="text-muted small">
+                                            {{ $this->folderCards()->count() }} folder(s)
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="row g-3">
+                                    @forelse($this->folderCards() as $folder)
+                                        <div class="col-xxl-3 col-md-4 col-sm-6">
+                                            <div class="card shadow-none folder-tile {{ $path === $folder['path'] ? 'active' : '' }}">
+                                                <div class="card-body">
+                                                    <div class="d-flex mb-3">
+                                                        <div class="flex-grow-1">
+                                                            <button type="button" class="btn btn-sm btn-ghost-primary" wire:click="navigateTo('{{ $folder['path'] }}')">
+                                                                Open
+                                                            </button>
+                                                        </div>
+                                                        <div class="dropdown" wire:ignore.self>
+                                                            <button class="btn btn-ghost-primary btn-icon btn-sm" type="button" data-bs-toggle="dropdown" aria-expanded="false" onclick="event.stopPropagation()">
+                                                                <i class="ri-more-2-fill fs-16 align-bottom"></i>
+                                                            </button>
+                                                            <ul class="dropdown-menu dropdown-menu-end" onclick="event.stopPropagation()">
+                                                                <li>
+                                                                    <button class="dropdown-item" type="button" wire:click="navigateTo('{{ $folder['path'] }}')">Open</button>
+                                                                </li>
+                                                                <li>
+                                                                    <button class="dropdown-item text-danger" type="button" wire:click="confirmDeleteFolder('{{ $folder['path'] }}')">Delete</button>
+                                                                </li>
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="text-center">
+                                                        <div class="mb-2">
+                                                            <i class="{{ $folder['icon'] }} align-bottom text-warning display-5"></i>
+                                                        </div>
+                                                        <h6 class="fs-15 folder-name mb-1">{{ $folder['label'] }}</h6>
+                                                        <div class="small text-muted text-truncate">{{ $folder['path'] }}</div>
+                                                    </div>
+
+                                                    <div class="hstack mt-4 text-muted">
+                                                        <span class="me-auto"><b>{{ number_format($folder['item_count']) }}</b> {{ $folder['item_label'] }}</span>
+                                                        <span><b>{{ $this->formatBytes($folder['size_bytes']) }}</b></span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @empty
+                                        <div class="col-12">
+                                            <div class="alert alert-info mb-0">
+                                                No folders found in this location.
+                                            </div>
+                                        </div>
+                                    @endforelse
+                                </div>
+                                
+                            </div>
+                            @if (count($this->pagedFiles()))
+                            <!-- Files -->
+                            <div>
+                                <div class="d-flex align-items-center justify-content-between mb-3">
+                                    <h5 class="flex-grow-1 fs-16 mb-0">Files</h5>
+                                    <div class="text-muted small">
+                                        Showing {{ $this->filesPaginator()->firstItem() ?? 0 }} - {{ $this->filesPaginator()->lastItem() ?? 0 }}
+                                        of {{ $this->filesPaginator()->total() }}
+                                    </div>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table align-middle table-nowrap mb-0">
+                                        <thead class="table-active">
+                                            <tr>
+                                                <th scope="col">Name</th>
+                                                <th scope="col">Type</th>
+                                                <th scope="col">Size</th>
+                                                <th scope="col">Updated</th>
+                                                <th scope="col" class="text-center">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @forelse($this->pagedFiles() as $file)
+                                                @php
+                                                    $isAudio = $this->isAudio($file['mime'], $file['extension']);
+                                                    $isPreviewable = $this->isPreviewable($file['mime'], $file['extension']);
+                                                    $streamUrl = $isAudio ? $this->temporaryUrlFor($file, 'inline') : null;
+                                                    $downloadUrl = $this->temporaryUrlFor($file, 'attachment');
+                                                @endphp
+                                                <tr
+                                                    class="file-row {{ $isPreviewable ? 'file-row-selectable' : '' }} {{ $selectedFile === $file['relative_path'] ? 'table-active' : '' }}"
+                                                    wire:key="storage-file-{{ $file['id'] }}"
+                                                    @if($isPreviewable)
+                                                        wire:click="selectFile('{{ $file['relative_path'] }}')"
+                                                    @endif
+                                                >
+                                                    <td>
+                                                        <div class="d-flex align-items-center">
+                                                            <div class="avatar-xs flex-shrink-0 me-2">
+                                                                <div class="avatar-title bg-light text-muted rounded fs-16">
+                                                                    <i class="{{ $this->fileIcon($file['mime'], $file['extension']) }}"></i>
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <div class="fw-semibold text-truncate" style="max-width: 260px;">
+                                                                    {{ $file['basename'] }}
+                                                                </div>
+                                                                <div class="small text-muted text-truncate" style="max-width: 260px;">
+                                                                    {{ $file['relative_path'] }}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td>{{ $this->typeLabel($file['mime'], $file['extension']) }}</td>
+                                                    <td>{{ $this->formatBytes($file['size_bytes']) }}</td>
+                                                    <td>{{ optional($file['updated_at'])->format('d M Y, h:i A') }}</td>
+                                                    <td class="text-center" onclick="event.stopPropagation()">
+                                                        <div class="dropdown" wire:ignore.self>
+                                                            <button class="btn btn-ghost-primary btn-icon btn-sm" type="button" data-bs-toggle="dropdown" aria-expanded="false" onclick="event.stopPropagation()">
+                                                                <i class="ri-more-2-fill fs-16 align-bottom"></i>
+                                                            </button>
+                                                            <ul class="dropdown-menu dropdown-menu-end" onclick="event.stopPropagation()">
+                                                                @if($isAudio && $streamUrl)
+                                                                    <li>
+                                                                        <a class="dropdown-item" href="{{ $streamUrl }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">
+                                                                            Stream
+                                                                        </a>
+                                                                    </li>
+                                                                @endif
+                                                                <li>
+                                                                    <a class="dropdown-item" href="{{ $downloadUrl }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">
+                                                                        Download
+                                                                    </a>
+                                                                </li>
+                                                                <li>
+                                                                    <button class="dropdown-item text-danger" type="button" wire:click.stop="confirmDeleteFile('{{ $file['relative_path'] }}')">
+                                                                        Delete
+                                                                    </button>
+                                                                </li>
+                                                            </ul>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            @empty
+                                                <tr>
+                                                    <td colspan="5" class="text-center text-muted py-5">
+                                                        No files found in this folder.
+                                                    </td>
+                                                </tr>
+                                            @endforelse
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                @if($this->filesPaginator()->hasPages())
+                                    <div class="align-items-center mt-3 row g-3 text-center text-sm-start">
+                                        <div class="col-sm">
+                                            <div class="text-muted">
+                                                Showing <span class="fw-semibold">{{ $this->filesPaginator()->firstItem() }}</span>
+                                                to <span class="fw-semibold">{{ $this->filesPaginator()->lastItem() }}</span>
+                                                of <span class="fw-semibold">{{ $this->filesPaginator()->total() }}</span> results
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-auto">
+                                            {{ $this->filesPaginator()->links() }}
+                                        </div>
+                                    </div>
+                                @endif
+                            </div>
+                            @endif
+                        </div>
+                    </div>
+
+                    <!-- Overview / Preview -->
+                    <div class="file-manager-detail-content p-3 py-0">
+                        <div class="mx-n3 pt-3 px-3">
+                            @if($this->selectedFileData())
+                                @php $preview = $this->selectedFileData(); @endphp
+                                <div id="file-overview" class="h-100 sticky-pane">
+                                    <div class="d-flex h-100 flex-column">
+                                        <div class="d-flex align-items-center pb-3 border-bottom border-bottom-dashed mb-3 gap-2">
+                                            <h5 class="flex-grow-1 fw-bold mb-0">File Preview</h5>
+                                            <div>
+                                                <button type="button" class="btn btn-soft-danger btn-icon btn-sm fs-16" wire:click="confirmDeleteFile('{{ $preview['relative_path'] }}')">
+                                                    <i class="ri-delete-bin-line align-bottom"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div class="pb-3 border-bottom border-bottom-dashed mb-3">
+                                            <div class="file-details-box bg-light p-3 text-center rounded-3 border border-light mb-3">
+                                                <div class="display-4 file-icon">
+                                                    <i class="{{ $preview['icon'] }}"></i>
+                                                </div>
+                                            </div>
+
+                                            <div class="d-flex gap-2 float-end">
+                                                @if($preview['is_audio'])
+                                                    <a href="{{ $preview['stream_url'] }}" target="_blank" rel="noopener noreferrer" class="btn btn-icon btn-sm btn-ghost-success fs-16">
+                                                        <i class="ri-play-circle-line"></i>
+                                                    </a>
+                                                @endif
+
+                                                <a href="{{ $preview['download_url'] }}" target="_blank" rel="noopener noreferrer" class="btn btn-icon btn-sm btn-ghost-primary fs-16">
+                                                    <i class="ri-download-2-line"></i>
+                                                </a>
+                                            </div>
+
+                                            <h5 class="fs-16 mb-1">{{ $preview['basename'] }}</h5>
+                                            <p class="text-muted mb-0 fs-12">
+                                                {{ $this->formatBytes($preview['size_bytes']) }},
+                                                {{ optional($preview['updated_at'])->format('d M, Y') }}
+                                            </p>
+                                        </div>
+
+                                        @if($preview['is_audio'])
+                                            <div class="audio-preview mb-3" wire:key="storage-audio-preview-{{ md5($preview['relative_path']) }}">
+                                                <div class="fw-semibold mb-2">Audio Player</div>
+                                                <div wire:ignore>
+                                                    <audio controls class="w-100" preload="none">
+                                                        <source src="{{ $preview['stream_url'] }}" type="{{ $preview['mime'] }}">
+                                                        Your browser does not support audio playback.
+                                                    </audio>
+                                                </div>
+                                            </div>
+                                        @endif
+
+                                        <div>
+                                            <h5 class="fs-12 text-uppercase text-muted mb-3">File Details</h5>
+
+                                            <div class="table-responsive">
+                                                <table class="table table-borderless table-nowrap table-sm">
+                                                    <tbody>
+                                                        <tr>
+                                                            <th scope="row" style="width: 35%;">File Name :</th>
+                                                            <td class="text-break">{{ $preview['basename'] }}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th scope="row">File Type :</th>
+                                                            <td>{{ $preview['type_label'] }}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th scope="row">MIME :</th>
+                                                            <td class="text-break">{{ $preview['mime'] }}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th scope="row">Size :</th>
+                                                            <td>{{ $this->formatBytes($preview['size_bytes']) }}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th scope="row">Updated :</th>
+                                                            <td>{{ optional($preview['updated_at'])->format('d M Y, h:i A') }}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th scope="row">Path :</th>
+                                                            <td>
+                                                                <div class="user-select-all text-break small">{{ $preview['relative_path'] }}</div>
+                                                            </td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th scope="row">Disk :</th>
+                                                            <td>{{ $preview['disk'] }}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th scope="row">Tool :</th>
+                                                            <td>{{ strtoupper(explode('/', $preview['relative_path'])[0] ?? '-') }}</td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+
+                                            @php
+                                                $deletePrefix = $this->resolveDeletePrefixForFile($preview['relative_path']);
+                                                $linkedDelete = $deletePrefix !== $preview['relative_path'];
+                                            @endphp
+
+                                            @if($linkedDelete)
+                                                <div class="alert alert-warning mt-3 mb-0">
+                                                    Deleting this file will remove its linked job folder too.
+                                                </div>
+                                            @endif
+                                        </div>
+
+                                        <div class="mt-auto border-top border-top-dashed py-3">
+                                            <div class="hstack gap-2">
+                                                <a href="{{ $preview['download_url'] }}" target="_blank" rel="noopener noreferrer" class="btn btn-soft-primary w-100">
+                                                    <i class="ri-download-2-line align-bottom me-1"></i> Download
+                                                </a>
+                                                @if($preview['is_audio'])
+                                                    <a href="{{ $preview['stream_url'] }}" target="_blank" rel="noopener noreferrer" class="btn btn-soft-success w-100">
+                                                        <i class="ri-play-circle-line align-bottom me-1"></i> Stream
+                                                    </a>
+                                                @endif
+                                                <button type="button" class="btn btn-soft-danger w-100" wire:click="confirmDeleteFile('{{ $preview['relative_path'] }}')">
+                                                    <i class="ri-delete-bin-line align-bottom me-1"></i> Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            @else
+                                <div id="folder-overview" class="sticky-pane">
+                                    <div class="d-flex align-items-center pb-3 border-bottom border-bottom-dashed">
+                                        <h5 class="flex-grow-1 fw-bold mb-0">Overview</h5>
+                                    </div>
+
+                                    <div class="mt-4">
+                                        <ul class="list-unstyled vstack gap-4">
+                                            @foreach($this->overviewStats() as $label => $stat)
+                                                <li>
+                                                    <div class="d-flex align-items-center">
+                                                        <div class="flex-shrink-0">
+                                                            <div class="avatar-xs">
+                                                                <div class="avatar-title rounded bg-{{ $stat['color'] }}-subtle text-{{ $stat['color'] }}">
+                                                                    <i class="{{ $stat['icon'] }} fs-17"></i>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div class="flex-grow-1 ms-3">
+                                                            <h5 class="mb-1 fs-15">{{ $label }}</h5>
+                                                            <p class="mb-0 fs-12 text-muted">{{ number_format($stat['count']) }} files</p>
+                                                        </div>
+                                                        <b>{{ $this->formatBytes($stat['size']) }}</b>
+                                                    </div>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    </div>
+
+                                    <div class="pb-3 mt-4">
+                                        <div class="alert alert-info d-flex align-items-center mb-0">
+                                            <div class="flex-shrink-0">
+                                                <i class="ri-lock-2-line text-info align-bottom display-6"></i>
+                                            </div>
+                                            <div class="flex-grow-1 ms-3">
+                                                <h5 class="text-info fs-14">Storage Rules</h5>
+                                                <p class="text-muted mb-0">
+                                                    This page is read-only. Customers can stream, download, and delete only.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        {{-- </div> --}}
+
+        <!-- Delete Modal -->
+        <div
+            id="removeFileItemModal"
+            class="modal fade zoomIn"
+            tabindex="-1"
+            aria-hidden="true"
+            wire:ignore.self
+        >
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0">
+                    <div class="modal-header">
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" wire:click="cancelDelete"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mt-2 text-center">
+                            <div class="avatar-lg mx-auto mb-4">
+                                <div class="avatar-title bg-danger-subtle text-danger rounded-circle fs-1">
+                                    <i class="ri-delete-bin-5-line"></i>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 pt-2 fs-15 mx-4 mx-sm-5">
+                                <h4>Are you sure?</h4>
+                                <p class="text-muted mx-4 mb-0">
+                                    @if($pendingDeleteType === 'folder')
+                                        Deleting this folder will permanently remove all files inside it.
+                                    @else
+                                        Deleting this item may also remove all linked assets in the same job folder.
+                                    @endif
+                                </p>
+
+                                @if($pendingDeleteLabel)
+                                    <div class="mt-3 small text-break text-primary">
+                                        {{ $pendingDeleteLabel }}
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2 justify-content-center mt-4 mb-2">
+                            <button type="button" class="btn w-sm btn-light" data-bs-dismiss="modal" wire:click="cancelDelete">
+                                Close
+                            </button>
+                            <button type="button" class="btn w-sm btn-danger" wire:click="deleteConfirmed">
+                                Yes, Delete It!
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+@push('scripts')
+<script>
+    let storageDeleteModal;
+
+    const getStorageDeleteModal = () => {
+        const el = document.getElementById('removeFileItemModal');
+        if (!el) return null;
+        storageDeleteModal ??= new bootstrap.Modal(el);
+        return storageDeleteModal;
+    };
+
+    window.addEventListener('storage-delete-modal-open', () => {
+        const modal = getStorageDeleteModal();
+        modal?.show();
+    });
+
+    window.addEventListener('storage-delete-modal-close', () => {
+        const modal = getStorageDeleteModal();
+        modal?.hide();
+    });
+</script>
+@endpush
