@@ -544,9 +544,77 @@ class extends Component
         $this->currentQueuedForSec = $queuedForSec;
         $this->currentElapsedSec = $elapsedSec;
         $this->currentProgressTitle = (string) data_get($job->input, 'title', '');
+        $this->currentProgressFileName = (string) (
+            data_get($job->output, 'download_name')
+            ?: data_get($job->output, 'file_name')
+            ?: ''
+        );
+        $this->currentProgressUpdatedAt = $job->updated_at?->toDateTimeString();
         $this->currentPlaylistCount = data_get($job->input, 'entries_count') !== null
             ? (int) data_get($job->input, 'entries_count')
             : null;
+    }
+
+    protected function rememberTrackedJob(?string $jobId): void
+    {
+        $jobId = trim((string) $jobId);
+
+        if ($jobId === '') {
+            session()->forget('youtube.last_job_id');
+
+            return;
+        }
+
+        session(['youtube.last_job_id' => $jobId]);
+    }
+
+    protected function trackedJobId(): ?string
+    {
+        $jobId = trim((string) session('youtube.last_job_id', ''));
+
+        return $jobId !== '' ? $jobId : null;
+    }
+
+    protected function jobHasBrowserDownload(?MlJob $job): bool
+    {
+        if (! $job instanceof MlJob) {
+            return false;
+        }
+
+        return (string) $job->status === 'done'
+            && (string) data_get($job->output, 'delivery', '') === 'browser_direct'
+            && trim((string) data_get($job->output, 'local_file_path', '')) !== '';
+    }
+
+    protected function findRestorableFinishedJob(int $customerId, array $toolIds): ?MlJob
+    {
+        $baseQuery = MlJob::query()
+            ->where('customer_id', $customerId)
+            ->when(! empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
+            ->where('status', 'done');
+
+        $trackedJobId = $this->trackedJobId();
+
+        if ($trackedJobId) {
+            $trackedJob = (clone $baseQuery)
+                ->where('id', $trackedJobId)
+                ->first();
+
+            if ($this->jobHasBrowserDownload($trackedJob)) {
+                return $trackedJob;
+            }
+        }
+
+        $latestFinishedJob = (clone $baseQuery)
+            ->orderByDesc('finished_at')
+            ->orderByDesc('updated_at')
+            ->first();
+
+        if ($this->jobHasBrowserDownload($latestFinishedJob)) {
+            return $latestFinishedJob;
+        }
+
+        return null;
     }
 
     protected function hydrateCurrentJobFromDb(): void
@@ -586,6 +654,10 @@ class extends Component
             ->first();
 
         if (! $job) {
+            $job = $this->findRestorableFinishedJob($customerId, $toolIds);
+        }
+
+        if (! $job) {
             $this->currentJobId = null;
             $this->currentStatus = null;
             $this->jobFinished = false;
@@ -597,6 +669,7 @@ class extends Component
         }
 
         $status = (string) $job->status;
+        $this->rememberTrackedJob((string) $job->id);
 
         $this->currentJobId = (string) $job->id;
         $this->currentStatus = $status;
@@ -620,11 +693,13 @@ class extends Component
         }
 
         $finishedAt = $job->finished_at;
+        $hasBrowserDownload = $this->jobHasBrowserDownload($job);
 
-        $this->showJobStatus =
-            $this->dismissedJobStatusFor !== (string) $job->id
-            && $finishedAt
-            && $finishedAt->gte(now()->subSeconds(3));
+        $this->showJobStatus = $this->dismissedJobStatusFor !== (string) $job->id
+            && (
+                $hasBrowserDownload
+                || ($finishedAt && $finishedAt->gte(now()->subSeconds(3)))
+            );
     }
 
     // =========================================================
@@ -782,6 +857,7 @@ class extends Component
             ProcessYoutubeDownloadJob::dispatch($jobId);
 
             $this->currentJobId = $jobId;
+            $this->rememberTrackedJob($jobId);
             $this->currentStatus = 'queued';
             $this->jobFinished = false;
             $this->currentProgress = 10;
@@ -1049,6 +1125,15 @@ class extends Component
         $this->dispatch('header:refresh');
         $this->dispatch('youtube-downloads-refresh');
         $this->dispatch('alert', type: 'success', message: 'Download deleted.');
+
+        if ($this->trackedJobId() === $jobId) {
+            $this->rememberTrackedJob(null);
+        }
+
+        if ($this->dismissedJobStatusFor === $jobId) {
+            $this->dismissedJobStatusFor = null;
+            session()->forget('youtube.dismissed_job_status_for');
+        }
     }
 
     public function reuseDownload(string $jobId): void
@@ -1608,6 +1693,11 @@ class extends Component
                                     Eliminate
                                 </button>
 
+                                @if($currentDownloadUrl)
+                                    <a class="btn btn-sm btn-outline-success" href="{{ $currentDownloadUrl }}">
+                                        Download To Device
+                                    </a>
+                                @endif
                                 @if($walletBalance < $creditsCost && $creditsCost > 0)
                                     <span class="small text-danger align-self-center">
                                         Not enough credits for this download.
