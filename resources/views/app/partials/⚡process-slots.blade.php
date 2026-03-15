@@ -2,9 +2,7 @@
 
 use Livewire\Attributes\On;
 use Livewire\Component;
-use Illuminate\Support\Facades\Log;
 use App\Models\MlJob;
-use App\Services\XTTS\XttsJobSyncService;
 
 new class extends Component {
     public int $refreshKey = 0;
@@ -24,7 +22,15 @@ new class extends Component {
     #[On('clone-xtts-renders-refresh')]
     #[On('wasr-renders-refresh')]
     #[On('asr-renders-refresh')]
+    #[On('stem-renders-refresh')]
+    #[On('ocr-renders-refresh')]
+    #[On('youtube-downloads-refresh')]
     public function refreshSlots(): void
+    {
+        $this->hydrateBoard();
+    }
+
+    public function pollJobs(): void
     {
         $this->hydrateBoard();
     }
@@ -68,6 +74,7 @@ new class extends Component {
                 'wasr','asr'=> route('app.wasr', ['locale' => app()->getLocale()]),
                 'ocr'       => route('app.ocr', ['locale' => app()->getLocale()]),
                 'stem'      => route('app.stem', ['locale' => app()->getLocale()]),
+                'youtube_audio', 'youtube_video' => route('app.youtube', ['locale' => app()->getLocale()]),
                 default     => route('app.home', ['locale' => app()->getLocale()]),
             };
 
@@ -180,7 +187,7 @@ new class extends Component {
     };
 @endphp
 <div wire:key="process-slots-{{ $refreshKey }}" class="d-flex align-items-center">
-    {{-- <div wire:poll.keep-alive.2500ms="pollJobs"></div> --}}
+    <div wire:poll.5000ms="pollJobs"></div>
 
     <div class="d-flex align-items-center gap-2 px-2 py-2 rounded-4"
          style="background: rgba(0,0,0,.22); box-shadow: inset 0 1px 0 rgba(255,255,255,.04);">

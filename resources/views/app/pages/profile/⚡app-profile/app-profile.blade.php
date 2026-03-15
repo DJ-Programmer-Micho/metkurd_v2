@@ -1,4 +1,4 @@
-<div class="page-content">
+<div>
     @push('styles')
         <style>
             .profile-wid-bg::before {

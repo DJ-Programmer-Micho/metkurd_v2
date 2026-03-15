@@ -73,7 +73,7 @@
 
                 <livewire:partials.components.nav-feature-link
                     :route="'app.xtts'"
-                    icon="bx bx-aperture"
+                    icon="ri-volume-up-line"
                     label="TEXT-TO-SPEECH"
                     feature="tts.active"
                     badge="PRO"
@@ -89,7 +89,7 @@
 
                 <livewire:partials.components.nav-feature-link 
                     :route="'app.wasr'"
-                    icon="bx bxs-microphone-alt"
+                    icon="ri-file-text-line"
                     :label="__('SPEECH_TO_TEXT')"
                     feature="asr.active"
                     badge="PRO"
@@ -140,7 +140,7 @@
                 <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">YouTube</span></li>
                 <livewire:partials.components.nav-feature-link
                     :route="'app.youtube'"
-                    icon="bx bx-video"
+                    icon="ri-youtube-line"
                     :label="__('YOUTUBE DOWNLOADER')"
                     feature="youtube_video.active"
                     badge="PRO"

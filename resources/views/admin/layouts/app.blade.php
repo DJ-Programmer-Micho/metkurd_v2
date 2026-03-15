@@ -80,6 +80,7 @@
     <script data-navigate-once src="{{ asset('app/js/app.js') }}"></script>
 
     {{-- Toastr --}}
+    <script data-navigate-once src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 
     @livewireScripts
@@ -107,9 +108,40 @@
     }
 
     // Toastr from Livewire
-    window.addEventListener('alert', (event) => {
+    const dispatchToast = (payload) => {
+        if (typeof toastr === 'undefined') return;
+
         toastr.options = { closeButton: true, progressBar: true };
-        toastr[event.detail.type](event.detail.message, event.detail.title ?? '');
+
+        const detail = Array.isArray(payload)
+            ? (payload[0] || {})
+            : ((payload && typeof payload === 'object' && 'detail' in payload)
+                ? (payload.detail || {})
+                : (payload || {}));
+
+        const type = detail.type || 'info';
+        const message = detail.message || '';
+        const title = detail.title || '';
+
+        if (typeof toastr[type] === 'function') {
+            toastr[type](message, title);
+        } else {
+            toastr.info(message, title);
+        }
+    };
+
+    window.addEventListener('alert', dispatchToast);
+
+    document.addEventListener('livewire:init', () => {
+        if (window.__ADMIN_TOASTR_LIVEWIRE_BOUND__ || typeof Livewire === 'undefined') {
+            return;
+        }
+
+        window.__ADMIN_TOASTR_LIVEWIRE_BOUND__ = true;
+
+        Livewire.on('alert', (payload) => {
+            dispatchToast(payload);
+        });
     });
 
     function initBootstrap() {
