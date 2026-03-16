@@ -1,4 +1,4 @@
-{{-- resources/views/app/partials/components/nav-feature-link.blade.php --}}
+{{-- resources/views/admin/partials/components/nav-feature-link.blade.php --}}
 <?php
 
 use Livewire\Component;
@@ -14,7 +14,7 @@ new class extends Component
 ?>
 
 @php
-    $user = auth('app')->user();
+    $user = auth('admin')->user();
     $enabled = true;
     // $enabled = $feature ? ($user?->hasFeature($feature) ?? false) : true;
 

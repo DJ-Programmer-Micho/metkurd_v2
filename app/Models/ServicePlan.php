@@ -56,4 +56,19 @@ class ServicePlan extends Model
     {
         return $this->hasMany(CreditMonthlyGrant::class, 'service_plan_id');
     }
+
+    public function planEntitlements(): HasMany
+    {
+        return $this->hasMany(PlanEntitlement::class, 'service_plan_id');
+    }
+
+    public function voiceAccesses(): HasMany
+    {
+        return $this->hasMany(PlanVoiceAccess::class, 'service_plan_id');
+    }
+
+    public function activeVoiceAccesses(): HasMany
+    {
+        return $this->voiceAccesses()->where('is_active', true);
+    }
 }

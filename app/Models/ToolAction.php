@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ToolAction extends Model
@@ -27,9 +28,19 @@ class ToolAction extends Model
         'meta' => 'array',
     ];
 
+    public function tool(): BelongsTo
+    {
+        return $this->belongsTo(Tool::class, 'tool_code', 'code');
+    }
+
     public function pricingRules(): HasMany
     {
         return $this->hasMany(PricingRule::class, 'tool_action_id');
+    }
+
+    public function entitlements(): HasMany
+    {
+        return $this->hasMany(PlanEntitlement::class, 'tool_action_id');
     }
 
     public function customerPricingRules(): HasMany
@@ -40,5 +51,10 @@ class ToolAction extends Model
     public function usageEvents(): HasMany
     {
         return $this->hasMany(UsageEvent::class, 'tool_action_id');
+    }
+
+    public function mlJobs(): HasMany
+    {
+        return $this->hasMany(MlJob::class, 'tool_action_id');
     }
 }

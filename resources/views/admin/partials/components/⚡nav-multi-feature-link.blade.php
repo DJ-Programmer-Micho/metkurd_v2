@@ -1,4 +1,4 @@
-{{-- resources/views/app/partials/components/nav-multi-feature-link.blade.php --}}
+{{-- resources/views/admin/partials/components/nav-multi-feature-link.blade.php --}}
 <?php
 
 use Livewire\Component;
@@ -16,7 +16,7 @@ new class extends Component
 ?>
 
 @php
-    $user = auth('app')->user();
+    $user = auth('admin')->user();
 
     $featuresArr = collect(is_array($features) ? $features : ($features ? [$features] : []))
         ->filter()

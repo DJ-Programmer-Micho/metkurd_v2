@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\Admin\Auth\AdminAuthController;
-use App\Http\Controllers\Admin\Pages\AdminController;
 use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
 use App\Http\Controllers\App\Services\CloneXttsRenderController;
@@ -45,6 +44,19 @@ Route::prefix('{locale}/'.app('aurl'))
     ->middleware(['auth:admin', LocalizationMainMiddleware::class])
     ->group(function () {
         Route::livewire('/home', 'admin::pages.home.app-home')->name('admin.home');
+        Route::livewire('/services/tools', 'admin::pages.services.adm-services-tools')->name('admin.services.tools');
+        Route::get('/services/rules', fn (string $locale) => redirect()->route('admin.services.voices', ['locale' => $locale]))
+            ->name('admin.services.rules');
+        Route::livewire('/services/voices', 'admin::pages.services.adm-services-voices')->name('admin.services.voices');
+        Route::livewire('/services/pricing', 'admin::pages.services.adm-services-pricing')->name('admin.services.pricing');
+        Route::livewire('/services/entitlements', 'admin::pages.services.adm-services-entitlements')->name('admin.services.entitlements');
+        Route::livewire('/customers/list', 'admin::pages.customers.adm-customers-list')->name('admin.customers.list');
+        Route::livewire('/customers/ranking', 'admin::pages.customers.adm-customers-ranking')->name('admin.customers.ranking');
+        Route::livewire('/customers/register', 'admin::pages.customers.adm-customers-register')->name('admin.customers.register');    
+        Route::livewire('/customers/usage', 'admin::pages.customers.adm-customers-usage')->name('admin.customers.usage');
+        Route::livewire('/packs/plans', 'admin::pages.payments.adm-payments-plans')->name('admin.payments.plans');
+        Route::livewire('/packs/addons', 'admin::pages.payments.adm-payments-addons')->name('admin.payments.addons');
+        Route::livewire('/packs/storage', 'admin::pages.payments.adm-payments-storages')->name('admin.payments.storage');
     });
 
     Route::middleware('auth:admin')->group(function () {

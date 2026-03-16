@@ -26,7 +26,7 @@
     <link rel="shortcut icon" href="{{ app('logo_1024_tran') }}">
 
     {{-- <link href="{{ asset('app/libs/swiper/swiper-bundle.min.css') }}" rel="stylesheet" type="text/css" /> --}}
-
+    @stack('pre-styles')
     <link href="{{ asset('app/css/bootstrap.min.css') }}" rel="stylesheet" type="text/css" />
     <link href="{{ asset('app/css/icons.min.css') }}" rel="stylesheet" type="text/css" />
     <link href="{{ asset('app/css/app.min.css') }}" rel="stylesheet" type="text/css" />
@@ -59,25 +59,26 @@
     <div class="vertical-overlay"></div>
 
     <div class="main-content">
+        <div class="page-content">
         {{ $slot }}
-
+        </div>
         @if (view()->exists('admin.partials.footer-one'))
             @include('admin.partials.footer-one')
         @endif
     </div>
 
     {{-- Core JS (Bootstrap must be before plugins that depend on it) --}}
-    <script data-navigate-once src="{{ asset('app/libs/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
-    <script data-navigate-once src="{{ asset('app/libs/simplebar/simplebar.min.js') }}"></script>
-    <script data-navigate-once src="{{ asset('app/libs/node-waves/waves.min.js') }}"></script>
-    <script data-navigate-once src="{{ asset('app/libs/feather-icons/feather.min.js') }}"></script>
-    <script data-navigate-once src="{{ asset('app/js/pages/plugins/lord-icon-2.1.0.js') }}"></script>
+    <script data-navigate-once src="{{ asset('admin/libs/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+    <script data-navigate-once src="{{ asset('admin/libs/simplebar/simplebar.min.js') }}"></script>
+    <script data-navigate-once src="{{ asset('admin/libs/node-waves/waves.min.js') }}"></script>
+    <script data-navigate-once src="{{ asset('admin/libs/feather-icons/feather.min.js') }}"></script>
+    <script data-navigate-once src="{{ asset('admin/js/pages/plugins/lord-icon-2.1.0.js') }}"></script>
 
     <script src="{{ asset('app/libs/swiper/swiper-bundle.min.js') }}"></script>
 
     {{-- Template scripts --}}
     {{-- <script src="{{ asset('app/js/plugins.js') }}"></script> --}}
-    <script data-navigate-once src="{{ asset('app/js/app.js') }}"></script>
+    <script data-navigate-once src="{{ asset('admin/js/app.js') }}"></script>
 
     {{-- Toastr --}}
     <script data-navigate-once src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -130,19 +131,9 @@
         }
     };
 
+    // Livewire dispatch() already reaches the browser as a DOM event.
+    // Listening in both places causes duplicate toasts.
     window.addEventListener('alert', dispatchToast);
-
-    document.addEventListener('livewire:init', () => {
-        if (window.__ADMIN_TOASTR_LIVEWIRE_BOUND__ || typeof Livewire === 'undefined') {
-            return;
-        }
-
-        window.__ADMIN_TOASTR_LIVEWIRE_BOUND__ = true;
-
-        Livewire.on('alert', (payload) => {
-            dispatchToast(payload);
-        });
-    });
 
     function initBootstrap() {
         // Dropdowns
