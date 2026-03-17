@@ -54,6 +54,7 @@ Route::prefix('{locale}/'.app('aurl'))
         Route::livewire('/customers/ranking', 'admin::pages.customers.adm-customers-ranking')->name('admin.customers.ranking');
         Route::livewire('/customers/register', 'admin::pages.customers.adm-customers-register')->name('admin.customers.register');    
         Route::livewire('/customers/usage', 'admin::pages.customers.adm-customers-usage')->name('admin.customers.usage');
+        Route::livewire('/customers/suspended', 'admin::pages.customers.adm-customers-suspended')->name('admin.customers.suspended');
         Route::livewire('/packs/plans', 'admin::pages.payments.adm-payments-plans')->name('admin.payments.plans');
         Route::livewire('/packs/addons', 'admin::pages.payments.adm-payments-addons')->name('admin.payments.addons');
         Route::livewire('/packs/storage', 'admin::pages.payments.adm-payments-storages')->name('admin.payments.storage');

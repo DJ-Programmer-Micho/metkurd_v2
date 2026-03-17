@@ -152,13 +152,15 @@ class PlanSwitcher
                 'credit_product_id' => null,
                 'status' => 'paid',
                 'credits_amount' => 0,
-                'amount_usd' => 0,
+                'amount_usd' => (float) ($plan->price_usd ?? 0),
                 'currency' => 'USD',
                 'provider' => 'fake',
                 'provider_ref' => 'FAKE-STORAGE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999),
                 'meta' => array_merge([
                     'purpose' => 'storage_plan_change',
                     'storage_plan_id' => $plan->id,
+                    'storage_plan_code' => $plan->code,
+                    'storage_plan_name' => $plan->name,
                 ], $meta),
             ]);
 

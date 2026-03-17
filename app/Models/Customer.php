@@ -110,7 +110,7 @@ class Customer extends Authenticatable
     public function activeServiceSubscription(): HasOne
     {
         return $this->hasOne(CustomerServiceSubscription::class)
-            ->where('status', 'active')
+            ->where('customer_service_subscriptions.status', 'active')
             ->latestOfMany();
     }
 

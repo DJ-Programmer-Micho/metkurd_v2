@@ -13,6 +13,7 @@ class CustomerProfile extends Model
         'first_name',
         'last_name',
         'job_title',
+        'brand_name',
         'country',
         'city',
         'address',

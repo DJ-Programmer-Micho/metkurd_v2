@@ -88,7 +88,7 @@
                 <livewire:partials.components.nav-multi-feature-link
                     id="sidebarCustomer"
                     icon="bx bx-microphone"
-                    :label="__('List')"
+                    :label="__('Customers')"
                     :features="null"
                     >
 
@@ -114,6 +114,12 @@
                         route="admin.customers.usage"
                         icon="bx bxs-microphone-alt"
                         :label="__('Usage')"
+                    />
+
+                    <livewire:partials.components.nav-feature-link
+                        route="admin.customers.suspended"
+                        icon="bx bxs-microphone-alt"
+                        :label="__('Suspended')"
                     />
 
                 </livewire:partials.components.nav-multi-feature-link>

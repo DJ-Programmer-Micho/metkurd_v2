@@ -39,6 +39,7 @@ class extends Component
                     'code' => (string) $p->code,
                     'name' => (string) $p->name,
                     'quota_mb' => (int) ($p->quota_mb ?? 0),
+                    'price_usd' => (float) ($p->price_usd ?? 0),
                 ];
             })
             ->values()
@@ -178,6 +179,8 @@ class extends Component
                             <div class="ms-auto text-end">
                                 <div class="fw-semibold">{{ number_format($p['quota_mb']) }} MB</div>
                                 <div class="text-muted fs-12">quota</div>
+                                <div class="fw-semibold mt-2">${{ number_format($p['price_usd'], 2) }}</div>
+                                <div class="text-muted fs-12">per change</div>
                             </div>
                         </div>
 
@@ -231,6 +234,10 @@ class extends Component
                             <p class="mb-2">
                                 New quota:
                                 <b>{{ number_format($selected['quota_mb']) }} MB</b>
+                            </p>
+                            <p class="mb-2">
+                                Price:
+                                <b>${{ number_format($selected['price_usd'], 2) }}</b>
                             </p>
                         @endif
 
