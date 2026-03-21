@@ -32,6 +32,7 @@ class MlJob extends Model
         'runtime_ms',
         'started_at',
         'finished_at',
+        'expires_at',
         'job_kind',
         'execution_scope',
         'locked_by_session_id',
@@ -46,6 +47,7 @@ class MlJob extends Model
         'provider_cost_usd' => 'decimal:6',
         'started_at'        => 'datetime',
         'finished_at'       => 'datetime',
+        'expires_at'        => 'datetime',
         'lock_expires_at'   => 'datetime',
     ];
 

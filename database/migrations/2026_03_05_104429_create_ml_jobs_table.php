@@ -37,7 +37,7 @@ return new class extends Migration {
 
             $table->timestamp('started_at')->nullable()->index();
             $table->timestamp('finished_at')->nullable()->index();
-
+            $table->timestamp('expires_at')->nullable()->index();
             /*
             |--------------------------------------------------------------------------
             | SPA / execution lock fields

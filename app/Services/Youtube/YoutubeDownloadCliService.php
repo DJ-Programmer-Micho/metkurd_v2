@@ -2,42 +2,37 @@
 
 namespace App\Services\Youtube;
 
+use App\Services\Youtube\Concerns\InteractsWithYoutubeWorker;
+use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Process\InvokedProcess;
 use Illuminate\Support\Facades\Process;
 
 class YoutubeDownloadCliService
 {
+    use InteractsWithYoutubeWorker;
+
+    protected function cookieArguments(): array
+    {
+        return [];
+    }
+
     public function __construct(
         protected YoutubeOutputStorage $storage,
     ) {}
 
-    public function download(
+    public function startDownload(
         string $url,
         string $mode,
         string $format,
         string $quality,
         string $jobId
-    ): array {
-        $script = base_path('python/youtube_worker.py');
-        $tempDir = $this->storage->localTempDir($jobId);
-        $progressFile = $this->storage->progressSnapshotPath($jobId);
-        $progressLog = $this->storage->progressLogPath($jobId);
+    ): InvokedProcess {
+        $workspace = $this->prepareWorkspace($jobId);
 
-        if (! is_dir($tempDir)) {
-            mkdir($tempDir, 0775, true);
-        }
-
-        if (! is_file($script)) {
-            throw new \RuntimeException("YouTube worker script not found: {$script}");
-        }
-
-        $result = Process::path(base_path())
+        return Process::path(base_path())
             ->env($this->processEnvironment())
-            ->timeout(7500)
-            ->run([
-                $this->pythonBin(),
-                '-X',
-                'utf8',
-                $script,
+            ->forever()
+            ->start($this->workerCommand([
                 'download',
                 '--url',
                 trim($url),
@@ -48,13 +43,16 @@ class YoutubeDownloadCliService
                 '--quality',
                 $quality,
                 '--outdir',
-                $tempDir,
+                $workspace['temp_dir'],
                 '--progress-file',
-                $progressFile,
+                $workspace['progress_file'],
                 '--progress-log',
-                $progressLog,
-            ]);
+                $workspace['progress_log'],
+            ]));
+    }
 
+    public function decodeDownloadResult(ProcessResult $result): array
+    {
         $raw = trim($result->output());
         $error = trim($result->errorOutput());
 
@@ -62,121 +60,43 @@ class YoutubeDownloadCliService
             $data = $this->tryDecodeJson($raw);
 
             if (is_array($data) && array_key_exists('error', $data)) {
-                throw new \RuntimeException((string) $data['error']);
+                throw new \RuntimeException($this->friendlyWorkerError((string) $data['error']));
             }
 
-            throw new \RuntimeException($raw !== '' ? $raw : ($error !== '' ? $error : 'Download command failed.'));
+            $message = $raw !== '' ? $raw : ($error !== '' ? $error : 'Download command failed.');
+
+            throw new \RuntimeException($this->friendlyWorkerError($message));
         }
 
-        $data = $this->decodeJson($raw, 'Download');
+        $data = $this->decodeJson($raw, 'download');
 
         if (($data['ok'] ?? false) !== true) {
-            throw new \RuntimeException((string) ($data['error'] ?? 'Download failed.'));
+            throw new \RuntimeException($this->friendlyWorkerError((string) ($data['error'] ?? 'Download failed.')));
         }
 
         return $data['data'] ?? [];
     }
 
-    protected function pythonBin(): string
+    public function prepareWorkspace(string $jobId): array
     {
-        $target = trim((string) config('services.youtube.python_target', 'default'));
-        $bin = trim((string) data_get(config('services.youtube.python_bins', []), $target, ''));
+        $tempDir = $this->storage->localTempDir($jobId);
 
-        if ($bin === '') {
-            $bin = trim((string) config('services.youtube.python_bin', 'python'));
+        if (! is_dir($tempDir)) {
+            mkdir($tempDir, 0775, true);
         }
-
-        if ($bin === '') {
-            return 'python';
-        }
-
-        if (
-            (str_contains($bin, '\\') || str_contains($bin, '/'))
-            && ! is_file($bin)
-        ) {
-            throw new \RuntimeException("Python executable not found: {$bin}");
-        }
-
-        return $bin;
-    }
-
-    protected function decodeJson(string $raw, string $context): array
-    {
-        $data = $this->tryDecodeJson($raw);
-
-        if (! is_array($data)) {
-            throw new \RuntimeException("{$context} returned invalid JSON: ".$this->normalizeJsonString($raw));
-        }
-
-        return $data;
-    }
-
-    protected function tryDecodeJson(string $raw): ?array
-    {
-        $normalized = trim($this->normalizeJsonString($raw));
-
-        if ($normalized === '') {
-            return null;
-        }
-
-        $data = json_decode($normalized, true);
-
-        if (is_array($data)) {
-            return $data;
-        }
-
-        $lines = preg_split('/\r\n|\n|\r/', $normalized) ?: [];
-
-        foreach (array_reverse($lines) as $line) {
-            $candidate = trim((string) $line);
-
-            if ($candidate === '' || ! str_starts_with($candidate, '{')) {
-                continue;
-            }
-
-            $decoded = json_decode($candidate, true);
-
-            if (is_array($decoded)) {
-                return $decoded;
-            }
-        }
-
-        return null;
-    }
-
-    protected function normalizeJsonString(string $raw): string
-    {
-        if ($raw === '') {
-            return $raw;
-        }
-
-        if (function_exists('mb_check_encoding') && ! mb_check_encoding($raw, 'UTF-8')) {
-            $converted = @mb_convert_encoding($raw, 'UTF-8', 'Windows-1252');
-
-            if (is_string($converted) && $converted !== '') {
-                return $converted;
-            }
-        }
-
-        return $raw;
-    }
-
-    protected function processEnvironment(): array
-    {
-        $systemRoot = trim((string) (getenv('SYSTEMROOT') ?: getenv('SystemRoot') ?: 'C:\\Windows'));
-        $tempDir = trim((string) (getenv('TEMP') ?: getenv('TMP') ?: sys_get_temp_dir()));
-        $path = (string) (getenv('PATH') ?: getenv('Path') ?: '');
 
         return [
-            'SYSTEMROOT' => $systemRoot,
-            'SystemRoot' => $systemRoot,
-            'WINDIR' => trim((string) (getenv('WINDIR') ?: $systemRoot)),
-            'ComSpec' => trim((string) (getenv('ComSpec') ?: $systemRoot.'\\System32\\cmd.exe')),
-            'TEMP' => $tempDir,
-            'TMP' => $tempDir,
-            'PATH' => $path,
-            'PYTHONUTF8' => '1',
-            'PYTHONIOENCODING' => 'utf-8',
+            'temp_dir' => $tempDir,
+            'progress_file' => $this->storage->progressSnapshotPath($jobId),
+            'progress_log' => $this->storage->progressLogPath($jobId),
+        ];
+    }
+
+    public function progressState(string $jobId, int $logLimit = 10): array
+    {
+        return [
+            'snapshot' => $this->storage->readProgressSnapshot($jobId),
+            'log_lines' => $this->storage->readProgressLog($jobId, $logLimit),
         ];
     }
 }

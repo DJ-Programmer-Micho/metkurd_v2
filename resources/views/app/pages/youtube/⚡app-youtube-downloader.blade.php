@@ -72,6 +72,10 @@ class extends Component
 
     public ?string $currentProgressFileName = null;
 
+    public bool $currentDownloadReady = false;
+
+    public ?string $currentDownloadExpiresAt = null;
+
     public ?int $currentPlaylistIndex = null;
 
     public ?int $currentPlaylistCount = null;
@@ -125,6 +129,10 @@ class extends Component
 
     public int $creditsCost = 0;
 
+    public array $audioFormatOptions = [];
+
+    public array $videoQualityOptions = [];
+
     // =========================================================
     // Internal
     // =========================================================
@@ -135,6 +143,7 @@ class extends Component
     // =========================================================
     public function mount(): void
     {
+        $this->loadDownloadOptionMaps();
         $this->normalizeDownloadOptions();
         $this->syncWallet();
         $this->syncCostPreview();
@@ -150,6 +159,7 @@ class extends Component
     #[On('youtube-downloads-refresh')]
     public function refreshUi(): void
     {
+        $this->loadDownloadOptionMaps();
         $this->syncWallet();
         $this->syncCostPreview();
         $this->hydrateCurrentJobFromDb();
@@ -381,26 +391,32 @@ class extends Component
 
     protected function allowedAudioFormats(): array
     {
-        return ['mp3', 'wav'];
+        $this->ensureDownloadOptionMapsLoaded();
+
+        return array_keys($this->audioFormatOptions);
     }
 
     protected function allowedVideoQualities(): array
     {
-        return ['p480', 'p720', 'p1080', 'p4k'];
+        $this->ensureDownloadOptionMapsLoaded();
+
+        return array_keys($this->videoQualityOptions);
     }
 
     protected function normalizeDownloadOptions(): void
     {
+        $this->ensureDownloadOptionMapsLoaded();
+
         if (! in_array($this->downloadMode, ['audio', 'video'], true)) {
             $this->downloadMode = 'audio';
         }
 
         if (! in_array($this->videoQuality, $this->allowedVideoQualities(), true)) {
-            $this->videoQuality = 'p720';
+            $this->videoQuality = $this->allowedVideoQualities()[0] ?? 'p720';
         }
 
         if (! in_array($this->audioFormat, $this->allowedAudioFormats(), true)) {
-            $this->audioFormat = 'mp3';
+            $this->audioFormat = $this->allowedAudioFormats()[0] ?? 'mp3';
         }
     }
 
@@ -455,14 +471,24 @@ class extends Component
         $this->normalizeDownloadOptions();
 
         if ($this->downloadMode === 'audio') {
-            $tool = Tool::query()->where('code', $this->audioToolCode)->first();
+            $tool = Tool::query()
+                ->where('code', $this->audioToolCode)
+                ->where('is_active', true)
+                ->first();
             $action = ToolAction::query()
-                ->where('full_code', "youtube_audio.{$this->audioFormat}")
+                ->where('tool_code', $this->audioToolCode)
+                ->where('action_code', $this->audioFormat)
+                ->where('is_active', true)
                 ->first();
         } else {
-            $tool = Tool::query()->where('code', $this->videoToolCode)->first();
+            $tool = Tool::query()
+                ->where('code', $this->videoToolCode)
+                ->where('is_active', true)
+                ->first();
             $action = ToolAction::query()
-                ->where('full_code', "youtube_video.{$this->videoQuality}")
+                ->where('tool_code', $this->videoToolCode)
+                ->where('action_code', $this->videoQuality)
+                ->where('is_active', true)
                 ->first();
         }
 
@@ -471,6 +497,128 @@ class extends Component
         }
 
         return [$tool, $action];
+    }
+
+    protected function ensureDownloadOptionMapsLoaded(): void
+    {
+        if ($this->audioFormatOptions !== [] && $this->videoQualityOptions !== []) {
+            return;
+        }
+
+        $this->loadDownloadOptionMaps();
+    }
+
+    protected function loadDownloadOptionMaps(): void
+    {
+        $actions = ToolAction::query()
+            ->whereIn('tool_code', [$this->audioToolCode, $this->videoToolCode])
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->get(['tool_code', 'action_code', 'name']);
+
+        $audio = [];
+        $video = [];
+
+        foreach ($actions as $action) {
+            $toolCode = (string) $action->tool_code;
+            $actionCode = trim((string) $action->action_code);
+
+            if ($actionCode === '') {
+                continue;
+            }
+
+            $label = $this->youtubeActionLabel($toolCode, $actionCode, (string) $action->name);
+
+            if ($toolCode === $this->audioToolCode) {
+                $audio[$actionCode] = $label;
+            } elseif ($toolCode === $this->videoToolCode) {
+                $video[$actionCode] = $label;
+            }
+        }
+
+        $this->audioFormatOptions = $this->sortYoutubeOptions(
+            $audio !== [] ? $audio : $this->defaultAudioFormatOptions(),
+            'audio'
+        );
+        $this->videoQualityOptions = $this->sortYoutubeOptions(
+            $video !== [] ? $video : $this->defaultVideoQualityOptions(),
+            'video'
+        );
+    }
+
+    protected function defaultAudioFormatOptions(): array
+    {
+        return [
+            'mp3' => 'MP3',
+            'wav' => 'WAV',
+        ];
+    }
+
+    protected function defaultVideoQualityOptions(): array
+    {
+        return [
+            'p480' => '480p',
+            'p720' => '720p',
+            'p1080' => '1080p',
+            'p4k' => '4K',
+        ];
+    }
+
+    protected function youtubeActionLabel(string $toolCode, string $actionCode, ?string $name = null): string
+    {
+        $name = trim((string) $name);
+
+        if ($name !== '') {
+            $prefix = $toolCode === $this->audioToolCode
+                ? 'YouTube Audio '
+                : 'YouTube Video ';
+
+            if (str_starts_with($name, $prefix)) {
+                $name = trim(substr($name, strlen($prefix)));
+            }
+
+            if ($name !== '') {
+                return $name;
+            }
+        }
+
+        if ($toolCode === $this->audioToolCode) {
+            return strtoupper($actionCode);
+        }
+
+        return match (strtolower($actionCode)) {
+            'p4k' => '4K',
+            default => preg_match('/^p(\d+)$/i', $actionCode, $matches)
+                ? "{$matches[1]}p"
+                : strtoupper($actionCode),
+        };
+    }
+
+    protected function sortYoutubeOptions(array $options, string $type): array
+    {
+        if ($type === 'video') {
+            uksort($options, function (string $left, string $right): int {
+                return $this->videoQualityRank($left) <=> $this->videoQualityRank($right);
+            });
+
+            return $options;
+        }
+
+        uksort($options, fn (string $left, string $right): int => strcmp($left, $right));
+
+        return $options;
+    }
+
+    protected function videoQualityRank(string $code): int
+    {
+        $normalized = strtolower(trim($code));
+
+        return match ($normalized) {
+            'p4k' => 2160,
+            default => preg_match('/^p(\d+)$/', $normalized, $matches)
+                ? (int) $matches[1]
+                : PHP_INT_MAX,
+        };
     }
 
     protected function resetPreview(): void
@@ -502,6 +650,8 @@ class extends Component
         $this->currentProgressUpdatedAt = null;
         $this->currentProgressTitle = null;
         $this->currentProgressFileName = null;
+        $this->currentDownloadReady = false;
+        $this->currentDownloadExpiresAt = null;
         $this->currentPlaylistIndex = null;
         $this->currentPlaylistCount = null;
         $this->currentLogLines = [];
@@ -514,7 +664,7 @@ class extends Component
                 ? 'Waiting for the queue worker to pick up this job.'
                 : 'Queued and waiting to start.',
             'running' => 'Worker is processing the download.',
-            'saving' => 'Saving the finished file.',
+            'saving' => 'Saving the finished file to secure download storage.',
             'done' => 'Download completed successfully.',
             'failed' => 'Download failed.',
             default => null,
@@ -549,7 +699,13 @@ class extends Component
             ?: data_get($job->output, 'file_name')
             ?: ''
         );
-        $this->currentProgressUpdatedAt = $job->updated_at?->toDateTimeString();
+        $this->currentProgressUpdatedAt = (string) (
+            data_get($job->output, 'progress_updated_at')
+            ?: $job->updated_at?->toDateTimeString()
+            ?: ''
+        );
+        $this->currentDownloadReady = $this->jobHasBrowserDownload($job);
+        $this->currentDownloadExpiresAt = $job->expires_at?->toDateTimeString();
         $this->currentPlaylistCount = data_get($job->input, 'entries_count') !== null
             ? (int) data_get($job->input, 'entries_count')
             : null;
@@ -583,7 +739,9 @@ class extends Component
 
         return (string) $job->status === 'done'
             && (string) data_get($job->output, 'delivery', '') === 'browser_direct'
-            && trim((string) data_get($job->output, 'local_file_path', '')) !== '';
+            && trim((string) data_get($job->output, 'disk', '')) !== ''
+            && trim((string) data_get($job->output, 'path', '')) !== ''
+            && (! $job->expires_at || $job->expires_at->isFuture());
     }
 
     protected function findRestorableFinishedJob(int $customerId, array $toolIds): ?MlJob
@@ -741,7 +899,13 @@ class extends Component
             ]);
 
             $this->resetPreview();
-            $this->dispatch('alert', type: 'error', message: 'Could not preview this URL. Please make sure it is a working YouTube video or playlist link.');
+            $this->dispatch(
+                'alert',
+                type: 'error',
+                message: trim((string) $e->getMessage()) !== ''
+                    ? (string) $e->getMessage()
+                    : 'Could not preview this URL. Please make sure it is a working YouTube video or playlist link.'
+            );
         }
     }
 
@@ -867,6 +1031,8 @@ class extends Component
             $this->currentStatusMessage = 'Queued and waiting to start.';
             $this->currentQueuedForSec = 0;
             $this->currentProgressTitle = (string) ($this->previewTitle ?? '');
+            $this->currentDownloadReady = false;
+            $this->currentDownloadExpiresAt = null;
             $this->currentPlaylistCount = $this->previewEntriesCount;
 
             $this->dispatch('header:refresh');
@@ -922,6 +1088,9 @@ class extends Component
 
             $this->currentStatus = (string) ($result['status'] ?? $this->currentStatus);
             $this->currentProgress = (int) ($result['progress'] ?? $this->currentProgress);
+            $this->currentDownloadReady = ($result['download_ready'] ?? false) === true;
+            $expiresAt = trim((string) ($result['expires_at'] ?? ''));
+            $this->currentDownloadExpiresAt = $expiresAt !== '' ? $expiresAt : null;
             $phase = trim((string) ($result['phase'] ?? ''));
             $message = trim((string) ($result['message'] ?? ''));
 
@@ -1011,11 +1180,16 @@ class extends Component
                 $this->dispatch('customerPlanUpdated');
                 $this->dispatch('youtube-downloads-refresh');
                 $this->dispatch('header:refresh');
-                $this->dispatch('youtube-download-ready', url: route('app.renders.youtube.download', [
-                    'locale' => app()->getLocale(),
-                    'jobId' => (string) $job->id,
-                ]));
-                $this->dispatch('alert', type: 'success', message: 'Download completed. Browser download is ready.');
+
+                if ($this->currentDownloadReady) {
+                    $this->dispatch('youtube-download-ready', url: route('app.renders.youtube.download', [
+                        'locale' => app()->getLocale(),
+                        'jobId' => (string) $job->id,
+                    ]));
+                    $this->dispatch('alert', type: 'success', message: 'Download completed. Browser download is ready.');
+                } else {
+                    $this->dispatch('alert', type: 'warning', message: (string) ($result['message'] ?? 'Prepared download is no longer available.'));
+                }
             }
 
             if ($failed) {
@@ -1303,7 +1477,7 @@ class extends Component
         $totalText = $currentTotalBytes !== null ? $this->humanBytes($currentTotalBytes) : '-';
         $lastUpdateText = $currentProgressUpdatedAt ? $this->humanLogTime($currentProgressUpdatedAt) : '-';
         $customerLogLines = is_array($currentLogLines ?? null) ? $currentLogLines : [];
-        $currentDownloadUrl = $currentJobId && $currentStatus === 'done'
+        $currentDownloadUrl = $currentJobId && $currentStatus === 'done' && $currentDownloadReady
             ? route('app.renders.youtube.download', ['locale' => app()->getLocale(), 'jobId' => $currentJobId])
             : null;
     @endphp
@@ -1609,20 +1783,30 @@ class extends Component
                                     </select>
                                 </div>
 
-                                <div class="col-md-6">
+                                <div class="col-md-6" wire:key="youtube-format-field-{{ $downloadMode }}">
                                     @if($downloadMode === 'audio')
-                                        <label class="form-label">Audio Format</label>
-                                        <select class="form-select" wire:model.live="audioFormat">
-                                            <option value="mp3">MP3</option>
-                                            <option value="wav">WAV</option>
+                                        <label class="form-label" for="youtube-audio-format">Audio Format</label>
+                                        <select
+                                            id="youtube-audio-format"
+                                            class="form-select"
+                                            wire:model.live="audioFormat"
+                                            wire:key="youtube-audio-format-select"
+                                        >
+                                            @foreach($audioFormatOptions as $value => $label)
+                                                <option value="{{ $value }}">{{ $label }}</option>
+                                            @endforeach
                                         </select>
                                     @else
-                                        <label class="form-label">Video Quality</label>
-                                        <select class="form-select" wire:model.live="videoQuality">
-                                            <option value="p480">480p</option>
-                                            <option value="p720">720p</option>
-                                            <option value="p1080">1080p</option>
-                                            <option value="p4k">4K</option>
+                                        <label class="form-label" for="youtube-video-quality">Video Quality</label>
+                                        <select
+                                            id="youtube-video-quality"
+                                            class="form-select"
+                                            wire:model.live="videoQuality"
+                                            wire:key="youtube-video-quality-select"
+                                        >
+                                            @foreach($videoQualityOptions as $value => $label)
+                                                <option value="{{ $value }}">{{ $label }}</option>
+                                            @endforeach
                                         </select>
                                     @endif
                                 </div>

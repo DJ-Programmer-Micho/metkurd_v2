@@ -38,6 +38,17 @@ return [
         'python_target' => env('YOUTUBE_PYTHON_TARGET', 'default'),
         'python_bin' => env('YOUTUBE_PYTHON_BIN', 'python'),
         'temp_dir' => env('YOUTUBE_TEMP_DIR', sys_get_temp_dir()),
+        'output_disk' => env('YOUTUBE_OUTPUT_DISK', env('APP_ENV') === 'local' ? 'local' : 's3'),
+        'output_prefix' => env('YOUTUBE_OUTPUT_PREFIX', 'tmp/youtube-downloads'),
+        'output_ttl_minutes' => (int) env('YOUTUBE_OUTPUT_TTL_MINUTES', 60),
+        'download_url_ttl_minutes' => (int) env('YOUTUBE_DOWNLOAD_URL_TTL_MINUTES', 15),
+        'cookies_browser' => env('YOUTUBE_COOKIES_BROWSER', ''),
+        'cookies_browsers' => array_values(array_filter(array_map(
+            static fn ($value) => trim((string) $value),
+            explode(',', (string) env('YOUTUBE_COOKIES_BROWSERS', ''))
+        ))),
+        'cookies_browser_profile' => env('YOUTUBE_COOKIES_BROWSER_PROFILE', ''),
+        'cookies_file' => env('YOUTUBE_COOKIES_FILE', ''),
         'python_bins' => [
             'windows_local' => env('YOUTUBE_PYTHON_BIN_WINDOWS_LOCAL'),
             'linux_aws_ec2' => env('YOUTUBE_PYTHON_BIN_LINUX_AWS_EC2'),

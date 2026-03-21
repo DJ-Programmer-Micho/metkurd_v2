@@ -16,13 +16,13 @@ class YoutubeJobSyncService
     {
         $fresh = MlJob::query()->findOrFail($job->id);
         $status = (string) $fresh->status;
-        $jobId = (string) $fresh->id;
-
-        $snapshot = in_array($status, ['queued', 'running', 'saving'], true)
-            ? $this->storage->readProgressSnapshot($jobId)
+        $snapshot = is_array(data_get($fresh->output, 'progress_snapshot'))
+            ? data_get($fresh->output, 'progress_snapshot')
             : null;
-
-        $progress = $this->resolveProgress($status, $snapshot);
+        $logLines = is_array(data_get($fresh->output, 'progress_log'))
+            ? data_get($fresh->output, 'progress_log')
+            : [];
+        $downloadReady = $this->hasBrowserDownload($fresh);
         $queuedForSec = $status === 'queued' && $fresh->created_at
             ? now()->diffInSeconds($fresh->created_at)
             : null;
@@ -35,10 +35,12 @@ class YoutubeJobSyncService
 
         return [
             'status' => $status,
-            'progress' => $progress,
+            'progress' => $this->resolveProgress($status, $snapshot),
             'done' => $status === 'done',
             'failed' => in_array($status, ['failed', 'delete_failed'], true),
-            'message' => $this->resolveMessage($fresh, $status, $snapshot, $queuedForSec),
+            'download_ready' => $downloadReady,
+            'expires_at' => $fresh->expires_at?->toDateTimeString(),
+            'message' => $this->resolveMessage($fresh, $status, $snapshot, $queuedForSec, $downloadReady),
             'phase' => (string) ($snapshot['phase'] ?? ''),
             'speed_bps' => isset($snapshot['speed_bps']) ? (float) $snapshot['speed_bps'] : null,
             'eta_sec' => isset($snapshot['eta_sec']) ? (int) $snapshot['eta_sec'] : null,
@@ -46,13 +48,60 @@ class YoutubeJobSyncService
             'total_bytes' => isset($snapshot['total_bytes']) ? (int) $snapshot['total_bytes'] : null,
             'elapsed_sec' => $elapsedSec,
             'queued_for_sec' => $queuedForSec,
-            'file_name' => (string) ($snapshot['file_name'] ?? ''),
-            'title' => (string) ($snapshot['title'] ?? ''),
+            'file_name' => (string) (($snapshot['file_name'] ?? null) ?: data_get($fresh->output, 'download_name', '')),
+            'title' => (string) (($snapshot['title'] ?? null) ?: data_get($fresh->input, 'title', '')),
             'playlist_index' => isset($snapshot['playlist_index']) ? (int) $snapshot['playlist_index'] : null,
-            'playlist_count' => isset($snapshot['playlist_count']) ? (int) $snapshot['playlist_count'] : null,
-            'updated_at' => (string) ($snapshot['updated_at'] ?? ''),
-            'log_lines' => $this->normalizeLogLines($this->storage->readProgressLog($jobId, 10)),
+            'playlist_count' => isset($snapshot['playlist_count'])
+                ? (int) $snapshot['playlist_count']
+                : (data_get($fresh->input, 'entries_count') !== null ? (int) data_get($fresh->input, 'entries_count') : null),
+            'updated_at' => (string) (($snapshot['updated_at'] ?? null) ?: (data_get($fresh->output, 'progress_updated_at') ?: $fresh->updated_at?->toDateTimeString())),
+            'log_lines' => $this->normalizeLogLines($logLines),
         ];
+    }
+
+    public function deleteFinishedDownload(MlJob $job): void
+    {
+        $fresh = MlJob::query()->findOrFail($job->id);
+
+        if (! in_array((string) $fresh->status, ['done', 'delete_failed'], true)) {
+            throw new \RuntimeException('Download not found or already deleted.');
+        }
+
+        try {
+            $this->storage->deleteStoredOutput($fresh);
+            $this->storage->cleanupLocalTempDir((string) $fresh->id);
+
+            $fresh->update([
+                'status' => 'deleted',
+                'error' => null,
+                'storage_out_bytes' => 0,
+                'expires_at' => null,
+                'output' => array_replace((array) $fresh->output, [
+                    'deleted_at' => now()->toDateTimeString(),
+                    'disk' => null,
+                    'path' => null,
+                    'delivery' => null,
+                ]),
+            ]);
+
+            $this->locks->releaseLock((string) $fresh->id);
+        } catch (\Throwable $e) {
+            $fresh->update([
+                'status' => 'delete_failed',
+                'error' => ['message' => 'Could not delete the prepared download.'],
+            ]);
+
+            throw $e;
+        }
+    }
+
+    protected function hasBrowserDownload(MlJob $job): bool
+    {
+        return (string) $job->status === 'done'
+            && (string) data_get($job->output, 'delivery', '') === 'browser_direct'
+            && trim((string) data_get($job->output, 'disk', '')) !== ''
+            && trim((string) data_get($job->output, 'path', '')) !== ''
+            && ! $this->storage->isExpired($job);
     }
 
     protected function resolveProgress(string $status, ?array $snapshot): int
@@ -91,8 +140,17 @@ class YoutubeJobSyncService
         return max(0, min(100, $percent));
     }
 
-    protected function resolveMessage(MlJob $job, string $status, ?array $snapshot, ?int $queuedForSec): string
-    {
+    protected function resolveMessage(
+        MlJob $job,
+        string $status,
+        ?array $snapshot,
+        ?int $queuedForSec,
+        bool $downloadReady
+    ): string {
+        if ($status === 'done' && ! $downloadReady) {
+            return 'This prepared download has expired. Start a new download to generate it again.';
+        }
+
         if (is_array($snapshot) && filled($snapshot['message'] ?? null)) {
             return (string) $snapshot['message'];
         }
@@ -106,7 +164,7 @@ class YoutubeJobSyncService
         }
 
         if ($status === 'saving') {
-            return 'Saving the finished file.';
+            return 'Saving the finished file to secure download storage.';
         }
 
         if ($status === 'running') {
@@ -119,6 +177,10 @@ class YoutubeJobSyncService
             }
 
             return 'Queued and waiting to start.';
+        }
+
+        if ($status === 'deleted') {
+            return 'Prepared download file was removed.';
         }
 
         return '';
@@ -149,37 +211,5 @@ class YoutubeJobSyncService
                     : null,
             ];
         }, $lines));
-    }
-
-    public function deleteFinishedDownload(MlJob $job): void
-    {
-        $fresh = MlJob::query()->findOrFail($job->id);
-
-        if (! in_array((string) $fresh->status, ['done', 'delete_failed'], true)) {
-            throw new \RuntimeException('Download not found or already deleted.');
-        }
-
-        try {
-            $this->storage->cleanupLocalTempDir((string) $fresh->id);
-
-            $fresh->update([
-                'status' => 'deleted',
-                'error' => null,
-                'storage_out_bytes' => 0,
-                'output' => array_merge((array) $fresh->output, [
-                    'deleted_at' => now()->toDateTimeString(),
-                    'local_file_path' => null,
-                ]),
-            ]);
-
-            $this->locks->releaseLock((string) $fresh->id);
-        } catch (\Throwable $e) {
-            $fresh->update([
-                'status' => 'delete_failed',
-                'error' => ['message' => $e->getMessage()],
-            ]);
-
-            throw $e;
-        }
     }
 }
