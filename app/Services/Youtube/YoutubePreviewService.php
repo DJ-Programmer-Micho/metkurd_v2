@@ -50,6 +50,8 @@ class YoutubePreviewService
         $error = trim($result->errorOutput());
 
         if (! $result->successful()) {
+            $this->logWorkerProcessFailure('preview', $result->exitCode(), $raw, $error);
+
             $data = $this->tryDecodeJson($raw);
 
             if (is_array($data) && array_key_exists('error', $data)) {

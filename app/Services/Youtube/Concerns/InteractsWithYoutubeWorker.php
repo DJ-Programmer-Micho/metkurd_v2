@@ -151,6 +151,53 @@ trait InteractsWithYoutubeWorker
         return $data;
     }
 
+    protected function logWorkerProcessFailure(string $context, int $exitCode, string $stdout, string $stderr): void
+    {
+        Log::warning('YOUTUBE_WORKER_PROCESS_FAIL', [
+            'context' => $context,
+            'exit_code' => $exitCode,
+            'stdout' => $this->truncateWorkerOutput($stdout),
+            'stderr' => $this->truncateWorkerOutput($stderr),
+            'python_target' => config('services.youtube.python_target'),
+            'python_bin' => $this->resolvedPythonBinForLogging(),
+        ]);
+    }
+
+    protected function truncateWorkerOutput(string $value, int $limit = 2000): string
+    {
+        $value = trim($this->normalizeJsonString($value));
+
+        if ($value === '') {
+            return '';
+        }
+
+        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+            if (mb_strlen($value, 'UTF-8') <= $limit) {
+                return $value;
+            }
+
+            return mb_substr($value, 0, $limit, 'UTF-8').'...';
+        }
+
+        if (strlen($value) <= $limit) {
+            return $value;
+        }
+
+        return substr($value, 0, $limit).'...';
+    }
+
+    protected function resolvedPythonBinForLogging(): string
+    {
+        $target = trim((string) config('services.youtube.python_target', 'default'));
+        $bin = trim((string) data_get(config('services.youtube.python_bins', []), $target, ''));
+
+        if ($bin === '') {
+            $bin = trim((string) config('services.youtube.python_bin', 'python'));
+        }
+
+        return $bin !== '' ? $bin : 'python';
+    }
+
     protected function tryDecodeJson(string $raw): ?array
     {
         $normalized = trim($this->normalizeJsonString($raw));
@@ -240,6 +287,8 @@ trait InteractsWithYoutubeWorker
             str_contains($normalized, 'python executable not found')
             || str_contains($normalized, 'youtube worker script not found')
             || str_contains($normalized, 'cookies file not found')
+            || str_contains($normalized, 'modulenotfounderror')
+            || str_contains($normalized, 'no module named')
         ) {
             return $this->serviceUnavailableMessage();
         }
