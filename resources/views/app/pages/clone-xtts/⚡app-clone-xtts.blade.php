@@ -1044,11 +1044,7 @@ class extends Component
 };
 ?>
 
-<div
-    id="clone-xtts-page-root"
-    x-data="cloneXttsFormCache()"
-    x-init="init()"
->
+<div id="clone-xtts-page-root">
     @if($currentJobId && !$jobFinished)
         <div wire:poll.keep-alive.2000ms="pollJob"></div>
     @endif
@@ -1190,8 +1186,8 @@ class extends Component
 
                                 <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
                                     <div class="d-flex gap-3 small">
-                                        <span class="text-muted">Chars: <strong x-text="chars">{{ $this->currentChars }}</strong></span>
-                                        <span class="text-muted">Words: <strong x-text="words">{{ $this->currentWords }}</strong></span>
+                                        <span class="text-muted">Chars: <strong>{{ $this->currentChars }}</strong></span>
+                                        <span class="text-muted">Words: <strong>{{ $this->currentWords }}</strong></span>
                                         <span class="text-muted">Credits: <strong>{{ $creditsCost }}</strong></span>
                                     </div>
 
@@ -1485,7 +1481,7 @@ class extends Component
 </div>
 @push('styles')
 <link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet">
-<link href="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.min.css" rel="stylesheet">
+
 @endpush
 @push('scripts')
 <script src="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.min.js"></script>
@@ -1660,121 +1656,6 @@ class extends Component
 </script>
 @endpush
 @push('scripts')
-<script>
-function cloneXttsFormCache() {
-    return {
-        cacheKey: 'clone_xtts_form_state_v1',
-
-        text: @entangle('text').live,
-        language: @entangle('language').live,
-        split: @entangle('split').live,
-        max_words: @entangle('max_words').live,
-        fade_ms: @entangle('fade_ms').live,
-        temperature: @entangle('temperature').live,
-        top_k: @entangle('top_k').live,
-        top_p: @entangle('top_p').live,
-        repetition_penalty: @entangle('repetition_penalty').live,
-        length_penalty: @entangle('length_penalty').live,
-        speed: @entangle('speed').live,
-        selectedPreset: @entangle('selectedPreset').live,
-
-        chars: 0,
-        words: 0,
-
-        init() {
-            this.restore();
-            this.updateCounts();
-
-            this.$watch('text', () => {
-                this.updateCounts();
-                this.save();
-            });
-
-            this.$watch('language', () => this.save());
-            this.$watch('split', () => this.save());
-            this.$watch('max_words', () => this.save());
-            this.$watch('fade_ms', () => this.save());
-            this.$watch('temperature', () => this.save());
-            this.$watch('top_k', () => this.save());
-            this.$watch('top_p', () => this.save());
-            this.$watch('repetition_penalty', () => this.save());
-            this.$watch('length_penalty', () => this.save());
-            this.$watch('speed', () => this.save());
-            this.$watch('selectedPreset', () => this.save());
-
-            window.addEventListener('beforeunload', () => this.save());
-
-            window.addEventListener('clone-xtts-form-state-clear', () => {
-                this.clear();
-            });
-        },
-
-        updateCounts() {
-            const v = (this.text || '').trim();
-            this.chars = v.length;
-            this.words = v ? v.split(/\s+/u).filter(Boolean).length : 0;
-        },
-
-        save() {
-            try {
-                const payload = {
-                    text: this.text ?? '',
-                    language: this.language ?? 'ar',
-                    split: !!this.split,
-                    max_words: parseInt(this.max_words ?? 25, 10),
-                    fade_ms: parseInt(this.fade_ms ?? 80, 10),
-                    temperature: parseFloat(this.temperature ?? 0.65),
-                    top_k: parseInt(this.top_k ?? 50, 10),
-                    top_p: parseFloat(this.top_p ?? 0.8),
-                    repetition_penalty: parseFloat(this.repetition_penalty ?? 2.0),
-                    length_penalty: parseFloat(this.length_penalty ?? 1.0),
-                    speed: parseFloat(this.speed ?? 1.0),
-                    selectedPreset: this.selectedPreset ?? 'balanced',
-                    ts: Date.now(),
-                };
-
-                localStorage.setItem(this.cacheKey, JSON.stringify(payload));
-            } catch (e) {
-                console.warn('[Clone XTTS] save failed', e);
-            }
-        },
-
-        restore() {
-            try {
-                const raw = localStorage.getItem(this.cacheKey);
-                if (!raw) return;
-
-                const data = JSON.parse(raw);
-                if (!data) return;
-
-                this.text = data.text ?? this.text ?? '';
-                this.language = data.language ?? this.language ?? 'ar';
-                this.split = typeof data.split === 'boolean' ? data.split : this.split;
-                this.max_words = parseInt(data.max_words ?? this.max_words ?? 25, 10);
-                this.fade_ms = parseInt(data.fade_ms ?? this.fade_ms ?? 80, 10);
-                this.temperature = parseFloat(data.temperature ?? this.temperature ?? 0.65);
-                this.top_k = parseInt(data.top_k ?? this.top_k ?? 50, 10);
-                this.top_p = parseFloat(data.top_p ?? this.top_p ?? 0.8);
-                this.repetition_penalty = parseFloat(data.repetition_penalty ?? this.repetition_penalty ?? 2.0);
-                this.length_penalty = parseFloat(data.length_penalty ?? this.length_penalty ?? 1.0);
-                this.speed = parseFloat(data.speed ?? this.speed ?? 1.0);
-                this.selectedPreset = data.selectedPreset ?? this.selectedPreset ?? 'balanced';
-            } catch (e) {
-                console.warn('[Clone XTTS] restore failed', e);
-            }
-        },
-
-        clear() {
-            try {
-                localStorage.removeItem(this.cacheKey);
-            } catch (e) {
-                console.warn('[Clone XTTS] clear failed', e);
-            }
-        }
-    };
-}
-</script>
-
 <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
 
 <script>

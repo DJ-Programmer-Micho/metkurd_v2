@@ -921,11 +921,7 @@ class extends Component
 };
 ?>
 
-<div
-    id="stem-page-root"
-    x-data="stemFormCache()"
-    x-init="init()"
->
+<div id="stem-page-root">
     @if($currentJobId && !$jobFinished)
         <div wire:poll.keep-alive.3000ms="pollJob"></div>
     @endif
@@ -1170,6 +1166,7 @@ class extends Component
 
                             <input type="hidden" id="stem-latest-ready" value="{{ $loadedRender ? 1 : 0 }}">
                             <input type="hidden" id="stem-latest-render-id" value="{{ $loadedRender['id'] ?? '' }}">
+                            <script type="application/json" id="stem-initial-render-data">{!! json_encode($loadedRender, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!}</script>
 
                             <div id="stem-empty-state" class="{{ $loadedRender ? 'd-none' : '' }}">
                                 <div class="text-muted small text-center py-4">No output selected yet.</div>
@@ -1432,7 +1429,7 @@ class extends Component
 
 @push('styles')
 <link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet">
-<link href="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.min.css" rel="stylesheet">
+
 <style>
     :root{
         --stem-primary: var(--bs-primary, #0d6efd);
@@ -1624,11 +1621,14 @@ class extends Component
             livewireBound: false,
             commitHooked: false,
             pluginsRegistered: false,
+            formWatchBoot: false,
             bootTimer: null,
         };
     }
 
     const S = window.__STEM_POND__;
+    const FORM_KEY = 'stem_form_state_v3';
+    const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
 
     if (!S.pluginsRegistered) {
         FilePond.registerPlugin(
@@ -1664,6 +1664,85 @@ class extends Component
             try { S.pond.destroy(); } catch (_) {}
             S.pond = null;
         }
+    }
+
+    function safeInt(value, fallback) {
+        const parsed = parseInt(value, 10);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function formSave() {
+        try {
+            const lw = getStemComponent();
+            if (!lw || typeof lw.get !== 'function') return;
+
+            localStorage.setItem(FORM_KEY, JSON.stringify({
+                stems: safeInt(lw.get('stems'), 4) === 2 ? 2 : 4,
+                model: lw.get('model') ?? 'htdemucs_ft',
+                stemCodec: lw.get('stemCodec') ?? 'mp3',
+                stemBitrate: lw.get('stemBitrate') ?? '192k',
+                ts: Date.now(),
+            }));
+        } catch (_) {}
+    }
+
+    function formLoad() {
+        try {
+            const raw = localStorage.getItem(FORM_KEY);
+            if (!raw) return null;
+
+            const data = JSON.parse(raw);
+            if (!data || Date.now() - (data.ts || 0) > FORM_TTL) {
+                localStorage.removeItem(FORM_KEY);
+                return null;
+            }
+
+            return data;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function formClear() {
+        try {
+            localStorage.removeItem(FORM_KEY);
+        } catch (_) {}
+    }
+
+    function formRestoreIfNeeded() {
+        const saved = formLoad();
+        if (!saved) return;
+
+        const lw = getStemComponent();
+        if (!lw || typeof lw.set !== 'function') return;
+
+        try {
+            lw.set('stems', safeInt(saved.stems, 4) === 2 ? 2 : 4);
+            lw.set('model', saved.model ?? 'htdemucs_ft');
+            lw.set('stemCodec', saved.stemCodec ?? 'mp3');
+            lw.set('stemBitrate', saved.stemBitrate ?? '192k');
+        } catch (_) {}
+    }
+
+    function watchAndPersistForm() {
+        if (S.formWatchBoot) return;
+
+        const lw = getStemComponent();
+        if (!lw || typeof lw.$watch !== 'function') return;
+
+        S.formWatchBoot = true;
+
+        let timer = null;
+        const debouncedSave = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => formSave(), 250);
+        };
+
+        ['stems', 'model', 'stemCodec', 'stemBitrate'].forEach((field) => {
+            try {
+                lw.$watch(field, debouncedSave);
+            } catch (_) {}
+        });
     }
 
     function bootPond() {
@@ -1738,6 +1817,8 @@ class extends Component
 
         S.bootTimer = setTimeout(() => {
             S.bootTimer = null;
+            formRestoreIfNeeded();
+            watchAndPersistForm();
             bootPond();
         }, 0);
     }
@@ -1747,7 +1828,11 @@ class extends Component
 
         document.addEventListener('livewire:initialized', bootStemFilePondPage);
         document.addEventListener('livewire:navigated', bootStemFilePondPage);
-        document.addEventListener('livewire:navigating', destroyPond);
+        document.addEventListener('livewire:navigating', () => {
+            formSave();
+            S.formWatchBoot = false;
+            destroyPond();
+        });
     }
 
     if (window.Livewire && !S.livewireBound) {
@@ -1765,12 +1850,17 @@ class extends Component
             }
         });
 
+        Livewire.on('stem-form-state-clear', () => {
+            formClear();
+        });
+
         if (!S.commitHooked && typeof Livewire.hook === 'function') {
             S.commitHooked = true;
 
             Livewire.hook('commit', ({ succeed }) => {
                 succeed(() => {
                     requestAnimationFrame(() => {
+                        formSave();
                         const input = document.getElementById('stem-audio-pond');
                         if (input && !S.pond) {
                             bootPond();
@@ -1790,8 +1880,6 @@ class extends Component
 <script>
 (function () {
     'use strict';
-
-    const INITIAL_RENDER = @js($loadedRender);
 
     if (!window.__STEM_RENDER_PAGE__) {
         window.__STEM_RENDER_PAGE__ = {
@@ -1836,6 +1924,18 @@ class extends Component
         try {
             return window.Livewire.find(wireId);
         } catch (_) {
+            return null;
+        }
+    }
+
+    function readInitialRender() {
+        const node = document.getElementById('stem-initial-render-data');
+        if (!node) return null;
+
+        try {
+            return JSON.parse(node.textContent || 'null');
+        } catch (e) {
+            console.warn('[STEM] Failed to parse initial render payload', e);
             return null;
         }
     }
@@ -2344,8 +2444,10 @@ class extends Component
             registerLivewireEvents();
             spaRestoreIfNeeded();
 
-            if (INITIAL_RENDER && INITIAL_RENDER.id) {
-                loadStemRender(INITIAL_RENDER, { persist: false });
+            const initialRender = readInitialRender();
+
+            if (initialRender && initialRender.id) {
+                loadStemRender(initialRender, { persist: false });
                 return;
             }
 
@@ -2370,74 +2472,5 @@ class extends Component
 
     bootStemRenderPage();
 })();
-</script>
-@endpush
-
-@push('scripts')
-<script>
-function stemFormCache() {
-    return {
-        cacheKey: 'stem_form_state_v3',
-
-        stems: @entangle('stems').live,
-        model: @entangle('model').live,
-        stemCodec: @entangle('stemCodec').live,
-        stemBitrate: @entangle('stemBitrate').live,
-
-        init() {
-            this.restore();
-
-            this.$watch('stems', () => this.save());
-            this.$watch('model', () => this.save());
-            this.$watch('stemCodec', () => this.save());
-            this.$watch('stemBitrate', () => this.save());
-
-            window.addEventListener('beforeunload', () => this.save());
-            window.addEventListener('stem-form-state-clear', () => this.clear());
-        },
-
-        normalizeStems(value) {
-            return parseInt(value, 10) === 2 ? 2 : 4;
-        },
-
-        save() {
-            try {
-                localStorage.setItem(this.cacheKey, JSON.stringify({
-                    stems: this.normalizeStems(this.stems),
-                    model: this.model ?? 'htdemucs_ft',
-                    stemCodec: this.stemCodec ?? 'mp3',
-                    stemBitrate: this.stemBitrate ?? '192k',
-                    ts: Date.now(),
-                }));
-            } catch (_) {}
-        },
-
-        restore() {
-            try {
-                const raw = localStorage.getItem(this.cacheKey);
-                if (!raw) return;
-
-                const data = JSON.parse(raw);
-                if (!data) return;
-
-                if (Date.now() - (data.ts || 0) > 7 * 24 * 60 * 60 * 1000) {
-                    localStorage.removeItem(this.cacheKey);
-                    return;
-                }
-
-                if (data.stems !== undefined) this.stems = this.normalizeStems(data.stems);
-                if (data.model !== undefined) this.model = data.model;
-                if (data.stemCodec !== undefined) this.stemCodec = data.stemCodec;
-                if (data.stemBitrate !== undefined) this.stemBitrate = data.stemBitrate;
-            } catch (_) {}
-        },
-
-        clear() {
-            try {
-                localStorage.removeItem(this.cacheKey);
-            } catch (_) {}
-        }
-    };
-}
 </script>
 @endpush

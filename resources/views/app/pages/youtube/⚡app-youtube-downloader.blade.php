@@ -1440,11 +1440,7 @@ class extends Component
 
 ?>
 
-<div
-    id="youtube-page-root"
-    x-data="youtubeDownloaderFormCache()"
-    x-init="init()"
->
+<div id="youtube-page-root">
     @if($currentJobId && !$jobFinished)
         <div wire:poll.keep-alive.3000ms="pollJob"></div>
     @endif
@@ -2187,71 +2183,164 @@ class extends Component
 
 @push('scripts')
 <script>
-function youtubeDownloaderFormCache() {
-    return {
-        cacheKey: 'youtube_downloader_form_state_v1',
+(function () {
+    'use strict';
 
-        url: @entangle('url').live,
-        downloadMode: @entangle('downloadMode').live,
-        audioFormat: @entangle('audioFormat').live,
-        videoQuality: @entangle('videoQuality').live,
-        includeThumbnail: @entangle('includeThumbnail').live,
+    if (!window.__YOUTUBE_FORM__) {
+        window.__YOUTUBE_FORM__ = {
+            eventsBound: false,
+            commitHooked: false,
+            formWatchBoot: false,
+        };
+    }
 
-        init() {
-            this.restore();
+    const S = window.__YOUTUBE_FORM__;
+    const FORM_KEY = 'youtube_downloader_form_state_v1';
+    const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
 
-            this.$watch('url', () => this.save());
-            this.$watch('downloadMode', () => this.save());
-            this.$watch('audioFormat', () => this.save());
-            this.$watch('videoQuality', () => this.save());
-            this.$watch('includeThumbnail', () => this.save());
-        },
+    function getYoutubeComponent() {
+        if (!window.Livewire) return null;
 
-        save() {
-            try {
-                localStorage.setItem(this.cacheKey, JSON.stringify({
-                    url: this.url,
-                    downloadMode: this.downloadMode,
-                    audioFormat: this.audioFormat,
-                    videoQuality: this.videoQuality,
-                    includeThumbnail: this.includeThumbnail,
-                }));
-            } catch (_) {}
-        },
+        const root = document.getElementById('youtube-page-root');
+        if (!root) return null;
 
-        restore() {
-            try {
-                const raw = localStorage.getItem(this.cacheKey);
-                if (!raw) return;
+        const wireId = root.getAttribute('wire:id');
+        if (!wireId) return null;
 
-                const data = JSON.parse(raw);
-
-                if (data.url !== undefined) this.url = data.url;
-                if (data.downloadMode !== undefined) this.downloadMode = data.downloadMode;
-                if (data.audioFormat !== undefined) this.audioFormat = data.audioFormat;
-                if (data.videoQuality !== undefined) this.videoQuality = data.videoQuality;
-                if (data.includeThumbnail !== undefined) this.includeThumbnail = data.includeThumbnail;
-            } catch (_) {}
+        try {
+            return window.Livewire.find(wireId);
+        } catch (_) {
+            return null;
         }
     }
-}
 
-document.addEventListener('livewire:init', () => {
-    Livewire.on('youtube-download-ready', ({ url }) => {
-        if (!url) {
-            return;
+    function formSave() {
+        try {
+            const lw = getYoutubeComponent();
+            if (!lw || typeof lw.get !== 'function') return;
+
+            localStorage.setItem(FORM_KEY, JSON.stringify({
+                url: lw.get('url') ?? '',
+                downloadMode: lw.get('downloadMode') ?? 'audio',
+                audioFormat: lw.get('audioFormat') ?? 'mp3',
+                videoQuality: lw.get('videoQuality') ?? 'p720',
+                includeThumbnail: !!lw.get('includeThumbnail'),
+                ts: Date.now(),
+            }));
+        } catch (_) {}
+    }
+
+    function formLoad() {
+        try {
+            const raw = localStorage.getItem(FORM_KEY);
+            if (!raw) return null;
+
+            const data = JSON.parse(raw);
+            if (!data || Date.now() - (data.ts || 0) > FORM_TTL) {
+                localStorage.removeItem(FORM_KEY);
+                return null;
+            }
+
+            return data;
+        } catch (_) {
+            return null;
         }
+    }
 
-        const link = document.createElement('a');
-        link.href = url;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
+    function formRestoreIfNeeded() {
+        const saved = formLoad();
+        if (!saved) return;
 
-        requestAnimationFrame(() => {
-            link.remove();
+        const lw = getYoutubeComponent();
+        if (!lw || typeof lw.get !== 'function' || typeof lw.set !== 'function') return;
+
+        try {
+            const currentUrl = String(lw.get('url') ?? '').trim();
+            if (currentUrl !== '') return;
+
+            lw.set('url', saved.url ?? '');
+            lw.set('downloadMode', saved.downloadMode ?? 'audio');
+            lw.set('audioFormat', saved.audioFormat ?? 'mp3');
+            lw.set('videoQuality', saved.videoQuality ?? 'p720');
+            lw.set('includeThumbnail', !!saved.includeThumbnail);
+        } catch (_) {}
+    }
+
+    function watchAndPersistForm() {
+        if (S.formWatchBoot) return;
+
+        const lw = getYoutubeComponent();
+        if (!lw || typeof lw.$watch !== 'function') return;
+
+        S.formWatchBoot = true;
+
+        let timer = null;
+        const debouncedSave = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => formSave(), 250);
+        };
+
+        ['url', 'downloadMode', 'audioFormat', 'videoQuality', 'includeThumbnail'].forEach((field) => {
+            try {
+                lw.$watch(field, debouncedSave);
+            } catch (_) {}
         });
-    });
-});
+    }
+
+    function registerLivewireEvents() {
+        if (!window.Livewire || S.eventsBound) return;
+        S.eventsBound = true;
+
+        Livewire.on('youtube-download-ready', ({ url }) => {
+            if (!url) return;
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+
+            requestAnimationFrame(() => {
+                link.remove();
+            });
+        });
+
+        if (!S.commitHooked && typeof Livewire.hook === 'function') {
+            S.commitHooked = true;
+
+            Livewire.hook('commit', ({ succeed }) => {
+                succeed(() => {
+                    requestAnimationFrame(() => {
+                        formSave();
+                    });
+                });
+            });
+        }
+    }
+
+    function bootYoutubePage() {
+        setTimeout(() => {
+            const root = document.getElementById('youtube-page-root');
+            if (!root) return;
+
+            registerLivewireEvents();
+            formRestoreIfNeeded();
+            watchAndPersistForm();
+        }, 0);
+    }
+
+    function teardownYoutubePage() {
+        formSave();
+        S.formWatchBoot = false;
+    }
+
+    document.addEventListener('livewire:initialized', bootYoutubePage);
+    document.addEventListener('livewire:navigated', bootYoutubePage);
+    document.addEventListener('livewire:navigating', teardownYoutubePage);
+
+    window.addEventListener('beforeunload', formSave);
+
+    bootYoutubePage();
+})();
 </script>
 @endpush

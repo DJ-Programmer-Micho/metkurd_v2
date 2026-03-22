@@ -954,11 +954,7 @@ class extends Component
 };
 ?>
 
-<div
-    id="wasr-page-root"
-    x-data="wasrFormCache()"
-    x-init="init()"
->
+<div id="wasr-page-root">
     @if($currentJobId && !$jobFinished)
         <div wire:poll.keep-alive.3000ms="pollJob"></div>
     @endif
@@ -1272,6 +1268,7 @@ class extends Component
                                     <div
                                         class="render-card wasr-transcript-item {{ $r['is_latest'] ? 'wasr-transcript-item--latest' : '' }} mb-3 p-3 rounded-3 border"
                                         wire:key="wasr-render-{{ $r['id'] }}"
+                                        id="wasr-render-card-{{ $r['id'] }}"
                                     >
                                         <div class="d-flex justify-content-between align-items-start gap-3">
                                             <div class="min-w-0 flex-grow-1">
@@ -1300,11 +1297,32 @@ class extends Component
                                                     @endif
                                                 </div>
                                                     @if(!empty($r['audio_url']))
-                                                        <div class="mt-3">
-                                                            <audio controls preload="none" class="w-100">
-                                                                <source src="{{ $r['audio_url'] }}">
-                                                                Your browser does not support the audio element.
-                                                            </audio>
+                                                        <div class="mt-3" wire:ignore>
+                                                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                                                <span class="small text-muted" id="wasr-time-{{ $r['id'] }}">--:-- / --:--</span>
+
+                                                                <div class="btn-group btn-group-sm">
+                                                                    <button type="button"
+                                                                            class="btn btn-outline-primary btn-wasr-preview"
+                                                                            data-job="{{ $r['id'] }}"
+                                                                            data-url="{{ $r['audio_url'] }}"
+                                                                            data-latest="{{ $r['is_latest'] ? '1' : '0' }}"
+                                                                            data-preload-rank="{{ $loop->index }}">
+                                                                        <i class="fa fa-play me-1"></i> Play/Pause
+                                                                    </button>
+
+                                                                    <button type="button"
+                                                                            class="btn btn-outline-secondary btn-wasr-stop"
+                                                                            data-job="{{ $r['id'] }}">
+                                                                        <i class="fa fa-stop me-1"></i> Stop
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+                                                            <div id="wasr-wrap-{{ $r['id'] }}" class="mt-1">
+                                                                <div id="wasr-ph-{{ $r['id'] }}" class="border rounded bg-dark" style="height:90px; opacity:.25;"></div>
+                                                                <div id="wasr-wave-{{ $r['id'] }}" class="border rounded" style="height:90px; display:none;"></div>
+                                                            </div>
                                                         </div>
                                                     @endif
                                                 <div class="wasr-snippet small mt-2">
@@ -1379,7 +1397,7 @@ class extends Component
 
 @push('styles')
 <link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet">
-<link href="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.min.css" rel="stylesheet">
+
 <style>
     .wasr-cost-preview{
         background: rgba(var(--bs-warning-rgb), .08);
@@ -1449,11 +1467,14 @@ class extends Component
             livewireBound: false,
             commitHooked: false,
             pluginsRegistered: false,
+            formWatchBoot: false,
             bootTimer: null,
         };
     }
 
     const S = window.__WASR_POND__;
+    const FORM_KEY = 'wasr_form_state_v2';
+    const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
 
     if (!S.pluginsRegistered) {
         FilePond.registerPlugin(
@@ -1489,6 +1510,93 @@ class extends Component
             try { S.pond.destroy(); } catch (_) {}
             S.pond = null;
         }
+    }
+
+    function safeInt(value, fallback) {
+        const parsed = parseInt(value, 10);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function formSave() {
+        try {
+            const lw = getWasrComponent();
+            if (!lw || typeof lw.get !== 'function') return;
+
+            localStorage.setItem(FORM_KEY, JSON.stringify({
+                language: lw.get('language') ?? 'ckb',
+                chunkLengthS: safeInt(lw.get('chunkLengthS'), 30),
+                strideLeftS: safeInt(lw.get('strideLeftS'), 5),
+                strideRightS: safeInt(lw.get('strideRightS'), 5),
+                beamSize: safeInt(lw.get('beamSize'), 5),
+                ts: Date.now(),
+            }));
+        } catch (_) {}
+    }
+
+    function formLoad() {
+        try {
+            const raw = localStorage.getItem(FORM_KEY);
+            if (!raw) return null;
+
+            const data = JSON.parse(raw);
+            if (!data || Date.now() - (data.ts || 0) > FORM_TTL) {
+                localStorage.removeItem(FORM_KEY);
+                return null;
+            }
+
+            return data;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function formClear() {
+        try {
+            localStorage.removeItem(FORM_KEY);
+        } catch (_) {}
+    }
+
+    function formRestoreIfNeeded() {
+        const saved = formLoad();
+        if (!saved) return;
+
+        const lw = getWasrComponent();
+        if (!lw || typeof lw.set !== 'function') return;
+
+        try {
+            lw.set('language', saved.language ?? 'ckb');
+            lw.set('chunkLengthS', safeInt(saved.chunkLengthS, 30));
+            lw.set('strideLeftS', safeInt(saved.strideLeftS, 5));
+            lw.set('strideRightS', safeInt(saved.strideRightS, 5));
+            lw.set('beamSize', safeInt(saved.beamSize, 5));
+        } catch (_) {}
+    }
+
+    function watchAndPersistForm() {
+        if (S.formWatchBoot) return;
+
+        const lw = getWasrComponent();
+        if (!lw || typeof lw.$watch !== 'function') return;
+
+        S.formWatchBoot = true;
+
+        let timer = null;
+        const debouncedSave = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => formSave(), 250);
+        };
+
+        [
+            'language',
+            'chunkLengthS',
+            'strideLeftS',
+            'strideRightS',
+            'beamSize',
+        ].forEach((field) => {
+            try {
+                lw.$watch(field, debouncedSave);
+            } catch (_) {}
+        });
     }
 
     function bootPond() {
@@ -1563,6 +1671,8 @@ class extends Component
 
         S.bootTimer = setTimeout(() => {
             S.bootTimer = null;
+            formRestoreIfNeeded();
+            watchAndPersistForm();
             bootPond();
         }, 0);
     }
@@ -1572,7 +1682,11 @@ class extends Component
 
         document.addEventListener('livewire:initialized', bootWasrFilePondPage);
         document.addEventListener('livewire:navigated', bootWasrFilePondPage);
-        document.addEventListener('livewire:navigating', destroyPond);
+        document.addEventListener('livewire:navigating', () => {
+            formSave();
+            S.formWatchBoot = false;
+            destroyPond();
+        });
     }
 
     if (window.Livewire && !S.livewireBound) {
@@ -1588,6 +1702,7 @@ class extends Component
             if (S.pond) {
                 try { S.pond.removeFiles(); } catch (_) {}
             }
+            formClear();
         });
 
         Livewire.on('wasr-copy-text', (e) => {
@@ -1602,6 +1717,7 @@ class extends Component
             Livewire.hook('commit', ({ succeed }) => {
                 succeed(() => {
                     requestAnimationFrame(() => {
+                        formSave();
                         const input = document.getElementById('wasr-audio-pond');
                         if (input && !S.pond) {
                             bootPond();
@@ -1618,54 +1734,358 @@ class extends Component
 @endpush
 
 @push('scripts')
+<script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
 <script>
-function wasrFormCache() {
-    return {
-        cacheKey: 'wasr_form_state_v2',
+(function () {
+    'use strict';
 
-        language: @entangle('language').live,
-        chunkLengthS: @entangle('chunkLengthS').live,
-        strideLeftS: @entangle('strideLeftS').live,
-        strideRightS: @entangle('strideRightS').live,
-        beamSize: @entangle('beamSize').live,
+    if (!window.__WASR_WAVE__) {
+        window.__WASR_WAVE__ = {};
+    }
 
-        init() {
-            this.restore();
+    const S = window.__WASR_WAVE__;
 
-            this.$watch('language', () => this.save());
-            this.$watch('chunkLengthS', () => this.save());
-            this.$watch('strideLeftS', () => this.save());
-            this.$watch('strideRightS', () => this.save());
-            this.$watch('beamSize', () => this.save());
-        },
+    S.previewWS = S.previewWS || new Map();
+    S.previewMeta = S.previewMeta || new Map();
+    S.pendingFetch = S.pendingFetch || new Map();
+    S.eventsBound = S.eventsBound || false;
+    S.commitHooked = S.commitHooked || false;
+    S.listenersBound = S.listenersBound || false;
+    S.bootTimer = S.bootTimer || null;
 
-        save() {
+    const CACHE_NAME = 'wasr-audio-v1';
+    const CACHE_MAX = 30;
+    const PRELOAD_LIMIT = 10;
+
+    function primaryColor(isLatest = false) {
+        if (isLatest) return '#dc3545';
+
+        return (getComputedStyle(document.documentElement)
+            .getPropertyValue('--bs-primary') || '#0d6efd').trim();
+    }
+
+    function buildWaveOptions(container, isLatest = false) {
+        const color = primaryColor(isLatest);
+
+        return {
+            container,
+            height: 90,
+            normalize: true,
+            responsive: true,
+            backend: 'MediaElement',
+            waveColor: color,
+            progressColor: color,
+            cursorColor: color,
+        };
+    }
+
+    async function openCache() {
+        return caches.open(CACHE_NAME);
+    }
+
+    async function pruneCache() {
+        try {
+            const cache = await openCache();
+            const keys = await cache.keys();
+
+            if (keys.length > CACHE_MAX) {
+                const toDelete = keys.slice(0, keys.length - CACHE_MAX);
+                await Promise.all(toDelete.map((key) => cache.delete(key)));
+            }
+        } catch (_) {}
+    }
+
+    async function getBlob(url) {
+        if (S.pendingFetch.has(url)) {
+            return S.pendingFetch.get(url);
+        }
+
+        const promise = (async () => {
             try {
-                localStorage.setItem(this.cacheKey, JSON.stringify({
-                    language: this.language,
-                    chunkLengthS: this.chunkLengthS,
-                    strideLeftS: this.strideLeftS,
-                    strideRightS: this.strideRightS,
-                    beamSize: this.beamSize,
-                }));
+                const cache = await openCache();
+                const hit = await cache.match(url);
+                if (hit) return hit.blob();
             } catch (_) {}
-        },
 
-        restore() {
+            const res = await fetch(url, {
+                method: 'GET',
+                cache: 'no-cache',
+                credentials: 'same-origin',
+            });
+
+            if (!res.ok) throw new Error('Fetch failed ' + res.status);
+
             try {
-                const raw = localStorage.getItem(this.cacheKey);
-                if (!raw) return;
-
-                const data = JSON.parse(raw);
-
-                if (data.language !== undefined) this.language = data.language;
-                if (data.chunkLengthS !== undefined) this.chunkLengthS = data.chunkLengthS;
-                if (data.strideLeftS !== undefined) this.strideLeftS = data.strideLeftS;
-                if (data.strideRightS !== undefined) this.strideRightS = data.strideRightS;
-                if (data.beamSize !== undefined) this.beamSize = data.beamSize;
+                const cache = await openCache();
+                await cache.put(url, res.clone());
+                pruneCache().catch(() => {});
             } catch (_) {}
+
+            return res.blob();
+        })();
+
+        S.pendingFetch.set(url, promise);
+        promise.finally(() => S.pendingFetch.delete(url));
+
+        return promise;
+    }
+
+    async function getBlobUrl(jobId, url) {
+        const meta = S.previewMeta.get(jobId);
+        if (meta && meta.url === url && meta.blobUrl) {
+            return meta.blobUrl;
+        }
+
+        if (meta?.blobUrl) {
+            try { URL.revokeObjectURL(meta.blobUrl); } catch (_) {}
+        }
+
+        const blob = await getBlob(url);
+        const blobUrl = URL.createObjectURL(blob);
+        S.previewMeta.set(jobId, { url, blobUrl });
+
+        return blobUrl;
+    }
+
+    function stopWS(ws) {
+        if (!ws) return;
+
+        try {
+            ws.pause();
+            ws.setTime(0);
+        } catch (_) {}
+    }
+
+    function stopAll(exceptJobId = null) {
+        S.previewWS.forEach((ws, jobId) => {
+            if (jobId !== exceptJobId) {
+                stopWS(ws);
+            }
+        });
+    }
+
+    function destroyPreview(jobId) {
+        const ws = S.previewWS.get(jobId);
+        if (ws) {
+            try { ws.destroy(); } catch (_) {}
+            S.previewWS.delete(jobId);
+        }
+
+        const meta = S.previewMeta.get(jobId);
+        if (meta?.blobUrl) {
+            try { URL.revokeObjectURL(meta.blobUrl); } catch (_) {}
+        }
+
+        S.previewMeta.delete(jobId);
+
+        const wave = document.getElementById('wasr-wave-' + jobId);
+        if (wave) {
+            wave.innerHTML = '';
+            wave.style.display = 'none';
+        }
+
+        const ph = document.getElementById('wasr-ph-' + jobId);
+        if (ph) {
+            ph.style.display = '';
         }
     }
-}
+
+    function cleanupOrphanPreviews() {
+        S.previewWS.forEach((_, jobId) => {
+            if (!document.getElementById('wasr-wave-' + jobId)) {
+                destroyPreview(jobId);
+            }
+        });
+    }
+
+    function initPreview(jobId, url, isLatest = false) {
+        if (S.previewWS.has(jobId)) {
+            return S.previewWS.get(jobId);
+        }
+
+        if (typeof WaveSurfer === 'undefined') {
+            return null;
+        }
+
+        const ph = document.getElementById('wasr-ph-' + jobId);
+        const wave = document.getElementById('wasr-wave-' + jobId);
+        const time = document.getElementById('wasr-time-' + jobId);
+
+        if (!wave || !url) return null;
+
+        if (ph) ph.style.display = '';
+        wave.style.display = 'none';
+
+        const ws = WaveSurfer.create(buildWaveOptions(wave, isLatest));
+
+        ws.on('ready', () => {
+            if (ph) ph.style.display = 'none';
+            wave.style.display = '';
+
+            if (time) {
+                time.textContent = `00:00 / ${formatTime(ws.getDuration())}`;
+            }
+        });
+
+        ws.on('timeupdate', () => {
+            if (time) {
+                time.textContent = `${formatTime(ws.getCurrentTime())} / ${formatTime(ws.getDuration())}`;
+            }
+        });
+
+        ws.on('finish', () => {
+            try { ws.setTime(0); } catch (_) {}
+        });
+
+        ws.on('error', (error) => {
+            console.error('[WASR] WaveSurfer error', jobId, error);
+        });
+
+        (async () => {
+            try {
+                const blobUrl = await getBlobUrl(jobId, url);
+                ws.load(blobUrl);
+            } catch (error) {
+                console.warn('[WASR] Falling back to direct URL', jobId, error);
+                ws.load(url);
+            }
+        })();
+
+        S.previewWS.set(jobId, ws);
+        return ws;
+    }
+
+    function formatTime(sec) {
+        sec = Math.max(0, sec || 0);
+        const m = String(Math.floor(sec / 60)).padStart(2, '0');
+        const s = String(Math.floor(sec % 60)).padStart(2, '0');
+        return `${m}:${s}`;
+    }
+
+    function bindPreviewButtons() {
+        document.querySelectorAll('.btn-wasr-preview[data-job][data-url]').forEach((btn) => {
+            if (btn.dataset.bound === '1') return;
+            btn.dataset.bound = '1';
+
+            btn.addEventListener('click', () => {
+                const jobId = btn.getAttribute('data-job');
+                const url = btn.getAttribute('data-url');
+                const isLatest = btn.getAttribute('data-latest') === '1';
+
+                const ws = initPreview(jobId, url, isLatest);
+                if (!ws) return;
+
+                stopAll(jobId);
+                ws.playPause();
+            });
+        });
+
+        document.querySelectorAll('.btn-wasr-stop[data-job]').forEach((btn) => {
+            if (btn.dataset.bound === '1') return;
+            btn.dataset.bound = '1';
+
+            btn.addEventListener('click', () => {
+                stopWS(S.previewWS.get(btn.getAttribute('data-job')));
+            });
+        });
+    }
+
+    async function preloadAndRenderRecentAudio() {
+        const buttons = Array.from(
+            document.querySelectorAll('.btn-wasr-preview[data-job][data-url]')
+        )
+            .sort((a, b) =>
+                Number(a.getAttribute('data-preload-rank') ?? 9999) -
+                Number(b.getAttribute('data-preload-rank') ?? 9999)
+            )
+            .slice(0, PRELOAD_LIMIT);
+
+        for (const btn of buttons) {
+            const jobId = btn.getAttribute('data-job');
+            const url = btn.getAttribute('data-url');
+            const isLatest = btn.getAttribute('data-latest') === '1';
+
+            if (!jobId || !url) continue;
+            if (S.previewWS.has(jobId)) continue;
+
+            try {
+                getBlob(url).catch(() => {});
+                initPreview(jobId, url, isLatest);
+            } catch (error) {
+                console.error('[WASR] Preload failed', jobId, error);
+            }
+        }
+    }
+
+    function registerLivewireEvents() {
+        if (!window.Livewire || S.eventsBound) return;
+        S.eventsBound = true;
+
+        if (!S.commitHooked && typeof Livewire.hook === 'function') {
+            S.commitHooked = true;
+
+            Livewire.hook('commit', ({ succeed }) => {
+                succeed(() => {
+                    requestAnimationFrame(() => {
+                        bindPreviewButtons();
+                        cleanupOrphanPreviews();
+
+                        const idle = 'requestIdleCallback' in window
+                            ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
+                            : (cb) => setTimeout(cb, 500);
+
+                        idle(() => preloadAndRenderRecentAudio());
+                    });
+                });
+            });
+        }
+    }
+
+    function bootWasrWavePage() {
+        if (S.bootTimer) {
+            clearTimeout(S.bootTimer);
+        }
+
+        S.bootTimer = setTimeout(() => {
+            S.bootTimer = null;
+
+            const root = document.getElementById('wasr-page-root');
+            if (!root) return;
+
+            registerLivewireEvents();
+            bindPreviewButtons();
+            cleanupOrphanPreviews();
+
+            const idle = 'requestIdleCallback' in window
+                ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
+                : (cb) => setTimeout(cb, 500);
+
+            idle(() => preloadAndRenderRecentAudio());
+        }, 0);
+    }
+
+    function teardownWasrWavePage() {
+        if (S.bootTimer) {
+            clearTimeout(S.bootTimer);
+            S.bootTimer = null;
+        }
+
+        S.previewWS.forEach((_, jobId) => {
+            destroyPreview(jobId);
+        });
+    }
+
+    if (!S.listenersBound) {
+        S.listenersBound = true;
+
+        document.addEventListener('livewire:initialized', bootWasrWavePage);
+        document.addEventListener('livewire:navigated', bootWasrWavePage);
+        document.addEventListener('livewire:navigating', teardownWasrWavePage);
+    }
+
+    window.addEventListener('beforeunload', teardownWasrWavePage);
+
+    bootWasrWavePage();
+})();
 </script>
 @endpush

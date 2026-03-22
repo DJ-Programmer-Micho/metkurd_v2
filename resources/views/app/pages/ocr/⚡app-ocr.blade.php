@@ -1004,7 +1004,7 @@ class extends Component
 };
 ?>
 
-<div id="ocr-page-root" x-data="ocrFormCache()" x-init="init()">
+<div id="ocr-page-root">
     @if($currentJobId && !$jobFinished)
         <div wire:poll.keep-alive.3000ms="pollJob"></div>
     @endif
@@ -1903,6 +1903,7 @@ class extends Component
                         textUrl: null,
                         eventsBound: false,
                         commitHooked: false,
+                        formWatchBoot: false,
                         listenersBound: false,
                         windowDragBound: false,
                         bootTimer: null,
@@ -1910,6 +1911,8 @@ class extends Component
                 }
 
                 const S = window.__OCR_PAGE__;
+                const FORM_KEY = 'ocr_form_state_v1';
+                const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
 
                 function getOcrComponent() {
                     if (!window.Livewire) return null;
@@ -1929,6 +1932,108 @@ class extends Component
 
                 function qs(id) {
                     return document.getElementById(id);
+                }
+
+                function safeInt(value, fallback) {
+                    const parsed = parseInt(value, 10);
+                    return Number.isFinite(parsed) ? parsed : fallback;
+                }
+
+                function formSave() {
+                    try {
+                        const lw = getOcrComponent();
+                        if (!lw || typeof lw.get !== 'function') return;
+
+                        localStorage.setItem(FORM_KEY, JSON.stringify({
+                            lang: lw.get('lang') ?? 'ckb',
+                            pageRange: lw.get('pageRange') ?? '',
+                            dpi: safeInt(lw.get('dpi'), 200),
+                            psm: safeInt(lw.get('psm'), 6),
+                            oem: safeInt(lw.get('oem'), 3),
+                            normalize: !!lw.get('normalize'),
+                            grayscale: !!lw.get('grayscale'),
+                            autocontrast: !!lw.get('autocontrast'),
+                            sharpen: !!lw.get('sharpen'),
+                            binarize: !!lw.get('binarize'),
+                            ts: Date.now(),
+                        }));
+                    } catch (_) {}
+                }
+
+                function formLoad() {
+                    try {
+                        const raw = localStorage.getItem(FORM_KEY);
+                        if (!raw) return null;
+
+                        const data = JSON.parse(raw);
+                        if (!data || Date.now() - (data.ts || 0) > FORM_TTL) {
+                            localStorage.removeItem(FORM_KEY);
+                            return null;
+                        }
+
+                        return data;
+                    } catch (_) {
+                        return null;
+                    }
+                }
+
+                function formClear() {
+                    try {
+                        localStorage.removeItem(FORM_KEY);
+                    } catch (_) {}
+                }
+
+                function formRestoreIfNeeded() {
+                    const saved = formLoad();
+                    if (!saved) return;
+
+                    const lw = getOcrComponent();
+                    if (!lw || typeof lw.set !== 'function') return;
+
+                    try {
+                        lw.set('lang', saved.lang ?? 'ckb');
+                        lw.set('pageRange', saved.pageRange ?? '');
+                        lw.set('dpi', safeInt(saved.dpi, 200));
+                        lw.set('psm', safeInt(saved.psm, 6));
+                        lw.set('oem', safeInt(saved.oem, 3));
+                        lw.set('normalize', !!saved.normalize);
+                        lw.set('grayscale', saved.grayscale === undefined ? true : !!saved.grayscale);
+                        lw.set('autocontrast', saved.autocontrast === undefined ? true : !!saved.autocontrast);
+                        lw.set('sharpen', saved.sharpen === undefined ? true : !!saved.sharpen);
+                        lw.set('binarize', !!saved.binarize);
+                    } catch (_) {}
+                }
+
+                function watchAndPersistForm() {
+                    if (S.formWatchBoot) return;
+
+                    const lw = getOcrComponent();
+                    if (!lw || typeof lw.$watch !== 'function') return;
+
+                    S.formWatchBoot = true;
+
+                    let timer = null;
+                    const debouncedSave = () => {
+                        clearTimeout(timer);
+                        timer = setTimeout(() => formSave(), 250);
+                    };
+
+                    [
+                        'lang',
+                        'pageRange',
+                        'dpi',
+                        'psm',
+                        'oem',
+                        'normalize',
+                        'grayscale',
+                        'autocontrast',
+                        'sharpen',
+                        'binarize',
+                    ].forEach((field) => {
+                        try {
+                            lw.$watch(field, debouncedSave);
+                        } catch (_) {}
+                    });
                 }
 
                 function showError(msg = '') {
@@ -2562,6 +2667,10 @@ class extends Component
                         if (textarea) textarea.value = '';
                     });
 
+                    Livewire.on('ocr-form-state-clear', () => {
+                        formClear();
+                    });
+
                     Livewire.on('ocr-render-loaded', async (event) => {
                         const render = event?.render || null;
                         await applyRender(render, { persist: false });
@@ -2604,6 +2713,7 @@ class extends Component
                             succeed(() => {
                                 requestAnimationFrame(() => {
                                     bindStaticEvents();
+                                    formSave();
                                 });
                             });
                         });
@@ -2620,6 +2730,8 @@ class extends Component
 
                         bindStaticEvents();
                         registerLivewireEvents();
+                        formRestoreIfNeeded();
+                        watchAndPersistForm();
 
                         const initial = S.currentRender;
                         if (initial && initial.id) {
@@ -2635,100 +2747,15 @@ class extends Component
 
                     document.addEventListener('livewire:initialized', boot);
                     document.addEventListener('livewire:navigated', boot);
-                    document.addEventListener('livewire:navigating', revokeBlobUrl);
+                    document.addEventListener('livewire:navigating', () => {
+                        formSave();
+                        S.formWatchBoot = false;
+                        revokeBlobUrl();
+                    });
                 }
 
                 boot();
             })();
-        </script>
-    @endpush
-
-    @push('scripts')
-        <script>
-            function ocrFormCache() {
-                return {
-                    cacheKey: 'ocr_form_state_v1',
-
-                    lang: @entangle('lang').live,
-                    pageRange: @entangle('pageRange').live,
-                    dpi: @entangle('dpi').live,
-                    psm: @entangle('psm').live,
-                    oem: @entangle('oem').live,
-                    normalize: @entangle('normalize').live,
-                    grayscale: @entangle('grayscale').live,
-                    autocontrast: @entangle('autocontrast').live,
-                    sharpen: @entangle('sharpen').live,
-                    binarize: @entangle('binarize').live,
-
-                    init() {
-                        this.restore();
-
-                        this.$watch('lang', () => this.save());
-                        this.$watch('pageRange', () => this.save());
-                        this.$watch('dpi', () => this.save());
-                        this.$watch('psm', () => this.save());
-                        this.$watch('oem', () => this.save());
-                        this.$watch('normalize', () => this.save());
-                        this.$watch('grayscale', () => this.save());
-                        this.$watch('autocontrast', () => this.save());
-                        this.$watch('sharpen', () => this.save());
-                        this.$watch('binarize', () => this.save());
-
-                        window.addEventListener('beforeunload', () => this.save());
-                        window.addEventListener('ocr-form-state-clear', () => this.clear());
-                    },
-
-                    save() {
-                        try {
-                            localStorage.setItem(this.cacheKey, JSON.stringify({
-                                lang: this.lang ?? 'ckb',
-                                pageRange: this.pageRange ?? '',
-                                dpi: this.dpi ?? 200,
-                                psm: this.psm ?? 6,
-                                oem: this.oem ?? 3,
-                                normalize: !!this.normalize,
-                                grayscale: !!this.grayscale,
-                                autocontrast: !!this.autocontrast,
-                                sharpen: !!this.sharpen,
-                                binarize: !!this.binarize,
-                                ts: Date.now(),
-                            }));
-                        } catch (_) {}
-                    },
-
-                    restore() {
-                        try {
-                            const raw = localStorage.getItem(this.cacheKey);
-                            if (!raw) return;
-
-                            const data = JSON.parse(raw);
-                            if (!data) return;
-
-                            if (Date.now() - (data.ts || 0) > 7 * 24 * 60 * 60 * 1000) {
-                                localStorage.removeItem(this.cacheKey);
-                                return;
-                            }
-
-                            if (data.lang !== undefined) this.lang = data.lang;
-                            if (data.pageRange !== undefined) this.pageRange = data.pageRange;
-                            if (data.dpi !== undefined) this.dpi = data.dpi;
-                            if (data.psm !== undefined) this.psm = data.psm;
-                            if (data.oem !== undefined) this.oem = data.oem;
-                            if (data.normalize !== undefined) this.normalize = !!data.normalize;
-                            if (data.grayscale !== undefined) this.grayscale = !!data.grayscale;
-                            if (data.autocontrast !== undefined) this.autocontrast = !!data.autocontrast;
-                            if (data.sharpen !== undefined) this.sharpen = !!data.sharpen;
-                            if (data.binarize !== undefined) this.binarize = !!data.binarize;
-                        } catch (_) {}
-                    },
-
-                    clear() {
-                        try {
-                            localStorage.removeItem(this.cacheKey);
-                        } catch (_) {}
-                    }
-                };
-            }
         </script>
     @endpush
 @endonce

@@ -223,8 +223,38 @@ class ProgressReporter:
         )
 
 
-def build_youtube(url: str, on_progress_callback=None) -> YouTube:
-    return YouTube(url, on_progress_callback=on_progress_callback)
+def build_youtube(
+    url: str,
+    on_progress_callback=None,
+    po_token: str | None = None,
+    visitor_data: str | None = None,
+) -> YouTube:
+    kwargs = {
+        "url": url,
+        "on_progress_callback": on_progress_callback,
+    }
+
+    if po_token and visitor_data:
+        kwargs["use_po_token"] = True
+        kwargs["po_token"] = po_token
+        kwargs["visitor_data"] = visitor_data
+
+    return YouTube(**kwargs)
+
+
+def build_playlist(
+    url: str,
+    po_token: str | None = None,
+    visitor_data: str | None = None,
+) -> Playlist:
+    kwargs = {"url": url}
+
+    if po_token and visitor_data:
+        kwargs["use_po_token"] = True
+        kwargs["po_token"] = po_token
+        kwargs["visitor_data"] = visitor_data
+
+    return Playlist(**kwargs)
 
 
 def billable_minutes(duration_sec: int) -> int:
@@ -309,15 +339,12 @@ def should_use_progressive_stream(progressive, adaptive, target_height: int) -> 
     if progressive_height <= 0:
         return False
 
-    # 1080p / 4K selections should prefer adaptive MP4 video when available.
     if target_height > 720 and adaptive_height > 0:
         return False
 
-    # If adaptive can hit the requested quality and progressive cannot, use adaptive.
     if adaptive_height >= target_height and progressive_height < target_height:
         return False
 
-    # If adaptive can satisfy a better resolution than progressive, use it.
     if adaptive_height > progressive_height:
         return False
 
@@ -338,7 +365,11 @@ def download_stream(
     playlist_count: int | None = None,
 ) -> Path:
     total_bytes = stream_filesize(stream)
-    suffix = getattr(stream, "subtype", None) or (getattr(stream, "mime_type", "").split("/")[-1] if getattr(stream, "mime_type", None) else "bin")
+    suffix = getattr(stream, "subtype", None) or (
+        getattr(stream, "mime_type", "").split("/")[-1]
+        if getattr(stream, "mime_type", None)
+        else "bin"
+    )
     target_path = unique_path(outdir, stem, suffix)
 
     if reporter is not None:
@@ -422,8 +453,12 @@ def merge_video_audio(video_path: Path, audio_path: Path, target_path: Path):
     run_ffmpeg(command, "Video merge")
 
 
-def preview_video(url: str):
-    yt = build_youtube(url)
+def preview_video(
+    url: str,
+    po_token: str | None = None,
+    visitor_data: str | None = None,
+):
+    yt = build_youtube(url, po_token=po_token, visitor_data=visitor_data)
 
     data = {
         "type": "video",
@@ -439,8 +474,12 @@ def preview_video(url: str):
     return ok(data)
 
 
-def preview_playlist(url: str):
-    playlist = Playlist(url)
+def preview_playlist(
+    url: str,
+    po_token: str | None = None,
+    visitor_data: str | None = None,
+):
+    playlist = build_playlist(url, po_token=po_token, visitor_data=visitor_data)
     urls = list(playlist.video_urls)
 
     if not urls:
@@ -454,7 +493,7 @@ def preview_playlist(url: str):
 
     for item_url in urls:
         try:
-            yt = build_youtube(item_url)
+            yt = build_youtube(item_url, po_token=po_token, visitor_data=visitor_data)
         except Exception:
             continue
 
@@ -498,13 +537,15 @@ def preview_url(
     cookie_browsers: list[str] | None = None,
     cookie_browser_profile: str | None = None,
     cookie_file: str | None = None,
+    po_token: str | None = None,
+    visitor_data: str | None = None,
 ):
     _ = cookie_browsers, cookie_browser_profile, cookie_file
 
     if "list=" in url or "/playlist" in url:
-        return preview_playlist(url)
+        return preview_playlist(url, po_token=po_token, visitor_data=visitor_data)
 
-    return preview_video(url)
+    return preview_video(url, po_token=po_token, visitor_data=visitor_data)
 
 
 def download_audio(
@@ -517,10 +558,12 @@ def download_audio(
     cookie_file: str | None = None,
     playlist_index: int | None = None,
     playlist_count: int | None = None,
+    po_token: str | None = None,
+    visitor_data: str | None = None,
 ):
     _ = cookie_browsers, cookie_browser_profile, cookie_file
 
-    yt = build_youtube(url)
+    yt = build_youtube(url, po_token=po_token, visitor_data=visitor_data)
     stream = best_audio_stream(yt)
     if stream is None:
         raise RuntimeError("No audio stream was found for this video.")
@@ -606,10 +649,12 @@ def download_video(
     cookie_file: str | None = None,
     playlist_index: int | None = None,
     playlist_count: int | None = None,
+    po_token: str | None = None,
+    visitor_data: str | None = None,
 ):
     _ = cookie_browsers, cookie_browser_profile, cookie_file
 
-    yt = build_youtube(url)
+    yt = build_youtube(url, po_token=po_token, visitor_data=visitor_data)
     target_height = target_height_for_quality(quality)
     title_stem = sanitize_filename(yt.title or "video")
 
@@ -744,10 +789,12 @@ def download_playlist(
     cookie_browsers: list[str] | None = None,
     cookie_browser_profile: str | None = None,
     cookie_file: str | None = None,
+    po_token: str | None = None,
+    visitor_data: str | None = None,
 ):
     _ = cookie_browsers, cookie_browser_profile, cookie_file
 
-    playlist = Playlist(url)
+    playlist = build_playlist(url, po_token=po_token, visitor_data=visitor_data)
     urls = list(playlist.video_urls)
 
     if not urls:
@@ -777,6 +824,8 @@ def download_playlist(
                     reporter,
                     playlist_index=index,
                     playlist_count=len(urls),
+                    po_token=po_token,
+                    visitor_data=visitor_data,
                 )
             else:
                 item = download_video(
@@ -786,6 +835,8 @@ def download_playlist(
                     reporter,
                     playlist_index=index,
                     playlist_count=len(urls),
+                    po_token=po_token,
+                    visitor_data=visitor_data,
                 )
 
             downloaded_files.append(Path(item["file_path"]))
@@ -856,6 +907,11 @@ def add_cookie_args(parser: argparse.ArgumentParser):
     parser.add_argument("--cookies-file")
 
 
+def add_po_token_args(parser: argparse.ArgumentParser):
+    parser.add_argument("--po-token")
+    parser.add_argument("--visitor-data")
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -863,6 +919,7 @@ def main():
     p1 = sub.add_parser("preview")
     p1.add_argument("--url", required=True)
     add_cookie_args(p1)
+    add_po_token_args(p1)
 
     p2 = sub.add_parser("download")
     p2.add_argument("--url", required=True)
@@ -873,6 +930,7 @@ def main():
     p2.add_argument("--progress-file")
     p2.add_argument("--progress-log")
     add_cookie_args(p2)
+    add_po_token_args(p2)
 
     args = parser.parse_args()
 
@@ -883,6 +941,8 @@ def main():
                 cookie_browsers=args.cookies_browser,
                 cookie_browser_profile=args.cookies_browser_profile,
                 cookie_file=args.cookies_file,
+                po_token=args.po_token,
+                visitor_data=args.visitor_data,
             )
 
         if args.command == "download":
@@ -899,6 +959,8 @@ def main():
                     cookie_browsers=args.cookies_browser,
                     cookie_browser_profile=args.cookies_browser_profile,
                     cookie_file=args.cookies_file,
+                    po_token=args.po_token,
+                    visitor_data=args.visitor_data,
                 ))
 
             if args.mode == "video":
@@ -910,6 +972,8 @@ def main():
                     cookie_browsers=args.cookies_browser,
                     cookie_browser_profile=args.cookies_browser_profile,
                     cookie_file=args.cookies_file,
+                    po_token=args.po_token,
+                    visitor_data=args.visitor_data,
                 ))
 
             if args.mode == "playlist":
@@ -923,6 +987,8 @@ def main():
                     cookie_browsers=args.cookies_browser,
                     cookie_browser_profile=args.cookies_browser_profile,
                     cookie_file=args.cookies_file,
+                    po_token=args.po_token,
+                    visitor_data=args.visitor_data,
                 ))
 
     except Exception as e:
