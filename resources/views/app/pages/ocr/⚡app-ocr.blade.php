@@ -1903,6 +1903,9 @@ class extends Component
                         textUrl: null,
                         eventsBound: false,
                         commitHooked: false,
+                        listenersBound: false,
+                        windowDragBound: false,
+                        bootTimer: null,
                     };
                 }
 
@@ -2405,8 +2408,11 @@ class extends Component
                     const downloadAllBtn = qs('downloadAllBtn');
                     const copyBtn = qs('ocr-copy-text-btn');
 
-                    window.addEventListener('dragover', (e) => e.preventDefault(), { passive: false });
-                    window.addEventListener('drop', (e) => e.preventDefault(), { passive: false });
+                    if (!S.windowDragBound) {
+                        S.windowDragBound = true;
+                        window.addEventListener('dragover', (e) => e.preventDefault(), { passive: false });
+                        window.addEventListener('drop', (e) => e.preventDefault(), { passive: false });
+                    }
 
                     if (dropbox && !dropbox.dataset.bound) {
                         dropbox.dataset.bound = '1';
@@ -2605,20 +2611,34 @@ class extends Component
                 }
 
                 async function boot() {
-                    bindStaticEvents();
-                    registerLivewireEvents();
-
-                    const initial = S.currentRender;
-                    if (initial && initial.id) {
-                        await applyRender(initial, { persist: false });
-                    } else {
-                        clearViewerUi();
+                    if (S.bootTimer) {
+                        clearTimeout(S.bootTimer);
                     }
+
+                    S.bootTimer = setTimeout(async () => {
+                        S.bootTimer = null;
+
+                        bindStaticEvents();
+                        registerLivewireEvents();
+
+                        const initial = S.currentRender;
+                        if (initial && initial.id) {
+                            await applyRender(initial, { persist: false });
+                        } else {
+                            clearViewerUi();
+                        }
+                    }, 0);
                 }
 
-                document.addEventListener('livewire:initialized', boot);
-                document.addEventListener('livewire:navigated', boot);
-                document.addEventListener('livewire:navigating', revokeBlobUrl);
+                if (!S.listenersBound) {
+                    S.listenersBound = true;
+
+                    document.addEventListener('livewire:initialized', boot);
+                    document.addEventListener('livewire:navigated', boot);
+                    document.addEventListener('livewire:navigating', revokeBlobUrl);
+                }
+
+                boot();
             })();
         </script>
     @endpush

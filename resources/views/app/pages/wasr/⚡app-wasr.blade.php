@@ -1445,16 +1445,23 @@ class extends Component
     if (!window.__WASR_POND__) {
         window.__WASR_POND__ = {
             pond: null,
-            booted: false,
+            listenersBound: false,
+            livewireBound: false,
+            commitHooked: false,
+            pluginsRegistered: false,
+            bootTimer: null,
         };
     }
 
     const S = window.__WASR_POND__;
 
-    FilePond.registerPlugin(
-        FilePondPluginFileValidateType,
-        FilePondPluginFileValidateSize
-    );
+    if (!S.pluginsRegistered) {
+        FilePond.registerPlugin(
+            FilePondPluginFileValidateType,
+            FilePondPluginFileValidateSize
+        );
+        S.pluginsRegistered = true;
+    }
 
     function getWasrComponent() {
         if (!window.Livewire) return null;
@@ -1473,6 +1480,11 @@ class extends Component
     }
 
     function destroyPond() {
+        if (S.bootTimer) {
+            clearTimeout(S.bootTimer);
+            S.bootTimer = null;
+        }
+
         if (S.pond) {
             try { S.pond.destroy(); } catch (_) {}
             S.pond = null;
@@ -1545,14 +1557,27 @@ class extends Component
     }
 
     function bootWasrFilePondPage() {
-        setTimeout(() => bootPond(), 0);
+        if (S.bootTimer) {
+            clearTimeout(S.bootTimer);
+        }
+
+        S.bootTimer = setTimeout(() => {
+            S.bootTimer = null;
+            bootPond();
+        }, 0);
     }
 
-    document.addEventListener('livewire:initialized', bootWasrFilePondPage);
-    document.addEventListener('livewire:navigated', bootWasrFilePondPage);
-    document.addEventListener('livewire:navigating', destroyPond);
+    if (!S.listenersBound) {
+        S.listenersBound = true;
 
-    if (window.Livewire) {
+        document.addEventListener('livewire:initialized', bootWasrFilePondPage);
+        document.addEventListener('livewire:navigated', bootWasrFilePondPage);
+        document.addEventListener('livewire:navigating', destroyPond);
+    }
+
+    if (window.Livewire && !S.livewireBound) {
+        S.livewireBound = true;
+
         Livewire.on('wasr-audio-file-cleared', () => {
             if (S.pond) {
                 try { S.pond.removeFiles(); } catch (_) {}
@@ -1571,7 +1596,9 @@ class extends Component
             navigator.clipboard?.writeText(text).catch(() => {});
         });
 
-        if (typeof Livewire.hook === 'function') {
+        if (!S.commitHooked && typeof Livewire.hook === 'function') {
+            S.commitHooked = true;
+
             Livewire.hook('commit', ({ succeed }) => {
                 succeed(() => {
                     requestAnimationFrame(() => {
@@ -1584,6 +1611,8 @@ class extends Component
             });
         }
     }
+
+    bootWasrFilePondPage();
 })();
 </script>
 @endpush

@@ -1620,15 +1620,23 @@ class extends Component
     if (!window.__STEM_POND__) {
         window.__STEM_POND__ = {
             pond: null,
+            listenersBound: false,
+            livewireBound: false,
+            commitHooked: false,
+            pluginsRegistered: false,
+            bootTimer: null,
         };
     }
 
     const S = window.__STEM_POND__;
 
-    FilePond.registerPlugin(
-        FilePondPluginFileValidateType,
-        FilePondPluginFileValidateSize
-    );
+    if (!S.pluginsRegistered) {
+        FilePond.registerPlugin(
+            FilePondPluginFileValidateType,
+            FilePondPluginFileValidateSize
+        );
+        S.pluginsRegistered = true;
+    }
 
     function getStemComponent() {
         if (!window.Livewire) return null;
@@ -1647,6 +1655,11 @@ class extends Component
     }
 
     function destroyPond() {
+        if (S.bootTimer) {
+            clearTimeout(S.bootTimer);
+            S.bootTimer = null;
+        }
+
         if (S.pond) {
             try { S.pond.destroy(); } catch (_) {}
             S.pond = null;
@@ -1719,14 +1732,27 @@ class extends Component
     }
 
     function bootStemFilePondPage() {
-        setTimeout(() => bootPond(), 0);
+        if (S.bootTimer) {
+            clearTimeout(S.bootTimer);
+        }
+
+        S.bootTimer = setTimeout(() => {
+            S.bootTimer = null;
+            bootPond();
+        }, 0);
     }
 
-    document.addEventListener('livewire:initialized', bootStemFilePondPage);
-    document.addEventListener('livewire:navigated', bootStemFilePondPage);
-    document.addEventListener('livewire:navigating', destroyPond);
+    if (!S.listenersBound) {
+        S.listenersBound = true;
 
-    if (window.Livewire) {
+        document.addEventListener('livewire:initialized', bootStemFilePondPage);
+        document.addEventListener('livewire:navigated', bootStemFilePondPage);
+        document.addEventListener('livewire:navigating', destroyPond);
+    }
+
+    if (window.Livewire && !S.livewireBound) {
+        S.livewireBound = true;
+
         Livewire.on('stem-audio-file-cleared', () => {
             if (S.pond) {
                 try { S.pond.removeFiles(); } catch (_) {}
@@ -1739,7 +1765,9 @@ class extends Component
             }
         });
 
-        if (typeof Livewire.hook === 'function') {
+        if (!S.commitHooked && typeof Livewire.hook === 'function') {
+            S.commitHooked = true;
+
             Livewire.hook('commit', ({ succeed }) => {
                 succeed(() => {
                     requestAnimationFrame(() => {
@@ -1752,6 +1780,8 @@ class extends Component
             });
         }
     }
+
+    bootStemFilePondPage();
 })();
 </script>
 @endpush
@@ -1772,6 +1802,8 @@ class extends Component
             eventsBound: false,
             commitHooked: false,
             masterTicker: null,
+            listenersBound: false,
+            bootTimer: null,
         };
     }
 
@@ -2302,7 +2334,13 @@ class extends Component
     }
 
     function bootStemRenderPage() {
-        const runBoot = () => {
+        if (S.bootTimer) {
+            clearTimeout(S.bootTimer);
+        }
+
+        S.bootTimer = setTimeout(() => {
+            S.bootTimer = null;
+
             registerLivewireEvents();
             spaRestoreIfNeeded();
 
@@ -2319,14 +2357,18 @@ class extends Component
 
             setPlayerVisibility(!!document.querySelector('#stem-tracks .stem-track-row'));
             updateMasterTime();
-        };
-
-        setTimeout(runBoot, 0);
+        }, 0);
     }
 
-    document.addEventListener('livewire:initialized', bootStemRenderPage);
-    document.addEventListener('livewire:navigated', bootStemRenderPage);
-    document.addEventListener('livewire:navigating', destroyPlayers);
+    if (!S.listenersBound) {
+        S.listenersBound = true;
+
+        document.addEventListener('livewire:initialized', bootStemRenderPage);
+        document.addEventListener('livewire:navigated', bootStemRenderPage);
+        document.addEventListener('livewire:navigating', destroyPlayers);
+    }
+
+    bootStemRenderPage();
 })();
 </script>
 @endpush

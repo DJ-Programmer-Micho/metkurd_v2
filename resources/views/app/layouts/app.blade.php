@@ -80,54 +80,46 @@
         }
 
         .glass-load{
-            --base: #242526;
-            --highlight: #3a3b3c;
-            --edge: #2e2f30;
-
-            background: linear-gradient(
-                110deg,
-                var(--base) 30%,
-                var(--highlight) 38%,
-                var(--highlight) 40%,
-                var(--base) 48%
-            );
-            background-size: 200% 100%;
-            background-position: 100% 0;
-            animation: load 1.5s infinite linear;
-
+            --glass-accent: rgba(255,255,255,.05);
             border-radius: 14px;
             border: 1px solid rgba(255,255,255,.06);
-            box-shadow: 0 6px 18px rgba(0,0,0,.35);
+            background:
+                linear-gradient(
+                    135deg,
+                    var(--glass-accent) 0%,
+                    rgba(255,255,255,.02) 42%,
+                    rgba(18, 19, 21, .94) 100%
+                ),
+                rgba(20, 21, 23, .92);
+            box-shadow: 0 8px 24px rgba(0,0,0,.28);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             color: inherit;
         }
 
         .glass-load--info{
-            --highlight: rgba(0, 123, 255, .35);
+            --glass-accent: rgba(0, 123, 255, .18);
             border-color: rgba(0, 123, 255, .25);
         }
 
         .glass-load--warning{
-            --highlight: rgba(255, 193, 7, .35);
+            --glass-accent: rgba(255, 193, 7, .2);
             border-color: rgba(255, 193, 7, .25);
         }
 
         .glass-load--success{
-            --highlight: rgba(40, 167, 69, .35);
+            --glass-accent: rgba(40, 167, 69, .18);
             border-color: rgba(40, 167, 69, .25);
         }
 
         .glass-load--danger{
-            --highlight: rgba(220, 53, 69, .35);
+            --glass-accent: rgba(220, 53, 69, .18);
             border-color: rgba(220, 53, 69, .25);
         }
 
         .glass-load--secondary{
-            --highlight: rgba(108, 117, 125, .30);
+            --glass-accent: rgba(108, 117, 125, .14);
             border-color: rgba(255,255,255,.08);
-        }
-
-        @keyframes load {
-            to { background-position: -100% 0; }
         }
 
         .tts-status-muted{ color: rgba(255,255,255,.65) !important; }
