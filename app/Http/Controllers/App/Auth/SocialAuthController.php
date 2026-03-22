@@ -158,7 +158,7 @@ class SocialAuthController extends Controller
             return redirect()->route('app.phone.otp');
         }
 
-        return redirect()->route('app.home')
+        return redirect()->route('app.home', ['locale' => 'en'])
             ->with('status', 'Welcome back!');
     }
 
