@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Models\Customer;
+use App\Observers\CustomerObserver;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +34,9 @@ class AppServiceProvider extends ServiceProvider
         //     );
 
         $this->configureDefaults();
-                $this->app->singleton('cloudfront', function () {
+        Customer::observe(CustomerObserver::class);
+
+        $this->app->singleton('cloudfront', function () {
             return $this->aws_clountfront_domain;
         });
         

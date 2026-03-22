@@ -8,7 +8,6 @@ use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rule;
 use App\Models\Customer;
 use App\Models\CustomerProfile;
-use App\Services\Billing\CustomerOnboardingService;
 
 new #[Layout('app::layouts.app-auth')] class extends Component
 {
@@ -60,10 +59,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                     'phone_number' => $this->normalizePhone($this->phone_number),
                 ]
             );
-
-            // Single source of truth for defaults:
-            // wallet, usage, free subscriptions, free monthly credits, etc.
-            app(CustomerOnboardingService::class)->provisionDefaults($customer);
 
             return $customer->fresh(['profile', 'wallet', 'usage']);
         });

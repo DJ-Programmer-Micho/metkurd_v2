@@ -18,7 +18,7 @@ class CustomerOnboardingService
     public function provisionDefaults(Customer $customer): void
     {
         DB::transaction(function () use ($customer) {
-            $now = now();
+            $registeredAt = $customer->created_at?->copy() ?? now();
 
             $servicePlan = ServicePlan::query()
                 ->where('code', 'free')
@@ -47,9 +47,9 @@ class CustomerOnboardingService
                 ],
                 [
                     'service_plan_id' => $servicePlan->id,
-                    'starts_at' => $now,
-                    'cycle_started_on' => $now->copy()->startOfMonth()->toDateString(),
-                    'cycle_ends_on' => $now->copy()->endOfMonth()->toDateString(),
+                    'starts_at' => $registeredAt,
+                    'cycle_started_on' => $registeredAt->copy()->startOfMonth()->toDateString(),
+                    'cycle_ends_on' => $registeredAt->copy()->endOfMonth()->toDateString(),
                     'previous_service_plan_id' => null,
                     'upgraded_at' => null,
                     'meta' => null,
@@ -63,7 +63,7 @@ class CustomerOnboardingService
                 ],
                 [
                     'storage_plan_id' => $storagePlan->id,
-                    'starts_at' => $now,
+                    'starts_at' => $registeredAt,
                     'meta' => null,
                 ]
             );
@@ -77,15 +77,15 @@ class CustomerOnboardingService
                     'lifetime_earned' => 0,
                     'lifetime_spent' => 0,
                     'lifetime_refunded' => 0,
-                    'cycle_started_on' => $now->copy()->startOfMonth()->toDateString(),
-                    'cycle_ends_on' => $now->copy()->endOfMonth()->toDateString(),
-                    'current_cycle_key' => $now->format('Y-m'),
+                    'cycle_started_on' => $registeredAt->copy()->startOfMonth()->toDateString(),
+                    'cycle_ends_on' => $registeredAt->copy()->endOfMonth()->toDateString(),
+                    'current_cycle_key' => $registeredAt->format('Y-m'),
                     'last_granted_at' => null,
                     'last_charged_at' => null,
                 ]
             );
 
-            $yearMonth = $now->format('Y-m');
+            $yearMonth = $registeredAt->format('Y-m');
 
             $alreadyGranted = CreditMonthlyGrant::query()
                 ->where('customer_id', $customer->id)
@@ -104,7 +104,7 @@ class CustomerOnboardingService
                 'subscription_id' => $serviceSubscription->id,
                 'year_month' => $yearMonth,
                 'granted_credits' => $grant,
-                'granted_at' => $now,
+                'granted_at' => $registeredAt,
                 'meta' => [
                     'plan_code' => $servicePlan->code,
                 ],
@@ -113,10 +113,10 @@ class CustomerOnboardingService
             $wallet->subscription_balance_credits = (int) $wallet->subscription_balance_credits + $grant;
             $wallet->balance_credits = (int) $wallet->subscription_balance_credits + (int) $wallet->addon_balance_credits;
             $wallet->lifetime_earned = (int) $wallet->lifetime_earned + $grant;
-            $wallet->cycle_started_on = $now->copy()->startOfMonth()->toDateString();
-            $wallet->cycle_ends_on = $now->copy()->endOfMonth()->toDateString();
+            $wallet->cycle_started_on = $registeredAt->copy()->startOfMonth()->toDateString();
+            $wallet->cycle_ends_on = $registeredAt->copy()->endOfMonth()->toDateString();
             $wallet->current_cycle_key = $yearMonth;
-            $wallet->last_granted_at = $now;
+            $wallet->last_granted_at = $registeredAt;
             $wallet->save();
 
             CreditLedger::create([
@@ -135,7 +135,7 @@ class CustomerOnboardingService
                     'year_month' => $yearMonth,
                     'subscription_id' => $serviceSubscription->id,
                 ],
-                'created_at' => $now,
+                'created_at' => $registeredAt,
             ]);
         });
     }
