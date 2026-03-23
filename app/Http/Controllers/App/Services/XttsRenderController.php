@@ -15,12 +15,20 @@ class XttsRenderController extends Controller
     {
         $toolId = Tool::query()->where('code', 'tts')->value('id');
 
-        return MlJob::query()
+        $job = MlJob::query()
+            ->with([
+                'tool:id,code,is_active',
+                'toolAction:id,tool_code,full_code,is_active',
+            ])
             ->where('id', $jobId)
             ->where('customer_id', auth('app')->id())
             ->when($toolId, fn ($q) => $q->where('tool_id', $toolId))
             ->where('status', 'done')
             ->firstOrFail();
+
+        $this->abortUnlessCustomerCanAccessJob($job);
+
+        return $job;
     }
 
     public function stream(Request $request, string $locale, string $jobId)

@@ -144,8 +144,9 @@ class extends Component
     public function quickActions(): array
     {
         $locale = app()->getLocale();
+        $customer = $this->customer();
 
-        return [
+        $actions = [
             [
                 'tool' => 'tts',
                 'label' => 'Text to Speech',
@@ -197,10 +198,26 @@ class extends Component
                 'description' => 'Preview and download video or audio jobs.',
                 'route' => route('app.youtube', ['locale' => $locale]),
                 'icon' => 'ri-youtube-line',
-                'entitlement' => 'youtube_video.p480',
+                'tool_codes' => ['youtube_audio', 'youtube_video'],
                 'cta' => 'Open YouTube',
             ],
         ];
+
+        if (! $customer) {
+            return [];
+        }
+
+        return array_values(array_filter($actions, function (array $action) use ($customer): bool {
+            $toolCodes = $action['tool_codes'] ?? [$action['tool']];
+
+            foreach ((array) $toolCodes as $toolCode) {
+                if ($customer->canAccessTool((string) $toolCode)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }));
     }
 
     #[Computed]
@@ -400,8 +417,13 @@ class extends Component
     public function routeForTool(?string $toolCode): string
     {
         $locale = app()->getLocale();
+        $normalizedToolCode = $this->normalizeToolCode($toolCode);
 
-        return match ($this->normalizeToolCode($toolCode)) {
+        if (! $this->canOpenTool($normalizedToolCode)) {
+            return route('app.home', ['locale' => $locale]);
+        }
+
+        return match ($normalizedToolCode) {
             'tts' => route('app.xtts', ['locale' => $locale]),
             'clone_tts' => route('app.clone-xtts', ['locale' => $locale]),
             'asr' => route('app.wasr', ['locale' => $locale]),
@@ -409,6 +431,20 @@ class extends Component
             'ocr' => route('app.ocr', ['locale' => $locale]),
             'youtube_audio', 'youtube_video', 'youtube_download' => route('app.youtube', ['locale' => $locale]),
             default => route('app.home', ['locale' => $locale]),
+        };
+    }
+
+    public function canOpenTool(?string $toolCode): bool
+    {
+        $customer = $this->customer();
+
+        if (! $customer) {
+            return false;
+        }
+
+        return match ($this->normalizeToolCode($toolCode)) {
+            'youtube_download' => $customer->canAccessAnyTool(['youtube_audio', 'youtube_video']),
+            default => $customer->canAccessTool($this->normalizeToolCode($toolCode)),
         };
     }
 
@@ -838,15 +874,12 @@ class extends Component
                                 <h5 class="card-title mb-1">Quick Actions</h5>
                                 <p class="text-muted mb-0">Jump straight into the tools customers use the most.</p>
                             </div>
-                            <span class="badge bg-primary-subtle text-primary">6 tools</span>
+                            <span class="badge bg-primary-subtle text-primary">{{ count($this->quickActions()) }} tools</span>
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="row g-3">
-                            @foreach($this->quickActions() as $action)
-                                @php
-                                    $isAllowed = $customer ? $customer->isAllowed($action['entitlement']) : false;
-                                @endphp
+                            @forelse($this->quickActions() as $action)
                                 <div class="col-md-6">
                                     <div class="card mk-quick-card h-100" style="--mk-tool-color: {{ $this->toolColor($action['tool']) }};">
                                         <div class="card-body">
@@ -855,7 +888,7 @@ class extends Component
                                                     <i class="{{ $action['icon'] }}"></i>
                                                 </div>
                                                 <span class="badge border border-{{ $this->toolBadgeClass($action['tool']) }} text-{{ $this->toolBadgeClass($action['tool']) }}">
-                                                    {{ $isAllowed ? 'Enabled' : 'Restricted' }}
+                                                    Enabled
                                                 </span>
                                             </div>
 
@@ -868,7 +901,17 @@ class extends Component
                                         </div>
                                     </div>
                                 </div>
-                            @endforeach
+                            @empty
+                                <div class="col-12">
+                                    <div class="border rounded-4 p-4 text-center bg-light-subtle">
+                                        <h6 class="mb-2">No active tools on this plan</h6>
+                                        <p class="text-muted mb-3">Your current plan or the global service status is hiding the available tool shortcuts.</p>
+                                        <a wire:navigate.hover href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-sm btn-outline-dark">
+                                            Open Billing
+                                        </a>
+                                    </div>
+                                </div>
+                            @endforelse
                         </div>
                     </div>
                 </div>
@@ -996,9 +1039,15 @@ class extends Component
                                 </div>
                                 <h6 class="mb-1">No activity yet</h6>
                                 <p class="text-muted mb-3">Once the customer starts using the tools, activity will appear here.</p>
-                                <a wire:navigate.hover href="{{ route('app.xtts', ['locale' => app()->getLocale()]) }}" class="btn btn-primary btn-sm">
-                                    Start with XTTS
-                                </a>
+                                @if($this->canOpenTool('tts'))
+                                    <a wire:navigate.hover href="{{ route('app.xtts', ['locale' => app()->getLocale()]) }}" class="btn btn-primary btn-sm">
+                                        Start with XTTS
+                                    </a>
+                                @else
+                                    <a wire:navigate.hover href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-dark btn-sm">
+                                        Review Plan Access
+                                    </a>
+                                @endif
                             </div>
                         @endif
                     </div>
@@ -1047,9 +1096,11 @@ class extends Component
                                             <div class="text-end">
                                                 <div class="small text-muted mb-1">Charged</div>
                                                 <div class="fw-semibold">{{ $this->formatCredits((int) ($job->credits_charged ?? 0)) }}</div>
-                                                <a wire:navigate.hover href="{{ $this->routeForTool($toolCode) }}" class="small text-decoration-underline">
-                                                    Open tool
-                                                </a>
+                                                @if($this->canOpenTool($toolCode))
+                                                    <a wire:navigate.hover href="{{ $this->routeForTool($toolCode) }}" class="small text-decoration-underline">
+                                                        Open tool
+                                                    </a>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>
@@ -1124,9 +1175,11 @@ class extends Component
                                     <td>{{ optional($job->created_at)->diffForHumans() ?: '-' }}</td>
                                     <td>{{ $this->formatCredits((int) ($job->credits_charged ?? 0)) }}</td>
                                     <td class="text-end">
-                                        <a wire:navigate.hover href="{{ $this->routeForTool($toolCode) }}" class="btn btn-sm btn-outline-dark">
-                                            View tool
-                                        </a>
+                                        @if($this->canOpenTool($toolCode))
+                                            <a wire:navigate.hover href="{{ $this->routeForTool($toolCode) }}" class="btn btn-sm btn-outline-dark">
+                                                View tool
+                                            </a>
+                                        @endif
                                     </td>
                                 </tr>
                             @empty

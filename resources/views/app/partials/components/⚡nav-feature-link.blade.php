@@ -9,38 +9,86 @@ new class extends Component
     public string $icon = '';
     public string $label = '';
     public ?string $feature = null;
+    public array|string|null $toolCodes = null;
+    public array|string|null $entitlements = null;
+    public string $mode = 'any';
     public ?string $badge = null;
 };
 ?>
 
 @php
-    $user = auth('app')->user();
-    $enabled = true;
-    // $enabled = $feature ? ($user?->hasFeature($feature) ?? false) : true;
+    $customer = auth('app')->user();
 
-    $url = $enabled && $route
-        ? route($route, ['locale' => app()->getLocale()])
-        : 'javascript:void(0)';
+    $normalize = function (array|string|null $codes): array {
+        return collect(is_array($codes) ? $codes : ($codes !== null ? [$codes] : []))
+            ->map(fn ($code) => strtolower(trim((string) $code)))
+            ->filter()
+            ->values()
+            ->all();
+    };
+
+    $legacyFeature = strtolower(trim((string) $feature));
+
+    $toolChecks = collect($normalize($toolCodes));
+    $entitlementChecks = collect($normalize($entitlements));
+
+    if ($legacyFeature !== '') {
+        if (\Illuminate\Support\Str::endsWith($legacyFeature, '.active')) {
+            $toolChecks->push(\Illuminate\Support\Str::beforeLast($legacyFeature, '.active'));
+        } else {
+            $entitlementChecks->push($legacyFeature);
+        }
+    }
+
+    $toolChecks = $toolChecks
+        ->map(fn ($code) => $code === 'wasr' ? 'asr' : $code)
+        ->unique()
+        ->values()
+        ->all();
+
+    $entitlementChecks = $entitlementChecks
+        ->unique()
+        ->values()
+        ->all();
+
+    if (empty($toolChecks) && empty($entitlementChecks)) {
+        $enabled = true;
+    } else {
+        $checks = [
+            ...array_map(fn ($code) => (bool) ($customer?->canAccessTool($code) ?? false), $toolChecks),
+            ...array_map(fn ($code) => (bool) ($customer?->isAllowed($code) ?? false), $entitlementChecks),
+        ];
+
+        $enabled = $mode === 'all'
+            ? ! in_array(false, $checks, true)
+            : in_array(true, $checks, true);
+    }
+
+    $url = $route ? route($route, ['locale' => app()->getLocale()]) : 'javascript:void(0)';
 @endphp
 
-<li class="nav-item">
-    <a
-        class="nav-link menu-link {{ $enabled ? '' : 'disabled' }}"
-        href="{{ $url }}"
-        @if($enabled)
+<li
+    @class([
+        'nav-item',
+        'd-none' => ! $enabled,
+    ])
+    @if(! $enabled)
+        hidden
+        aria-hidden="true"
+    @endif
+>
+    @if($enabled)
+        <a
+            class="nav-link menu-link"
+            href="{{ $url }}"
             wire:navigate.hover
-        @else
-            tabindex="-1" aria-disabled="true"
-            data-bs-toggle="tooltip"
-            data-bs-placement="right"
-            title="Subscribe to unlock this feature"
-        @endif
-    >
-        <i class="{{ $icon }}"></i>
-        <span style="{{ $enabled ? '' : 'opacity:0.6;' }}">{{ $label }}</span>
+        >
+            <i class="{{ $icon }}"></i>
+            <span>{{ $label }}</span>
 
-        @if(!$enabled && $badge)
-            <span class="badge badge-pill bg-primary">{{ $badge }}</span>
-        @endif
-    </a>
+            @if($badge)
+                <span class="badge badge-pill bg-primary ms-2">{{ $badge }}</span>
+            @endif
+        </a>
+    @endif
 </li>

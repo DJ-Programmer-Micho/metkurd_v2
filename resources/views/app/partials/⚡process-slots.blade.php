@@ -75,10 +75,15 @@ new class extends Component {
 
         $this->activeJobs = $jobs->count();
 
-        $items = $jobs->map(function ($job) {
+        $items = $jobs->map(function ($job) use ($customer) {
             $toolCode = (string) ($job->tool?->code ?? '');
+            $normalizedToolCode = match ($toolCode) {
+                'wasr' => 'asr',
+                default => $toolCode,
+            };
+            $isAccessible = $normalizedToolCode !== '' && $customer->canAccessTool($normalizedToolCode);
 
-            $route = match ($toolCode) {
+            $route = $isAccessible ? match ($toolCode) {
                 'tts' => route('app.xtts', ['locale' => app()->getLocale()]),
                 'clone_tts' => route('app.clone-xtts', ['locale' => app()->getLocale()]),
                 'wasr', 'asr' => route('app.wasr', ['locale' => app()->getLocale()]),
@@ -86,12 +91,12 @@ new class extends Component {
                 'stem' => route('app.stem', ['locale' => app()->getLocale()]),
                 'youtube_audio', 'youtube_video' => route('app.youtube', ['locale' => app()->getLocale()]),
                 default => route('app.home', ['locale' => app()->getLocale()]),
-            };
+            } : null;
 
             return [
                 'route' => $route,
                 'title' => strtoupper($toolCode ?: 'job') . ' - ' . strtoupper((string) $job->status),
-                'isClickable' => true,
+                'isClickable' => $isAccessible && $route !== null,
                 'cellClass' => match ((string) $job->status) {
                     'queued' => 'mk-slot-queued',
                     'running' => 'mk-slot-running',
@@ -164,7 +169,11 @@ new class extends Component {
 };
 ?>
 <div class="d-flex align-items-center gap-2">
-    <div wire:poll.keep-alive.5000ms="pollJobs"></div>
+    @if($activeJobs > 0)
+        <div wire:poll.6000ms="pollJobs"></div>
+    @else
+        <div wire:poll.20000ms="pollJobs"></div>
+    @endif
 
     <div class="mk-slot-summary" aria-label="Active jobs">
         <span class="mk-slot-summary__count">{{ $activeJobs }}</span>

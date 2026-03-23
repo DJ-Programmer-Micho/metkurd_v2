@@ -47,7 +47,7 @@ class extends Component
 
     public ?int $clientPdfPageCount = null;
 
-    public string $lang = 'ckb';
+    public string $lang = 'ckb+ara+eng';
     public string $pageRange = '';
     public int $dpi = 200;
     public int $psm = 6;
@@ -1214,25 +1214,25 @@ class extends Component
                             <div id="ocr-output-wrap" class="{{ $loadedRender ? '' : 'd-none' }}">
                                 <div class="ocr-output-meta mb-3">
                                     <div class="row g-2">
-                                        <div class="col-md-3 col-6">
+                                        {{-- <div class="col-md-3 col-6">
                                             <div class="ocr-meta-chip">
                                                 <span class="text-muted small d-block">Language</span>
                                                 <strong>{{ $loadedRender['lang'] ?? 'ckb' }}</strong>
                                             </div>
-                                        </div>
-                                        <div class="col-md-3 col-6">
+                                        </div> --}}
+                                        <div class="col-md-4 col-6">
                                             <div class="ocr-meta-chip">
                                                 <span class="text-muted small d-block">Range</span>
                                                 <strong>{{ ($loadedRender['page_range'] ?? '') !== '' ? $loadedRender['page_range'] : 'All pages' }}</strong>
                                             </div>
                                         </div>
-                                        <div class="col-md-3 col-6">
+                                        <div class="col-md-4 col-6">
                                             <div class="ocr-meta-chip">
                                                 <span class="text-muted small d-block">DPI</span>
                                                 <strong>{{ $loadedRender['dpi'] ?? 200 }}</strong>
                                             </div>
                                         </div>
-                                        <div class="col-md-3 col-6">
+                                        <div class="col-md-4 col-6">
                                             <div class="ocr-meta-chip">
                                                 <span class="text-muted small d-block">PSM / OEM</span>
                                                 <strong>{{ ($loadedRender['psm'] ?? 6) . ' / ' . ($loadedRender['oem'] ?? 3) }}</strong>
@@ -1271,9 +1271,9 @@ class extends Component
                                 </button>
                             </div>
 
-                            <hr>
+                            {{-- <hr> --}}
 
-                            <div class="mb-3">
+                            {{-- <div class="mb-3">
                                 <label class="mb-1"><b>Language</b></label>
                                 <select wire:model.live="lang" class="form-control rounded-pill">
                                     <option value="ckb">ckb</option>
@@ -1284,7 +1284,7 @@ class extends Component
                                     <option value="ara+eng">ara+eng</option>
                                     <option value="ckb+ara+eng">ckb+ara+eng</option>
                                 </select>
-                            </div>
+                            </div> --}}
 
                             <hr>
 

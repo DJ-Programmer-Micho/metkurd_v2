@@ -350,7 +350,7 @@ class extends Component
                 return [
                     'id' => $jobId,
                     'speaker' => data_get($j->input, 'speaker_id', '—'),
-                    'model' => 'XTTS (RunPod)',
+                    'model' => 'MK-TTS)',
                     'created_at' => optional($j->finished_at ?? $j->created_at)->format('Y-m-d H:i'),
                     'full_url' => route('app.renders.xtts.stream', [
                         'locale' => $locale,
@@ -963,7 +963,7 @@ class extends Component
     <div id="xtts-page-root">
     {{-- Poll only when a job is actively running --}}
     @if($currentJobId && !$jobFinished)
-        <div wire:poll.keep-alive.2000ms="pollJob"></div>
+        <div wire:poll.4000ms="pollJob"></div>
     @endif
 
     @php
@@ -1024,7 +1024,7 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                             <div>
-                                <strong>XTTS (RunPod)</strong>
+                                <strong>MK-TTS (MET KURDISH TEXT-TO-SPEECH)</strong>
                                 <div class="text-muted small">Dynamic voice access based on customer plan</div>
                             </div>
 
@@ -1369,6 +1369,7 @@ class extends Component
     @endif
 </div>
 
+@push('scripts')
 <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
 <script>
 (function () {

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\Authenticate;
+use App\Http\Middleware\EnsureCustomerCanAccessTool;
 use App\Http\Middleware\EnsureUserAppIsActive;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Foundation\Application;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth' => Authenticate::class,
             'localization.main' => LocalizationMainMiddleware::class,
             'app.active' => EnsureUserAppIsActive::class,
+            'app.tool.access' => EnsureCustomerCanAccessTool::class,
         ]);
 
         // $middleware->redirectGuestsTo(function ($request) {

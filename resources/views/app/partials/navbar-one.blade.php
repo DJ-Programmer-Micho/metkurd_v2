@@ -65,8 +65,6 @@
                     :route="'app.home'"
                     icon="bx bx-home"
                     :label="__('Home')"
-                    feature="tts.active"
-                    badge="PRO"
                 />
                 {{-- </x-app.auth.nav-multi-feature-link> --}}
                 <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">SPEECH TOOLS</span></li>
@@ -75,24 +73,21 @@
                     :route="'app.xtts'"
                     icon="ri-volume-up-line"
                     label="TEXT-TO-SPEECH"
-                    feature="tts.active"
-                    badge="PRO"
+                    tool-codes="tts"
                 />
 
                 <livewire:partials.components.nav-feature-link 
                     :route="'app.clone-xtts'"
                     icon="bx bx-user-voice"
                     label="Clone Speech"
-                    feature="clone_tts.active"
-                    badge="PRO"
+                    tool-codes="clone_tts"
                 />
 
                 <livewire:partials.components.nav-feature-link 
                     :route="'app.wasr'"
                     icon="ri-file-text-line"
                     :label="__('SPEECH_TO_TEXT')"
-                    feature="asr.active"
-                    badge="PRO"
+                    tool-codes="asr"
                 />
 
                 {{-- <livewire:partials.components.nav-multi-feature-link
@@ -124,8 +119,7 @@
                         :route="'app.stem'"
                         icon="bx bx-music"
                         :label="__('STEM')"
-                        feature="asr.active"
-                        badge="PRO"
+                        tool-codes="stem"
                     />
 
                 <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">DOCUMENT TOOLS</span></li>
@@ -133,8 +127,7 @@
                     :route="'app.ocr'"
                     icon="bx bx-aperture"
                     :label="__('OPTICAL CHARACTER RECOGNITION')"
-                    feature="asr.active"
-                    badge="PRO"
+                    tool-codes="ocr"
                 />
 
                 <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">YouTube</span></li>
@@ -142,8 +135,7 @@
                     :route="'app.youtube'"
                     icon="ri-youtube-line"
                     :label="__('YOUTUBE DOWNLOADER')"
-                    feature="youtube_video.active"
-                    badge="PRO"
+                    :tool-codes="['youtube_audio', 'youtube_video']"
                 />
 
 

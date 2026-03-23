@@ -18,12 +18,20 @@ class WasrRenderController extends Controller
             ->pluck('id')
             ->all();
 
-        return MlJob::query()
+        $job = MlJob::query()
+            ->with([
+                'tool:id,code,is_active',
+                'toolAction:id,tool_code,full_code,is_active',
+            ])
             ->where('id', $jobId)
             ->where('customer_id', auth('app')->id())
             ->when(!empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
             ->where('status', 'done')
             ->firstOrFail();
+
+        $this->abortUnlessCustomerCanAccessJob($job);
+
+        return $job;
     }
 
     public function downloadTxt(string $locale, string $jobId)

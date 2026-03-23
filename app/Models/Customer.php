@@ -12,6 +12,12 @@ class Customer extends Authenticatable
 {
     use Notifiable;
 
+    protected array $toolActionAllowanceCache = [];
+
+    protected array $toolAccessCache = [];
+
+    protected array $toolActionCodesByToolCache = [];
+
     protected $fillable = [
         'username',
         'email',
@@ -175,9 +181,24 @@ class Customer extends Authenticatable
 
     public function isAllowed(string $toolActionFullCode): bool
     {
-        $action = ToolAction::where('full_code', $toolActionFullCode)->first();
-        if (!$action) {
+        $toolActionFullCode = strtolower(trim($toolActionFullCode));
+
+        if ($toolActionFullCode === '') {
             return false;
+        }
+
+        if (array_key_exists($toolActionFullCode, $this->toolActionAllowanceCache)) {
+            return $this->toolActionAllowanceCache[$toolActionFullCode];
+        }
+
+        $action = ToolAction::query()
+            ->with('tool')
+            ->where('full_code', $toolActionFullCode)
+            ->where('is_active', true)
+            ->first();
+
+        if (! $action || ! ($action->tool?->is_active ?? false)) {
+            return $this->toolActionAllowanceCache[$toolActionFullCode] = false;
         }
 
         $now = now();
@@ -194,12 +215,15 @@ class Customer extends Authenticatable
             ->first();
 
         if ($override && $override->allowed !== null) {
-            return (bool) $override->allowed;
+            return $this->toolActionAllowanceCache[$toolActionFullCode] = (bool) $override->allowed;
         }
 
-        $plan = $this->servicePlan()->first();
-        if (!$plan) {
-            return false;
+        $plan = $this->relationLoaded('servicePlan')
+            ? $this->getRelation('servicePlan')
+            : $this->servicePlan()->first();
+
+        if (! $plan) {
+            return $this->toolActionAllowanceCache[$toolActionFullCode] = false;
         }
 
         $ent = PlanEntitlement::query()
@@ -207,7 +231,75 @@ class Customer extends Authenticatable
             ->where('tool_action_id', $action->id)
             ->first();
 
-        return $ent ? (bool) $ent->allowed : false;
+        return $this->toolActionAllowanceCache[$toolActionFullCode] = ($ent ? (bool) $ent->allowed : false);
+    }
+
+    public function canAccessTool(string $toolCode, array|string|null $toolActionFullCodes = null): bool
+    {
+        $toolCode = $this->normalizeToolCode($toolCode);
+
+        if ($toolCode === '') {
+            return false;
+        }
+
+        $requestedActionCodes = $this->normalizeCodeList($toolActionFullCodes);
+        $cacheKey = $toolCode . '|' . implode(',', $requestedActionCodes);
+
+        if (array_key_exists($cacheKey, $this->toolAccessCache)) {
+            return $this->toolAccessCache[$cacheKey];
+        }
+
+        $actionCodes = ! empty($requestedActionCodes)
+            ? array_values(array_filter($requestedActionCodes, fn (string $code) => str_starts_with($code, $toolCode . '.')))
+            : $this->activeToolActionCodes($toolCode);
+
+        if (empty($actionCodes)) {
+            return $this->toolAccessCache[$cacheKey] = false;
+        }
+
+        foreach ($actionCodes as $actionCode) {
+            if ($this->isAllowed($actionCode)) {
+                return $this->toolAccessCache[$cacheKey] = true;
+            }
+        }
+
+        return $this->toolAccessCache[$cacheKey] = false;
+    }
+
+    public function canAccessAnyTool(array|string|null $toolCodes): bool
+    {
+        foreach ($this->normalizeCodeList($toolCodes) as $toolCode) {
+            if ($this->canAccessTool($toolCode)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function canAccessMlJob(MlJob $job): bool
+    {
+        $job->loadMissing([
+            'tool:id,code,is_active',
+            'toolAction:id,tool_code,full_code,is_active',
+        ]);
+
+        $fullCode = strtolower(trim((string) ($job->toolAction?->full_code ?? '')));
+
+        if ($fullCode !== '') {
+            return $this->isAllowed($fullCode);
+        }
+
+        $toolCode = strtolower(trim((string) ($job->tool?->code ?? '')));
+
+        if ($toolCode !== '') {
+            return $this->canAccessTool($toolCode);
+        }
+
+        return match (strtolower(trim((string) $job->job_kind))) {
+            'youtube_download' => $this->canAccessAnyTool(['youtube_audio', 'youtube_video']),
+            default => $this->canAccessTool((string) $job->job_kind),
+        };
     }
 
     // =========================================================
@@ -347,6 +439,47 @@ class Customer extends Authenticatable
 
             default
                 => (float) ($context['quantity'] ?? 0),
+        };
+    }
+
+    protected function activeToolActionCodes(string $toolCode): array
+    {
+        $toolCode = $this->normalizeToolCode($toolCode);
+
+        if ($toolCode === '') {
+            return [];
+        }
+
+        if (array_key_exists($toolCode, $this->toolActionCodesByToolCache)) {
+            return $this->toolActionCodesByToolCache[$toolCode];
+        }
+
+        return $this->toolActionCodesByToolCache[$toolCode] = ToolAction::query()
+            ->where('tool_code', $toolCode)
+            ->where('is_active', true)
+            ->whereHas('tool', fn ($query) => $query->where('is_active', true))
+            ->orderBy('id')
+            ->pluck('full_code')
+            ->map(fn ($code) => strtolower(trim((string) $code)))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function normalizeCodeList(array|string|null $codes): array
+    {
+        return collect(is_array($codes) ? $codes : ($codes !== null ? [$codes] : []))
+            ->map(fn ($code) => strtolower(trim((string) $code)))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function normalizeToolCode(string $toolCode): string
+    {
+        return match (strtolower(trim($toolCode))) {
+            'wasr' => 'asr',
+            default => strtolower(trim($toolCode)),
         };
     }
 }

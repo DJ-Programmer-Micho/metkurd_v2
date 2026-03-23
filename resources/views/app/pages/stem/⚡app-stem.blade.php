@@ -74,7 +74,7 @@ class extends Component
         $this->syncWallet();
         $this->syncCostPreview();
         $this->hydrateCurrentJobFromDb();
-        $this->hydrateLatestFinishedRender();
+        $this->syncLoadedRenderSelection();
     }
 
     #[On('header:refresh')]
@@ -86,7 +86,7 @@ class extends Component
         $this->syncWallet();
         $this->syncCostPreview();
         $this->hydrateCurrentJobFromDb();
-        $this->hydrateLatestFinishedRender();
+        $this->syncLoadedRenderSelection();
         $this->rendersRefreshKey++;
     }
 
@@ -210,22 +210,73 @@ class extends Component
         $this->applyJobStateFromModel($job);
     }
 
-    protected function hydrateLatestFinishedRender(): void
+    protected function latestFinishedStemJob(): ?MlJob
     {
         $customerId = auth('app')->id();
         if (!$customerId) {
-            $this->latestFinishedJobId = null;
-            return;
+            return null;
         }
 
-        $job = MlJob::query()
+        return MlJob::query()
             ->where('customer_id', $customerId)
             ->where('job_kind', $this->jobKind)
             ->where('status', 'done')
             ->orderByDesc('finished_at')
             ->first();
+    }
 
-        $this->latestFinishedJobId = $job ? (string) $job->id : null;
+    protected function finishedStemJobById(string $jobId): ?MlJob
+    {
+        $customerId = auth('app')->id();
+        if (!$customerId || $jobId === '') {
+            return null;
+        }
+
+        return MlJob::query()
+            ->where('id', $jobId)
+            ->where('customer_id', $customerId)
+            ->where('job_kind', $this->jobKind)
+            ->where('status', 'done')
+            ->first();
+    }
+
+    protected function syncLoadedRenderSelection(bool $dispatchBrowserEvent = false): void
+    {
+        $customerId = auth('app')->id();
+        if (!$customerId) {
+            $this->latestFinishedJobId = null;
+            $this->loadedRender = null;
+
+            if ($dispatchBrowserEvent) {
+                $this->dispatch('stem-render-cleared');
+            }
+
+            return;
+        }
+
+        $latestJob = $this->latestFinishedStemJob();
+        $this->latestFinishedJobId = $latestJob ? (string) $latestJob->id : null;
+
+        $selectedId = (string) ($this->loadedRender['id'] ?? '');
+        $selectedJob = $selectedId !== ''
+            ? $this->finishedStemJobById($selectedId)
+            : null;
+
+        if ($selectedJob) {
+            $this->setLoadedRenderFromJob($selectedJob, false);
+            return;
+        }
+
+        if ($latestJob) {
+            $this->setLoadedRenderFromJob($latestJob, $dispatchBrowserEvent);
+            return;
+        }
+
+        $this->loadedRender = null;
+
+        if ($dispatchBrowserEvent) {
+            $this->dispatch('stem-render-cleared');
+        }
     }
 
     protected function applyJobStateFromModel(MlJob $job): void
@@ -768,7 +819,7 @@ class extends Component
             $this->dispatch('stem-renders-refresh');
             $this->dispatch('alert', type: 'success', message: (string) ($result['message'] ?? 'Stem separation completed.'));
             $this->resetJobState();
-            $this->hydrateLatestFinishedRender();
+            $this->syncLoadedRenderSelection();
 
             return;
         }
@@ -816,13 +867,13 @@ class extends Component
         try {
             $storage->deleteStemOutputs($job);
 
-            if (($this->loadedRender['id'] ?? null) === (string) $job->id) {
+            $deletedLoadedRender = (($this->loadedRender['id'] ?? null) === (string) $job->id);
+            if ($deletedLoadedRender) {
                 $this->loadedRender = null;
-                $this->dispatch('stem-render-cleared');
             }
 
             $this->resetPage();
-            $this->hydrateLatestFinishedRender();
+            $this->syncLoadedRenderSelection($deletedLoadedRender);
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('header:refresh');
             $this->dispatch('stem-renders-refresh');
@@ -923,7 +974,7 @@ class extends Component
 
 <div id="stem-page-root">
     @if($currentJobId && !$jobFinished)
-        <div wire:poll.keep-alive.3000ms="pollJob"></div>
+        <div wire:poll.5000ms="pollJob"></div>
     @endif
 
     @php
@@ -951,7 +1002,7 @@ class extends Component
         };
 
         $latestTitle = $loadedRender['input_name'] ?? null;
-        $latestTitle = $latestTitle ?: ($loadedRender['id'] ?? '—');
+        $latestTitle = $latestTitle ?: ($loadedRender['id'] ?? '-');
 
         $status = $currentStatus ?? 'queued';
         $badge = match($status) {
@@ -1022,8 +1073,8 @@ class extends Component
                         <div class="card-body p-3 p-md-4">
                             <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
                                 <div>
-                                    <strong class="d-block">Upload Audio</strong>
-                                    <small class="text-muted">Separate stems with Demucs / MDX</small>
+                                    <strong class="d-block">STEM</strong>
+                                    <small class="text-muted">Separate stems Music</small>
                                 </div>
                                 <span class="badge badge-primary">Beta</span>
                             </div>
@@ -1045,7 +1096,7 @@ class extends Component
                                 @endif
                             </div>
 
-                            <div class="mb-3">
+                            <div class="stem-plugin-card mb-3">
                                 <label class="mb-1 font-weight-medium">Audio File</label>
                                 <div wire:ignore>
                                     <input type="file" id="stem-audio-pond">
@@ -1056,7 +1107,7 @@ class extends Component
                                 </div>
 
                                 <small class="text-muted d-block mt-2">
-                                    WAV recommended • Max 100MB
+                                    WAV recommended | Max 100MB
                                 </small>
                             </div>
 
@@ -1068,7 +1119,7 @@ class extends Component
                                             <div class="small text-muted">
                                                 {{ $audioDurationSec ? number_format($audioDurationSec, 2) . ' sec' : 'Unknown duration' }}
                                                 @if($audioFileBytes)
-                                                    • {{ number_format($audioFileBytes / 1024 / 1024, 2) }} MB
+                                                    | {{ number_format($audioFileBytes / 1024 / 1024, 2) }} MB
                                                 @endif
                                             </div>
                                         </div>
@@ -1135,13 +1186,13 @@ class extends Component
                             <div class="d-flex align-items-center justify-content-between flex-wrap mb-3">
                                 <div>
                                     <strong class="d-block">Latest Output</strong>
-                                    <small class="text-muted">Title: <b>{{ $latestTitle }}</b></small>
+                                    <small class="text-muted">Title: <b id="stem-latest-title">{{ $latestTitle }}</b></small>
                                 </div>
 
                                 <div class="d-flex align-items-center gap-2">
                                     @if($loadedRender && isset($loadedRender['downloads']['all']))
-                                        <small class="text-muted mt-2 mt-md-0 mr-2">
-                                            Render: <b>#{{ $loadedRender['id'] }}</b>
+                                        <small id="stem-current-render-label" class="text-muted mt-2 mt-md-0 mr-2">
+                                            Render: <b id="stem-current-render-id">#{{ $loadedRender['id'] }}</b>
                                         </small>
                                         <a
                                             id="stem-download-all"
@@ -1152,6 +1203,9 @@ class extends Component
                                             <i class="mdi mdi-download"></i> Download ZIP
                                         </a>
                                     @else
+                                        <small id="stem-current-render-label" class="text-muted mt-2 mt-md-0 mr-2 d-none">
+                                            Render: <b id="stem-current-render-id"></b>
+                                        </small>
                                         <a
                                             id="stem-download-all"
                                             href="#"
@@ -1204,11 +1258,15 @@ class extends Component
                                                     <div class="stem-track-label">
                                                         <span class="stem-badge">{{ $trackLabel($track) }}</span>
                                                         <div class="small text-muted mt-1">
-                                                            {{ $track === 'original' ? 'Original uploaded audio — muted by default' : 'Separated output track' }}
+                                                            {{ $track === 'original' ? 'Original uploaded audio - muted by default' : 'Separated output track' }}
                                                         </div>
                                                     </div>
 
                                                     <div class="stem-track-controls d-flex gap-2 flex-wrap">
+                                                        <button type="button" class="btn btn-sm btn-stem-play track-play btn-outline-success" data-track="{{ $track }}">
+                                                            <i class="mdi mdi-play"></i> Play
+                                                        </button>
+
                                                         <button type="button" class="btn btn-sm btn-stem-solo track-solo" data-track="{{ $track }}">
                                                             <i class="mdi mdi-headphones"></i> S
                                                         </button>
@@ -1248,66 +1306,122 @@ class extends Component
             <div class="turbo-border mb-3">
                 <div class="turbo-inner">
                     <div class="card mb-0">
-                        <div class="card-body p-3 p-md-4">
-                            <div class="d-flex align-items-center justify-content-between mb-3">
-                                <strong>Parameters</strong>
-                                <button wire:click="resetForm" class="btn btn-sm btn-outline-secondary" type="button">
-                                    <i class="mdi mdi-refresh"></i> Reset
-                                </button>
+                        <div class="card-body p-3 p-md-4 stem-param-rack">
+                            <div class="d-flex align-items-center justify-content-between mb-3 gap-2 flex-wrap">
+                                <div>
+                                    <strong class="d-block">Parameters</strong>
+                                    <small class="text-muted">Tune the separation like an audio plugin before you render.</small>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="small text-muted stem-param-sync" wire:loading wire:target="stems,model,stemCodec,stemBitrate">
+                                        Applying...
+                                    </span>
+                                    <button wire:click="resetForm" class="btn btn-sm btn-outline-secondary" type="button">
+                                        <i class="mdi mdi-refresh"></i> Reset
+                                    </button>
+                                </div>
                             </div>
 
-                            <hr>
+                            <div class="stem-plugin-card mb-3">
+                                <div class="stem-plugin-card__head">
+                                    <div>
+                                        <div class="stem-plugin-kicker">Separation</div>
+                                        <h6 class="stem-plugin-title mb-0">Stem Mode</h6>
+                                    </div>
+                                    <span class="stem-plugin-value" id="stem-param-mode-copy">{{ $stems }} outputs</span>
+                                </div>
+                                <div
+                                    class="stem-choice-grid"
+                                    data-stem-choice-group="stems"
+                                    data-current-value="{{ $stems }}"
+                                >
+                                    <button
+                                        type="button"
+                                        class="stem-choice {{ $stems === 2 ? 'is-active' : '' }}"
+                                        data-stem-choice
+                                        data-field="stems"
+                                        data-value="2"
+                                    >
+                                        <span class="stem-choice-title">2 Stems</span>
+                                        <span class="stem-choice-meta">Vocals + Instrumental</span>
+                                    </button>
 
-                            <div class="mb-3">
-                                <label class="mb-1"><b>Stems Mode</b></label>
-                                <div class="btn-group btn-group-toggle d-flex" data-toggle="buttons">
-                                    <label class="btn btn-outline-secondary {{ $stems == 2 ? 'active' : '' }}">
-                                        <input type="radio" wire:model.live="stems" value="2"> 2 Stems
-                                    </label>
-                                    <label class="btn btn-outline-secondary {{ $stems == 4 ? 'active' : '' }}">
-                                        <input type="radio" wire:model.live="stems" value="4"> 4 Stems
-                                    </label>
+                                    <button
+                                        type="button"
+                                        class="stem-choice {{ $stems === 4 ? 'is-active' : '' }}"
+                                        data-stem-choice
+                                        data-field="stems"
+                                        data-value="4"
+                                    >
+                                        <span class="stem-choice-title">4 Stems</span>
+                                        <span class="stem-choice-meta">Vocals, Drums, Bass, Other</span>
+                                    </button>
                                 </div>
                                 <small class="text-muted d-block mt-2">
-                                    2 = vocals + instrumental • 4 = vocals + drums + bass + other
+                                    2 = vocals + instrumental | 4 = vocals + drums + bass + other
                                 </small>
                             </div>
 
-                            <hr>
+                            {{-- <div class="stem-plugin-card mb-3">
+                                <div class="stem-plugin-card__head">
+                                    <div>
+                                        <div class="stem-plugin-kicker">Engine</div>
+                                        <h6 class="stem-plugin-title mb-0">Stem Model</h6>
+                                    </div>
+                                </div>
 
-                            <div class="mb-3">
-                                <label class="mb-1"><b>Choose Stem Model</b></label>
-                                <select wire:model.live="model" class="form-control rounded-pill">
-                                    <option value="htdemucs_ft">htdemucs_ft</option>
+                                <label class="stem-plugin-label" for="stem-model-select">Select Model</label>
+                                <select id="stem-model-select" data-stem-select-field="model" class="form-select stem-plugin-select">
+                                    <option value="htdemucs_ft" @selected($model === 'htdemucs_ft')>STEM V1.5</option>
                                 </select>
-                                <small class="form-text text-muted">htdemucs_ft is usually best quality</small>
-                            </div>
+                                <small class="form-text text-muted mt-2 d-block">Balanced for high-quality musical separation.</small>
+                            </div> --}}
 
-                            <hr>
+                            <div class="stem-plugin-card mb-3">
+                                <div class="stem-plugin-card__head">
+                                    <div>
+                                        <div class="stem-plugin-kicker">Output</div>
+                                        <h6 class="stem-plugin-title mb-0">Format</h6>
+                                    </div>
+                                </div>
 
-                            <div class="mb-3">
-                                <label class="mb-1"><b>Output Format</b></label>
-                                <div class="btn-group btn-group-toggle d-flex" data-toggle="buttons">
-                                    <label class="btn btn-outline-secondary {{ $stemCodec === 'mp3' ? 'active' : '' }}">
-                                        <input type="radio" wire:model.live="stemCodec" value="mp3"> MP3
-                                    </label>
+                                <div
+                                    class="stem-choice-grid stem-choice-grid--single"
+                                    data-stem-choice-group="stemCodec"
+                                    data-current-value="{{ $stemCodec }}"
+                                >
+                                    <button
+                                        type="button"
+                                        class="stem-choice {{ $stemCodec === 'mp3' ? 'is-active' : '' }}"
+                                        data-stem-choice
+                                        data-field="stemCodec"
+                                        data-value="mp3"
+                                    >
+                                        <span class="stem-choice-title">MP3</span>
+                                        <span class="stem-choice-meta">Fast download-friendly delivery</span>
+                                    </button>
                                 </div>
                             </div>
 
-                            <hr>
+                            <div class="stem-plugin-card mb-0">
+                                <div class="stem-plugin-card__head">
+                                    <div>
+                                        <div class="stem-plugin-kicker">Export</div>
+                                        <h6 class="stem-plugin-title mb-0">Bitrate</h6>
+                                    </div>
+                                </div>
 
-                            <div class="mb-0">
-                                <label class="mb-1"><b>Bitrate</b></label>
-                                <select wire:model.live="stemBitrate" class="form-control rounded-pill">
-                                    <option value="192k">192k</option>
+                                <label class="stem-plugin-label" for="stem-bitrate-select">Quality</label>
+                                <select id="stem-bitrate-select" data-stem-select-field="stemBitrate" class="form-select stem-plugin-select">
+                                    <option value="192k" @selected($stemBitrate === '192k')>192k</option>
                                 </select>
                             </div>
 
-                            <div class="wasr-cost-preview rounded-3 p-3 mt-3">
-                                <div class="d-flex justify-content-between align-items-center">
+                            <div class="wasr-cost-preview stem-cost-preview rounded-3 p-3 mt-3">
+                                <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
                                     <div>
                                         <div class="fw-semibold">Estimated Cost</div>
-                                        <div class="small text-muted">
+                                        <div class="small text-muted" id="stem-cost-mode-label">
                                             {{ $stems === 4 ? '4-stem separation pricing' : '2-stem separation pricing' }}
                                         </div>
                                     </div>
@@ -1472,16 +1586,158 @@ class extends Component
         border: 1px solid rgba(255,255,255,.08);
     }
 
+    .stem-param-sync{
+        padding: .2rem .55rem;
+        border-radius: 999px;
+        border: 1px solid rgba(var(--bs-body-color-rgb), .08);
+        background: rgba(var(--bs-body-color-rgb), .04);
+    }
+
+    .stem-plugin-card{
+        padding: 1rem;
+        border-radius: 18px;
+        background:
+            linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.02)),
+            radial-gradient(circle at top left, rgba(var(--bs-primary-rgb), .14), transparent 46%);
+        border: 1px solid rgba(255,255,255,.08);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 16px 30px rgba(0,0,0,.08);
+    }
+
+    .stem-plugin-card__head{
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: .9rem;
+    }
+
+    .stem-plugin-kicker{
+        font-size: .7rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: rgba(255,255,255,.62);
+        margin-bottom: .2rem;
+    }
+
+    .stem-plugin-title{
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: .01em;
+    }
+
+    .stem-plugin-value{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 32px;
+        padding: .35rem .7rem;
+        border-radius: 999px;
+        background: rgba(var(--bs-primary-rgb), .16);
+        border: 1px solid rgba(var(--bs-primary-rgb), .25);
+        color: rgba(255,255,255,.92);
+        font-size: .75rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .stem-plugin-label{
+        display: block;
+        margin-bottom: .5rem;
+        font-size: .78rem;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: rgba(255,255,255,.62);
+    }
+
+    .stem-plugin-select{
+        min-height: 48px;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,.12);
+        background: rgba(8, 14, 24, .72);
+        color: var(--bs-body-color);
+        font-weight: 600;
+        box-shadow: none;
+    }
+
+    .stem-plugin-select:focus{
+        border-color: rgba(var(--bs-primary-rgb), .45);
+        box-shadow: 0 0 0 .18rem rgba(var(--bs-primary-rgb), .14);
+        background: rgba(8, 14, 24, .88);
+    }
+
+    .stem-choice-grid{
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .75rem;
+    }
+
+    .stem-choice-grid--single{
+        grid-template-columns: 1fr;
+    }
+
+    .stem-choice{
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: .32rem;
+        padding: 1rem;
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,.12);
+        background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.025));
+        color: var(--bs-body-color);
+        text-align: left;
+        transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
+    }
+
+    .stem-choice:hover{
+        transform: translateY(-1px);
+        border-color: rgba(var(--bs-primary-rgb), .28);
+        box-shadow: 0 12px 24px rgba(0,0,0,.08);
+    }
+
+    .stem-choice.is-active{
+        border-color: rgba(var(--bs-primary-rgb), .46);
+        background: linear-gradient(180deg, rgba(var(--bs-primary-rgb), .2), rgba(var(--bs-primary-rgb), .09));
+        box-shadow: inset 0 0 0 1px rgba(var(--bs-primary-rgb), .22), 0 14px 28px rgba(13,110,253,.12);
+    }
+
+    .stem-choice:focus-visible{
+        outline: none;
+        box-shadow: 0 0 0 .2rem rgba(var(--bs-primary-rgb), .18);
+    }
+
+    .stem-choice-title{
+        font-size: .98rem;
+        font-weight: 700;
+    }
+
+    .stem-choice-meta{
+        font-size: .78rem;
+        color: rgba(255,255,255,.68);
+    }
+
+    .stem-cost-preview{
+        border-radius: 18px !important;
+        background:
+            linear-gradient(180deg, rgba(var(--bs-warning-rgb), .13), rgba(var(--bs-warning-rgb), .06)),
+            radial-gradient(circle at top left, rgba(255,255,255,.08), transparent 38%);
+    }
+
     .stem-player-container {
-        background: rgba(0,0,0,.05);
-        border-radius: 12px;
+        background:
+            linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)),
+            radial-gradient(circle at top left, rgba(var(--bs-primary-rgb), .12), transparent 34%);
+        border: 1px solid rgba(255,255,255,.08);
+        border-radius: 16px;
         padding: 20px;
     }
 
     .master-controls {
-        background: rgba(255,255,255,.05);
+        background: rgba(5, 10, 18, .38);
         padding: 15px;
-        border-radius: 8px;
+        border-radius: 12px;
         border: 1px solid rgba(255,255,255,.1);
     }
 
@@ -1491,10 +1747,10 @@ class extends Component
     }
 
     .stem-track {
-        background: rgba(255,255,255,.03);
+        background: rgba(255,255,255,.035);
         border: 1px solid color-mix(in srgb, var(--stem-color) 40%, rgba(255,255,255,.10));
         border-left: 4px solid var(--stem-color);
-        border-radius: 8px;
+        border-radius: 12px;
         padding: 12px;
         transition: all 0.2s ease;
     }
@@ -1534,11 +1790,19 @@ class extends Component
         align-items: center;
     }
 
+    .btn-stem-play,
     .btn-stem-solo,
     .btn-stem-mute {
         min-width: 44px;
         font-weight: 600;
         transition: all 0.2s ease;
+    }
+
+    .btn-stem-play:hover,
+    .btn-stem-play.active {
+        background: #198754 !important;
+        border-color: #198754 !important;
+        color: #fff !important;
     }
 
     .btn-stem-solo:hover,
@@ -1564,6 +1828,7 @@ class extends Component
         background: rgba(255,255,255,.02);
         border-radius: 6px;
         overflow: hidden;
+        cursor: pointer;
     }
 
     .render-item,
@@ -1590,6 +1855,12 @@ class extends Component
 
     .stem-render-item--latest{
         border-left: 3px solid var(--bs-primary);
+    }
+
+    @media (max-width: 575.98px) {
+        .stem-choice-grid{
+            grid-template-columns: 1fr;
+        }
     }
 
     .gap-2 {
@@ -1623,12 +1894,19 @@ class extends Component
             pluginsRegistered: false,
             formWatchBoot: false,
             bootTimer: null,
+            paramTimers: {},
         };
     }
 
     const S = window.__STEM_POND__;
     const FORM_KEY = 'stem_form_state_v3';
     const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
+    const PARAM_DEFAULTS = {
+        stems: 4,
+        model: 'htdemucs_ft',
+        stemCodec: 'mp3',
+        stemBitrate: '192k',
+    };
 
     if (!S.pluginsRegistered) {
         FilePond.registerPlugin(
@@ -1671,19 +1949,169 @@ class extends Component
         return Number.isFinite(parsed) ? parsed : fallback;
     }
 
-    function formSave() {
+    function normalizeState(state = {}) {
+        return {
+            stems: safeInt(state.stems, PARAM_DEFAULTS.stems) === 2 ? 2 : 4,
+            model: String(state.model || PARAM_DEFAULTS.model),
+            stemCodec: String(state.stemCodec || PARAM_DEFAULTS.stemCodec),
+            stemBitrate: String(state.stemBitrate || PARAM_DEFAULTS.stemBitrate),
+        };
+    }
+
+    function getStateFromDom() {
+        const stemsGroup = document.querySelector('[data-stem-choice-group="stems"]');
+        const codecGroup = document.querySelector('[data-stem-choice-group="stemCodec"]');
+        const modelSelect = document.querySelector('[data-stem-select-field="model"]');
+        const bitrateSelect = document.querySelector('[data-stem-select-field="stemBitrate"]');
+
+        if (!stemsGroup && !codecGroup && !modelSelect && !bitrateSelect) {
+            return null;
+        }
+
+        return normalizeState({
+            stems: stemsGroup?.dataset.currentValue || PARAM_DEFAULTS.stems,
+            model: modelSelect?.value || PARAM_DEFAULTS.model,
+            stemCodec: codecGroup?.dataset.currentValue || PARAM_DEFAULTS.stemCodec,
+            stemBitrate: bitrateSelect?.value || PARAM_DEFAULTS.stemBitrate,
+        });
+    }
+
+    function getStateFromLivewire(lw = getStemComponent()) {
+        if (!lw || typeof lw.get !== 'function') return null;
+
+        return normalizeState({
+            stems: lw.get('stems'),
+            model: lw.get('model'),
+            stemCodec: lw.get('stemCodec'),
+            stemBitrate: lw.get('stemBitrate'),
+        });
+    }
+
+    function updateParameterMicrocopy(state) {
+        const modeCopy = document.getElementById('stem-param-mode-copy');
+        const costLabel = document.getElementById('stem-cost-mode-label');
+
+        if (modeCopy) {
+            modeCopy.textContent = `${state.stems} outputs`;
+        }
+
+        if (costLabel) {
+            costLabel.textContent = state.stems === 4
+                ? '4-stem separation pricing'
+                : '2-stem separation pricing';
+        }
+    }
+
+    function applyParameterUI(stateLike = null) {
+        const state = normalizeState(
+            stateLike
+            || getStateFromDom()
+            || getStateFromLivewire()
+            || PARAM_DEFAULTS
+        );
+
+        document.querySelectorAll('[data-stem-choice-group]').forEach((group) => {
+            const field = group.dataset.stemChoiceGroup;
+            const currentValue = String(state[field] ?? group.dataset.currentValue ?? '');
+
+            group.dataset.currentValue = currentValue;
+
+            group.querySelectorAll('[data-stem-choice]').forEach((button) => {
+                const active = button.dataset.value === currentValue;
+                button.classList.toggle('is-active', active);
+                button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        });
+
+        document.querySelectorAll('[data-stem-select-field]').forEach((select) => {
+            const field = select.dataset.stemSelectField;
+            const currentValue = String(state[field] ?? '');
+
+            if (currentValue && select.value !== currentValue) {
+                select.value = currentValue;
+            }
+        });
+
+        updateParameterMicrocopy(state);
+
+        return state;
+    }
+
+    function persistState(stateLike = null) {
         try {
-            const lw = getStemComponent();
-            if (!lw || typeof lw.get !== 'function') return;
+            const state = normalizeState(
+                stateLike
+                || getStateFromDom()
+                || getStateFromLivewire()
+                || PARAM_DEFAULTS
+            );
 
             localStorage.setItem(FORM_KEY, JSON.stringify({
-                stems: safeInt(lw.get('stems'), 4) === 2 ? 2 : 4,
-                model: lw.get('model') ?? 'htdemucs_ft',
-                stemCodec: lw.get('stemCodec') ?? 'mp3',
-                stemBitrate: lw.get('stemBitrate') ?? '192k',
+                ...state,
                 ts: Date.now(),
             }));
         } catch (_) {}
+    }
+
+    function queueParameterSync(field, value) {
+        const lw = getStemComponent();
+        if (!lw || typeof lw.set !== 'function') return;
+
+        clearTimeout(S.paramTimers[field]);
+        S.paramTimers[field] = setTimeout(() => {
+            try {
+                lw.set(field, field === 'stems' ? safeInt(value, PARAM_DEFAULTS.stems) : String(value));
+            } catch (_) {}
+        }, 120);
+    }
+
+    function bindParameterControls() {
+        applyParameterUI();
+
+        document.querySelectorAll('[data-stem-choice]').forEach((button) => {
+            if (button.dataset.bound === '1') return;
+            button.dataset.bound = '1';
+
+            button.addEventListener('click', () => {
+                const field = button.dataset.field || '';
+                const rawValue = button.dataset.value || '';
+                if (!field || rawValue === '') return;
+
+                const nextState = normalizeState({
+                    ...(getStateFromDom() || getStateFromLivewire() || PARAM_DEFAULTS),
+                    [field]: field === 'stems'
+                        ? safeInt(rawValue, PARAM_DEFAULTS.stems)
+                        : rawValue,
+                });
+
+                applyParameterUI(nextState);
+                persistState(nextState);
+                queueParameterSync(field, nextState[field]);
+            });
+        });
+
+        document.querySelectorAll('[data-stem-select-field]').forEach((select) => {
+            if (select.dataset.bound === '1') return;
+            select.dataset.bound = '1';
+
+            select.addEventListener('change', () => {
+                const field = select.dataset.stemSelectField || '';
+                if (!field) return;
+
+                const nextState = normalizeState({
+                    ...(getStateFromDom() || getStateFromLivewire() || PARAM_DEFAULTS),
+                    [field]: select.value,
+                });
+
+                applyParameterUI(nextState);
+                persistState(nextState);
+                queueParameterSync(field, nextState[field]);
+            });
+        });
+    }
+
+    function formSave() {
+        persistState();
     }
 
     function formLoad() {
@@ -1711,16 +2139,22 @@ class extends Component
 
     function formRestoreIfNeeded() {
         const saved = formLoad();
-        if (!saved) return;
+        if (!saved) {
+            applyParameterUI(getStateFromLivewire() || PARAM_DEFAULTS);
+            return;
+        }
 
         const lw = getStemComponent();
+        applyParameterUI(saved);
+
         if (!lw || typeof lw.set !== 'function') return;
 
         try {
-            lw.set('stems', safeInt(saved.stems, 4) === 2 ? 2 : 4);
-            lw.set('model', saved.model ?? 'htdemucs_ft');
-            lw.set('stemCodec', saved.stemCodec ?? 'mp3');
-            lw.set('stemBitrate', saved.stemBitrate ?? '192k');
+            const state = normalizeState(saved);
+            lw.set('stems', state.stems);
+            lw.set('model', state.model);
+            lw.set('stemCodec', state.stemCodec);
+            lw.set('stemBitrate', state.stemBitrate);
         } catch (_) {}
     }
 
@@ -1735,7 +2169,10 @@ class extends Component
         let timer = null;
         const debouncedSave = () => {
             clearTimeout(timer);
-            timer = setTimeout(() => formSave(), 250);
+            timer = setTimeout(() => {
+                formSave();
+                applyParameterUI(getStateFromLivewire() || getStateFromDom() || PARAM_DEFAULTS);
+            }, 250);
         };
 
         ['stems', 'model', 'stemCodec', 'stemBitrate'].forEach((field) => {
@@ -1818,6 +2255,7 @@ class extends Component
         S.bootTimer = setTimeout(() => {
             S.bootTimer = null;
             formRestoreIfNeeded();
+            bindParameterControls();
             watchAndPersistForm();
             bootPond();
         }, 0);
@@ -1848,10 +2286,13 @@ class extends Component
             if (S.pond) {
                 try { S.pond.removeFiles(); } catch (_) {}
             }
+
+            applyParameterUI(PARAM_DEFAULTS);
         });
 
         Livewire.on('stem-form-state-clear', () => {
             formClear();
+            applyParameterUI(PARAM_DEFAULTS);
         });
 
         if (!S.commitHooked && typeof Livewire.hook === 'function') {
@@ -1861,6 +2302,8 @@ class extends Component
                 succeed(() => {
                     requestAnimationFrame(() => {
                         formSave();
+                        bindParameterControls();
+                        applyParameterUI(getStateFromLivewire() || getStateFromDom() || PARAM_DEFAULTS);
                         const input = document.getElementById('stem-audio-pond');
                         if (input && !S.pond) {
                             bootPond();
@@ -1883,15 +2326,29 @@ class extends Component
 
     if (!window.__STEM_RENDER_PAGE__) {
         window.__STEM_RENDER_PAGE__ = {
-            players: {},
+            medias: {},
+            waves: {},
             trackState: {},
             currentRender: null,
+            audioContext: null,
+            isPlaying: false,
             isSyncSeeking: false,
+            isLoadingBuffers: false,
+            auditionTrack: null,
             eventsBound: false,
             commitHooked: false,
             masterTicker: null,
             listenersBound: false,
             bootTimer: null,
+            masterTime: 0,
+            duration: 0,
+            leadTrack: null,
+            transportStartedAt: 0,
+            transportOffset: 0,
+            assetGeneration: 0,
+            sourceGeneration: 0,
+            transportRequestId: 0,
+            loadingRenderId: null,
         };
     }
 
@@ -1940,6 +2397,10 @@ class extends Component
         }
     }
 
+    function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+    }
+
     function formatTime(sec) {
         sec = Math.max(0, Number(sec || 0));
         const m = String(Math.floor(sec / 60)).padStart(2, '0');
@@ -1947,42 +2408,268 @@ class extends Component
         return `${m}:${s}`;
     }
 
-    function updateMasterTime() {
-        const first = Object.values(S.players)[0];
+    function updateLatestHeader(render) {
+        const titleEl = document.getElementById('stem-latest-title');
+        const labelEl = document.getElementById('stem-current-render-label');
+        const idEl = document.getElementById('stem-current-render-id');
+        const downloadAll = document.getElementById('stem-download-all');
+        const readyEl = document.getElementById('stem-latest-ready');
+        const hiddenIdEl = document.getElementById('stem-latest-render-id');
+
+        if (titleEl) {
+            titleEl.textContent = render?.input_name || 'No output selected';
+        }
+
+        if (labelEl) {
+            labelEl.classList.toggle('d-none', !(render && render.id));
+        }
+
+        if (idEl) {
+            idEl.textContent = render?.id ? `#${render.id}` : '';
+        }
+
+        if (downloadAll) {
+            if (render?.downloads?.all) {
+                downloadAll.href = render.downloads.all;
+                downloadAll.classList.remove('disabled');
+            } else {
+                downloadAll.href = '#';
+                downloadAll.classList.add('disabled');
+            }
+        }
+
+        if (readyEl) {
+            readyEl.value = render?.id ? '1' : '0';
+        }
+
+        if (hiddenIdEl) {
+            hiddenIdEl.value = render?.id || '';
+        }
+    }
+
+    function updateMasterTime(current = S.masterTime, duration = S.duration) {
         const currentEl = document.getElementById('master-current');
         const durationEl = document.getElementById('master-duration');
 
-        if (!currentEl || !durationEl || !first) return;
+        if (!currentEl || !durationEl) return;
+
+        currentEl.textContent = formatTime(current);
+        durationEl.textContent = formatTime(duration);
+    }
+
+    function ensureAudioContext() {
+        if (S.audioContext) {
+            return S.audioContext;
+        }
+
+        const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextCtor) {
+            return null;
+        }
+
+        S.audioContext = new AudioContextCtor();
+
+        return S.audioContext;
+    }
+
+    async function resumeAudioContext() {
+        const context = ensureAudioContext();
+        if (!context) return null;
+
+        if (context.state === 'suspended') {
+            try {
+                await context.resume();
+            } catch (_) {}
+        }
+
+        return context;
+    }
+
+    function getLeadTrack() {
+        if (S.leadTrack && S.medias[S.leadTrack]) {
+            return S.leadTrack;
+        }
+
+        const firstTrack = Object.keys(S.medias)[0] || null;
+        if (!firstTrack) return null;
+
+        S.leadTrack = firstTrack;
+
+        return firstTrack;
+    }
+
+    function getTransportTime() {
+        if (!S.isPlaying || !S.audioContext) {
+            return clamp(S.masterTime, 0, S.duration || Math.max(S.masterTime, 0));
+        }
+
+        return clamp(
+            (S.audioContext.currentTime - S.transportStartedAt) + S.transportOffset,
+            0,
+            S.duration || 0
+        );
+    }
+
+    function syncWaveProgress(track, seconds = S.masterTime) {
+        const wave = S.waves[track];
+        if (!wave) return;
+
+        const duration = Number(
+            S.medias[track]?.duration
+            || S.duration
+            || wave.getDuration?.()
+            || 0
+        );
+
+        if (!(duration > 0)) return;
+
+        const ratio = clamp(seconds / duration, 0, 1);
+        if (Math.abs((wave.__stemRatio ?? -1) - ratio) < 0.004) return;
+
+        wave.__stemRatio = ratio;
 
         try {
-            currentEl.textContent = formatTime(first.getCurrentTime?.() || 0);
-            durationEl.textContent = formatTime(first.getDuration?.() || 0);
+            wave.seekTo(ratio);
         } catch (_) {}
     }
 
-    function startMasterTicker() {
+    function syncAllWaveProgress(seconds = S.masterTime) {
+        Object.keys(S.waves).forEach((track) => {
+            syncWaveProgress(track, seconds);
+        });
+    }
+
+    function updateMasterControls() {
+        const hasRender = !!S.currentRender && Object.keys(S.medias).length > 0;
+        const busy = S.isLoadingBuffers;
+        const playBtn = document.getElementById('stem-master-play');
+        const stopBtn = document.getElementById('stem-master-stop');
+
+        if (playBtn) {
+            playBtn.disabled = !hasRender || busy;
+            playBtn.classList.toggle('btn-success', !busy && !(S.isPlaying && !S.auditionTrack));
+            playBtn.classList.toggle('btn-warning', !busy && S.isPlaying && !S.auditionTrack);
+            playBtn.classList.toggle('btn-outline-secondary', busy);
+
+            if (busy) {
+                playBtn.innerHTML = '<span class="spinner-border spinner-border-sm mr-1"></span> Preparing...';
+            } else {
+                playBtn.innerHTML = S.isPlaying && !S.auditionTrack
+                    ? '<i class="mdi mdi-pause"></i> Pause All'
+                    : '<i class="mdi mdi-play"></i> Play All';
+            }
+        }
+
+        if (stopBtn) {
+            stopBtn.disabled = !hasRender || busy;
+        }
+    }
+
+    function stopSources() {
+        S.sourceGeneration += 1;
+
+        Object.values(S.medias).forEach((media) => {
+            if (media.source) {
+                try {
+                    media.source.onended = null;
+                    media.source.stop();
+                } catch (_) {}
+
+                try {
+                    media.source.disconnect();
+                } catch (_) {}
+
+                media.source = null;
+            }
+
+            if (media.gain) {
+                try {
+                    media.gain.disconnect();
+                } catch (_) {}
+
+                media.gain = null;
+            }
+        });
+    }
+
+    function finishTransport() {
+        S.transportRequestId += 1;
+        S.isPlaying = false;
+        S.masterTime = S.duration;
+        S.transportOffset = S.duration;
+
         stopMasterTicker();
-        S.masterTicker = setInterval(updateMasterTime, 250);
+        stopSources();
+        syncAllWaveProgress(S.masterTime);
+        updateMasterTime(S.masterTime, S.duration);
+        updateMasterControls();
+        updateTrackButtonStates();
     }
 
     function stopMasterTicker() {
         if (S.masterTicker) {
-            clearInterval(S.masterTicker);
+            cancelAnimationFrame(S.masterTicker);
             S.masterTicker = null;
         }
     }
 
-    function destroyPlayers() {
+    function startMasterTicker() {
         stopMasterTicker();
 
-        Object.values(S.players).forEach((player) => {
-            try { player.destroy(); } catch (_) {}
+        const tick = () => {
+            if (!S.isPlaying) {
+                S.masterTicker = null;
+                return;
+            }
+
+            S.masterTime = getTransportTime();
+            updateMasterTime(S.masterTime, S.duration);
+            syncAllWaveProgress(S.masterTime);
+
+            if (S.duration > 0 && S.masterTime >= (S.duration - 0.03)) {
+                finishTransport();
+                return;
+            }
+
+            S.masterTicker = requestAnimationFrame(tick);
+        };
+
+        S.masterTicker = requestAnimationFrame(tick);
+    }
+
+    function destroyPlayers() {
+        S.transportRequestId += 1;
+        stopMasterTicker();
+        stopSources();
+
+        Object.values(S.waves).forEach((wave) => {
+            try { wave.destroy(); } catch (_) {}
         });
 
-        S.players = {};
+        Object.values(S.medias).forEach((media) => {
+            if (media?.waveUrl) {
+                try { URL.revokeObjectURL(media.waveUrl); } catch (_) {}
+            }
+        });
+
+        S.medias = {};
+        S.waves = {};
         S.trackState = {};
         S.currentRender = null;
+        S.isPlaying = false;
         S.isSyncSeeking = false;
+        S.isLoadingBuffers = false;
+        S.auditionTrack = null;
+        S.masterTime = 0;
+        S.duration = 0;
+        S.leadTrack = null;
+        S.transportStartedAt = 0;
+        S.transportOffset = 0;
+        S.assetGeneration += 1;
+        S.loadingRenderId = null;
+
+        updateMasterControls();
+        updateMasterTime(0, 0);
     }
 
     function defaultStateForTracks(tracks) {
@@ -2013,7 +2700,7 @@ class extends Component
 
     function trackDescription(track) {
         return track === 'original'
-            ? 'Original uploaded audio — muted by default'
+            ? 'Original uploaded audio - muted by default'
             : 'Separated output track';
     }
 
@@ -2034,6 +2721,9 @@ class extends Component
                             <div class="small text-muted mt-1">${trackDescription(track)}</div>
                         </div>
                         <div class="stem-track-controls d-flex gap-2 flex-wrap">
+                            <button type="button" class="btn btn-sm btn-stem-play track-play btn-outline-success" data-track="${track}">
+                                <i class="mdi mdi-play"></i> Play
+                            </button>
                             <button type="button" class="btn btn-sm btn-stem-solo track-solo" data-track="${track}">
                                 <i class="mdi mdi-headphones"></i> S
                             </button>
@@ -2045,7 +2735,7 @@ class extends Component
                             </a>
                         </div>
                     </div>
-                    <div id="wave-${track}" class="stem-wave tts-wave"></div>
+                    <div id="wave-${track}" class="stem-wave tts-wave" title="Click to seek all stems together"></div>
                 </div>
             `}).join('');
 
@@ -2174,44 +2864,169 @@ class extends Component
         const soloed = tracks.filter((track) => S.trackState[track]?.solo);
 
         tracks.forEach((track) => {
-            const player = S.players[track];
-            if (!player) return;
-
             let volume = 1;
-            if (soloed.length > 0) {
+
+            if (S.auditionTrack) {
+                volume = S.auditionTrack === track ? 1 : 0;
+            } else if (soloed.length > 0) {
                 volume = soloed.includes(track) ? 1 : 0;
             } else if (S.trackState[track]?.mute) {
                 volume = 0;
             }
 
             S.trackState[track].volume = volume;
-            player.setVolume(volume);
+
+            const context = S.audioContext;
+            const gain = S.medias[track]?.gain;
+            if (!context || !gain) return;
+
+            try {
+                gain.gain.cancelScheduledValues(context.currentTime);
+                gain.gain.setTargetAtTime(volume, context.currentTime, 0.015);
+            } catch (_) {
+                try {
+                    gain.gain.value = volume;
+                } catch (_) {}
+            }
         });
     }
 
-    function syncAllToTime(seconds, exceptTrack = null) {
-        if (S.isSyncSeeking) return;
-        S.isSyncSeeking = true;
+    function seekTransport(seconds) {
+        const target = clamp(Number(seconds || 0), 0, S.duration || Math.max(Number(seconds || 0), 0));
+        S.masterTime = target;
+        S.transportOffset = target;
+        updateMasterTime(S.masterTime, S.duration);
+        syncAllWaveProgress(S.masterTime);
 
-        Object.entries(S.players).forEach(([track, player]) => {
-            if (track === exceptTrack) return;
+        if (S.isPlaying) {
+            playTransport(S.auditionTrack);
+        }
+    }
+
+    function pauseTransport({ preserveTime = true } = {}) {
+        const pauseAt = preserveTime
+            ? getTransportTime()
+            : 0;
+
+        S.transportRequestId += 1;
+        S.isPlaying = false;
+        S.transportOffset = pauseAt;
+        stopMasterTicker();
+        stopSources();
+
+        S.masterTime = pauseAt;
+        syncAllWaveProgress(S.masterTime);
+        updateMasterTime(S.masterTime, S.duration);
+        updateMasterControls();
+        updateTrackButtonStates();
+    }
+
+    function stopTransport() {
+        pauseTransport({ preserveTime: false });
+    }
+
+    async function playTransport(auditionTrack = S.auditionTrack) {
+        if (!S.currentRender || S.isLoadingBuffers || Object.keys(S.medias).length === 0) return;
+
+        const requestId = S.transportRequestId + 1;
+        S.transportRequestId = requestId;
+
+        const context = await resumeAudioContext();
+        if (!context || requestId !== S.transportRequestId) return;
+
+        S.auditionTrack = auditionTrack || null;
+        S.masterTime = clamp(S.masterTime, 0, S.duration || Math.max(S.masterTime, 0));
+        S.transportOffset = S.masterTime;
+
+        stopSources();
+        if (requestId !== S.transportRequestId) return;
+
+        const generation = S.sourceGeneration;
+        const offset = S.transportOffset;
+        const leadTrack = getLeadTrack();
+
+        Object.entries(S.medias).forEach(([track, media]) => {
+            if (!media?.buffer) return;
+
+            const source = context.createBufferSource();
+            const gain = context.createGain();
+
+            source.buffer = media.buffer;
+            source.connect(gain);
+            gain.connect(context.destination);
+
+            media.source = source;
+            media.gain = gain;
+
+            const volume = S.trackState[track]?.volume ?? 1;
+            gain.gain.value = volume;
+
+            source.onended = () => {
+                if (generation !== S.sourceGeneration || !S.isPlaying) return;
+                if (track !== leadTrack) return;
+                finishTransport();
+            };
 
             try {
-                const duration = player.getDuration() || 1;
-                player.seekTo(seconds / duration);
+                source.start(0, offset);
             } catch (_) {}
         });
 
-        setTimeout(() => { S.isSyncSeeking = false; }, 40);
+        S.transportStartedAt = context.currentTime;
+        S.isPlaying = true;
+
+        applyStemMix();
+        updateMasterTime(S.masterTime, S.duration);
+        syncAllWaveProgress(S.masterTime);
+        updateMasterControls();
+        updateTrackButtonStates();
+        startMasterTicker();
     }
 
-    function createPlayer(track, url) {
+    function guessMimeType(url, contentType = '') {
+        if (contentType) {
+            return contentType.split(';')[0];
+        }
+
+        const lowered = String(url || '').toLowerCase();
+        if (lowered.endsWith('.wav')) return 'audio/wav';
+        if (lowered.endsWith('.ogg')) return 'audio/ogg';
+        if (lowered.endsWith('.aac')) return 'audio/aac';
+        if (lowered.endsWith('.m4a') || lowered.endsWith('.mp4')) return 'audio/mp4';
+        return 'audio/mpeg';
+    }
+
+    async function createMedia(track, url) {
+        if (!url) return null;
+
+        const context = ensureAudioContext();
+        if (!context) return null;
+
+        const response = await fetch(url, { credentials: 'same-origin' });
+        if (!response.ok) {
+            throw new Error(`Failed to load ${track}`);
+        }
+
+        const mimeType = guessMimeType(url, response.headers.get('content-type') || '');
+        const arrayBuffer = await response.arrayBuffer();
+        const decoded = await context.decodeAudioData(arrayBuffer.slice(0));
+        const waveUrl = URL.createObjectURL(new Blob([arrayBuffer], { type: mimeType }));
+
+        return {
+            buffer: decoded,
+            duration: Number(decoded.duration || 0),
+            source: null,
+            gain: null,
+            waveUrl,
+        };
+    }
+
+    function createWave(track, url) {
         const container = document.getElementById(`wave-${track}`);
-        if (!container || !url) return null;
+        if (!container || !url || !window.WaveSurfer) return null;
 
         const color = STEM_COLORS[track] || '#4f46e5';
-
-        const player = WaveSurfer.create({
+        const options = {
             container,
             waveColor: color,
             progressColor: color,
@@ -2219,32 +3034,80 @@ class extends Component
             height: 60,
             normalize: true,
             autoScroll: false,
+            interact: false,
             barWidth: 2,
             barGap: 2,
             barRadius: 2,
+        };
+
+        try {
+            const wave = WaveSurfer.create({ ...options, url });
+
+            wave.on('ready', () => {
+                const duration = Number(S.medias[track]?.duration || wave.getDuration?.() || 0);
+                if (duration > 0) {
+                    S.duration = Math.max(S.duration, duration);
+                    updateMasterTime(S.masterTime, S.duration);
+                }
+
+                syncWaveProgress(track, S.masterTime);
+            });
+
+            return wave;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function bindWaveSeekHandlers() {
+        document.querySelectorAll('.stem-wave').forEach((waveEl) => {
+            if (waveEl.dataset.seekBound === '1') return;
+            waveEl.dataset.seekBound = '1';
+
+            waveEl.addEventListener('click', (event) => {
+                const rect = waveEl.getBoundingClientRect();
+                if (rect.width <= 0) return;
+
+                const ratio = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+                const duration = S.duration > 0 ? S.duration : 0;
+
+                if (!(duration > 0)) return;
+
+                seekTransport(duration * ratio);
+            });
         });
-
-        player.load(url);
-
-        player.on('ready', updateMasterTime);
-        player.on('audioprocess', updateMasterTime);
-
-        player.on('seeking', (progress) => {
-            if (S.isSyncSeeking) return;
-            const duration = player.getDuration() || 1;
-            syncAllToTime(progress * duration, track);
-        });
-
-        return player;
     }
 
     function updateTrackButtonStates() {
+        document.querySelectorAll('.track-play').forEach((button) => {
+            const track = button.dataset.track;
+            const active = S.auditionTrack === track;
+            const ready = !!S.medias[track]?.buffer;
+
+            button.classList.toggle('active', active);
+            button.classList.toggle('btn-success', active);
+            button.classList.toggle('btn-outline-success', !active);
+            button.disabled = !ready || S.isLoadingBuffers;
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+
+            if (!ready || S.isLoadingBuffers) {
+                button.innerHTML = '<span class="spinner-border spinner-border-sm mr-1"></span> Loading';
+                return;
+            }
+
+            button.innerHTML = active && S.isPlaying
+                ? '<i class="mdi mdi-pause"></i> Pause'
+                : '<i class="mdi mdi-play"></i> Play';
+        });
+
         document.querySelectorAll('.track-solo').forEach((button) => {
             const track = button.dataset.track;
             const active = !!S.trackState[track]?.solo;
 
             button.classList.toggle('active', active);
+            button.classList.toggle('btn-primary', active);
             button.classList.toggle('btn-outline-primary', !active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
 
         document.querySelectorAll('.track-mute').forEach((button) => {
@@ -2254,11 +3117,27 @@ class extends Component
             button.classList.toggle('active', muted);
             button.classList.toggle('btn-warning', muted);
             button.classList.toggle('btn-outline-warning', !muted);
+            button.setAttribute('aria-pressed', muted ? 'true' : 'false');
             button.innerHTML = `<i class="mdi mdi-volume-off"></i> ${muted ? 'Muted' : 'Mute'}`;
         });
     }
 
     function bindTrackButtons() {
+        document.querySelectorAll('.track-play').forEach((button) => {
+            button.onclick = async () => {
+                const track = button.dataset.track;
+                if (!S.trackState[track] || S.isLoadingBuffers) return;
+
+                if (S.auditionTrack === track && S.isPlaying) {
+                    pauseTransport({ preserveTime: true });
+                    return;
+                }
+
+                S.auditionTrack = track;
+                await playTransport(track);
+            };
+        });
+
         document.querySelectorAll('.track-solo').forEach((button) => {
             button.onclick = () => {
                 const track = button.dataset.track;
@@ -2285,66 +3164,110 @@ class extends Component
         const stopBtn = document.getElementById('stem-master-stop');
 
         if (playBtn) {
-            playBtn.disabled = Object.keys(S.players).length === 0;
-            playBtn.onclick = () => {
-                Object.values(S.players).forEach((player) => {
-                    try { player.play(); } catch (_) {}
-                });
-                startMasterTicker();
+            playBtn.onclick = async () => {
+                if (S.isPlaying && !S.auditionTrack) {
+                    pauseTransport({ preserveTime: true });
+                    return;
+                }
+
+                S.auditionTrack = null;
+                await playTransport(null);
             };
         }
 
         if (stopBtn) {
-            stopBtn.disabled = Object.keys(S.players).length === 0;
             stopBtn.onclick = () => {
-                Object.values(S.players).forEach((player) => {
-                    try {
-                        player.pause();
-                        player.seekTo(0);
-                    } catch (_) {}
-                });
-                updateMasterTime();
-                stopMasterTicker();
+                stopTransport();
             };
         }
+
+        bindWaveSeekHandlers();
+        updateMasterControls();
+        updateTrackButtonStates();
     }
 
     function loadStemRender(render, options = {}) {
         if (!render || !render.id || !Array.isArray(render.tracks)) return;
 
         const { persist = true } = options;
+        const assetGeneration = S.assetGeneration + 1;
+        destroyPlayers();
         if (!ensureTrackRows(render)) return;
 
-        destroyPlayers();
         S.currentRender = render;
+        S.assetGeneration = assetGeneration;
+        S.loadingRenderId = String(render.id);
+        S.isLoadingBuffers = true;
         S.trackState = defaultStateForTracks(render.tracks);
+        S.leadTrack = render.tracks.find((track) => track !== 'original') || render.tracks[0] || null;
+        S.auditionTrack = null;
+        S.masterTime = 0;
+        S.duration = 0;
 
         if (persist) {
             saveRenderCache(render);
         }
 
         setPlayerVisibility(true);
-
-        const downloadAll = document.getElementById('stem-download-all');
-        if (downloadAll && render.downloads?.all) {
-            downloadAll.href = render.downloads.all;
-            downloadAll.classList.remove('disabled');
-        }
+        updateLatestHeader(render);
+        updateMasterControls();
+        updateMasterTime(0, 0);
 
         requestAnimationFrame(() => {
-            (render.tracks || []).forEach((track) => {
-                const url = render.stems?.[track] || null;
-                if (url) {
-                    S.players[track] = createPlayer(track, url);
-                }
-            });
+            bindTrackButtons();
+            updateTrackButtonStates();
 
-            setTimeout(() => {
-                applyStemMix();
-                bindTrackButtons();
-                updateTrackButtonStates();
-                updateMasterTime();
-            }, 250);
+            (async () => {
+                try {
+                    const loadedTracks = await Promise.all(
+                        (render.tracks || []).map(async (track) => {
+                            const url = render.stems?.[track] || null;
+                            if (!url) return null;
+
+                            const media = await createMedia(track, url);
+                            return { track, media };
+                        })
+                    );
+
+                    if (S.assetGeneration !== assetGeneration || String(S.currentRender?.id || '') !== String(render.id)) {
+                        loadedTracks.forEach((item) => {
+                            if (item?.media?.waveUrl) {
+                                try { URL.revokeObjectURL(item.media.waveUrl); } catch (_) {}
+                            }
+                        });
+                        return;
+                    }
+
+                    loadedTracks.forEach((item) => {
+                        if (!item?.media) return;
+
+                        S.medias[item.track] = item.media;
+                        S.duration = Math.max(S.duration, Number(item.media.duration || 0));
+                    });
+
+                    Object.entries(S.medias).forEach(([track, media]) => {
+                        const wave = createWave(track, media.waveUrl);
+                        if (wave) {
+                            S.waves[track] = wave;
+                        }
+                    });
+
+                    applyStemMix();
+                    bindTrackButtons();
+                    updateTrackButtonStates();
+                    syncAllWaveProgress(0);
+                    updateMasterTime(0, S.duration);
+                } catch (error) {
+                    console.warn('[STEM] Failed to prepare track assets', error);
+                } finally {
+                    if (S.assetGeneration === assetGeneration) {
+                        S.isLoadingBuffers = false;
+                        S.loadingRenderId = null;
+                        updateMasterControls();
+                        updateTrackButtonStates();
+                    }
+                }
+            })();
         });
     }
 
@@ -2356,7 +3279,9 @@ class extends Component
 
         destroyPlayers();
         setPlayerVisibility(false);
-        updateMasterTime();
+        updateLatestHeader(null);
+        updateMasterControls();
+        updateMasterTime(0, 0);
     }
 
     function highlightLatestRender() {
@@ -2370,6 +3295,56 @@ class extends Component
         setTimeout(() => {
             firstCard.style.boxShadow = '';
         }, 2500);
+    }
+
+    function syncRenderFromServerDom(options = {}) {
+        const { allowCache = false } = options;
+        const serverRender = readInitialRender();
+        const serverId = String(serverRender?.id || '');
+        const currentId = String(S.currentRender?.id || '');
+
+        if (serverId) {
+            if (currentId !== serverId && S.loadingRenderId !== serverId) {
+                loadStemRender(serverRender, { persist: false });
+                return;
+            }
+
+            if (currentId === serverId) {
+                S.currentRender = { ...S.currentRender, ...serverRender };
+            } else {
+                S.currentRender = serverRender;
+            }
+
+            updateLatestHeader(S.currentRender);
+            setPlayerVisibility(true);
+            updateMasterControls();
+
+            if (Object.keys(S.medias).length === 0 && S.loadingRenderId !== serverId) {
+                loadStemRender(S.currentRender, { persist: false });
+            }
+
+            return;
+        }
+
+        if (allowCache) {
+            const latestReady = document.getElementById('stem-latest-ready')?.value === '1';
+            const cachedRender = latestReady ? loadLatestCachedRender() : null;
+
+            if (cachedRender && String(cachedRender.id || '') !== currentId) {
+                loadStemRender(cachedRender, { persist: false });
+                return;
+            }
+        }
+
+        if (currentId) {
+            clearStemRenderUI();
+            return;
+        }
+
+        updateLatestHeader(null);
+        setPlayerVisibility(false);
+        updateMasterControls();
+        updateMasterTime(0, 0);
     }
 
     function registerLivewireEvents() {
@@ -2421,12 +3396,11 @@ class extends Component
             Livewire.hook('commit', ({ succeed }) => {
                 succeed(() => {
                     requestAnimationFrame(() => {
-                        if (S.currentRender && Object.keys(S.players).length === 0) {
-                            loadStemRender(S.currentRender, { persist: false });
-                            return;
-                        }
-
+                        syncRenderFromServerDom();
                         bindTrackButtons();
+                        bindWaveSeekHandlers();
+                        updateTrackButtonStates();
+                        updateMasterControls();
                     });
                 });
             });
@@ -2443,22 +3417,7 @@ class extends Component
 
             registerLivewireEvents();
             spaRestoreIfNeeded();
-
-            const initialRender = readInitialRender();
-
-            if (initialRender && initialRender.id) {
-                loadStemRender(initialRender, { persist: false });
-                return;
-            }
-
-            const cachedRender = loadLatestCachedRender();
-            if (cachedRender) {
-                loadStemRender(cachedRender, { persist: false });
-                return;
-            }
-
-            setPlayerVisibility(!!document.querySelector('#stem-tracks .stem-track-row'));
-            updateMasterTime();
+            syncRenderFromServerDom({ allowCache: true });
         }, 0);
     }
 

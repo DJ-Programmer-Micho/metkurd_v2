@@ -120,12 +120,24 @@ Route::prefix('{locale}')
         Route::livewire('/app/my-storage', 'app::pages.my-storage.app-storage')->name('app.storage');
         Route::livewire('/app/my-billing', 'app::pages.billing.app-billing')->name('app.billing');
 
-        Route::livewire('/app/xtts', 'app::pages.xtts.app-xtts')->name('app.xtts');
-        Route::livewire('/app/clone-xtts', 'app::pages.clone-xtts.app-clone-xtts')->name('app.clone-xtts');
-        Route::livewire('/app/wasr', 'app::pages.wasr.app-wasr')->name('app.wasr');
-        Route::livewire('/app/stem', 'app::pages.stem.app-stem')->name('app.stem');
-        Route::livewire('/app/ocr', 'app::pages.ocr.app-ocr')->name('app.ocr');
-        Route::livewire('/app/youtube', 'app::pages.youtube.app-youtube-downloader')->name('app.youtube');
+        Route::livewire('/app/xtts', 'app::pages.xtts.app-xtts')
+            ->middleware('app.tool.access:tts.standard')
+            ->name('app.xtts');
+        Route::livewire('/app/clone-xtts', 'app::pages.clone-xtts.app-clone-xtts')
+            ->middleware('app.tool.access:clone_tts.standard')
+            ->name('app.clone-xtts');
+        Route::livewire('/app/wasr', 'app::pages.wasr.app-wasr')
+            ->middleware('app.tool.access:asr.standard')
+            ->name('app.wasr');
+        Route::livewire('/app/stem', 'app::pages.stem.app-stem')
+            ->middleware('app.tool.access:stem')
+            ->name('app.stem');
+        Route::livewire('/app/ocr', 'app::pages.ocr.app-ocr')
+            ->middleware('app.tool.access:ocr.standard')
+            ->name('app.ocr');
+        Route::livewire('/app/youtube', 'app::pages.youtube.app-youtube-downloader')
+            ->middleware('app.tool.access:any,youtube_audio,youtube_video')
+            ->name('app.youtube');
 
 /*
 |--------------------------------------------------------------------------
@@ -142,51 +154,67 @@ Route::prefix('{locale}')
 |--------------------------------------------------------------------------
 */
     Route::get('/app/renders/xtts/{jobId}/stream', [XttsRenderController::class, 'stream'])
+        ->middleware('app.tool.access:tts')
         ->name('app.renders.xtts.stream');
 
     Route::get('/app/renders/xtts/{jobId}/download', [XttsRenderController::class, 'download'])
+        ->middleware('app.tool.access:tts')
         ->name('app.renders.xtts.download');
 
     Route::get('/app/renders/clone-xtts/{jobId}/stream', [CloneXttsRenderController::class, 'Stream'])
+        ->middleware('app.tool.access:clone_tts')
         ->name('app.renders.clone_xtts.stream');
 
     Route::get('/app/renders/clone-xtts/{jobId}/download', [CloneXttsRenderController::class, 'Download'])
+        ->middleware('app.tool.access:clone_tts')
         ->name('app.renders.clone_xtts.download');
 
     Route::get('/app/renders/wasr/{jobId}/txt', [WasrRenderController::class, 'downloadTxt'])
+        ->middleware('app.tool.access:asr')
         ->name('app.renders.wasr.txt');
         
     Route::get('/app/renders/wasr/{jobId}/json', [WasrRenderController::class, 'downloadJson'])
+        ->middleware('app.tool.access:asr')
         ->name('app.renders.wasr.json');
 
     Route::get('/app/renders/wasr/{jobId}/input-audio', [WasrRenderController::class, 'inputAudio'])
+        ->middleware('app.tool.access:asr')
         ->name('app.renders.wasr.input-audio');
 
     Route::get('/app/renders/stem/{jobId}/stream/{track}', [StemRenderController::class, 'stream'])
+        ->middleware('app.tool.access:stem')
         ->name('app.renders.stem.stream');
 
     Route::get('/app/renders/stem/{jobId}/download/{track}', [StemRenderController::class, 'download'])
+        ->middleware('app.tool.access:stem')
         ->name('app.renders.stem.download');
 
     Route::get('/app/renders/stem/{jobId}/zip', [StemRenderController::class, 'zip'])
+        ->middleware('app.tool.access:stem')
         ->name('app.renders.stem.zip');
 
     Route::get('/app/renders/ocr/{jobId}/txt', [OcrRenderController::class, 'downloadText'])
+        ->middleware('app.tool.access:ocr')
         ->name('app.renders.ocr.text');
 
     Route::get('/app/renders/ocr/{jobId}/txt/view', [OcrRenderController::class, 'viewText'])
+        ->middleware('app.tool.access:ocr')
         ->name('app.renders.ocr.text.view');
 
     Route::get('/app/renders/ocr/{jobId}/json', [OcrRenderController::class, 'downloadJson'])
+        ->middleware('app.tool.access:ocr')
         ->name('app.renders.ocr.json');
 
     Route::get('/app/renders/ocr/{jobId}/json/view', [OcrRenderController::class, 'viewJson'])
+        ->middleware('app.tool.access:ocr')
         ->name('app.renders.ocr.json.view');
 
     Route::get('/app/renders/ocr/{jobId}/input', [OcrRenderController::class, 'inputDocument'])
+        ->middleware('app.tool.access:ocr')
         ->name('app.renders.ocr.input');
 
     Route::get('/app/renders/youtube/{jobId}/download', [YoutubeRenderController::class, 'download'])
+        ->middleware('app.tool.access:any,youtube_audio,youtube_video')
         ->name('app.renders.youtube.download');
     // Route::get('/app/renders/wasr/{jobId}/json/view', [WasrRenderController::class, 'viewJson'])
     //     ->name('app.renders.wasr.json.view');
@@ -204,7 +232,7 @@ Route::prefix('{locale}')
 | Landing
 |--------------------------------------------------------------------------
 */
-Route::get('/', fn () => view('welcome'));
+Route::get('/en', fn () => view('welcome'));
 
 
 

@@ -1442,7 +1442,7 @@ class extends Component
 
 <div id="youtube-page-root">
     @if($currentJobId && !$jobFinished)
-        <div wire:poll.keep-alive.3000ms="pollJob"></div>
+        <div wire:poll.5000ms="pollJob"></div>
     @endif
 
     @php

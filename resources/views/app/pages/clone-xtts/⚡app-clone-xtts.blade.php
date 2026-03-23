@@ -341,7 +341,7 @@ class extends Component
                 return [
                     'id' => $jobId,
                     'reference_name' => data_get($j->input, 'reference_audio_name', 'Uploaded Sample'),
-                    'model' => 'Clone XTTS (RunPod)',
+                    'model' => 'MK-CTTS',
                     'created_at' => optional($j->finished_at ?? $j->created_at)->format('Y-m-d H:i'),
                     'full_url' => route('app.renders.clone_xtts.stream', [
                         'locale' => $locale,
@@ -1046,7 +1046,7 @@ class extends Component
 
 <div id="clone-xtts-page-root">
     @if($currentJobId && !$jobFinished)
-        <div wire:poll.keep-alive.2000ms="pollJob"></div>
+        <div wire:poll.4000ms="pollJob"></div>
     @endif
 
     @php
@@ -1104,7 +1104,7 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                             <div>
-                                <strong>Clone XTTS (RunPod)</strong>
+                                <strong>MK-CTTS (MET KURDISH CLONE TEXT-TO-SPEECH)</strong>
                                 <div class="text-muted small">Upload your voice sample and generate speech in the same style</div>
                             </div>
 
@@ -1213,7 +1213,7 @@ class extends Component
                                     </select>
                                 </div>
 
-                                <div class="col-md-4">
+                                {{-- <div class="col-md-4">
                                     <label class="form-label">Language</label>
                                     <input type="text"
                                            class="form-control"
@@ -1223,7 +1223,7 @@ class extends Component
                                     @error('language')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
                                     @enderror
-                                </div>
+                                </div> --}}
 
                                 <div class="col-md-2">
                                     <label class="form-label">Max Words</label>
@@ -1435,7 +1435,7 @@ class extends Component
                                 @endforeach
 
                                 <div class="mt-3">
-                                    {{ $this->renders->links() }}
+                                    {{ $this->renders->links(data: ['scrollTo' => false]) }}
                                 </div>
                             @endif
                         </div>
@@ -1497,15 +1497,33 @@ class extends Component
             pond: null,
             booted: false,
             bootTimer: null,
+            pluginsRegistered: false,
+            listenersBound: false,
+            livewireBound: false,
+            commitHooked: false,
         };
     }
 
     const S = window.__CLONE_XTTS_POND__;
 
-    FilePond.registerPlugin(
-        FilePondPluginFileValidateType,
-        FilePondPluginFileValidateSize
-    );
+    function hasFilePondDeps() {
+        return typeof window.FilePond !== 'undefined'
+            && typeof window.FilePondPluginFileValidateType !== 'undefined'
+            && typeof window.FilePondPluginFileValidateSize !== 'undefined';
+    }
+
+    function registerPlugins() {
+        if (S.pluginsRegistered) return true;
+        if (!hasFilePondDeps()) return false;
+
+        FilePond.registerPlugin(
+            FilePondPluginFileValidateType,
+            FilePondPluginFileValidateSize
+        );
+
+        S.pluginsRegistered = true;
+        return true;
+    }
 
     function getCloneComponent() {
         if (!window.Livewire) return null;
@@ -1540,24 +1558,16 @@ class extends Component
     function bootPond(attempt = 0) {
         const input = document.getElementById('clone-reference-audio-pond');
         const lw = getCloneComponent();
-        const maxAttempts = 20;
+        const maxAttempts = 40;
 
-        if (!input || !lw) {
+        if (!input || !lw || !registerPlugins()) {
             if (attempt >= maxAttempts) return;
 
             S.bootTimer = setTimeout(() => bootPond(attempt + 1), 75);
             return;
         }
 
-        if (S.pond) {
-            try { S.pond.destroy(); } catch (_) {}
-            S.pond = null;
-        }
-
-        if (S.bootTimer) {
-            clearTimeout(S.bootTimer);
-            S.bootTimer = null;
-        }
+        destroyPond();
 
         S.pond = FilePond.create(input, {
             allowMultiple: false,
@@ -1625,24 +1635,34 @@ class extends Component
         S.bootTimer = setTimeout(() => bootPond(), 0);
     }
 
-    document.addEventListener('DOMContentLoaded', bootCloneFilePondPage);
-    document.addEventListener('livewire:initialized', bootCloneFilePondPage);
-    document.addEventListener('livewire:navigated', bootCloneFilePondPage);
-    document.addEventListener('livewire:navigating', destroyPond);
+    if (!S.listenersBound) {
+        S.listenersBound = true;
 
-    if (window.Livewire) {
+        document.addEventListener('DOMContentLoaded', bootCloneFilePondPage);
+        document.addEventListener('livewire:initialized', bootCloneFilePondPage);
+        document.addEventListener('livewire:navigated', bootCloneFilePondPage);
+        document.addEventListener('livewire:navigating', destroyPond);
+    }
+
+    if (window.Livewire && !S.livewireBound) {
+        S.livewireBound = true;
+
         Livewire.on('clone-xtts-reference-audio-cleared', () => {
             if (S.pond) {
                 try { S.pond.removeFiles(); } catch (_) {}
             }
         });
 
-        if (typeof Livewire.hook === 'function') {
+        if (!S.commitHooked && typeof Livewire.hook === 'function') {
+            S.commitHooked = true;
+
             Livewire.hook('commit', ({ succeed }) => {
                 succeed(() => {
                     requestAnimationFrame(() => {
                         const input = document.getElementById('clone-reference-audio-pond');
-                        if (input && !S.pond) {
+                        const isCurrentPage = !!document.getElementById('clone-xtts-page-root');
+
+                        if (isCurrentPage && input && !S.pond) {
                             bootPond();
                         }
                     });

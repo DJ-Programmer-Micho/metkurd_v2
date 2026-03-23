@@ -13,12 +13,20 @@ class StemRenderController extends Controller
 {
     protected function jobOrFail(string $jobId): MlJob
     {
-        return MlJob::query()
+        $job = MlJob::query()
+            ->with([
+                'tool:id,code,is_active',
+                'toolAction:id,tool_code,full_code,is_active',
+            ])
             ->where('id', $jobId)
             ->where('customer_id', auth('app')->id())
             ->where('job_kind', 'stem')
             ->where('status', 'done')
             ->firstOrFail();
+
+        $this->abortUnlessCustomerCanAccessJob($job);
+
+        return $job;
     }
 
     protected function resolveTrackPath(MlJob $job, string $track): ?string

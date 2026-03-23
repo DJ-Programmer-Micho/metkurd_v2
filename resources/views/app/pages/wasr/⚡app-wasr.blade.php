@@ -809,6 +809,7 @@ class extends Component
                 $this->transcriptionText = (string) ($result['text'] ?? '');
                 $this->showJobStatus = true;
                 $this->latestFinishedJobId = $this->currentJobId;
+                $this->hydrateLatestFinishedResult();
 
                 $this->dispatch('customerPlanUpdated');
                 $this->dispatch('customerStorageUpdated');
@@ -826,8 +827,6 @@ class extends Component
                 $this->dispatch('header:refresh');
                 $this->dispatch('alert', type: 'error', message: $msg);
             }
-
-            $this->hydrateLatestFinishedResult();
         } catch (\Throwable $e) {
             Log::warning('WASR_POLL_FAIL', [
                 'job_id' => $this->currentJobId,
@@ -956,7 +955,7 @@ class extends Component
 
 <div id="wasr-page-root">
     @if($currentJobId && !$jobFinished)
-        <div wire:poll.keep-alive.3000ms="pollJob"></div>
+        <div wire:poll.5000ms="pollJob"></div>
     @endif
 
     @php
@@ -1015,7 +1014,7 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                             <div>
-                                <strong>WASR (RunPod)</strong>
+                                <strong>WASR (WELL AUTOMATIC-SPEECH-RECOGNITION)</strong>
                                 <div class="text-muted small">Upload your audio and generate a full transcription</div>
                             </div>
 
@@ -1228,8 +1227,11 @@ class extends Component
             <div class="turbo-border mb-3">
                 <div class="turbo-inner">
                     <div class="card mb-0">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <strong>Recent Transcriptions</strong>
+                        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-3">
+                            <div>
+                                <strong>Recent Transcriptions</strong>
+                                <div class="small text-muted">Your latest speech-to-text outputs in one place.</div>
+                            </div>
 
                             <div class="d-flex gap-2">
                                 @if($latestFinishedJobId)
@@ -1246,31 +1248,59 @@ class extends Component
 
                         <div class="card-body">
                             @if($transcriptionText !== '')
-                                <div class="wasr-output-text rounded-3 p-3 mb-3 text-right">
-                                    {{ $transcriptionText }}
-                                </div>
-                                @if($latestFinishedJobId)
-                                    <div class="d-flex gap-2 flex-wrap mb-3">
-                                        <a
-                                            class="btn btn-sm btn-outline-success"
-                                            href="{{ route('app.renders.wasr.txt', ['locale' => app()->getLocale(), 'jobId' => $latestFinishedJobId]) }}"
-                                        >
-                                            Download TXT
-                                        </a>
+                                <div class="wasr-latest-panel mb-4">
+                                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+                                        <div>
+                                            <div class="wasr-section-caption">Latest Result</div>
+                                            <div class="fw-semibold">Ready to copy or export</div>
+                                        </div>
+
+                                        @if($latestFinishedJobId)
+                                            <div class="d-flex gap-2 flex-wrap">
+                                                <button class="btn btn-sm btn-primary" wire:click="copyTranscript" type="button">
+                                                    Copy Transcript
+                                                </button>
+
+                                                <a
+                                                    class="btn btn-sm btn-outline-success"
+                                                    href="{{ route('app.renders.wasr.txt', ['locale' => app()->getLocale(), 'jobId' => $latestFinishedJobId]) }}"
+                                                >
+                                                    Download TXT
+                                                </a>
+                                            </div>
+                                        @endif
                                     </div>
-                                @endif
+
+                                    <div class="wasr-output-text rounded-3 p-3 text-right">
+                                        {{ $transcriptionText }}
+                                    </div>
+                                </div>
                             @endif
 
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                                <div>
+                                    <div class="wasr-section-caption">History</div>
+                                    <div class="small text-muted">
+                                        {{ $this->transcriptions->count() }}
+                                        {{ $this->transcriptions->count() === 1 ? 'transcription' : 'transcriptions' }}
+                                        on this page
+                                    </div>
+                                </div>
+                            </div>
+
                             @if($this->transcriptions->count() === 0)
-                                <div class="text-muted">No transcriptions yet.</div>
+                                <div class="wasr-empty-state text-center">
+                                    <div class="fw-semibold mb-1">No transcriptions yet</div>
+                                    <div class="small text-muted">Upload an audio file and your transcription history will appear here.</div>
+                                </div>
                             @else
                                 @foreach($this->transcriptions as $r)
                                     <div
-                                        class="render-card wasr-transcript-item {{ $r['is_latest'] ? 'wasr-transcript-item--latest' : '' }} mb-3 p-3 rounded-3 border"
+                                        class="render-card wasr-transcript-item {{ $r['is_latest'] ? 'wasr-transcript-item--latest' : '' }} mb-1 p-1 rounded-3 border"
                                         wire:key="wasr-render-{{ $r['id'] }}"
                                         id="wasr-render-card-{{ $r['id'] }}"
                                     >
-                                        <div class="d-flex justify-content-between align-items-start gap-3">
+                                        <div class="d-flex justify-content-between align-items-start gap-3 p-1 border">
                                             <div class="min-w-0 flex-grow-1">
                                                 <div class="d-flex align-items-center gap-2 flex-wrap">
                                                     <strong class="text-truncate">{{ $r['audio_name'] }}</strong>
@@ -1284,7 +1314,7 @@ class extends Component
                                                     </span>
                                                 </div>
 
-                                                <div class="small text-muted mt-1">
+                                                <div class="wasr-transcript-meta small text-muted mt-2">
                                                     {{ $r['created_at'] }}
                                                     @if($r['duration_mins'] > 0)
                                                         • {{ number_format((float) $r['duration_mins'], 2) }} min
@@ -1297,7 +1327,7 @@ class extends Component
                                                     @endif
                                                 </div>
                                                     @if(!empty($r['audio_url']))
-                                                        <div class="mt-3" wire:ignore>
+                                                        <div class="wasr-audio-panel mt-3" wire:ignore>
                                                             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                                                                 <span class="small text-muted" id="wasr-time-{{ $r['id'] }}">--:-- / --:--</span>
 
@@ -1323,24 +1353,27 @@ class extends Component
                                                                 <div id="wasr-ph-{{ $r['id'] }}" class="border rounded bg-dark" style="height:90px; opacity:.25;"></div>
                                                                 <div id="wasr-wave-{{ $r['id'] }}" class="border rounded" style="height:90px; display:none;"></div>
                                                             </div>
+
+                                                            <a class="btn btn-sm btn-outline-success" href="{{ $r['download_url'] }}">
+                                                                Download TXT
+                                                            </a>
+                                                            <button
+                                                                class="btn btn-sm btn-outline-danger"
+                                                                wire:click="deleteTranscription('{{ $r['id'] }}')"
+                                                                wire:loading.attr="disabled"
+                                                                wire:target="deleteTranscription('{{ $r['id'] }}')"
+                                                                type="button"
+                                                            >
+                                                                Delete
+                                                            </button>
                                                         </div>
                                                     @endif
-                                                <div class="wasr-snippet small mt-2">
-                                                    {{ $r['snippet'] }}
+                                                <div class="wasr-snippet-wrap mt-3">
+                                                    <div class="wasr-section-caption mb-2">Transcript Preview</div>
+                                                    <div class="wasr-snippet small">
+                                                        {{ $r['snippet'] }}
+                                                    </div>
                                                 </div>
-                                            </div>
-
-                                            <div class="d-flex flex-column gap-2">
-                                                <a class="btn btn-xs btn-outline-success" href="{{ $r['download_url'] }}">
-                                                    TXT
-                                                </a>
-                                                <button
-                                                    class="btn btn-xs btn-outline-danger"
-                                                    wire:click="deleteTranscription('{{ $r['id'] }}')"
-                                                    type="button"
-                                                >
-                                                    Delete
-                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -1349,7 +1382,7 @@ class extends Component
 
                             @if($this->transcriptions->hasPages())
                                 <div class="mt-3">
-                                    {{ $this->transcriptions->links() }}
+                                    {{ $this->transcriptions->links(data: ['scrollTo' => false]) }}
                                 </div>
                             @endif
                         </div>
@@ -1404,10 +1437,25 @@ class extends Component
         border: 1px solid rgba(var(--bs-warning-rgb), .22);
     }
 
+    .wasr-section-caption{
+        font-size: .72rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--bs-secondary-color);
+    }
+
+    .wasr-latest-panel{
+        padding: 1rem;
+        border-radius: 1rem;
+        background: linear-gradient(180deg, rgba(var(--bs-primary-rgb), .08), rgba(var(--bs-info-rgb), .04));
+        border: 1px solid rgba(var(--bs-primary-rgb), .16);
+    }
+
     .wasr-output-text{
-        background: rgba(0,0,0,.04);
-        border: 1px solid rgba(0,0,0,.08);
-        font-size: .9rem;
+        background: rgba(var(--bs-body-color-rgb), .03);
+        border: 1px solid rgba(var(--bs-body-color-rgb), .08);
+        font-size: .95rem;
         line-height: 1.8;
         white-space: pre-wrap;
         word-break: break-word;
@@ -1417,16 +1465,49 @@ class extends Component
         unicode-bidi: plaintext;
     }
 
+    .wasr-empty-state{
+        padding: 1.25rem;
+        border-radius: 1rem;
+        border: 1px dashed rgba(var(--bs-body-color-rgb), .18);
+        background: rgba(var(--bs-body-color-rgb), .02);
+    }
+
     .wasr-transcript-item{
-        transition: background .15s;
+        border-radius: 1rem;
+        border: 1px solid rgba(var(--bs-body-color-rgb), .09) !important;
+        background: linear-gradient(180deg, rgba(var(--bs-body-bg-rgb), .96), rgba(var(--bs-primary-rgb), .03));
+        box-shadow: 0 10px 24px rgba(0, 0, 0, .04);
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
     }
 
     .wasr-transcript-item:hover{
-        background: rgba(var(--bs-primary-rgb), .03);
+        transform: translateY(-2px);
+        background: linear-gradient(180deg, rgba(var(--bs-body-bg-rgb), .98), rgba(var(--bs-primary-rgb), .05));
+        border-color: rgba(var(--bs-primary-rgb), .22) !important;
+        box-shadow: 0 14px 30px rgba(0, 0, 0, .07);
     }
 
     .wasr-transcript-item--latest{
-        border-left: 3px solid var(--bs-primary);
+        border-color: rgba(var(--bs-primary-rgb), .28) !important;
+        box-shadow: inset 3px 0 0 var(--bs-primary), 0 14px 30px rgba(13, 110, 253, .08);
+    }
+
+    .wasr-transcript-meta{
+        line-height: 1.75;
+    }
+
+    .wasr-audio-panel{
+        padding: .9rem;
+        border-radius: 1rem;
+        background: rgba(var(--bs-body-color-rgb), .025);
+        border: 1px solid rgba(var(--bs-body-color-rgb), .08);
+    }
+
+    .wasr-snippet-wrap{
+        padding: 1rem;
+        border-radius: 1rem;
+        background: rgba(var(--bs-primary-rgb), .04);
+        border: 1px solid rgba(var(--bs-primary-rgb), .12);
     }
 
     .wasr-snippet{
@@ -1435,6 +1516,14 @@ class extends Component
         word-break: break-word;
         direction: rtl;
         unicode-bidi: plaintext;
+    }
+
+    .wasr-actions{
+        min-width: 140px;
+    }
+
+    .wasr-actions .btn{
+        width: 100%;
     }
 
     .wasr-badge-credits{
