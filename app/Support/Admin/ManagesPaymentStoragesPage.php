@@ -216,7 +216,7 @@ trait ManagesPaymentStoragesPage
         $this->dispatch(
             'alert',
             type: 'success',
-            message: $this->editingStorageId ? 'Storage plan updated successfully.' : 'Storage plan created successfully.'
+            message: $this->editingStorageId ? __('Storage plan updated successfully.') : __('Storage plan created successfully.')
         );
 
         $this->resetStorageForm();
@@ -231,7 +231,7 @@ trait ManagesPaymentStoragesPage
         $this->dispatch(
             'alert',
             type: 'success',
-            message: $plan->is_active ? 'Storage plan activated successfully.' : 'Storage plan deactivated successfully.'
+            message: $plan->is_active ? __('Storage plan activated successfully.') : __('Storage plan deactivated successfully.')
         );
     }
 
@@ -253,7 +253,7 @@ trait ManagesPaymentStoragesPage
             $this->dispatch(
                 'alert',
                 type: 'error',
-                message: 'This storage plan has customer subscriptions. Deactivate it instead of deleting.'
+                message: __('This storage plan has customer subscriptions. Deactivate it instead of deleting.')
             );
 
             return;
@@ -262,7 +262,7 @@ trait ManagesPaymentStoragesPage
         $plan->delete();
         $this->resetDeleteState();
         $this->dispatch('payments-storage:modal-hide', id: 'paymentStorageDeleteModal');
-        $this->dispatch('alert', type: 'success', message: 'Storage plan deleted successfully.');
+        $this->dispatch('alert', type: 'success', message: __('Storage plan deleted successfully.'));
     }
 
     public function resetStorageForm(): void

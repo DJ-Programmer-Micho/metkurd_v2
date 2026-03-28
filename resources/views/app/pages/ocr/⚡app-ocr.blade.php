@@ -3,7 +3,6 @@
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -24,7 +23,6 @@ use App\Services\Storage\CustomerOutputStorage;
 
 new
 #[Layout('app::layouts.app')]
-#[Title('OCR | METKURD')]
 class extends Component
 {
     use WithFileUploads;
@@ -270,14 +268,14 @@ class extends Component
                 : sha1(($this->documentFileName ?? '') . '|' . ($this->documentFileBytes ?? 0));
 
             $this->syncCostPreview();
-            $this->dispatch('alert', type: 'success', message: 'PDF uploaded successfully.');
+            $this->dispatch('alert', type: 'success', message: __('PDF uploaded successfully.'));
         } catch (\Throwable $e) {
             Log::error('OCR_DOCUMENT_UPLOAD_FAIL', [
                 'message' => $e->getMessage(),
             ]);
 
             $this->resetDocumentState();
-            $this->dispatch('alert', type: 'error', message: 'Failed to process the uploaded PDF.');
+            $this->dispatch('alert', type: 'error', message: __('Failed to process the uploaded PDF.'));
         }
     }
 
@@ -432,27 +430,27 @@ class extends Component
         $customer = auth('app')->user();
 
         if (!$customer) {
-            return 'You must be logged in.';
+            return __('You must be logged in.');
         }
 
         if ($this->currentJobId && !$this->jobFinished) {
-            return 'An OCR job is already in progress.';
+            return __('An OCR job is already in progress.');
         }
 
         if (method_exists($customer, 'isAllowed') && !$customer->isAllowed($this->fullActionCode())) {
-            return 'Your plan does not allow OCR.';
+            return __('Your plan does not allow OCR.');
         }
 
         if (!$this->documentFile) {
-            return 'Please upload a PDF file.';
+            return __('Please upload a PDF file.');
         }
 
         if ($this->creditsCost <= 0) {
-            return 'Pricing could not be calculated.';
+            return __('Pricing could not be calculated.');
         }
 
         if ($this->walletBalance < $this->creditsCost) {
-            return 'Not enough credits.';
+            return __('Not enough credits.');
         }
 
         return null;
@@ -475,7 +473,7 @@ class extends Component
 
         return [
             'id' => $jobId,
-            'input_name' => (string) data_get($job->input, 'file_name', 'Untitled PDF'),
+            'input_name' => (string) data_get($job->input, 'file_name', __('Untitled PDF')),
             'input_url' => $inputPath !== '' ? route('app.renders.ocr.input', [
                 'locale' => $locale,
                 'jobId' => $jobId,
@@ -534,18 +532,18 @@ class extends Component
         $this->hydrateCurrentJobFromDb();
 
         if ($this->currentJobId && !$this->jobFinished) {
-            $this->dispatch('alert', type: 'warning', message: 'An OCR job is already in progress.');
+            $this->dispatch('alert', type: 'warning', message: __('An OCR job is already in progress.'));
             return;
         }
 
         $customer = auth('app')->user();
         if (!$customer) {
-            $this->dispatch('alert', type: 'error', message: 'You must be logged in.');
+            $this->dispatch('alert', type: 'error', message: __('You must be logged in.'));
             return;
         }
 
         if (method_exists($customer, 'isAllowed') && !$customer->isAllowed($this->fullActionCode())) {
-            $this->dispatch('alert', type: 'error', message: 'Your plan does not allow OCR.');
+            $this->dispatch('alert', type: 'error', message: __('Your plan does not allow OCR.'));
             return;
         }
 
@@ -558,13 +556,13 @@ class extends Component
             ->first();
 
         if ($active) {
-            $this->dispatch('alert', type: 'warning', message: 'You already have an OCR job in progress.');
+            $this->dispatch('alert', type: 'warning', message: __('You already have an OCR job in progress.'));
             return;
         }
 
         $needed = $this->requiredCredits();
         if ($needed <= 0) {
-            $this->dispatch('alert', type: 'error', message: 'Pricing is not configured for OCR.');
+            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured for OCR.'));
             return;
         }
 
@@ -586,7 +584,7 @@ class extends Component
                 $charged = true;
             } catch (\Throwable) {
                 $this->syncWallet();
-                $this->dispatch('alert', type: 'error', message: 'Not enough credits.');
+                $this->dispatch('alert', type: 'error', message: __('Not enough credits.'));
                 return;
             }
 
@@ -682,7 +680,7 @@ class extends Component
 
             if (!($lock['ok'] ?? false)) {
                 $refundReason = 'ocr_lock_conflict';
-                throw new \RuntimeException((string) ($lock['message'] ?? 'Could not lock the OCR job.'));
+                throw new \RuntimeException((string) ($lock['message'] ?? __('Could not lock the OCR job.')));
             }
 
             $payload = $sync->buildRunpodInput(
@@ -736,7 +734,7 @@ class extends Component
                 'status' => 'running',
                 'progress' => 15,
             ]);
-            $this->dispatch('alert', type: 'success', message: 'OCR job submitted.');
+            $this->dispatch('alert', type: 'success', message: __('OCR job submitted.'));
             $this->syncWallet();
         } catch (\Throwable $e) {
             Log::error('OCR_SUBMIT_FAIL', [
@@ -844,7 +842,7 @@ class extends Component
             $this->dispatch('header:refresh');
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('ocr-renders-refresh');
-            $this->dispatch('alert', type: 'success', message: (string) ($result['message'] ?? 'OCR completed.'));
+            $this->dispatch('alert', type: 'success', message: (string) ($result['message'] ?? __('OCR completed.')));
             $this->resetJobState();
             $this->hydrateLatestFinishedRender();
 
@@ -855,7 +853,7 @@ class extends Component
             $this->dispatch('ocr-job-state-clear');
             $this->dispatch('header:refresh');
             $this->dispatch('ocr-renders-refresh');
-            $this->dispatch('alert', type: 'error', message: (string) ($result['message'] ?? 'OCR failed.'));
+            $this->dispatch('alert', type: 'error', message: (string) ($result['message'] ?? __('OCR failed.')));
             $this->resetJobState();
         }
     }
@@ -870,7 +868,7 @@ class extends Component
             ->first();
 
         if (!$job) {
-            $this->dispatch('alert', type: 'error', message: 'Render not found.');
+            $this->dispatch('alert', type: 'error', message: __('Render not found.'));
             return;
         }
 
@@ -887,7 +885,7 @@ class extends Component
             ->first();
 
         if (!$job) {
-            $this->dispatch('alert', type: 'error', message: 'Render not found.');
+            $this->dispatch('alert', type: 'error', message: __('Render not found.'));
             return;
         }
 
@@ -904,14 +902,14 @@ class extends Component
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('header:refresh');
             $this->dispatch('ocr-renders-refresh');
-            $this->dispatch('alert', type: 'success', message: 'Render deleted.');
+            $this->dispatch('alert', type: 'success', message: __('Render deleted.'));
         } catch (\Throwable $e) {
             Log::error('OCR_DELETE_RENDER_FAIL', [
                 'job_id' => (string) $job->id,
                 'message' => $e->getMessage(),
             ]);
 
-            $this->dispatch('alert', type: 'error', message: 'Failed to delete render.');
+            $this->dispatch('alert', type: 'error', message: __('Failed to delete render.'));
         }
     }
 
@@ -993,7 +991,7 @@ class extends Component
         $this->dispatch('header:refresh');
         $this->dispatch('customerStorageUpdated');
         $this->dispatch('ocr-renders-refresh');
-        $this->dispatch('alert', type: 'warning', message: 'Current OCR job eliminated. Credits were not refunded.');
+        $this->dispatch('alert', type: 'warning', message: __('Current OCR job eliminated. Credits were not refunded.'));
         $this->resetJobState();
     }
 
@@ -1004,15 +1002,25 @@ class extends Component
 };
 ?>
 
+<x-slot:title>{{ __('Optical Character Recognition') }} | {{ __('MET KURD') }}</x-slot:title>
+
 <div id="ocr-page-root">
     @if($currentJobId && !$jobFinished)
         <div wire:poll.keep-alive.3000ms="pollJob"></div>
     @endif
 
     @php
-        $latestTitle = $loadedRender['input_name'] ?? ($loadedRender['id'] ?? '—');
+        $latestTitle = $loadedRender['input_name'] ?? ($loadedRender['id'] ?? 'â€”');
 
         $status = $currentStatus ?? 'queued';
+        $statusLabel = match($status) {
+            'queued' => __('Queued'),
+            'running' => __('Running'),
+            'saving' => __('Saving'),
+            'done' => __('Done'),
+            'failed' => __('Failed'),
+            default => __('Queued'),
+        };
         $badge = match($status) {
             'queued' => 'secondary',
             'running' => 'info',
@@ -1040,10 +1048,10 @@ class extends Component
                         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                             <div class="d-flex align-items-center">
                                 <span class="badge badge-{{ $badge }} mr-2 text-uppercase" style="letter-spacing:.5px;">
-                                    {{ $currentStatus }}
+                                    {{ $statusLabel }}
                                 </span>
                                 <small class="tts-status-muted">
-                                    Job ID: <span class="font-weight-bold">{{ $currentJobId }}</span>
+                                    {{ __('Job ID:') }} <span class="font-weight-bold">{{ $currentJobId }}</span>
                                 </small>
                             </div>
 
@@ -1051,10 +1059,10 @@ class extends Component
                                 @if(!$jobFinished)
                                     <small class="tts-status-muted">
                                         <span class="spinner-border spinner-border-sm mr-1" role="status"></span>
-                                        Working...
+                                        {{ __('Working...') }}
                                     </small>
                                 @else
-                                    <small class="tts-status-muted">Finished</small>
+                                    <small class="tts-status-muted">{{ __('Finished') }}</small>
                                 @endif
                             </div>
                         </div>
@@ -1081,27 +1089,27 @@ class extends Component
                         <div class="card-body p-3 p-md-4">
                             <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
                                 <div>
-                                    <strong class="d-block">Upload PDF</strong>
-                                    <small class="text-muted">OCR-ready PDF viewer with range preview</small>
+                                    <strong class="d-block">{{ __('Upload PDF') }}</strong>
+                                    <small class="text-muted">{{ __('OCR-ready PDF viewer with range preview') }}</small>
                                 </div>
-                                <span class="badge badge-primary">OCR</span>
+                                <span class="badge badge-primary">{{ __('Optical Character Recognition') }}</span>
                             </div>
 
                             <div class="d-flex flex-wrap gap-3 mb-3 ocr-top-mini-stats">
                                 <div class="ocr-mini-stat">
-                                    <div class="text-muted small">Wallet</div>
+                                    <div class="text-muted small">{{ __('Wallet') }}</div>
                                     <div class="fw-semibold">{{ number_format($walletBalance) }}</div>
                                 </div>
                                 <div class="ocr-mini-stat">
-                                    <div class="text-muted small">Cost</div>
+                                    <div class="text-muted small">{{ __('Cost') }}</div>
                                     <div class="fw-semibold">{{ number_format($creditsCost) }}</div>
                                 </div>
                                 <div class="ocr-mini-stat">
-                                    <div class="text-muted small">Pages</div>
+                                    <div class="text-muted small">{{ __('Pages') }}</div>
                                     <div class="fw-semibold">{{ $clientPdfPageCount ?: 0 }}</div>
                                 </div>
                                 <div class="ocr-mini-stat">
-                                    <div class="text-muted small">Selected</div>
+                                    <div class="text-muted small">{{ __('Selected') }}</div>
                                     <div class="fw-semibold">{{ $documentFile ? $this->estimatedPages() : 0 }}</div>
                                 </div>
                             </div>
@@ -1109,17 +1117,17 @@ class extends Component
                             <section class="ocr-card dropzone mb-3">
                                 <div id="dropbox" class="dropbox" role="button" tabindex="0" wire:ignore>
                                     <div style="min-width:0">
-                                        <div class="pill" style="display:inline-block;margin-bottom:8px;">.pdf only</div>
+                                        <div class="pill" style="display:inline-block;margin-bottom:8px;">{{ __('PDF only') }}</div>
                                         <div id="fileHint" class="hint">
-                                            {{ $documentFileName ? $documentFileName : 'No file selected.' }}
+                                            {{ $documentFileName ? $documentFileName : __('No file selected.') }}
                                         </div>
                                         <div id="errorBox" class="error"></div>
                                     </div>
 
                                     <div class="actions">
-                                        <label class="btn btn-primary" for="fileInput">Choose PDF</label>
+                                        <label class="btn btn-primary" for="fileInput">{{ __('Choose PDF') }}</label>
                                         <button id="clearBtn" class="btn btn-outline-danger" type="button" {{ $documentFile ? '' : 'disabled' }}>
-                                            Clear
+                                            {{ __('Clear') }}
                                         </button>
                                     </div>
 
@@ -1127,50 +1135,50 @@ class extends Component
                                 </div>
 
                                 <div wire:loading wire:target="documentFile" class="small text-primary mt-2">
-                                    Uploading PDF...
+                                    {{ __('Uploading PDF...') }}
                                 </div>
                             </section>
 
                             <section class="ocr-card viewer" wire:ignore>
                                 <div class="toolbar">
                                     <div class="group">
-                                        <button id="prevBtn" type="button" class="btn btn-sm btn-outline-secondary" disabled>◀ Prev</button>
-                                        <button id="nextBtn" type="button" class="btn btn-sm btn-outline-secondary" disabled>Next ▶</button>
-                                        <span class="pill" id="pageInfo">Page 0 / 0</span>
+                                        <button id="prevBtn" type="button" class="btn btn-sm btn-outline-secondary" disabled>{{ __('Prev') }}</button>
+                                        <button id="nextBtn" type="button" class="btn btn-sm btn-outline-secondary" disabled>{{ __('Next') }}</button>
+                                        <span class="pill" id="pageInfo">{{ __('Page 0 / 0') }}</span>
                                     </div>
 
                                     <div class="group">
                                         <div class="zoom">
-                                            <span>Zoom</span>
+                                            <span>{{ __('Zoom') }}</span>
                                             <input id="zoomRange" type="range" min="50" max="200" value="110" disabled />
                                             <span id="zoomLabel">110%</span>
                                         </div>
                                     </div>
 
                                     <div class="group rangeWrap">
-                                        <span class="pill">Range</span>
-                                        <input id="rangeInput" type="text" placeholder="e.g. 1-3,5,8-10" value="{{ $pageRange }}" disabled />
-                                        <button id="applyRangeBtn" class="btn btn-sm btn-primary" type="button" disabled>Preview Range</button>
-                                        <button id="clearRangeBtn" class="btn btn-sm btn-outline-secondary" type="button" disabled>Clear Range</button>
-                                        <button id="downloadRangeBtn" class="btn btn-sm btn-primary" type="button" disabled>Download Range</button>
-                                        <button id="downloadAllBtn" class="btn btn-sm btn-outline-secondary" type="button" disabled>Download Full</button>
+                                        <span class="pill">{{ __('Range') }}</span>
+                                        <input id="rangeInput" type="text" placeholder="{{ __('e.g. 1-3,5,8-10') }}" value="{{ $pageRange }}" disabled />
+                                        <button id="applyRangeBtn" class="btn btn-sm btn-primary" type="button" disabled>{{ __('Preview Range') }}</button>
+                                        <button id="clearRangeBtn" class="btn btn-sm btn-outline-secondary" type="button" disabled>{{ __('Clear Range') }}</button>
+                                        <button id="downloadRangeBtn" class="btn btn-sm btn-primary" type="button" disabled>{{ __('Download Range') }}</button>
+                                        <button id="downloadAllBtn" class="btn btn-sm btn-outline-secondary" type="button" disabled>{{ __('Download Full') }}</button>
                                         <span class="rangeHelp" id="rangeHelp"></span>
                                     </div>
                                 </div>
 
                                 <div class="viewerGrid">
-                                    <aside class="thumbs" id="thumbsPanel" aria-label="Thumbnails">
+                                    <aside class="thumbs" id="thumbsPanel" aria-label="{{ __('Thumbnails') }}">
                                         <div class="thumbsHeader">
-                                            <span class="pill">Thumbnails</span>
+                                            <span class="pill">{{ __('Thumbnails') }}</span>
                                             <span class="muted" id="thumbsCount">0</span>
                                         </div>
                                         <div class="thumbsList" id="thumbsList">
-                                            <div class="empty" id="thumbsEmpty">Upload a PDF to see thumbnails.</div>
+                                            <div class="empty" id="thumbsEmpty">{{ __('Upload a PDF to see thumbnails.') }}</div>
                                         </div>
                                     </aside>
 
                                     <div class="mainStage" id="mainStage">
-                                        <div class="empty" id="emptyState">Upload a PDF to preview it here.</div>
+                                        <div class="empty" id="emptyState">{{ __('Upload a PDF to preview it here.') }}</div>
                                         <canvas id="pdfCanvas" style="display:none;"></canvas>
                                     </div>
                                 </div>
@@ -1186,21 +1194,21 @@ class extends Component
                         <div class="card-body p-3 p-md-4">
                             <div class="d-flex align-items-center justify-content-between flex-wrap mb-3">
                                 <div>
-                                    <strong class="d-block">Latest Output</strong>
-                                    <small class="text-muted">Title: <b>{{ $latestTitle }}</b></small>
+                                    <strong class="d-block">{{ __('Latest Output') }}</strong>
+                                    <small class="text-muted">{{ __('Title:') }} <b>{{ $latestTitle }}</b></small>
                                 </div>
 
                                 <div class="d-flex align-items-center gap-2">
                                     @if($loadedRender && $loadedRender['text_download_url'])
                                         <small class="text-muted mt-2 mt-md-0 mr-2">
-                                            Render: <b>#{{ $loadedRender['id'] }}</b>
+                                            {{ __('Render:') }} <b>#{{ $loadedRender['id'] }}</b>
                                         </small>
                                         <a href="{{ $loadedRender['text_download_url'] }}" class="btn btn-sm btn-primary" target="_blank" rel="noopener">
-                                            <i class="mdi mdi-download"></i> Download TXT
+                                            <i class="mdi mdi-download"></i> {{ __('Download TXT') }}
                                         </a>
                                         @if($loadedRender['json_view_url'])
                                             <a href="{{ $loadedRender['json_view_url'] }}" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">
-                                                <i class="mdi mdi-code-json"></i> JSON
+                                                <i class="mdi mdi-code-json"></i> {{ __('JSON') }}
                                             </a>
                                         @endif
                                     @endif
@@ -1208,7 +1216,7 @@ class extends Component
                             </div>
 
                             <div id="ocr-output-empty" class="{{ $loadedRender ? 'd-none' : '' }}">
-                                <div class="text-muted small text-center py-4">No OCR result selected yet.</div>
+                                <div class="text-muted small text-center py-4">{{ __('No OCR result selected yet.') }}</div>
                             </div>
 
                             <div id="ocr-output-wrap" class="{{ $loadedRender ? '' : 'd-none' }}">
@@ -1216,25 +1224,25 @@ class extends Component
                                     <div class="row g-2">
                                         {{-- <div class="col-md-3 col-6">
                                             <div class="ocr-meta-chip">
-                                                <span class="text-muted small d-block">Language</span>
+                                                <span class="text-muted small d-block">{{ __('Language') }}</span>
                                                 <strong>{{ $loadedRender['lang'] ?? 'ckb' }}</strong>
                                             </div>
                                         </div> --}}
                                         <div class="col-md-4 col-6">
                                             <div class="ocr-meta-chip">
-                                                <span class="text-muted small d-block">Range</span>
-                                                <strong>{{ ($loadedRender['page_range'] ?? '') !== '' ? $loadedRender['page_range'] : 'All pages' }}</strong>
+                                                <span class="text-muted small d-block">{{ __('Range') }}</span>
+                                                <strong>{{ ($loadedRender['page_range'] ?? '') !== '' ? $loadedRender['page_range'] : __('All pages') }}</strong>
                                             </div>
                                         </div>
                                         <div class="col-md-4 col-6">
                                             <div class="ocr-meta-chip">
-                                                <span class="text-muted small d-block">DPI</span>
+                                                <span class="text-muted small d-block">{{ __('DPI') }}</span>
                                                 <strong>{{ $loadedRender['dpi'] ?? 200 }}</strong>
                                             </div>
                                         </div>
                                         <div class="col-md-4 col-6">
                                             <div class="ocr-meta-chip">
-                                                <span class="text-muted small d-block">PSM / OEM</span>
+                                                <span class="text-muted small d-block">{{ __('PSM / OEM') }}</span>
                                                 <strong>{{ ($loadedRender['psm'] ?? 6) . ' / ' . ($loadedRender['oem'] ?? 3) }}</strong>
                                             </div>
                                         </div>
@@ -1243,13 +1251,13 @@ class extends Component
 
                                 <div class="ocr-text-result-wrap">
                                     <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                                        <strong>Extracted Text</strong>
+                                        <strong>{{ __('Extracted Text') }}</strong>
                                         <button id="ocr-copy-text-btn" type="button" class="btn btn-sm btn-outline-secondary">
-                                            <i class="mdi mdi-content-copy"></i> Copy
+                                            <i class="mdi mdi-content-copy"></i> {{ __('Copy') }}
                                         </button>
                                     </div>
 
-                                    <textarea id="ocr-result-text" class="form-control ocr-result-text" rows="14" readonly placeholder="OCR text will appear here..."></textarea>
+                                    <textarea id="ocr-result-text" class="form-control ocr-result-text" rows="14" readonly placeholder="{{ __('OCR text will appear here...') }}"></textarea>
                                 </div>
                             </div>
                         </div>
@@ -1265,9 +1273,9 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-body p-3 p-md-4">
                             <div class="d-flex align-items-center justify-content-between mb-3">
-                                <strong>Parameters</strong>
+                                <strong>{{ __('Parameters') }}</strong>
                                 <button wire:click="resetForm" class="btn btn-sm btn-outline-secondary" type="button">
-                                    <i class="mdi mdi-refresh"></i> Reset
+                                    <i class="mdi mdi-refresh"></i> {{ __('Reset') }}
                                 </button>
                             </div>
 
@@ -1289,16 +1297,16 @@ class extends Component
                             <hr>
 
                             <div class="mb-3">
-                                <label class="mb-1"><b>Page Range</b></label>
-                                <input type="text" wire:model.live.debounce.300ms="pageRange" class="form-control rounded-pill" placeholder="e.g. 1-3,5,8-10">
-                                <small class="text-muted d-block mt-2">Leave empty to OCR the full PDF.</small>
+                                <label class="mb-1"><b>{{ __('Page Range') }}</b></label>
+                                <input type="text" wire:model.live.debounce.300ms="pageRange" class="form-control rounded-pill" placeholder="{{ __('e.g. 1-3,5,8-10') }}">
+                                <small class="text-muted d-block mt-2">{{ __('Leave empty to OCR the full PDF.') }}</small>
                             </div>
 
                             <hr>
 
                             <div class="row g-3 mb-3">
                                 <div class="col-md-4">
-                                    <label class="mb-1"><b>DPI</b></label>
+                                    <label class="mb-1"><b>{{ __('DPI') }}</b></label>
                                     <select wire:model.live="dpi" class="form-control rounded-pill">
                                         <option value="150">150</option>
                                         <option value="200">200</option>
@@ -1307,7 +1315,7 @@ class extends Component
                                     </select>
                                 </div>
                                 <div class="col-md-4">
-                                    <label class="mb-1"><b>PSM</b></label>
+                                    <label class="mb-1"><b>{{ __('PSM') }}</b></label>
                                     <select wire:model.live="psm" class="form-control rounded-pill">
                                         @for($i = 0; $i <= 13; $i++)
                                             <option value="{{ $i }}">{{ $i }}</option>
@@ -1315,7 +1323,7 @@ class extends Component
                                     </select>
                                 </div>
                                 <div class="col-md-4">
-                                    <label class="mb-1"><b>OEM</b></label>
+                                    <label class="mb-1"><b>{{ __('OEM') }}</b></label>
                                     <select wire:model.live="oem" class="form-control rounded-pill">
                                         <option value="0">0</option>
                                         <option value="1">1</option>
@@ -1328,28 +1336,28 @@ class extends Component
                             <hr>
 
                             <div class="mb-2">
-                                <label class="mb-2"><b>Processing Options</b></label>
+                                <label class="mb-2"><b>{{ __('Processing Options') }}</b></label>
 
                                 <div class="ocr-check-grid">
                                     <label class="ocr-check-item">
                                         <input type="checkbox" wire:model.live="normalize">
-                                        <span>Normalize to Sorani</span>
+                                        <span>{{ __('Normalize to Sorani') }}</span>
                                     </label>
                                     <label class="ocr-check-item">
                                         <input type="checkbox" wire:model.live="grayscale">
-                                        <span>Grayscale</span>
+                                        <span>{{ __('Grayscale') }}</span>
                                     </label>
                                     <label class="ocr-check-item">
                                         <input type="checkbox" wire:model.live="autocontrast">
-                                        <span>Auto Contrast</span>
+                                        <span>{{ __('Auto Contrast') }}</span>
                                     </label>
                                     <label class="ocr-check-item">
                                         <input type="checkbox" wire:model.live="sharpen">
-                                        <span>Sharpen</span>
+                                        <span>{{ __('Sharpen') }}</span>
                                     </label>
                                     <label class="ocr-check-item">
                                         <input type="checkbox" wire:model.live="binarize">
-                                        <span>Binarize</span>
+                                        <span>{{ __('Binarize') }}</span>
                                     </label>
                                 </div>
                             </div>
@@ -1357,14 +1365,14 @@ class extends Component
                             <div class="ocr-cost-preview rounded-3 p-3 mt-3">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <div>
-                                        <div class="fw-semibold">Estimated Cost</div>
+                                        <div class="fw-semibold">{{ __('Estimated Cost') }}</div>
                                         <div class="small text-muted">
-                                            {{ $documentFile ? $this->estimatedPages() . ' selected page(s)' : 'Upload a PDF first' }}
+                                            {{ $documentFile ? $this->estimatedPages() . ' ' . __('selected page(s)') : __('Upload a PDF first') }}
                                         </div>
                                     </div>
 
                                     <div class="badge ocr-badge-credits px-3 py-2">
-                                        {{ number_format($creditsCost) }} credits
+                                        {{ number_format($creditsCost) }} {{ __('credits') }}
                                     </div>
                                 </div>
                             </div>
@@ -1379,30 +1387,30 @@ class extends Component
                                     type="button"
                                 >
                                     <span wire:loading.remove wire:target="submit,documentFile">
-                                        <span class="mr-1" aria-hidden="true">▶</span>
-                                        {{ $this->canProcess ? 'Run OCR' : ($this->processBlockedReason ?? 'Run OCR') }}
+                                        <span class="mr-1" aria-hidden="true">â–¶</span>
+                                        {{ $this->canProcess ? __('Run OCR') : ($this->processBlockedReason ?? __('Run OCR')) }}
                                     </span>
 
                                     <span wire:loading wire:target="documentFile">
                                         <span class="spinner-border spinner-border-sm mr-1"></span>
-                                        Uploading PDF...
+                                        {{ __('Uploading PDF...') }}
                                     </span>
 
                                     <span wire:loading wire:target="submit">
                                         <span class="spinner-border spinner-border-sm mr-1"></span>
-                                        Sending...
+                                        {{ __('Sending...') }}
                                     </span>
                                 </button>
 
                                 @if($currentJobId && !$jobFinished)
                                     <button type="button" class="btn btn-outline-danger btn-sm" wire:click="openEliminateModal">
-                                        Eliminate Current Job
+                                        {{ __('Eliminate Current Job') }}
                                     </button>
                                 @endif
 
                                 @if($walletBalance < $creditsCost && $creditsCost > 0)
                                     <span class="small text-danger">
-                                        Not enough credits for this OCR job.
+                                        {{ __('Not enough credits for this OCR job.') }}
                                     </span>
                                 @endif
                             </div>
@@ -1416,7 +1424,7 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-body p-3 p-md-4">
                             <div class="d-flex align-items-center justify-content-between mb-2 gap-2 flex-wrap">
-                                <strong>Recent Renders</strong>
+                                <strong>{{ __('Recent Renders') }}</strong>
                                 <span class="badge badge-secondary">{{ $this->recentRenders->total() }}</span>
                             </div>
 
@@ -1424,13 +1432,13 @@ class extends Component
                                 <input
                                     type="text"
                                     class="form-control form-control-sm"
-                                    placeholder="Search..."
+                                    placeholder="{{ __('Search...') }}"
                                     wire:model.live.debounce.300ms="search"
                                 >
                             </div>
 
                             @if($this->recentRenders->count() === 0)
-                                <div class="text-muted small text-center py-4">No renders yet.</div>
+                                <div class="text-muted small text-center py-4">{{ __('No renders yet.') }}</div>
                             @else
                                 <div class="list-group">
                                     @foreach($this->recentRenders as $render)
@@ -1446,9 +1454,9 @@ class extends Component
                                                         <div class="d-flex align-items-center">
                                                             <i class="mdi mdi-file-document-outline mr-2 render-cache-icon"></i>
                                                             <div>
-                                                                <b class="d-block text-truncate" style="max-width: 200px;">{{ $render['input_name'] ?: 'Untitled PDF' }}</b>
+                                                                <b class="d-block text-truncate" style="max-width: 200px;">{{ $render['input_name'] ?: __('Untitled PDF') }}</b>
                                                                 <small class="text-muted d-block">
-                                                                    {{ $render['page_range'] ?: 'All pages' }} • {{ $render['lang'] }}
+                                                                    {{ __(':pages | :language', ['pages' => $render['page_range'] ?: __('All pages'), 'language' => $render['lang']]) }}
                                                                 </small>
                                                                 <small class="text-muted d-block">{{ $render['created_at'] }}</small>
                                                             </div>
@@ -1458,7 +1466,7 @@ class extends Component
 
                                                 <div class="d-flex align-items-center gap-1 ml-2">
                                                     @if($render['text_download_url'])
-                                                        <a href="{{ $render['text_download_url'] }}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener" title="TXT">
+                                                        <a href="{{ $render['text_download_url'] }}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener" title="{{ __('TXT') }}">
                                                             <i class="mdi mdi-download"></i>
                                                         </a>
                                                     @endif
@@ -1467,7 +1475,7 @@ class extends Component
                                                         type="button"
                                                         class="btn btn-sm btn-outline-danger"
                                                         wire:click.stop="deleteRender('{{ $render['id'] }}')"
-                                                        onclick="return confirm('Delete this render? This will remove files and deduct storage.');"
+                                                        onclick="return confirm(@js(__('Delete this render? This will remove files and deduct storage.')));"
                                                     >
                                                         <i class="mdi mdi-delete"></i>
                                                     </button>
@@ -1495,21 +1503,21 @@ class extends Component
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-0 shadow">
                     <div class="modal-header">
-                        <h5 class="modal-title">Eliminate current OCR job?</h5>
+                        <h5 class="modal-title">{{ __('Eliminate current OCR job?') }}</h5>
                         <button type="button" class="btn-close" wire:click="closeEliminateModal"></button>
                     </div>
                     <div class="modal-body">
                         <p class="mb-2">
-                            This will stop tracking the current OCR job and mark it as eliminated.
+                            {{ __('This will stop tracking the current OCR job and mark it as eliminated.') }}
                         </p>
                         <p class="mb-0 text-danger small">
-                            Credits are not refundable.
+                            {{ __('Credits are not refundable.') }}
                         </p>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" wire:click="closeEliminateModal">Cancel</button>
+                        <button type="button" class="btn btn-light" wire:click="closeEliminateModal">{{ __('Cancel') }}</button>
                         <button type="button" class="btn btn-danger" wire:click="eliminateCurrentJob">
-                            Eliminate
+                            {{ __('Eliminate') }}
                         </button>
                     </div>
                 </div>
@@ -1911,6 +1919,25 @@ class extends Component
                 }
 
                 const S = window.__OCR_PAGE__;
+                const OCR_I18N = {
+                    noFileSelected: @js(__('No file selected.')),
+                    previewCounter: @js(__('Preview')),
+                    invalidRange: @js(__('Invalid range')),
+                    invalidRangeExample: @js(__('Invalid range. Example: 1-3,5,8-10')),
+                    selectedPages: @js(__('page(s) selected')),
+                    fullPdf: @js(__('full.pdf')),
+                    rangePdf: @js(__('range.pdf')),
+                    documentPdf: @js(__('document.pdf')),
+                    uploadPreview: @js(__('Upload a PDF to preview it here.')),
+                    pageZero: @js(__('Page 0 / 0')),
+                    onlyPdf: @js(__('Only PDF files are allowed.')),
+                    uploadFailed: @js(__('Upload failed')),
+                    failedToOpenPdf: @js(__('Failed to open the selected PDF.')),
+                    loadingOcrText: @js(__('Loading OCR text...')),
+                    failedToLoadOcrText: @js(__('Failed to load OCR text.')),
+                    prev: @js(__('Prev')),
+                    next: @js(__('Next')),
+                };
                 const FORM_KEY = 'ocr_form_state_v1';
                 const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
 
@@ -2060,7 +2087,7 @@ class extends Component
                     });
                 }
 
-                function updateHint(name = 'No file selected.') {
+                function updateHint(name = OCR_I18N.noFileSelected) {
                     const hint = qs('fileHint');
                     if (hint) hint.textContent = name;
                 }
@@ -2164,7 +2191,7 @@ class extends Component
                     if (info) {
                         info.textContent = `Page ${pageNo} / ${S.pageCount}`;
                         if (pages.length !== S.pageCount) {
-                            info.textContent += ` • Preview ${S.activeIndex + 1}/${pages.length}`;
+                            info.textContent += ` - ${OCR_I18N.previewCounter} ${S.activeIndex + 1}/${pages.length}`;
                         }
                     }
 
@@ -2226,7 +2253,7 @@ class extends Component
                     }
                 }
 
-                async function loadPdfFromArrayBuffer(buffer, fileName = 'document.pdf') {
+                async function loadPdfFromArrayBuffer(buffer, fileName = OCR_I18N.documentPdf) {
                     revokeBlobUrl();
 
                     const blob = new Blob([buffer], { type: 'application/pdf' });
@@ -2265,7 +2292,7 @@ class extends Component
                     showError('');
                 }
 
-                async function loadPdfFromUrl(url, fileName = 'document.pdf', rangeValue = '') {
+                async function loadPdfFromUrl(url, fileName = OCR_I18N.documentPdf, rangeValue = '') {
                     try {
                         const res = await fetch(url, { credentials: 'same-origin' });
                         if (!res.ok) throw new Error(`Failed to load PDF (${res.status})`);
@@ -2296,14 +2323,14 @@ class extends Component
                     const help = qs('rangeHelp');
 
                     if (raw.trim() !== '' && (!parsed || parsed.length === 0)) {
-                        if (help) help.textContent = 'Invalid range';
-                        showError('Invalid range. Example: 1-3,5,8-10');
+                        if (help) help.textContent = OCR_I18N.invalidRange;
+                        showError(OCR_I18N.invalidRangeExample);
                         return;
                     }
 
                     if (help) {
                         help.textContent = parsed && parsed.length
-                            ? `${parsed.length} page(s) selected`
+                            ? `${parsed.length} ${OCR_I18N.selectedPages}`
                             : '';
                     }
 
@@ -2357,7 +2384,7 @@ class extends Component
 
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = pages.length === S.pageCount ? 'full.pdf' : 'range.pdf';
+                    a.download = pages.length === S.pageCount ? OCR_I18N.fullPdf : OCR_I18N.rangePdf;
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
@@ -2370,13 +2397,13 @@ class extends Component
 
                     const a = document.createElement('a');
                     a.href = S.currentBlobUrl;
-                    a.download = S.currentFile?.name || 'document.pdf';
+                    a.download = S.currentFile?.name || OCR_I18N.documentPdf;
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
                 }
 
-                function clearViewerUi(message = 'Upload a PDF to preview it here.') {
+                function clearViewerUi(message = OCR_I18N.uploadPreview) {
                     S.pdfDoc = null;
                     S.pageCount = 0;
                     S.activePages = null;
@@ -2386,13 +2413,18 @@ class extends Component
                     revokeBlobUrl();
                     clearThumbs();
                     setControlsEnabled(false);
-                    updateHint('No file selected.');
+                    updateHint(OCR_I18N.noFileSelected);
                     showError('');
                     const clearBtn = qs('clearBtn');
                     if (clearBtn) clearBtn.disabled = true;
 
                     const pageInfo = qs('pageInfo');
-                    if (pageInfo) pageInfo.textContent = 'Page 0 / 0';
+                    if (pageInfo) pageInfo.textContent = OCR_I18N.pageZero;
+
+                    const prevBtn = qs('prevBtn');
+                    const nextBtn = qs('nextBtn');
+                    if (prevBtn) prevBtn.textContent = OCR_I18N.prev;
+                    if (nextBtn) nextBtn.textContent = OCR_I18N.next;
 
                     const zoomRange = qs('zoomRange');
                     const zoomLabel = qs('zoomLabel');
@@ -2427,7 +2459,7 @@ class extends Component
                 async function uploadPdfFile(file) {
                     if (!file) return;
                     if (file.type !== 'application/pdf' && !String(file.name || '').toLowerCase().endsWith('.pdf')) {
-                        showError('Only PDF files are allowed.');
+                        showError(OCR_I18N.onlyPdf);
                         return;
                     }
 
@@ -2446,11 +2478,11 @@ class extends Component
                             file,
                             () => {},
                             (e) => {
-                                showError(typeof e === 'string' ? e : 'Upload failed');
+                                showError(typeof e === 'string' ? e : OCR_I18N.uploadFailed);
                             }
                         );
                     } catch (e) {
-                        showError(e?.message || 'Failed to open the selected PDF.');
+                        showError(e?.message || OCR_I18N.failedToOpenPdf);
                     }
                 }
 
@@ -2463,7 +2495,7 @@ class extends Component
                         return;
                     }
 
-                    textarea.value = 'Loading OCR text...';
+                    textarea.value = OCR_I18N.loadingOcrText;
 
                     try {
                         const res = await fetch(textUrl, { credentials: 'same-origin' });
@@ -2471,7 +2503,7 @@ class extends Component
                         textarea.value = await res.text();
                     } catch (e) {
                         textarea.value = '';
-                        showError(e?.message || 'Failed to load OCR text.');
+                        showError(e?.message || OCR_I18N.failedToLoadOcrText);
                     }
                 }
 
@@ -2495,7 +2527,7 @@ class extends Component
                     await fetchAndShowText(render.text_view_url || null);
 
                     if (render.input_url) {
-                        await loadPdfFromUrl(render.input_url, render.input_name || 'document.pdf', render.page_range || '');
+                        await loadPdfFromUrl(render.input_url, render.input_name || OCR_I18N.documentPdf, render.page_range || '');
                     }
                 }
 
@@ -2642,7 +2674,7 @@ class extends Component
                             try {
                                 await navigator.clipboard.writeText(textarea.value);
                                 window.dispatchEvent(new CustomEvent('alert', {
-                                    detail: { type: 'success', message: 'OCR text copied.' }
+                                    detail: { type: 'success', message: @js(__('OCR text copied.')) }
                                 }));
                             } catch (_) {}
                         });

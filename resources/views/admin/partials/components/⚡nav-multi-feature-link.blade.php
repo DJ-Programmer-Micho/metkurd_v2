@@ -47,7 +47,7 @@ new class extends Component
             tabindex="-1" aria-disabled="true"
             data-bs-toggle="tooltip"
             data-bs-placement="right"
-            title="{{ $tooltip }}"
+            title="{{ __($tooltip) }}"
         @endif
     >
         <i class="{{ $icon }}"></i>

@@ -8,12 +8,10 @@ use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
 new
 #[Layout('app::layouts.app')]
-#[Title('Dashboard | METKURD')]
 class extends Component
 {
     public int $refreshTick = 0;
@@ -149,57 +147,57 @@ class extends Component
         $actions = [
             [
                 'tool' => 'tts',
-                'label' => 'Text to Speech',
-                'description' => 'Turn scripts into natural audio output.',
+                'label' => __('Text to Speech'),
+                'description' => __('Turn scripts into natural audio output.'),
                 'route' => route('app.xtts', ['locale' => $locale]),
                 'icon' => 'ri-volume-up-line',
                 'entitlement' => 'tts.standard',
-                'cta' => 'Open XTTS',
+                'cta' => __('Open XTTS'),
             ],
             [
                 'tool' => 'clone_tts',
-                'label' => 'Voice Clone',
-                'description' => 'Generate speech with a cloned voice profile.',
+                'label' => __('Voice Clone'),
+                'description' => __('Generate speech with a cloned voice profile.'),
                 'route' => route('app.clone-xtts', ['locale' => $locale]),
                 'icon' => 'ri-user-voice-line',
                 'entitlement' => 'clone_tts.standard',
-                'cta' => 'Open Clone XTTS',
+                'cta' => __('Open Clone XTTS'),
             ],
             [
                 'tool' => 'asr',
-                'label' => 'Speech to Text',
-                'description' => 'Transcribe audio and export clean text.',
+                'label' => __('Speech to Text'),
+                'description' => __('Transcribe audio and export clean text.'),
                 'route' => route('app.wasr', ['locale' => $locale]),
                 'icon' => 'ri-file-text-line',
                 'entitlement' => 'asr.standard',
-                'cta' => 'Open WASR',
+                'cta' => __('Open WASR'),
             ],
             [
                 'tool' => 'stem',
-                'label' => 'Stem Separation',
-                'description' => 'Split vocals and instruments into tracks.',
+                'label' => __('Stem Separation'),
+                'description' => __('Split vocals and instruments into tracks.'),
                 'route' => route('app.stem', ['locale' => $locale]),
                 'icon' => 'bx bx-music',
                 'entitlement' => 'stem.sep2',
-                'cta' => 'Open STEM',
+                'cta' => __('Open STEM'),
             ],
             [
                 'tool' => 'ocr',
-                'label' => 'OCR',
-                'description' => 'Extract text from scans and images.',
+                'label' => __('Optical Character Recognition'),
+                'description' => __('Extract text from scans and images.'),
                 'route' => route('app.ocr', ['locale' => $locale]),
                 'icon' => 'bx bx-aperture',
                 'entitlement' => 'ocr.standard',
-                'cta' => 'Open OCR',
+                'cta' => __('Open OCR'),
             ],
             [
                 'tool' => 'youtube_video',
-                'label' => 'YouTube Downloader',
-                'description' => 'Preview and download video or audio jobs.',
+                'label' => __('YouTube Downloader'),
+                'description' => __('Preview and download video or audio jobs.'),
                 'route' => route('app.youtube', ['locale' => $locale]),
                 'icon' => 'ri-youtube-line',
                 'tool_codes' => ['youtube_audio', 'youtube_video'],
-                'cta' => 'Open YouTube',
+                'cta' => __('Open YouTube'),
             ],
         ];
 
@@ -325,7 +323,7 @@ class extends Component
             return (string) Str::before($email, '@');
         }
 
-        return 'there';
+        return __('there');
     }
 
     public function greetingLabel(): string
@@ -333,9 +331,9 @@ class extends Component
         $hour = (int) now()->format('G');
 
         return match (true) {
-            $hour < 12 => 'Good morning',
-            $hour < 17 => 'Good afternoon',
-            default => 'Good evening',
+            $hour < 12 => __('Good morning'),
+            $hour < 17 => __('Good afternoon'),
+            default => __('Good evening'),
         };
     }
 
@@ -359,15 +357,15 @@ class extends Component
     public function toolLabel(?string $toolCode): string
     {
         return match ($this->normalizeToolCode($toolCode)) {
-            'tts' => 'Text to Speech',
-            'clone_tts' => 'Voice Clone',
-            'asr' => 'Speech to Text',
-            'stem' => 'Stem Separation',
-            'ocr' => 'OCR',
-            'youtube_audio' => 'YouTube Audio',
-            'youtube_video' => 'YouTube Video',
-            'youtube_download' => 'YouTube Downloader',
-            default => Str::headline(str_replace('_', ' ', (string) $toolCode)),
+            'tts' => __('Text to Speech'),
+            'clone_tts' => __('Voice Clone'),
+            'asr' => __('Speech to Text'),
+            'stem' => __('Stem Separation'),
+            'ocr' => __('Optical Character Recognition'),
+            'youtube_audio' => __('YouTube Audio'),
+            'youtube_video' => __('YouTube Video'),
+            'youtube_download' => __('YouTube Downloader'),
+            default => __(Str::headline(str_replace('_', ' ', (string) $toolCode))),
         };
     }
 
@@ -411,7 +409,7 @@ class extends Component
 
     public function statusLabel(?string $status): string
     {
-        return Str::headline((string) $status);
+        return __(Str::headline((string) $status));
     }
 
     public function routeForTool(?string $toolCode): string
@@ -450,7 +448,7 @@ class extends Component
 
     public function formatCredits(int|float|null $value): string
     {
-        return number_format((float) $value) . ' cr';
+        return number_format((float) $value) . ' ' . __('cr');
     }
 
     public function formatBytes(int|float|null $bytes): string
@@ -485,6 +483,8 @@ class extends Component
     $servicePlan = $customer?->servicePlan ?: $customer?->activeServiceSubscription?->servicePlan;
     $storagePlan = $customer?->storagePlan ?: $customer?->activeStorageSubscription?->storagePlan;
 @endphp
+
+<x-slot:title>{{ __('Dashboard') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="mk-home-dashboard" wire:poll.15000ms="refreshDashboard">
     <style>
@@ -695,14 +695,14 @@ class extends Component
             <div class="col-12">
                 <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                     <div>
-                        <h4 class="mb-sm-0">Customer Dashboard</h4>
-                        <div class="text-muted mt-1">A live view of credits, AI jobs, storage, and recent activity.</div>
+                        <h4 class="mb-sm-0">{{ __('Customer Dashboard') }}</h4>
+                        <div class="text-muted mt-1">{{ __('A live view of credits, AI jobs, storage, and recent activity.') }}</div>
                     </div>
 
                     <div class="page-title-right">
                         <ol class="breadcrumb m-0">
-                            <li class="breadcrumb-item"><a href="javascript:void(0);">App</a></li>
-                            <li class="breadcrumb-item active">Dashboard</li>
+                            <li class="breadcrumb-item"><a href="javascript:void(0);">{{ __('App') }}</a></li>
+                            <li class="breadcrumb-item active">{{ __('Dashboard') }}</li>
                         </ol>
                     </div>
                 </div>
@@ -715,26 +715,26 @@ class extends Component
                     <div class="col-xl-7">
                         <span class="mk-hero-pill mb-3">
                             <i class="ri-flashlight-line"></i>
-                            Live customer workspace
+                            {{ __('Live customer workspace') }}
                         </span>
 
                         <div class="mk-hero-copy">
                             <h2 class="text-white mb-2">{{ $this->greetingLabel() }}, {{ $this->customerDisplayName() }}</h2>
                             <p class="mb-4 text-white text-opacity-75">
-                                This dashboard keeps the important customer signals in one place:
-                                current balance, live jobs, storage usage, and direct access back into each ML workflow.
+                                {{ __('This dashboard keeps the important customer signals in one place:') }}
+                                {{ __('current balance, live jobs, storage usage, and direct access back into each ML workflow.') }}
                             </p>
                         </div>
 
                         <div class="d-flex flex-wrap gap-2">
                             <a wire:navigate.hover href="{{ route('app.storage', ['locale' => app()->getLocale()]) }}" class="btn btn-light btn-label waves-effect waves-light">
-                                <i class="ri-folder-line label-icon align-middle fs-16 me-2"></i>My Storage
+                                <i class="ri-folder-line label-icon align-middle fs-16 me-2"></i>{{ __('My Storage') }}
                             </a>
                             <a wire:navigate.hover href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-light btn-label waves-effect waves-light">
-                                <i class="ri-wallet-3-line label-icon align-middle fs-16 me-2"></i>Billing
+                                <i class="ri-wallet-3-line label-icon align-middle fs-16 me-2"></i>{{ __('Billing') }}
                             </a>
                             <a wire:navigate.hover href="{{ route('app.profile', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-light btn-label waves-effect waves-light">
-                                <i class="ri-user-settings-line label-icon align-middle fs-16 me-2"></i>Profile
+                                <i class="ri-user-settings-line label-icon align-middle fs-16 me-2"></i>{{ __('Profile') }}
                             </a>
                         </div>
                     </div>
@@ -742,36 +742,36 @@ class extends Component
                     <div class="col-xl-5">
                         <div class="mk-hero-grid">
                             <div class="mk-hero-stat">
-                                <div class="label mb-2">Service plan</div>
-                                <div class="value">{{ $servicePlan?->name ?? 'Free' }}</div>
+                                <div class="label mb-2">{{ __('Service plan') }}</div>
+                                <div class="value">{{ $servicePlan?->name ?? __('Free') }}</div>
                                 <div class="small text-white text-opacity-75 mt-1">
-                                    {{ number_format((int) ($servicePlan?->monthly_credits ?? 0)) }} monthly credits
+                                    {{ __(':count monthly credits', ['count' => number_format((int) ($servicePlan?->monthly_credits ?? 0))]) }}
                                 </div>
                             </div>
 
                             <div class="mk-hero-stat">
-                                <div class="label mb-2">Storage plan</div>
-                                <div class="value">{{ $storagePlan?->name ?? 'Default Storage' }}</div>
+                                <div class="label mb-2">{{ __('Storage plan') }}</div>
+                                <div class="value">{{ $storagePlan?->name ?? __('Default Storage') }}</div>
                                 <div class="small text-white text-opacity-75 mt-1">
-                                    {{ $this->formatBytes($stats['storage_quota_bytes']) }} capacity
+                                    {{ __(':value capacity', ['value' => $this->formatBytes($stats['storage_quota_bytes'])]) }}
                                 </div>
                             </div>
 
                             <div class="mk-hero-stat">
-                                <div class="label mb-2">Open job slots</div>
+                                <div class="label mb-2">{{ __('Open job slots') }}</div>
                                 <div class="value">{{ number_format($stats['available_slots']) }} / {{ number_format($stats['allowed_slots']) }}</div>
                                 <div class="small text-white text-opacity-75 mt-1">
-                                    {{ number_format($stats['active_jobs']) }} active job(s) right now
+                                    {{ __(':count active job(s) right now', ['count' => number_format($stats['active_jobs'])]) }}
                                 </div>
                             </div>
 
                             <div class="mk-hero-stat">
-                                <div class="label mb-2">Cycle window</div>
+                                <div class="label mb-2">{{ __('Cycle window') }}</div>
                                 <div class="value">
-                                    {{ optional($customer?->wallet?->cycle_ends_on)->format('d M Y') ?: 'Not set' }}
+                                    {{ optional($customer?->wallet?->cycle_ends_on)->format('d M Y') ?: __('Not set') }}
                                 </div>
                                 <div class="small text-white text-opacity-75 mt-1">
-                                    Auto-refreshing every 15 seconds
+                                    {{ __('Auto-refreshing every 15 seconds') }}
                                 </div>
                             </div>
                         </div>
@@ -786,11 +786,11 @@ class extends Component
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start gap-3">
                             <div>
-                                <div class="text-muted text-uppercase fw-semibold fs-12 mb-2">Available credits</div>
+                                <div class="text-muted text-uppercase fw-semibold fs-12 mb-2">{{ __('Available credits') }}</div>
                                 <h3 class="mb-1">{{ $this->formatCredits($stats['credits_balance']) }}</h3>
                                 <div class="mk-mini-note">
-                                    Subscription: <span class="fw-semibold text-body">{{ $this->formatCredits($stats['subscription_balance']) }}</span><br>
-                                    Add-on: <span class="fw-semibold text-body">{{ $this->formatCredits($stats['addon_balance']) }}</span>
+                                    {{ __('Subscription:') }} <span class="fw-semibold text-body">{{ $this->formatCredits($stats['subscription_balance']) }}</span><br>
+                                    {{ __('Add-on:') }} <span class="fw-semibold text-body">{{ $this->formatCredits($stats['addon_balance']) }}</span>
                                 </div>
                             </div>
                             <div class="mk-metric-icon text-primary">
@@ -806,15 +806,15 @@ class extends Component
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start gap-3">
                             <div class="w-100">
-                                <div class="text-muted text-uppercase fw-semibold fs-12 mb-2">Storage usage</div>
+                                <div class="text-muted text-uppercase fw-semibold fs-12 mb-2">{{ __('Storage usage') }}</div>
                                 <h3 class="mb-1">{{ $this->formatBytes($stats['storage_used_bytes']) }}</h3>
                                 <div class="mk-mini-note mb-3">
-                                    {{ $this->formatBytes($stats['storage_quota_bytes']) }} total quota
+                                    {{ __(':value total quota', ['value' => $this->formatBytes($stats['storage_quota_bytes'])]) }}
                                 </div>
                                 <div class="mk-progress-track">
                                     <div class="mk-progress-bar" style="width: {{ $stats['storage_pct'] }}%;"></div>
                                 </div>
-                                <div class="small text-muted mt-2">{{ $stats['storage_pct'] }}% used</div>
+                                <div class="small text-muted mt-2">{{ __(':pct% used', ['pct' => $stats['storage_pct']]) }}</div>
                             </div>
                             <div class="mk-metric-icon text-info">
                                 <i class="ri-database-2-line"></i>
@@ -829,11 +829,11 @@ class extends Component
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start gap-3">
                             <div>
-                                <div class="text-muted text-uppercase fw-semibold fs-12 mb-2">Live jobs</div>
+                                <div class="text-muted text-uppercase fw-semibold fs-12 mb-2">{{ __('Live jobs') }}</div>
                                 <h3 class="mb-1">{{ number_format($stats['active_jobs']) }}</h3>
                                 <div class="mk-mini-note">
-                                    Queued: <span class="fw-semibold text-body">{{ number_format($stats['queued_jobs']) }}</span><br>
-                                    Running or saving: <span class="fw-semibold text-body">{{ number_format($stats['running_jobs']) }}</span>
+                                    {{ __('Queued:') }} <span class="fw-semibold text-body">{{ number_format($stats['queued_jobs']) }}</span><br>
+                                    {{ __('Running or saving:') }} <span class="fw-semibold text-body">{{ number_format($stats['running_jobs']) }}</span>
                                 </div>
                             </div>
                             <div class="mk-metric-icon text-warning">
@@ -849,11 +849,11 @@ class extends Component
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start gap-3">
                             <div>
-                                <div class="text-muted text-uppercase fw-semibold fs-12 mb-2">Last 30 days</div>
+                                <div class="text-muted text-uppercase fw-semibold fs-12 mb-2">{{ __('Last 30 days') }}</div>
                                 <h3 class="mb-1">{{ number_format($stats['success_pct']) }}%</h3>
                                 <div class="mk-mini-note">
-                                    {{ number_format($stats['completed_30']) }} completed / {{ number_format($stats['failed_30']) }} failed<br>
-                                    {{ $this->formatCredits($stats['credits_spent_30']) }} charged
+                                    {{ __(':completed completed / :failed failed', ['completed' => number_format($stats['completed_30']), 'failed' => number_format($stats['failed_30'])]) }}<br>
+                                    {{ __(':value charged', ['value' => $this->formatCredits($stats['credits_spent_30'])]) }}
                                 </div>
                             </div>
                             <div class="mk-metric-icon text-success">
@@ -871,10 +871,10 @@ class extends Component
                     <div class="card-header border-0 pb-0 bg-transparent">
                         <div class="d-flex justify-content-between align-items-center gap-3">
                             <div>
-                                <h5 class="card-title mb-1">Quick Actions</h5>
-                                <p class="text-muted mb-0">Jump straight into the tools customers use the most.</p>
+                                <h5 class="card-title mb-1">{{ __('Quick Actions') }}</h5>
+                                <p class="text-muted mb-0">{{ __('Jump straight into the tools customers use the most.') }}</p>
                             </div>
-                            <span class="badge bg-primary-subtle text-primary">{{ count($this->quickActions()) }} tools</span>
+                            <span class="badge bg-primary-subtle text-primary">{{ __(':count tools', ['count' => count($this->quickActions())]) }}</span>
                         </div>
                     </div>
                     <div class="card-body">
@@ -888,7 +888,7 @@ class extends Component
                                                     <i class="{{ $action['icon'] }}"></i>
                                                 </div>
                                                 <span class="badge border border-{{ $this->toolBadgeClass($action['tool']) }} text-{{ $this->toolBadgeClass($action['tool']) }}">
-                                                    Enabled
+                                                    {{ __('Enabled') }}
                                                 </span>
                                             </div>
 
@@ -904,10 +904,10 @@ class extends Component
                             @empty
                                 <div class="col-12">
                                     <div class="border rounded-4 p-4 text-center bg-light-subtle">
-                                        <h6 class="mb-2">No active tools on this plan</h6>
-                                        <p class="text-muted mb-3">Your current plan or the global service status is hiding the available tool shortcuts.</p>
+                                        <h6 class="mb-2">{{ __('No active tools on this plan') }}</h6>
+                                        <p class="text-muted mb-3">{{ __('Your current plan or the global service status is hiding the available tool shortcuts.') }}</p>
                                         <a wire:navigate.hover href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-sm btn-outline-dark">
-                                            Open Billing
+                                            {{ __('Open Billing') }}
                                         </a>
                                     </div>
                                 </div>
@@ -920,63 +920,63 @@ class extends Component
             <div class="col-xl-5">
                 <div class="card mk-section-card h-100">
                     <div class="card-header border-0 pb-0 bg-transparent">
-                        <h5 class="card-title mb-1">Account Snapshot</h5>
-                        <p class="text-muted mb-0">Key account details without leaving the dashboard.</p>
+                        <h5 class="card-title mb-1">{{ __('Account Snapshot') }}</h5>
+                        <p class="text-muted mb-0">{{ __('Key account details without leaving the dashboard.') }}</p>
                     </div>
                     <div class="card-body">
                         <div class="mk-stat-row pt-0">
                             <div>
-                                <div class="text-muted small text-uppercase fw-semibold">Plan tier</div>
-                                <div class="fw-semibold">{{ $servicePlan?->name ?? 'Free' }}</div>
+                                <div class="text-muted small text-uppercase fw-semibold">{{ __('Plan tier') }}</div>
+                                <div class="fw-semibold">{{ $servicePlan?->name ?? __('Free') }}</div>
                             </div>
                         </div>
 
                         <div class="mk-stat-row">
                             <div>
-                                <div class="text-muted small text-uppercase fw-semibold">Storage package</div>
-                                <div class="fw-semibold">{{ $storagePlan?->name ?? 'Default Storage' }}</div>
+                                <div class="text-muted small text-uppercase fw-semibold">{{ __('Storage package') }}</div>
+                                <div class="fw-semibold">{{ $storagePlan?->name ?? __('Default Storage') }}</div>
                             </div>
                             <div class="text-end">
                                 <div class="fw-semibold">{{ $this->formatBytes($stats['storage_quota_bytes']) }}</div>
-                                <div class="small text-muted">available quota</div>
+                                <div class="small text-muted">{{ __('available quota') }}</div>
                             </div>
                         </div>
 
                         <div class="mk-stat-row">
                             <div>
-                                <div class="text-muted small text-uppercase fw-semibold">Customer Email Identity</div>
-                                <div class="fw-semibold">{{ $customer?->email ?? 'No email found' }}</div>
+                                <div class="text-muted small text-uppercase fw-semibold">{{ __('Customer Email Identity') }}</div>
+                                <div class="fw-semibold">{{ $customer?->email ?? __('No email found') }}</div>
                             </div>
                             <div class="text-end">
                                 <div class="badge bg-{{ $customer?->email_verify ? 'success' : 'warning' }}-subtle text-{{ $customer?->email_verify ? 'success' : 'warning' }}">
-                                    {{ $customer?->email_verify ? 'Email verified' : 'Email pending' }}
+                                    {{ $customer?->email_verify ? __('Email verified') : __('Email pending') }}
                                 </div><br>
                                 <div class="badge bg-{{ $customer?->phone_verify ? 'success' : 'warning' }}-subtle text-{{ $customer?->phone_verify ? 'success' : 'warning' }}">
-                                    {{ $customer?->phone_verify ? 'Phone verified' : 'Phone pending' }}
+                                    {{ $customer?->phone_verify ? __('Phone verified') : __('Phone pending') }}
                                 </div>
                             </div>
                         </div>
 
                         <div class="mk-stat-row">
                             <div>
-                                <div class="text-muted small text-uppercase fw-semibold">Today</div>
-                                <div class="fw-semibold">{{ number_format($stats['completed_today']) }} completed job(s)</div>
+                                <div class="text-muted small text-uppercase fw-semibold">{{ __('Today') }}</div>
+                                <div class="fw-semibold">{{ __(':count completed job(s)', ['count' => number_format($stats['completed_today'])]) }}</div>
                             </div>
                             <div class="text-end">
                                 <div class="fw-semibold">{{ $this->formatBytes($stats['storage_out_30']) }}</div>
-                                <div class="small text-muted">30 day output volume</div>
+                                <div class="small text-muted">{{ __('30 day output volume') }}</div>
                             </div>
                         </div>
 
                         <div class="d-flex flex-wrap gap-2 mt-4">
                             <a wire:navigate.hover href="{{ route('app.profile', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-primary btn-sm">
-                                Edit profile
+                                {{ __('Edit profile') }}
                             </a>
                             <a wire:navigate.hover href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-dark btn-sm">
-                                Open billing
+                                {{ __('Open billing') }}
                             </a>
                             <a wire:navigate.hover href="{{ route('app.storage', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-info btn-sm">
-                                Review storage
+                                {{ __('Review storage') }}
                             </a>
                         </div>
                     </div>
@@ -988,8 +988,8 @@ class extends Component
             <div class="col-xl-5">
                 <div class="card mk-section-card h-100">
                     <div class="card-header border-0 pb-0 bg-transparent">
-                        <h5 class="card-title mb-1">Tool Activity</h5>
-                        <p class="text-muted mb-0">Distribution of customer jobs over the last 30 days.</p>
+                        <h5 class="card-title mb-1">{{ __('Tool Activity') }}</h5>
+                        <p class="text-muted mb-0">{{ __('Distribution of customer jobs over the last 30 days.') }}</p>
                     </div>
                     <div class="card-body">
                         @if($toolBreakdown->isNotEmpty())
@@ -1001,7 +1001,7 @@ class extends Component
                                     <div
                                         class="mk-segment"
                                         style="width: {{ $segmentWidth }}%; background: {{ $tool['color'] }};"
-                                        title="{{ $tool['label'] }}: {{ number_format($tool['jobs']) }} jobs"
+                                        title="{{ __(':label: :count jobs', ['label' => $tool['label'], 'count' => number_format($tool['jobs'])]) }}"
                                     ></div>
                                 @endforeach
                             </div>
@@ -1018,13 +1018,13 @@ class extends Component
                                                 <span class="fw-semibold">{{ $tool['label'] }}</span>
                                             </div>
                                             <div class="text-end">
-                                                <div class="fw-semibold">{{ number_format($tool['jobs']) }} jobs</div>
-                                                <div class="small text-muted">{{ $share }}% of activity</div>
+                                                <div class="fw-semibold">{{ __(':count jobs', ['count' => number_format($tool['jobs'])]) }}</div>
+                                                <div class="small text-muted">{{ __(':share% of activity', ['share' => $share]) }}</div>
                                             </div>
                                         </div>
                                         <div class="d-flex justify-content-between text-muted small">
-                                            <span>{{ number_format($tool['completed']) }} completed</span>
-                                            <span>{{ number_format($tool['failed']) }} failed</span>
+                                            <span>{{ __(':count completed', ['count' => number_format($tool['completed'])]) }}</span>
+                                            <span>{{ __(':count failed', ['count' => number_format($tool['failed'])]) }}</span>
                                             <span>{{ $this->formatCredits($tool['credits']) }}</span>
                                         </div>
                                     </div>
@@ -1037,15 +1037,15 @@ class extends Component
                                         <i class="ri-bar-chart-box-line"></i>
                                     </div>
                                 </div>
-                                <h6 class="mb-1">No activity yet</h6>
-                                <p class="text-muted mb-3">Once the customer starts using the tools, activity will appear here.</p>
+                                <h6 class="mb-1">{{ __('No activity yet') }}</h6>
+                                <p class="text-muted mb-3">{{ __('Once the customer starts using the tools, activity will appear here.') }}</p>
                                 @if($this->canOpenTool('tts'))
                                     <a wire:navigate.hover href="{{ route('app.xtts', ['locale' => app()->getLocale()]) }}" class="btn btn-primary btn-sm">
-                                        Start with XTTS
+                                        {{ __('Start with XTTS') }}
                                     </a>
                                 @else
                                     <a wire:navigate.hover href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-dark btn-sm">
-                                        Review Plan Access
+                                        {{ __('Review Plan Access') }}
                                     </a>
                                 @endif
                             </div>
@@ -1059,10 +1059,10 @@ class extends Component
                     <div class="card-header border-0 pb-0 bg-transparent">
                         <div class="d-flex justify-content-between align-items-center gap-3">
                             <div>
-                                <h5 class="card-title mb-1">Live Queue</h5>
-                                <p class="text-muted mb-0">Active and waiting ML jobs across the customer workspace.</p>
+                                <h5 class="card-title mb-1">{{ __('Live Queue') }}</h5>
+                                <p class="text-muted mb-0">{{ __('Active and waiting ML jobs across the customer workspace.') }}</p>
                             </div>
-                            <span class="badge bg-warning-subtle text-warning">{{ number_format($stats['active_jobs']) }} active</span>
+                            <span class="badge bg-warning-subtle text-warning">{{ __(':count active', ['count' => number_format($stats['active_jobs'])]) }}</span>
                         </div>
                     </div>
                     <div class="card-body">
@@ -1086,19 +1086,19 @@ class extends Component
 
                                                 <div class="fw-semibold mb-1">{{ (string) $job->id }}</div>
                                                 <div class="text-muted small">
-                                                    Created {{ optional($job->created_at)->diffForHumans() ?: 'just now' }}
+                                                    {{ __('Created') }} {{ optional($job->created_at)->diffForHumans() ?: __('just now') }}
                                                     @if($job->started_at)
-                                                        | Started {{ optional($job->started_at)->diffForHumans() }}
+                                                        | {{ __('Started') }} {{ optional($job->started_at)->diffForHumans() }}
                                                     @endif
                                                 </div>
                                             </div>
 
                                             <div class="text-end">
-                                                <div class="small text-muted mb-1">Charged</div>
+                                                <div class="small text-muted mb-1">{{ __('Charged') }}</div>
                                                 <div class="fw-semibold">{{ $this->formatCredits((int) ($job->credits_charged ?? 0)) }}</div>
                                                 @if($this->canOpenTool($toolCode))
                                                     <a wire:navigate.hover href="{{ $this->routeForTool($toolCode) }}" class="small text-decoration-underline">
-                                                        Open tool
+                                                        {{ __('Open tool') }}
                                                     </a>
                                                 @endif
                                             </div>
@@ -1113,11 +1113,11 @@ class extends Component
                                         <i class="ri-checkbox-circle-line text-success"></i>
                                     </div>
                                 </div>
-                                <h6 class="mb-1">No active jobs right now</h6>
-                                <p class="text-muted mb-3">Queued, running, and saving jobs will appear here automatically.</p>
+                                <h6 class="mb-1">{{ __('No active jobs right now') }}</h6>
+                                <p class="text-muted mb-3">{{ __('Queued, running, and saving jobs will appear here automatically.') }}</p>
                                 <div class="d-flex justify-content-center gap-2 flex-wrap">
-                                    <a wire:navigate.hover href="{{ route('app.stem', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-success btn-sm">Open STEM</a>
-                                    <a wire:navigate.hover href="{{ route('app.youtube', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-dark btn-sm">Open YouTube</a>
+                                    <a wire:navigate.hover href="{{ route('app.stem', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-success btn-sm">{{ __('Open STEM') }}</a>
+                                    <a wire:navigate.hover href="{{ route('app.youtube', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-dark btn-sm">{{ __('Open YouTube') }}</a>
                                 </div>
                             </div>
                         @endif
@@ -1130,10 +1130,10 @@ class extends Component
             <div class="card-header border-0 bg-transparent">
                 <div class="d-flex justify-content-between align-items-center gap-3">
                     <div>
-                        <h5 class="card-title mb-1">Recent Jobs</h5>
-                        <p class="text-muted mb-0">The latest customer jobs across XTTS, ASR, STEM, OCR, and YouTube.</p>
+                        <h5 class="card-title mb-1">{{ __('Recent Jobs') }}</h5>
+                        <p class="text-muted mb-0">{{ __('The latest customer jobs across XTTS, ASR, STEM, OCR, and YouTube.') }}</p>
                     </div>
-                    <span class="badge bg-secondary-subtle text-secondary">Auto-updating</span>
+                    <span class="badge bg-secondary-subtle text-secondary">{{ __('Auto-updating') }}</span>
                 </div>
             </div>
 
@@ -1142,12 +1142,12 @@ class extends Component
                     <table class="table align-middle table-nowrap mb-0">
                         <thead class="table-light text-muted">
                             <tr>
-                                <th>Tool</th>
-                                <th>Job</th>
-                                <th>Status</th>
-                                <th>Created</th>
-                                <th>Credits</th>
-                                <th class="text-end">Action</th>
+                                <th>{{ __('Tool') }}</th>
+                                <th>{{ __('Job') }}</th>
+                                <th>{{ __('Status') }}</th>
+                                <th>{{ __('Created') }}</th>
+                                <th>{{ __('Credits') }}</th>
+                                <th class="text-end">{{ __('Action') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1177,7 +1177,7 @@ class extends Component
                                     <td class="text-end">
                                         @if($this->canOpenTool($toolCode))
                                             <a wire:navigate.hover href="{{ $this->routeForTool($toolCode) }}" class="btn btn-sm btn-outline-dark">
-                                                View tool
+                                                {{ __('View tool') }}
                                             </a>
                                         @endif
                                     </td>
@@ -1191,8 +1191,8 @@ class extends Component
                                                     <i class="ri-inbox-archive-line"></i>
                                                 </div>
                                             </div>
-                                            <h6 class="mb-1">No recent jobs yet</h6>
-                                            <p class="text-muted mb-0">Start a tool workflow and the latest jobs will appear here.</p>
+                                            <h6 class="mb-1">{{ __('No recent jobs yet') }}</h6>
+                                            <p class="text-muted mb-0">{{ __('Start a tool workflow and the latest jobs will appear here.') }}</p>
                                         </div>
                                     </td>
                                 </tr>

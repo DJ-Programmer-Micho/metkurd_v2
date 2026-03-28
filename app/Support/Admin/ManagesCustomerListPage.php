@@ -3,6 +3,7 @@
 namespace App\Support\Admin;
 
 use App\Models\Customer;
+use App\Support\CustomerEmailNotifier;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -167,10 +168,30 @@ trait ManagesCustomerListPage
 
         $customer->update(['status' => $nextStatus]);
 
+        if ($nextStatus === 0) {
+            CustomerEmailNotifier::sendAccountSuspended(
+                $customer->fresh(['profile']),
+                [
+                    'reason' => 'Administrative review required',
+                    'effective_date' => now()->format('F d, Y'),
+                ],
+                'Customer suspend action'
+            );
+        } else {
+            CustomerEmailNotifier::sendAccountRecovered(
+                $customer->fresh(['profile']),
+                [
+                    'recovered_at' => now()->format('Y-m-d H:i'),
+                    'login_url' => route('app.signin'),
+                ],
+                'Customer restore action'
+            );
+        }
+
         $this->dispatch(
             'alert',
             type: 'success',
-            message: $nextStatus === 0 ? 'Customer suspended successfully.' : 'Customer restored successfully.'
+            message: $nextStatus === 0 ? __('Customer suspended successfully.') : __('Customer restored successfully.')
         );
     }
 }

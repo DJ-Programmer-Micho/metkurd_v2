@@ -184,7 +184,7 @@ trait ManagesServiceEntitlementsPage
 
         if ($duplicate) {
             throw ValidationException::withMessages([
-                'entitlementServicePlanId' => 'This plan already has an entitlement row for the selected action.',
+                'entitlementServicePlanId' => __('This plan already has an entitlement row for the selected action.'),
             ]);
         }
 
@@ -203,7 +203,7 @@ trait ManagesServiceEntitlementsPage
 
         $entitlement->save();
 
-        $this->dispatch('alert', type: 'success', message: $this->editingEntitlementId ? 'Plan entitlement updated successfully.' : 'Plan entitlement created successfully.');
+        $this->dispatch('alert', type: 'success', message: $this->editingEntitlementId ? __('Plan entitlement updated successfully.') : __('Plan entitlement created successfully.'));
         $this->dispatch('services-entitlements:modal-hide', id: 'serviceEntitlementModal');
         $this->resetEntitlementForm();
     }
@@ -213,7 +213,7 @@ trait ManagesServiceEntitlementsPage
         $entitlement = PlanEntitlement::query()->findOrFail($entitlementId);
         $entitlement->update(['allowed' => !$entitlement->allowed]);
 
-        $this->dispatch('alert', type: 'success', message: $entitlement->allowed ? 'Entitlement marked as allowed.' : 'Entitlement blocked.');
+        $this->dispatch('alert', type: 'success', message: $entitlement->allowed ? __('Entitlement marked as allowed.') : __('Entitlement blocked.'));
     }
 
     public function confirmEntitlementDelete(int $entitlementId): void
@@ -232,7 +232,7 @@ trait ManagesServiceEntitlementsPage
     {
         if ($this->entitlementIdPendingDelete) {
             PlanEntitlement::query()->findOrFail($this->entitlementIdPendingDelete)->delete();
-            $this->dispatch('alert', type: 'success', message: 'Plan entitlement deleted successfully.');
+            $this->dispatch('alert', type: 'success', message: __('Plan entitlement deleted successfully.'));
         }
 
         $this->dispatch('services-entitlements:modal-hide', id: 'serviceEntitlementDeleteModal');
@@ -272,7 +272,7 @@ trait ManagesServiceEntitlementsPage
 
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
             throw ValidationException::withMessages([
-                $field => 'Please enter a valid JSON object.',
+                $field => __('Please enter a valid JSON object.'),
             ]);
         }
 

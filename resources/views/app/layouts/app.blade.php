@@ -19,7 +19,7 @@
 
     <meta name="theme-color" content="#cc0022">
     <meta name="publisher" content="MET IRAQ">
-    <meta name="mobile-web-app-title" content="MET KURD">
+    <meta name="mobile-web-app-title" content="{{ __('MET KURD') }}">
     <meta name="author" content="Michel Shabo">
     <meta name="robots" content="index, follow">
 
@@ -30,7 +30,7 @@
     <link href="{{ asset('app/css/app.min.css') }}" rel="stylesheet" type="text/css" />
     <link href="{{ asset('general/css/toaster.css') }}" rel="stylesheet" type="text/css">
 
-    <title>{{ $title ?? 'APP | METKURD' }}</title>
+    <title>{{ $title ?? __('App') . ' | ' . __('MET KURD') }}</title>
 
     @vite('resources/js/app.js')
     @livewireStyles

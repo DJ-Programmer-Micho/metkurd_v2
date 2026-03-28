@@ -16,14 +16,12 @@ use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
 new
 #[Layout('app::layouts.app')]
-#[Title('YOUTUBE DOWNLOADER | METKURD')]
 class extends Component
 {
     use WithPagination;
@@ -206,23 +204,23 @@ class extends Component
     public function downloadBlockedReason(): ?string
     {
         if ($this->isProcessing() || $this->currentActiveJobsCount() >= 1) {
-            return 'A YouTube download job is already in progress.';
+            return __('A YouTube download job is already in progress.');
         }
 
         if (! $this->isPreviewLoaded) {
-            return 'Please preview the URL first.';
+            return __('Please preview the URL first.');
         }
 
         if (! $this->validYouTubeUrl($this->url)) {
-            return 'Please enter a valid YouTube URL.';
+            return __('Please enter a valid YouTube URL.');
         }
 
         if ($this->creditsCost <= 0) {
-            return 'Pricing could not be calculated.';
+            return __('Pricing could not be calculated.');
         }
 
         if ($this->walletBalance < $this->creditsCost) {
-            return 'Not enough credits.';
+            return __('Not enough credits.');
         }
 
         return null;
@@ -256,7 +254,7 @@ class extends Component
                     data_get($job->output, 'download_name')
                     ?: data_get($job->output, 'file_name')
                     ?: data_get($job->input, 'title')
-                    ?: 'Download'
+                    ?: __('Download')
                 );
 
                 $mode = (string) data_get($job->input, 'mode', 'audio');
@@ -264,7 +262,7 @@ class extends Component
                 return [
                     'id' => (string) $job->id,
                     'status' => (string) $job->status,
-                    'title' => (string) data_get($job->input, 'title', 'YouTube Download'),
+                    'title' => (string) data_get($job->input, 'title', __('YouTube Download')),
                     'uploader' => (string) data_get($job->input, 'uploader', ''),
                     'mode' => $mode,
                     'quality' => (string) data_get($job->input, 'quality', ''),
@@ -493,7 +491,7 @@ class extends Component
         }
 
         if (! $tool || ! $action) {
-            throw new \RuntimeException('YouTube Tool or ToolAction is missing.');
+            throw new \RuntimeException(__('YouTube Tool or ToolAction is missing.'));
         }
 
         return [$tool, $action];
@@ -870,7 +868,7 @@ class extends Component
         ]);
 
         if (! $this->validYouTubeUrl($this->url)) {
-            $this->dispatch('alert', type: 'error', message: 'Please enter a valid YouTube URL.');
+            $this->dispatch('alert', type: 'error', message: __('Please enter a valid YouTube URL.'));
 
             return;
         }
@@ -880,7 +878,7 @@ class extends Component
 
             $this->isPreviewLoaded = true;
             $this->previewType = (string) ($data['type'] ?? 'video');
-            $this->previewTitle = (string) ($data['title'] ?? 'Untitled');
+            $this->previewTitle = (string) ($data['title'] ?? __('Untitled'));
             $this->previewUploader = (string) ($data['uploader'] ?? '');
             $this->previewThumbnail = (string) ($data['thumbnail'] ?? '');
             $this->previewDurationSec = (int) ($data['duration_sec'] ?? 0);
@@ -891,7 +889,7 @@ class extends Component
 
             $this->syncCostPreview();
 
-            $this->dispatch('alert', type: 'success', message: 'Preview loaded successfully.');
+            $this->dispatch('alert', type: 'success', message: __('Preview loaded successfully.'));
         } catch (\Throwable $e) {
             Log::warning('YOUTUBE_PREVIEW_FAIL', [
                 'url' => $this->url,
@@ -904,7 +902,7 @@ class extends Component
                 type: 'error',
                 message: trim((string) $e->getMessage()) !== ''
                     ? (string) $e->getMessage()
-                    : 'Could not preview this URL. Please make sure it is a working YouTube video or playlist link.'
+                    : __('Could not preview this URL. Please make sure it is a working YouTube video or playlist link.')
             );
         }
     }
@@ -920,7 +918,7 @@ class extends Component
         $this->showJobStatus = true;
         $this->hydrateCurrentJobFromDb();
         if ($this->isProcessing() || $this->currentActiveJobsCount() >= 1) {
-            $this->dispatch('alert', type: 'warning', message: 'A YouTube download job is already in progress.');
+            $this->dispatch('alert', type: 'warning', message: __('A YouTube download job is already in progress.'));
 
             return;
         }
@@ -928,14 +926,14 @@ class extends Component
         $this->validate();
 
         if (! $this->isPreviewLoaded) {
-            $this->dispatch('alert', type: 'error', message: 'Please preview the URL first.');
+            $this->dispatch('alert', type: 'error', message: __('Please preview the URL first.'));
 
             return;
         }
 
         $customer = auth('app')->user();
         if (! $customer) {
-            $this->dispatch('alert', type: 'error', message: 'You must be logged in.');
+            $this->dispatch('alert', type: 'error', message: __('You must be logged in.'));
 
             return;
         }
@@ -943,7 +941,7 @@ class extends Component
         [$tool, $action] = $this->findToolAndAction();
 
         if ($this->creditsCost <= 0) {
-            $this->dispatch('alert', type: 'error', message: 'Could not calculate billing for this download.');
+            $this->dispatch('alert', type: 'error', message: __('Could not calculate billing for this download.'));
 
             return;
         }
@@ -999,7 +997,7 @@ class extends Component
             );
 
             if (is_array($lock) && array_key_exists('ok', $lock) && ! ($lock['ok'] ?? false)) {
-                throw new \RuntimeException((string) ($lock['message'] ?? 'Could not acquire YouTube lock.'));
+                throw new \RuntimeException((string) ($lock['message'] ?? __('Could not acquire YouTube lock.')));
             }
 
             $credits->charge((int) $customer->id, $this->creditsCost, 'youtube_download_charge', [
@@ -1028,7 +1026,7 @@ class extends Component
             $this->showJobStatus = true;
             $this->resetCurrentTelemetry();
             $this->currentPhase = 'queued';
-            $this->currentStatusMessage = 'Queued and waiting to start.';
+            $this->currentStatusMessage = __('Queued and waiting to start.');
             $this->currentQueuedForSec = 0;
             $this->currentProgressTitle = (string) ($this->previewTitle ?? '');
             $this->currentDownloadReady = false;
@@ -1038,7 +1036,7 @@ class extends Component
             $this->dispatch('header:refresh');
             $this->dispatch('customerPlanUpdated');
             $this->dispatch('youtube-downloads-refresh');
-            $this->dispatch('alert', type: 'info', message: 'YouTube download job started.');
+            $this->dispatch('alert', type: 'info', message: __('YouTube download job started.'));
 
             $this->syncWallet();
         } catch (\Throwable $e) {
@@ -1186,9 +1184,9 @@ class extends Component
                         'locale' => app()->getLocale(),
                         'jobId' => (string) $job->id,
                     ]));
-                    $this->dispatch('alert', type: 'success', message: 'Download completed. Browser download is ready.');
+                    $this->dispatch('alert', type: 'success', message: __('Download completed. Browser download is ready.'));
                 } else {
-                    $this->dispatch('alert', type: 'warning', message: (string) ($result['message'] ?? 'Prepared download is no longer available.'));
+                    $this->dispatch('alert', type: 'warning', message: (string) ($result['message'] ?? __('Prepared download is no longer available.')));
                 }
             }
 
@@ -1196,7 +1194,7 @@ class extends Component
                 $this->jobFinished = true;
                 $this->showJobStatus = true;
 
-                $msg = (string) ($result['message'] ?? 'Download failed.');
+                $msg = (string) ($result['message'] ?? __('Download failed.'));
                 $this->dispatch('header:refresh');
                 $this->dispatch('alert', type: 'error', message: $msg);
             }
@@ -1252,7 +1250,7 @@ class extends Component
             $job->update([
                 'status' => 'failed',
                 'error' => [
-                    'message' => 'Eliminated by customer. Credits are not refundable.',
+                    'message' => __('Eliminated by customer. Credits are not refundable.'),
                     'type' => 'eliminated_by_customer',
                 ],
                 'finished_at' => now(),
@@ -1272,7 +1270,7 @@ class extends Component
 
         $this->dispatch('header:refresh');
         $this->dispatch('youtube-downloads-refresh');
-        $this->dispatch('alert', type: 'warning', message: 'Current YouTube job eliminated. Credits were not refunded.');
+        $this->dispatch('alert', type: 'warning', message: __('Current YouTube job eliminated. Credits were not refunded.'));
     }
 
     public function deleteDownload(string $jobId, YoutubeJobSyncService $sync): void
@@ -1290,7 +1288,7 @@ class extends Component
                 'error' => $e->getMessage(),
             ]);
 
-            $this->dispatch('alert', type: 'error', message: 'Could not delete this download.');
+            $this->dispatch('alert', type: 'error', message: __('Could not delete this download.'));
             $this->refreshUi();
 
             return;
@@ -1298,7 +1296,7 @@ class extends Component
 
         $this->dispatch('header:refresh');
         $this->dispatch('youtube-downloads-refresh');
-        $this->dispatch('alert', type: 'success', message: 'Download deleted.');
+        $this->dispatch('alert', type: 'success', message: __('Download deleted.'));
 
         if ($this->trackedJobId() === $jobId) {
             $this->rememberTrackedJob(null);
@@ -1333,7 +1331,7 @@ class extends Component
         $this->resetPreview();
         $this->syncCostPreview();
 
-        $this->dispatch('alert', type: 'info', message: 'Link loaded. Preview it again to start a new download.');
+        $this->dispatch('alert', type: 'info', message: __('Link loaded. Preview it again to start a new download.'));
     }
 
     public function resetForm(): void
@@ -1412,7 +1410,7 @@ class extends Component
             return '-';
         }
 
-        return (string) Str::of(str_replace('_', ' ', $value))->title();
+        return __( (string) Str::of(str_replace('_', ' ', $value))->title() );
     }
 
     public function humanLogTime(?string $timestamp): string
@@ -1464,6 +1462,14 @@ class extends Component
             default   => 'glass-load--secondary',
         };
         $progress = (int) ($currentProgress ?? 0);
+        $statusLabel = match ($currentStatus) {
+            'queued' => __('Queued'),
+            'running' => __('Running'),
+            'saving' => __('Saving'),
+            'done' => __('Done'),
+            'failed' => __('Failed'),
+            default => __('Idle'),
+        };
         $phaseText = $this->humanPhase($currentPhase);
         $speedText = $currentSpeedBps !== null ? $this->humanRate($currentSpeedBps) : '-';
         $etaText = $currentEtaSec !== null ? $this->humanDuration($currentEtaSec) : '-';
@@ -1478,19 +1484,21 @@ class extends Component
             : null;
     @endphp
 
+    <x-slot:title>{{ __('YouTube Downloader') }} | {{ __('MET KURD') }}</x-slot:title>
+
     <div class="row g-3">
         <div class="col-12">
             @if($showJobStatus && $currentJobId && $currentStatus)
                 <div class="glass-load {{ $glassClass }} p-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div>
-                            <div class="fw-semibold">YouTube download status</div>
+                            <div class="fw-semibold">{{ __('YouTube Download Status') }}</div>
                             @if($currentProgressTitle)
                                 <div class="small mt-1">{{ $currentProgressTitle }}</div>
                             @endif
-                            <div class="small text-muted">Job ID: {{ $currentJobId ?: '—' }}</div>
+                            <div class="small text-muted">{{ __('Job ID:') }} {{ $currentJobId ?: '-' }}</div>
                         </div>
-                        <span class="badge text-bg-{{ $badge }} fs-6 px-3 py-2">{{ $status }}</span>
+                        <span class="badge text-bg-{{ $badge }} fs-6 px-3 py-2">{{ $statusLabel }}</span>
                     </div>
 
                     <div class="progress" role="progressbar"
@@ -1508,67 +1516,67 @@ class extends Component
                         <div class="d-flex align-items-center gap-2">
                             @if($currentDownloadUrl)
                                 <a class="btn btn-sm btn-outline-success" href="{{ $currentDownloadUrl }}">
-                                    Download To Device
+                                    {{ __('Download To Device') }}
                                 </a>
                             @endif
                             @if($jobFinished)
-                                <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">Hide</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">{{ __('Hide') }}</button>
                             @endif
                         </div>
                     </div>
 
                     @if($currentDownloadUrl)
                         <div class="small text-muted mt-2">
-                            The file is delivered directly to your browser. History only keeps the source YouTube link.
+                            {{ __('The file is delivered directly to your browser. History only keeps the source YouTube link.') }}
                         </div>
                     @endif
 
                     <div class="row g-2 mt-2">
                         <div class="col-6 col-lg-3">
                             <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
-                                <div class="small">Phase</div>
+                                <div class="small">{{ __('Phase') }}</div>
                                 <div class="fw-semibold">{{ $phaseText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
                             <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
-                                <div class="small">Speed</div>
+                                <div class="small">{{ __('Speed') }}</div>
                                 <div class="fw-semibold">{{ $speedText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
                             <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
-                                <div class="small">ETA</div>
+                                <div class="small">{{ __('ETA') }}</div>
                                 <div class="fw-semibold">{{ $etaText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
                             <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
-                                <div class="small">Downloaded</div>
+                                <div class="small">{{ __('Downloaded') }}</div>
                                 <div class="fw-semibold">{{ $downloadedText }} / {{ $totalText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
                             <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
-                                <div class="small">{{ $currentStatus === 'queued' ? 'Queued For' : 'Elapsed' }}</div>
+                                <div class="small">{{ $currentStatus === 'queued' ? __('Queued For') : __('Elapsed') }}</div>
                                 <div class="fw-semibold">{{ $currentStatus === 'queued' ? $queuedText : $elapsedText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
                             <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
-                                <div class="small">Last Update</div>
+                                <div class="small">{{ __('Last Update') }}</div>
                                 <div class="fw-semibold">{{ $lastUpdateText }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
                             <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
-                                <div class="small">Output File</div>
+                                <div class="small">{{ __('Output File') }}</div>
                                 <div class="fw-semibold text-break">{{ $currentProgressFileName ?: '-' }}</div>
                             </div>
                         </div>
                         <div class="col-6 col-lg-3">
                             <div class="border rounded-3 p-2 h-100 bg-dark bg-opacity-50">
-                                <div class="text-muted small">Playlist</div>
+                                <div class="text-muted small">{{ __('Playlist') }}</div>
                                 <div class="fw-semibold">
                                     @if($currentPlaylistCount)
                                         {{ (int) ($currentPlaylistIndex ?? 0) }}/{{ (int) $currentPlaylistCount }}
@@ -1582,19 +1590,19 @@ class extends Component
 
                     <div class="mt-3">
                         <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
-                            <div class="fw-semibold small">Customer log</div>
+                            <div class="fw-semibold small">{{ __('Customer log') }}</div>
                             <div class="text-muted small">
                                 @if($currentStatus === 'queued')
-                                    Queue wait: {{ $queuedText }}
+                                    {{ __('Queue wait:') }} {{ $queuedText }}
                                 @elseif($currentElapsedSec !== null)
-                                    Elapsed: {{ $elapsedText }}
+                                    {{ __('Elapsed:') }} {{ $elapsedText }}
                                 @endif
                             </div>
                         </div>
 
                         <div class="border rounded-3 p-2 bg-dark bg-opacity-50" style="max-height: 220px; overflow-y: auto;">
                             @if($customerLogLines === [])
-                                <div class="small text-muted">{{ $currentStatusMessage ?: 'Waiting for worker updates.' }}</div>
+                                <div class="small text-muted">{{ $currentStatusMessage ?: __('Waiting for worker updates.') }}</div>
                             @else
                                 <div class="d-flex flex-column gap-2">
                                     @foreach($customerLogLines as $line)
@@ -1611,7 +1619,7 @@ class extends Component
                                                     <span class="ms-2">{{ $this->humanRate((float) $line['speed_bps']) }}</span>
                                                 @endif
                                                 @if(isset($line['eta_sec']) && $line['eta_sec'] !== null)
-                                                    <span class="ms-2">ETA {{ $this->humanDuration((int) $line['eta_sec']) }}</span>
+                                                    <span class="ms-2">{{ __('ETA') }} {{ $this->humanDuration((int) $line['eta_sec']) }}</span>
                                                 @endif
                                             </div>
                                         </div>
@@ -1630,31 +1638,31 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                             <div>
-                                <strong>YouTube Downloader PRO</strong>
-                                <div class="text-muted small">Preview a YouTube link, choose output type, and download through your METKURD job system</div>
+                                <strong>{{ __('YouTube Downloader PRO') }}</strong>
+                                <div class="text-muted small">{{ __('Preview a YouTube link, choose output type, and download through your METKURD job system') }}</div>
                             </div>
 
                             <div class="d-flex gap-2 flex-wrap text-end small">
                                 <div class="mini-stat">
-                                    <div class="text-muted">Wallet</div>
+                                    <div class="text-muted">{{ __('Wallet') }}</div>
                                     <div class="fw-semibold">{{ number_format($walletBalance) }}</div>
                                 </div>
 
                                 <div class="mini-stat">
-                                    <div class="text-muted">Cost</div>
+                                    <div class="text-muted">{{ __('Cost') }}</div>
                                     <div class="fw-semibold">{{ number_format($creditsCost) }}</div>
                                 </div>
 
                                 @if($previewDurationSec)
                                     <div class="mini-stat">
-                                        <div class="text-muted">Duration</div>
+                                        <div class="text-muted">{{ __('Duration') }}</div>
                                         <div class="fw-semibold">{{ $this->humanDuration($previewDurationSec) }}</div>
                                     </div>
                                 @endif
 
                                 @if($previewEntriesCount)
                                     <div class="mini-stat">
-                                        <div class="text-muted">Entries</div>
+                                        <div class="text-muted">{{ __('Entries') }}</div>
                                         <div class="fw-semibold">{{ number_format($previewEntriesCount) }}</div>
                                     </div>
                                 @endif
@@ -1663,7 +1671,7 @@ class extends Component
 
                         <div class="card-body">
                             <div class="mb-3">
-                                <label class="form-label">YouTube URL</label>
+                                <label class="form-label">{{ __('YouTube URL') }}</label>
                                 <div class="input-group">
                                     <input
                                         type="text"
@@ -1678,10 +1686,10 @@ class extends Component
                                         wire:loading.attr="disabled"
                                         wire:target="previewUrl"
                                     >
-                                        <span wire:loading.remove wire:target="previewUrl">Preview</span>
+                                        <span wire:loading.remove wire:target="previewUrl">{{ __('Preview') }}</span>
                                         <span wire:loading wire:target="previewUrl">
                                             <span class="spinner-border spinner-border-sm me-1"></span>
-                                            Loading...
+                                            {{ __('Loading...') }}
                                         </span>
                                     </button>
                                 </div>
@@ -1691,7 +1699,7 @@ class extends Component
                                 @enderror
 
                                 <div class="small text-muted mt-2">
-                                    Supported: YouTube video and playlist links
+                                    {{ __('Supported: YouTube video and playlist links') }}
                                 </div>
                             </div>
 
@@ -1703,13 +1711,13 @@ class extends Component
                                                 @if($previewThumbnail)
                                                     <img
                                                         src="{{ $previewThumbnail }}"
-                                                        alt="Thumbnail"
+                                                        alt="{{ __('Thumbnail') }}"
                                                         class="yt-thumb-img rounded-3"
                                                         loading="lazy"
                                                     >
                                                 @else
                                                     <div class="yt-thumb-placeholder rounded-3 d-flex align-items-center justify-content-center">
-                                                        <span class="small text-muted">No thumbnail</span>
+                                                        <span class="small text-muted">{{ __('No thumbnail') }}</span>
                                                     </div>
                                                 @endif
                                             </div>
@@ -1724,17 +1732,17 @@ class extends Component
                                                 @endif
 
                                                 @if($previewEntriesCount)
-                                                    <span class="badge text-bg-warning">{{ number_format($previewEntriesCount) }} items</span>
+                                                    <span class="badge text-bg-warning">{{ number_format($previewEntriesCount) }} {{ __('items') }}</span>
                                                 @endif
                                             </div>
 
                                             <div class="fw-semibold fs-5 lh-sm mb-2">
-                                                {{ $previewTitle ?: 'Untitled' }}
+                                                {{ $previewTitle ?: __('Untitled') }}
                                             </div>
 
                                             @if($previewUploader)
                                                 <div class="small text-muted mb-2">
-                                                    Channel: {{ $previewUploader }}
+                                                    {{ __('Channel:') }} {{ $previewUploader }}
                                                 </div>
                                             @endif
 
@@ -1746,18 +1754,18 @@ class extends Component
 
                                             @if($previewType === 'playlist' && count($previewEntries))
                                                 <div class="mt-3">
-                                                    <div class="small fw-semibold mb-2">Playlist Preview</div>
+                                                    <div class="small fw-semibold mb-2">{{ __('Playlist Preview') }}</div>
                                                     <div class="yt-playlist-list">
                                                         @foreach(array_slice($previewEntries, 0, 8) as $i => $entry)
                                                             <div class="yt-playlist-item">
                                                                 <span class="yt-playlist-index">{{ $i + 1 }}</span>
-                                                                <span class="text-truncate">{{ $entry['title'] ?? 'Untitled item' }}</span>
+                                                                <span class="text-truncate">{{ $entry['title'] ?? __('Untitled item') }}</span>
                                                             </div>
                                                         @endforeach
 
                                                         @if(count($previewEntries) > 8)
                                                             <div class="small text-muted mt-2">
-                                                                + {{ count($previewEntries) - 8 }} more items
+                                                                + {{ count($previewEntries) - 8 }} {{ __('more items') }}
                                                             </div>
                                                         @endif
                                                     </div>
@@ -1772,16 +1780,16 @@ class extends Component
 
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label class="form-label">Download Mode</label>
+                                    <label class="form-label">{{ __('Download Mode') }}</label>
                                     <select class="form-select" wire:model.live="downloadMode">
-                                        <option value="audio">Audio</option>
-                                        <option value="video">Video</option>
+                                        <option value="audio">{{ __('Audio') }}</option>
+                                        <option value="video">{{ __('Video') }}</option>
                                     </select>
                                 </div>
 
                                 <div class="col-md-6" wire:key="youtube-format-field-{{ $downloadMode }}">
                                     @if($downloadMode === 'audio')
-                                        <label class="form-label" for="youtube-audio-format">Audio Format</label>
+                                        <label class="form-label" for="youtube-audio-format">{{ __('Audio Format') }}</label>
                                         <select
                                             id="youtube-audio-format"
                                             class="form-select"
@@ -1793,7 +1801,7 @@ class extends Component
                                             @endforeach
                                         </select>
                                     @else
-                                        <label class="form-label" for="youtube-video-quality">Video Quality</label>
+                                        <label class="form-label" for="youtube-video-quality">{{ __('Video Quality') }}</label>
                                         <select
                                             id="youtube-video-quality"
                                             class="form-select"
@@ -1816,7 +1824,7 @@ class extends Component
                                             id="youtube-include-thumbnail"
                                         >
                                         <label class="form-check-label" for="youtube-include-thumbnail">
-                                            Include thumbnail metadata when available
+                                            {{ __('Include thumbnail metadata when available') }}
                                         </label>
                                     </div>
                                 </div>
@@ -1824,20 +1832,20 @@ class extends Component
 
                             @if($creditsCost > 0)
                                 <div class="youtube-cost-preview rounded-3 p-3 mt-3 small">
-                                    Estimated cost:
-                                    <strong>{{ number_format($creditsCost) }} credits</strong>
+                                    {{ __('Estimated cost:') }}
+                                    <strong>{{ number_format($creditsCost) }} {{ __('credits') }}</strong>
 
                                     @if($previewType === 'playlist' && $previewEntriesCount)
-                                        for <strong>{{ number_format($previewEntriesCount) }} video(s)</strong>
+                                        {{ __('for') }} <strong>{{ number_format($previewEntriesCount) }} {{ __('video(s)') }}</strong>
                                     @elseif($previewDurationSec)
-                                        based on <strong>{{ $this->humanDuration($previewDurationSec) }}</strong>
+                                        {{ __('based on') }} <strong>{{ $this->humanDuration($previewDurationSec) }}</strong>
                                     @endif
                                 </div>
                             @endif
 
                             @if($previewType === 'playlist')
                                 <div class="small text-muted mt-2">
-                                    Playlist links are detected automatically. We will bundle the selected output type for the whole playlist.
+                                    {{ __('Playlist links are detected automatically. We will bundle the selected output type for the whole playlist.') }}
                                 </div>
                             @endif
 
@@ -1851,17 +1859,17 @@ class extends Component
                                     type="button"
                                 >
                                     <span wire:loading.remove wire:target="startDownload,previewUrl">
-                                        {{ $this->canStartDownload ? 'Start Download' : ($this->downloadBlockedReason ?? 'Start Download') }}
+                                        {{ $this->canStartDownload ? __('Start Download') : ($this->downloadBlockedReason ?? __('Start Download')) }}
                                     </span>
 
                                     <span wire:loading wire:target="startDownload">
                                         <span class="spinner-border spinner-border-sm me-1"></span>
-                                        Starting...
+                                        {{ __('Starting...') }}
                                     </span>
                                 </button>
 
                                 <button class="btn btn-outline-secondary" wire:click="resetForm" type="button">
-                                    Reset
+                                    {{ __('Reset') }}
                                 </button>
 
                                 <button
@@ -1870,23 +1878,23 @@ class extends Component
                                     type="button"
                                     @disabled(!$currentJobId || $jobFinished)
                                 >
-                                    Eliminate
+                                    {{ __('Eliminate') }}
                                 </button>
 
                                 @if($currentDownloadUrl)
                                     <a class="btn btn-sm btn-outline-success" href="{{ $currentDownloadUrl }}">
-                                        Download To Device
+                                        {{ __('Download To Device') }}
                                     </a>
                                 @endif
                                 @if($walletBalance < $creditsCost && $creditsCost > 0)
                                     <span class="small text-danger align-self-center">
-                                        Not enough credits for this download.
+                                        {{ __('Not enough credits for this download.') }}
                                     </span>
                                 @endif
                             </div>
 
                             <div class="small text-muted mt-3">
-                                Use this only for content you have rights or permission to download.
+                                {{ __('Use this only for content you have rights or permission to download.') }}
                             </div>
                         </div>
                     </div>
@@ -1899,16 +1907,16 @@ class extends Component
                 <div class="turbo-inner">
                     <div class="card mb-0">
                         <div class="card-header d-flex justify-content-between align-items-center">
-                            <strong>Recent Downloads</strong>
+                            <strong>{{ __('Recent Downloads') }}</strong>
 
                             <button class="btn btn-sm btn-outline-secondary" wire:click="$refresh" type="button">
-                                Refresh
+                                {{ __('Refresh') }}
                             </button>
                         </div>
 
                         <div class="card-body">
                             @if($this->downloads->count() === 0)
-                                <div class="text-muted">No downloads yet.</div>
+                                <div class="text-muted">{{ __('No downloads yet.') }}</div>
                             @else
                                 @foreach($this->downloads as $r)
                                     <div
@@ -1929,15 +1937,15 @@ class extends Component
                                                     <strong class="text-truncate">{{ $r['title'] }}</strong>
 
                                                     @if($r['is_latest'])
-                                                        <span class="badge text-bg-primary">Latest</span>
+                                                        <span class="badge text-bg-primary">{{ __('Latest') }}</span>
                                                     @endif
 
                                                     <span class="badge text-bg-dark">{{ strtoupper($r['mode']) }}</span>
 
                                                     @if($r['status'] === 'deleted')
-                                                        <span class="badge text-bg-secondary">Deleted</span>
+                                                        <span class="badge text-bg-secondary">{{ __('Deleted') }}</span>
                                                     @elseif($r['status'] === 'delete_failed')
-                                                        <span class="badge text-bg-danger">Delete Failed</span>
+                                                        <span class="badge text-bg-danger">{{ __('Delete Failed') }}</span>
                                                     @endif
                                                 </div>
 
@@ -1959,7 +1967,7 @@ class extends Component
                                                     @endif
 
                                                     @if($r['entries_count'] > 0)
-                                                        • {{ number_format($r['entries_count']) }} items
+                                                        • {{ number_format($r['entries_count']) }} {{ __('items') }}
                                                     @endif
 
                                                     @if($r['duration_sec'] > 0)
@@ -1968,7 +1976,7 @@ class extends Component
                                                 </div>
 
                                                 <div class="small text-muted mt-1">
-                                                    Source:
+                                                    {{ __('Source:') }}
                                                     @if($r['source_url'])
                                                         <a href="{{ $r['source_url'] }}" target="_blank" rel="noopener" class="text-break">
                                                             {{ $r['source_url'] }}
@@ -1979,12 +1987,12 @@ class extends Component
                                                 </div>
 
                                                 <div class="small text-muted mt-1">
-                                                    Last output: {{ $r['download_name'] }}
+                                                    {{ __('Last output:') }} {{ $r['download_name'] }}
                                                     @if($r['storage_out_bytes'] > 0)
                                                         • {{ $this->humanBytes($r['storage_out_bytes']) }}
                                                     @endif
                                                     @if($r['credits_charged'] > 0)
-                                                        • {{ number_format($r['credits_charged']) }} credits
+                                                        • {{ number_format($r['credits_charged']) }} {{ __('credits') }}
                                                     @endif
                                                 </div>
                                             </div>
@@ -1995,16 +2003,16 @@ class extends Component
                                                     wire:click="reuseDownload('{{ $r['id'] }}')"
                                                     type="button"
                                                 >
-                                                    Use Again
+                                                    {{ __('Use Again') }}
                                                 </button>
 
                                                 @if($r['source_url'])
                                                     <a class="btn btn-xs btn-outline-success" href="{{ $r['source_url'] }}" target="_blank" rel="noopener">
-                                                        Open Link
+                                                        {{ __('Open Link') }}
                                                     </a>
                                                 @else
                                                     <button class="btn btn-xs btn-outline-secondary" type="button" disabled>
-                                                        Open Link
+                                                        {{ __('Open Link') }}
                                                     </button>
                                                 @endif
 
@@ -2014,11 +2022,11 @@ class extends Component
                                                         wire:click="deleteDownload('{{ $r['id'] }}')"
                                                         type="button"
                                                     >
-                                                        Delete
+                                                        {{ __('Delete') }}
                                                     </button>
                                                 @else
                                                     <button class="btn btn-xs btn-outline-secondary" type="button" disabled>
-                                                        Deleted
+                                                        {{ __('Deleted') }}
                                                     </button>
                                                 @endif
                                             </div>
@@ -2044,27 +2052,27 @@ class extends Component
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-danger">
                     <div class="modal-header">
-                        <h5 class="modal-title text-danger">Eliminate Current Job</h5>
+                        <h5 class="modal-title text-danger">{{ __('Eliminate Current Job') }}</h5>
                         <button type="button" class="btn-close" wire:click="closeEliminateModal"></button>
                     </div>
 
                     <div class="modal-body">
                         <p class="mb-2">
-                            Are you sure you want to eliminate the current YouTube download job?
+                            {{ __('Are you sure you want to eliminate the current YouTube download job?') }}
                         </p>
 
                         <div class="alert alert-warning mb-0">
-                            <strong>Warning:</strong> the credit will <strong>not</strong> be refunded.
+                            <strong>{{ __('Warning:') }}</strong> {{ __('the credit will not be refunded.') }}
                         </div>
                     </div>
 
                     <div class="modal-footer">
                         <button type="button" class="btn btn-light" wire:click="closeEliminateModal">
-                            Cancel
+                            {{ __('Cancel') }}
                         </button>
 
                         <button type="button" class="btn btn-danger" wire:click="eliminateCurrentJob">
-                            Yes, Eliminate
+                            {{ __('Yes, Eliminate') }}
                         </button>
                     </div>
                 </div>

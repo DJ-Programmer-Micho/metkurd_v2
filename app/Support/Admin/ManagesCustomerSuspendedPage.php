@@ -113,6 +113,6 @@ trait ManagesCustomerSuspendedPage
     public function restoreCustomer(int $customerId): void
     {
         Customer::query()->whereKey($customerId)->update(['status' => 1]);
-        $this->dispatch('alert', type: 'success', message: 'Customer restored successfully.');
+        $this->dispatch('alert', type: 'success', message: __('Customer restored successfully.'));
     }
 }

@@ -2,13 +2,11 @@
 
 use App\Support\Admin\ManagesServiceEntitlementsPage;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
 
 new
 #[Layout('admin::layouts.app')]
-#[Title('Services Entitlements | METKURD')]
 class extends Component
 {
     use ManagesServiceEntitlementsPage;
@@ -18,18 +16,20 @@ class extends Component
 };
 ?>
 
+<x-slot:title>{{ __('Services Entitlements') }} | {{ __('MET KURD') }}</x-slot:title>
+
 <div class="container-fluid">
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
-                    <h4 class="mb-sm-0">Plan Entitlements</h4>
-                    <p class="text-muted mb-0">Control which plans can access which tool actions, plus optional per-plan limits payloads.</p>
+                    <h4 class="mb-sm-0">{{ __('Plan Entitlements') }}</h4>
+                    <p class="text-muted mb-0">{{ __('Control which plans can access which tool actions, plus optional per-plan limits payloads.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
-                    <a wire:navigate href="{{ route('admin.services.pricing', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-secondary">View Pricing</a>
-                    <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">Clear Filters</button>
-                    <button type="button" class="btn btn-primary" wire:click="openEntitlementCreateModal">New Entitlement</button>
+                    <a wire:navigate href="{{ route('admin.services.pricing', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-secondary">{{ __('View Pricing') }}</a>
+                    <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
+                    <button type="button" class="btn btn-primary" wire:click="openEntitlementCreateModal">{{ __('New Entitlement') }}</button>
                 </div>
             </div>
         </div>
@@ -39,36 +39,36 @@ class extends Component
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Entitlement Rows</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Entitlement Rows') }}</p>
                     <h2 class="mb-1">{{ number_format($this->topStats['entitlements']) }}</h2>
-                    <p class="text-muted mb-0">All explicit plan-to-tool-action access decisions.</p>
+                    <p class="text-muted mb-0">{{ __('All explicit plan-to-tool-action access decisions.') }}</p>
                 </div>
             </div>
         </div>
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Allowed</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Allowed') }}</p>
                     <h2 class="mb-1">{{ number_format($this->topStats['allowed_entitlements']) }}</h2>
-                    <p class="text-muted mb-0">Rows that currently grant access.</p>
+                    <p class="text-muted mb-0">{{ __('Rows that currently grant access.') }}</p>
                 </div>
             </div>
         </div>
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Blocked</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Blocked') }}</p>
                     <h2 class="mb-1">{{ number_format($this->topStats['blocked_entitlements']) }}</h2>
-                    <p class="text-muted mb-0">Rows that explicitly deny access.</p>
+                    <p class="text-muted mb-0">{{ __('Rows that explicitly deny access.') }}</p>
                 </div>
             </div>
         </div>
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Current Scope</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Current Scope') }}</p>
                     <h2 class="mb-1">{{ number_format($this->entitlements->total()) }}</h2>
-                    <p class="text-muted mb-0">Entitlement rows that match the active filters below.</p>
+                    <p class="text-muted mb-0">{{ __('Entitlement rows that match the active filters below.') }}</p>
                 </div>
             </div>
         </div>
@@ -78,36 +78,36 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-4">
-                    <label class="form-label text-muted text-uppercase fs-12">Search</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="Search plan or action...">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search plan or action...') }}">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-3 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">Plan</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Plan') }}</label>
                     <select class="form-select" wire:model.live="planFilter">
-                        <option value="all">All Plans</option>
+                        <option value="all">{{ __('All Plans') }}</option>
                         @foreach ($this->planOptions as $plan)
                             <option value="{{ $plan->id }}">{{ $plan->name }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="col-xl-3 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">Tool Action</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Tool Action') }}</label>
                     <select class="form-select" wire:model.live="actionFilter">
-                        <option value="all">All Actions</option>
+                        <option value="all">{{ __('All Actions') }}</option>
                         @foreach ($this->actionOptions as $action)
                             <option value="{{ $action->id }}">{{ $action->full_code }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">State</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('State') }}</label>
                     <select class="form-select" wire:model.live="entitlementFilter">
-                        <option value="all">All Rows</option>
-                        <option value="allowed">Allowed Only</option>
-                        <option value="blocked">Blocked Only</option>
+                        <option value="all">{{ __('All Rows') }}</option>
+                        <option value="allowed">{{ __('Allowed Only') }}</option>
+                        <option value="blocked">{{ __('Blocked Only') }}</option>
                     </select>
                 </div>
             </div>
@@ -117,8 +117,8 @@ class extends Component
     <div class="card">
         <div class="card-header border-0">
             <div>
-                <h5 class="card-title mb-1">Plan Entitlements</h5>
-                <p class="text-muted mb-0">Use entitlements to grant or block tool actions per plan, with optional limits JSON.</p>
+                <h5 class="card-title mb-1">{{ __('Plan Entitlements') }}</h5>
+                <p class="text-muted mb-0">{{ __('Use entitlements to grant or block tool actions per plan, with optional limits JSON.') }}</p>
             </div>
         </div>
         <div class="card-body p-0">
@@ -126,44 +126,44 @@ class extends Component
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light text-muted">
                         <tr class="text-uppercase">
-                            <th>Plan</th>
-                            <th>Tool Action</th>
-                            <th>Allowed</th>
-                            <th>Limits</th>
-                            <th>Updated</th>
-                            <th class="text-end">Actions</th>
+                            <th>{{ __('Plan') }}</th>
+                            <th>{{ __('Tool Action') }}</th>
+                            <th>{{ __('Allowed') }}</th>
+                            <th>{{ __('Limits') }}</th>
+                            <th>{{ __('Updated') }}</th>
+                            <th class="text-end">{{ __('Actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse ($this->entitlements as $entitlement)
                             <tr wire:key="entitlement-row-{{ $entitlement->id }}">
-                                <td>{{ $entitlement->servicePlan?->name ?? 'Unknown Plan' }}</td>
+                                <td>{{ $entitlement->servicePlan?->name ?? __('Unknown Plan') }}</td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $entitlement->toolAction?->name ?? 'Unknown Action' }}</span>
-                                        <span class="text-muted small">{{ $entitlement->toolAction?->full_code ?? 'n/a' }}</span>
+                                        <span class="fw-semibold">{{ $entitlement->toolAction?->name ?? __('Unknown Action') }}</span>
+                                        <span class="text-muted small">{{ $entitlement->toolAction?->full_code ?? __('n/a') }}</span>
                                     </div>
                                 </td>
-                                <td><span class="badge {{ $this->statusBadgeClasses((bool) $entitlement->allowed) }}">{{ $entitlement->allowed ? 'Allowed' : 'Blocked' }}</span></td>
+                                <td><span class="badge {{ $this->statusBadgeClasses((bool) $entitlement->allowed) }}">{{ $entitlement->allowed ? __('Allowed') : __('Blocked') }}</span></td>
                                 <td>
                                     @if ($entitlement->limits)
                                         <code>{{ json_encode($entitlement->limits) }}</code>
                                     @else
-                                        <span class="text-muted">No limits</span>
+                                        <span class="text-muted">{{ __('No limits') }}</span>
                                     @endif
                                 </td>
                                 <td class="text-muted">{{ $entitlement->updated_at?->diffForHumans() }}</td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-success" wire:click="toggleEntitlementAllowed({{ $entitlement->id }})">{{ $entitlement->allowed ? 'Block' : 'Allow' }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openEntitlementEditModal({{ $entitlement->id }})">Edit</button>
-                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmEntitlementDelete({{ $entitlement->id }})">Delete</button>
+                                        <button type="button" class="btn btn-sm btn-soft-success" wire:click="toggleEntitlementAllowed({{ $entitlement->id }})">{{ $entitlement->allowed ? __('Block') : __('Allow') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openEntitlementEditModal({{ $entitlement->id }})">{{ __('Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmEntitlementDelete({{ $entitlement->id }})">{{ __('Delete') }}</button>
                                     </div>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="text-center py-5 text-muted">No entitlements matched the current filters.</td>
+                                <td colspan="6" class="text-center py-5 text-muted">{{ __('No entitlements matched the current filters.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -181,15 +181,15 @@ class extends Component
                 <form wire:submit.prevent="saveEntitlement">
                     @csrf
                     <div class="modal-header">
-                        <h5 class="modal-title">{{ $editingEntitlementId ? 'Edit Plan Entitlement' : 'Create Plan Entitlement' }}</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" wire:click="resetEntitlementForm"></button>
+                        <h5 class="modal-title">{{ $editingEntitlementId ? __('Edit Plan Entitlement') : __('Create Plan Entitlement') }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetEntitlementForm"></button>
                     </div>
                     <div class="modal-body">
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label class="form-label">Service Plan</label>
+                                <label class="form-label">{{ __('Service Plan') }}</label>
                                 <select class="form-select @error('entitlementServicePlanId') is-invalid @enderror" wire:model.defer="entitlementServicePlanId">
-                                    <option value="">Choose plan...</option>
+                                    <option value="">{{ __('Choose plan...') }}</option>
                                     @foreach ($this->planOptions as $plan)
                                         <option value="{{ $plan->id }}">{{ $plan->name }}</option>
                                     @endforeach
@@ -197,9 +197,9 @@ class extends Component
                                 @error('entitlementServicePlanId') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Tool Action</label>
+                                <label class="form-label">{{ __('Tool Action') }}</label>
                                 <select class="form-select @error('entitlementToolActionId') is-invalid @enderror" wire:model.defer="entitlementToolActionId">
-                                    <option value="">Choose action...</option>
+                                    <option value="">{{ __('Choose action...') }}</option>
                                     @foreach ($this->actionOptions as $action)
                                         <option value="{{ $action->id }}">{{ $action->full_code }}</option>
                                     @endforeach
@@ -207,22 +207,22 @@ class extends Component
                                 @error('entitlementToolActionId') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Access</label>
+                                <label class="form-label">{{ __('Access') }}</label>
                                 <select class="form-select" wire:model.defer="entitlementAllowed">
-                                    <option value="allowed">Allowed</option>
-                                    <option value="blocked">Blocked</option>
+                                    <option value="allowed">{{ __('Allowed') }}</option>
+                                    <option value="blocked">{{ __('Blocked') }}</option>
                                 </select>
                             </div>
                             <div class="col-md-8">
-                                <label class="form-label">Limits JSON</label>
+                                <label class="form-label">{{ __('Limits JSON') }}</label>
                                 <textarea class="form-control font-monospace @error('entitlementLimitsJson') is-invalid @enderror" rows="4" wire:model.defer="entitlementLimitsJson"></textarea>
                                 @error('entitlementLimitsJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetEntitlementForm">Cancel</button>
-                        <button type="submit" class="btn btn-primary">{{ $editingEntitlementId ? 'Save Changes' : 'Create Entitlement' }}</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetEntitlementForm">{{ __('Cancel') }}</button>
+                        <button type="submit" class="btn btn-primary">{{ $editingEntitlementId ? __('Save Changes') : __('Create Entitlement') }}</button>
                     </div>
                 </form>
             </div>
@@ -233,15 +233,15 @@ class extends Component
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Confirm Delete</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" wire:click="resetDeleteState"></button>
+                    <h5 class="modal-title">{{ __('Confirm Delete') }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetDeleteState"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="mb-0">Delete <span class="fw-semibold">{{ $deleteLabel }}</span>? Historical usage rows keep their original recorded values.</p>
+                    <p class="mb-0">{{ __('Delete') }} <span class="fw-semibold">{{ $deleteLabel }}</span>? {{ __('Historical usage rows keep their original recorded values.') }}</p>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetDeleteState">Cancel</button>
-                    <button type="button" class="btn btn-danger" wire:click="performDelete">Delete</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetDeleteState">{{ __('Cancel') }}</button>
+                    <button type="button" class="btn btn-danger" wire:click="performDelete">{{ __('Delete') }}</button>
                 </div>
             </div>
         </div>

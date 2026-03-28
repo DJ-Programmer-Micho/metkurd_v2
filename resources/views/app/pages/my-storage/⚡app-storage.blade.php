@@ -2,7 +2,6 @@
 
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -19,7 +18,6 @@ use Illuminate\Support\Str;
 
 new
 #[Layout('app::layouts.app')]
-#[Title('My Storage | METKURD')]
 class extends Component
 {
     use WithPagination;
@@ -40,16 +38,18 @@ class extends Component
     public ?string $pendingDeletePath = null;
     public ?string $pendingDeleteLabel = null;
 
-    public array $toolRoots = [
-        'tts'       => ['label' => 'TTS',        'icon' => 'ri-volume-up-line',   'color' => 'primary'],
-        'clone-tts' => ['label' => 'Clone TTS',  'icon' => 'ri-mic-line',         'color' => 'info'],
-        'stem'      => ['label' => 'STEM',       'icon' => 'ri-equalizer-line',   'color' => 'success'],
-        'wasr'      => ['label' => 'WASR',       'icon' => 'ri-file-text-line',   'color' => 'warning'],
-        'ocr'       => ['label' => 'OCR',        'icon' => 'ri-scan-2-line',      'color' => 'danger'],
-    ];
+    public array $toolRoots = [];
 
     public function mount(): void
     {
+        $this->toolRoots = [
+            'tts'       => ['label' => __('Text to Speech'), 'icon' => 'ri-volume-up-line', 'color' => 'primary'],
+            'clone-tts' => ['label' => __('Clone Speech'), 'icon' => 'ri-mic-line', 'color' => 'info'],
+            'stem'      => ['label' => __('Stem Separation'), 'icon' => 'ri-equalizer-line', 'color' => 'success'],
+            'wasr'      => ['label' => __('Speech to Text'), 'icon' => 'ri-file-text-line', 'color' => 'warning'],
+            'ocr'       => ['label' => __('Optical Character Recognition'), 'icon' => 'ri-scan-2-line', 'color' => 'danger'],
+        ];
+
         $this->path = $this->sanitizePath($this->path);
 
         if ($this->path !== '' && !$this->pathExists($this->path)) {
@@ -212,7 +212,7 @@ class extends Component
 
             $this->syncSelectedFile();
 
-            $this->dispatch('alert', type: 'success', message: 'Storage item deleted successfully.');
+            $this->dispatch('alert', type: 'success', message: __('Storage item deleted successfully.'));
         } catch (\Throwable $e) {
             Log::error('APP_STORAGE_DELETE_FAILED', [
                 'customer_id' => auth('app')->id(),
@@ -221,7 +221,7 @@ class extends Component
                 'message'     => $e->getMessage(),
             ]);
 
-            $this->dispatch('alert', type: 'error', message: 'Delete failed. Please try again.');
+            $this->dispatch('alert', type: 'error', message: __('Delete failed. Please try again.'));
         } finally {
             $this->cancelDelete();
             $this->resetPage();
@@ -366,7 +366,7 @@ class extends Component
                         'label'       => $cfg['label'],
                         'path'        => $tool,
                         'item_count'  => (int) $stats['folder_count'],
-                        'item_label'  => 'Folders',
+                        'item_label'  => __('Folders'),
                         'size_bytes'  => (int) $stats['size'],
                         'icon'        => $cfg['icon'],
                         'color'       => $cfg['color'],
@@ -408,7 +408,7 @@ class extends Component
                     'label'      => $next,
                     'path'       => $folderPath,
                     'item_count' => 0,
-                    'item_label' => 'Files',
+                    'item_label' => __('Files'),
                     'size_bytes' => 0,
                     'icon'       => 'ri-folder-2-fill',
                     'color'      => 'warning',
@@ -479,7 +479,7 @@ class extends Component
     public function breadcrumbs(): array
     {
         $crumbs = [
-            ['label' => 'My Storage', 'path' => ''],
+            ['label' => __('My Storage'), 'path' => ''],
         ];
 
         if ($this->path === '') {
@@ -748,13 +748,13 @@ class extends Component
         $ext = strtolower((string) $ext);
 
         if ($this->isAudio($mime, $ext)) {
-            return 'Audio';
+            return __('Audio');
         }
 
         return match ($ext) {
-            'txt', 'pdf', 'doc', 'docx' => 'Document',
-            'json' => 'JSON',
-            default => 'File',
+            'txt', 'pdf', 'doc', 'docx' => __('Document'),
+            'json' => __('JSON'),
+            default => __('File'),
         };
     }
 
@@ -927,6 +927,8 @@ class extends Component
 
     <div class="storage-shell">
         {{-- <div class="page-content"> --}}
+            <x-slot:title>{{ __('My Storage') }} | {{ __('MET KURD') }}</x-slot:title>
+
             <div class="container-fluid">
 
                 <div class="chat-wrapper d-lg-flex gap-3 mx-n4 mt-n4 p-3">
@@ -935,8 +937,8 @@ class extends Component
                     <div class="file-manager-sidebar">
                         <div class="p-3 d-flex flex-column h-100">
                             <div class="mb-3">
-                                <h5 class="mb-0 fw-bold">My Storage</h5>
-                                <div class="text-muted small mt-1">Manage your generated AI assets</div>
+                                <h5 class="mb-0 fw-bold">{{ __('My Storage') }}</h5>
+                                <div class="text-muted small mt-1">{{ __('Manage your generated AI assets') }}</div>
                             </div>
 
                             <div class="search-box mb-3">
@@ -944,7 +946,7 @@ class extends Component
                                     <input
                                         type="text"
                                         class="form-control bg-light border-light ps-5"
-                                        placeholder="Search files or folders..."
+                                        placeholder="{{ __('Search files or folders...') }}"
                                         wire:model.live.debounce.300ms="search"
                                     >
                                     <i class="ri-search-2-line search-icon position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
@@ -952,11 +954,11 @@ class extends Component
                             </div>
 
                             <div class="mt-2 flex-grow-1">
-                                <h6 class="fs-11 text-muted text-uppercase mb-3">Tools</h6>
+                                <h6 class="fs-11 text-muted text-uppercase mb-3">{{ __('Tools') }}</h6>
                                 <ul class="list-unstyled vstack gap-2">
                                     <li>
                                         <button type="button" class="btn btn-sm {{ $path === '' ? 'btn-primary' : 'btn-ghost-dark' }} w-100 text-start" wire:click="navigateTo('')">
-                                            <i class="ri-hard-drive-2-line align-bottom me-2"></i> All Tools
+                                            <i class="ri-hard-drive-2-line align-bottom me-2"></i> {{ __('All Tools') }}
                                         </button>
                                     </li>
 
@@ -971,7 +973,7 @@ class extends Component
                                                 wire:click="navigateTo('{{ $toolKey }}')"
                                             >
                                                 <span>
-                                                    <i class="{{ $cfg['icon'] }} align-bottom me-2"></i> {{ $cfg['label'] }}
+                                                    <i class="{{ $cfg['icon'] }} align-bottom me-2"></i> {{ __($cfg['label']) }}
                                                 </span>
                                                 <span class="badge bg-secondary-subtle text-secondary">{{ $stat['folder_count'] }}</span>
                                             </button>
@@ -981,26 +983,26 @@ class extends Component
                             </div>
 
                             <div class="mt-auto pt-3 border-top">
-                                <h6 class="fs-11 text-muted text-uppercase mb-3">Storage Status</h6>
+                                <h6 class="fs-11 text-muted text-uppercase mb-3">{{ __('Storage Status') }}</h6>
                                 <div class="storage-status-chart">
                                     <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
                                         <div class="d-flex align-items-center gap-2">
                                             <i class="ri-database-2-line fs-17"></i>
-                                            <span class="small text-muted">Used by tool</span>
+                                            <span class="small text-muted">{{ __('Used by tool') }}</span>
                                         </div>
                                         <span class="badge {{ $usage['percent'] >= 85 ? 'bg-danger-subtle text-danger' : ($usage['percent'] >= 60 ? 'bg-warning-subtle text-warning' : 'bg-success-subtle text-success') }}">
                                             {{ $usage['percent'] }}%
                                         </span>
                                     </div>
 
-                                    <div class="storage-status-bar mb-2" role="img" aria-label="Storage usage by tool">
+                                    <div class="storage-status-bar mb-2" role="img" aria-label="{{ __('Storage usage by tool') }}">
                                         @if($usage['percent'] > 0 && count($storageSegments))
                                             <div class="storage-status-used" style="width: {{ $usage['percent'] }}%">
                                                 @foreach($storageSegments as $segment)
                                                     <div
                                                         class="storage-status-segment bg-{{ $segment['color'] }}"
                                                         style="width: {{ $segment['percent_of_used'] }}%"
-                                                        title="{{ $segment['label'] }}: {{ $this->formatBytes($segment['size']) }}"
+                                                        title="{{ __($segment['label']) }}: {{ $this->formatBytes($segment['size']) }}"
                                                     ></div>
                                                 @endforeach
                                             </div>
@@ -1012,8 +1014,8 @@ class extends Component
                                     </div>
 
                                     <div class="text-muted fs-12 d-flex justify-content-between gap-2 mb-3">
-                                        <span><b>{{ $this->formatBytes($usage['used_bytes']) }}</b> used</span>
-                                        <span><b>{{ $this->formatBytes($usage['limit_bytes']) }}</b> total</span>
+                                        <span><b>{{ $this->formatBytes($usage['used_bytes']) }}</b> {{ __('used') }}</span>
+                                        <span><b>{{ $this->formatBytes($usage['limit_bytes']) }}</b> {{ __('total') }}</span>
                                     </div>
 
                                     @if(count($storageSegments))
@@ -1023,18 +1025,18 @@ class extends Component
                                                     <span class="storage-status-swatch bg-{{ $segment['color'] }}"></span>
                                                     <div class="flex-grow-1 min-w-0">
                                                         <div class="d-flex justify-content-between gap-2">
-                                                            <span class="text-truncate">{{ $segment['label'] }}</span>
+                                                            <span class="text-truncate">{{ __($segment['label']) }}</span>
                                                             <span class="fw-semibold">{{ $this->formatBytes($segment['size']) }}</span>
                                                         </div>
                                                         <div class="text-muted fs-12">
-                                                            {{ number_format($segment['folder_count']) }} folder(s)
+                                                            {{ number_format($segment['folder_count']) }} {{ __('folder(s)') }}
                                                         </div>
                                                     </div>
                                                 </div>
                                             @endforeach
                                         </div>
                                     @else
-                                        <div class="text-muted fs-12">No generated files are stored yet.</div>
+                                        <div class="text-muted fs-12">{{ __('No generated files are stored yet.') }}</div>
                                     @endif
                                 </div>
                             </div>
@@ -1050,10 +1052,10 @@ class extends Component
                                     <ol class="breadcrumb breadcrumb-separated mb-0">
                                         @foreach($this->breadcrumbs() as $index => $crumb)
                                             @if($loop->last)
-                                                <li class="breadcrumb-item active" aria-current="page">{{ $crumb['label'] }}</li>
+                                                <li class="breadcrumb-item active" aria-current="page">{{ __($crumb['label']) }}</li>
                                             @else
                                                 <li class="breadcrumb-item">
-                                                    <a href="javascript:void(0)" wire:click="navigateTo('{{ $crumb['path'] }}')">{{ $crumb['label'] }}</a>
+                                                    <a href="javascript:void(0)" wire:click="navigateTo('{{ $crumb['path'] }}')">{{ __($crumb['label']) }}</a>
                                                 </li>
                                             @endif
                                         @endforeach
@@ -1061,8 +1063,8 @@ class extends Component
                                 </nav>
 
                                 <div class="d-flex align-items-center gap-2">
-                                    <span class="badge bg-info-subtle text-info">Read Only</span>
-                                    <span class="badge bg-secondary-subtle text-secondary">S3-backed</span>
+                                    <span class="badge bg-info-subtle text-info">{{ __('Read Only') }}</span>
+                                    <span class="badge bg-secondary-subtle text-secondary">{{ __('S3-backed') }}</span>
                                 </div>
                             </div>
 
@@ -1072,13 +1074,13 @@ class extends Component
                                     <div class="col">
                                         <div class="d-flex align-items-center">
                                             <div class="flex-grow-1">
-                                                <h5 class="fs-16 mb-0">Folders</h5>
+                                                <h5 class="fs-16 mb-0">{{ __('Folders') }}</h5>
                                             </div>
                                         </div>
                                     </div>
                                     <div class="col-auto">
                                         <div class="text-muted small">
-                                            {{ $this->folderCards()->count() }} folder(s)
+                                            {{ $this->folderCards()->count() }} {{ __('folder(s)') }}
                                         </div>
                                     </div>
                                 </div>
@@ -1091,7 +1093,7 @@ class extends Component
                                                     <div class="d-flex mb-3">
                                                         <div class="flex-grow-1">
                                                             <button type="button" class="btn btn-sm btn-ghost-primary" wire:click="navigateTo('{{ $folder['path'] }}')">
-                                                                Open
+                                                                {{ __('Open') }}
                                                             </button>
                                                         </div>
                                                         <div class="dropdown" wire:ignore.self>
@@ -1100,10 +1102,10 @@ class extends Component
                                                             </button>
                                                             <ul class="dropdown-menu dropdown-menu-end" onclick="event.stopPropagation()">
                                                                 <li>
-                                                                    <button class="dropdown-item" type="button" wire:click="navigateTo('{{ $folder['path'] }}')">Open</button>
+                                                                    <button class="dropdown-item" type="button" wire:click="navigateTo('{{ $folder['path'] }}')">{{ __('Open') }}</button>
                                                                 </li>
                                                                 <li>
-                                                                    <button class="dropdown-item text-danger" type="button" wire:click="confirmDeleteFolder('{{ $folder['path'] }}')">Delete</button>
+                                                                    <button class="dropdown-item text-danger" type="button" wire:click="confirmDeleteFolder('{{ $folder['path'] }}')">{{ __('Delete') }}</button>
                                                                 </li>
                                                             </ul>
                                                         </div>
@@ -1113,7 +1115,7 @@ class extends Component
                                                         <div class="mb-2">
                                                             <i class="{{ $folder['icon'] }} align-bottom text-warning display-5"></i>
                                                         </div>
-                                                        <h6 class="fs-15 folder-name mb-1">{{ $folder['label'] }}</h6>
+                                                        <h6 class="fs-15 folder-name mb-1">{{ __($folder['label']) }}</h6>
                                                         <div class="small text-muted text-truncate">{{ $folder['path'] }}</div>
                                                     </div>
 
@@ -1127,7 +1129,7 @@ class extends Component
                                     @empty
                                         <div class="col-12">
                                             <div class="alert alert-info mb-0">
-                                                No folders found in this location.
+                                                {{ __('No folders found in this location.') }}
                                             </div>
                                         </div>
                                     @endforelse
@@ -1138,10 +1140,10 @@ class extends Component
                             <!-- Files -->
                             <div>
                                 <div class="d-flex align-items-center justify-content-between mb-3">
-                                    <h5 class="flex-grow-1 fs-16 mb-0">Files</h5>
+                                    <h5 class="flex-grow-1 fs-16 mb-0">{{ __('Files') }}</h5>
                                     <div class="text-muted small">
-                                        Showing {{ $this->filesPaginator()->firstItem() ?? 0 }} - {{ $this->filesPaginator()->lastItem() ?? 0 }}
-                                        of {{ $this->filesPaginator()->total() }}
+                                        {{ __('Showing') }} {{ $this->filesPaginator()->firstItem() ?? 0 }} - {{ $this->filesPaginator()->lastItem() ?? 0 }}
+                                        {{ __('of') }} {{ $this->filesPaginator()->total() }}
                                     </div>
                                 </div>
 
@@ -1149,11 +1151,11 @@ class extends Component
                                     <table class="table align-middle table-nowrap mb-0">
                                         <thead class="table-active">
                                             <tr>
-                                                <th scope="col">Name</th>
-                                                <th scope="col">Type</th>
-                                                <th scope="col">Size</th>
-                                                <th scope="col">Updated</th>
-                                                <th scope="col" class="text-center">Actions</th>
+                                                <th scope="col">{{ __('Name') }}</th>
+                                                <th scope="col">{{ __('Type') }}</th>
+                                                <th scope="col">{{ __('Size') }}</th>
+                                                <th scope="col">{{ __('Updated') }}</th>
+                                                <th scope="col" class="text-center">{{ __('Actions') }}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1200,18 +1202,18 @@ class extends Component
                                                                 @if($isAudio && $streamUrl)
                                                                     <li>
                                                                         <a class="dropdown-item" href="{{ $streamUrl }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">
-                                                                            Stream
+                                                                            {{ __('Stream') }}
                                                                         </a>
                                                                     </li>
                                                                 @endif
                                                                 <li>
                                                                     <a class="dropdown-item" href="{{ $downloadUrl }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">
-                                                                        Download
+                                                                        {{ __('Download') }}
                                                                     </a>
                                                                 </li>
                                                                 <li>
                                                                     <button class="dropdown-item text-danger" type="button" wire:click.stop="confirmDeleteFile('{{ $file['relative_path'] }}')">
-                                                                        Delete
+                                                                        {{ __('Delete') }}
                                                                     </button>
                                                                 </li>
                                                             </ul>
@@ -1221,7 +1223,7 @@ class extends Component
                                             @empty
                                                 <tr>
                                                     <td colspan="5" class="text-center text-muted py-5">
-                                                        No files found in this folder.
+                                                        {{ __('No files found in this folder.') }}
                                                     </td>
                                                 </tr>
                                             @endforelse
@@ -1233,9 +1235,9 @@ class extends Component
                                     <div class="align-items-center mt-3 row g-3 text-center text-sm-start">
                                         <div class="col-sm">
                                             <div class="text-muted">
-                                                Showing <span class="fw-semibold">{{ $this->filesPaginator()->firstItem() }}</span>
-                                                to <span class="fw-semibold">{{ $this->filesPaginator()->lastItem() }}</span>
-                                                of <span class="fw-semibold">{{ $this->filesPaginator()->total() }}</span> results
+                                                {{ __('Showing') }} <span class="fw-semibold">{{ $this->filesPaginator()->firstItem() }}</span>
+                                                {{ __('to') }} <span class="fw-semibold">{{ $this->filesPaginator()->lastItem() }}</span>
+                                                {{ __('of') }} <span class="fw-semibold">{{ $this->filesPaginator()->total() }}</span> {{ __('results') }}
                                             </div>
                                         </div>
                                         <div class="col-sm-auto">
@@ -1256,7 +1258,7 @@ class extends Component
                                 <div id="file-overview" class="h-100 sticky-pane">
                                     <div class="d-flex h-100 flex-column">
                                         <div class="d-flex align-items-center pb-3 border-bottom border-bottom-dashed mb-3 gap-2">
-                                            <h5 class="flex-grow-1 fw-bold mb-0">File Preview</h5>
+                                            <h5 class="flex-grow-1 fw-bold mb-0">{{ __('File Preview') }}</h5>
                                             <div>
                                                 <button type="button" class="btn btn-soft-danger btn-icon btn-sm fs-16" wire:click="confirmDeleteFile('{{ $preview['relative_path'] }}')">
                                                     <i class="ri-delete-bin-line align-bottom"></i>
@@ -1292,54 +1294,54 @@ class extends Component
 
                                         @if($preview['is_audio'])
                                             <div class="audio-preview mb-3" wire:key="storage-audio-preview-{{ md5($preview['relative_path']) }}">
-                                                <div class="fw-semibold mb-2">Audio Player</div>
+                                                <div class="fw-semibold mb-2">{{ __('Audio Player') }}</div>
                                                 <div wire:ignore>
                                                     <audio controls class="w-100" preload="none">
                                                         <source src="{{ $preview['stream_url'] }}" type="{{ $preview['mime'] }}">
-                                                        Your browser does not support audio playback.
+                                                        {{ __('Your browser does not support audio playback.') }}
                                                     </audio>
                                                 </div>
                                             </div>
                                         @endif
 
                                         <div>
-                                            <h5 class="fs-12 text-uppercase text-muted mb-3">File Details</h5>
+                                            <h5 class="fs-12 text-uppercase text-muted mb-3">{{ __('File Details') }}</h5>
 
                                             <div class="table-responsive">
                                                 <table class="table table-borderless table-nowrap table-sm">
                                                     <tbody>
                                                         <tr>
-                                                            <th scope="row" style="width: 35%;">File Name :</th>
+                                                            <th scope="row" style="width: 35%;">{{ __('File Name :') }}</th>
                                                             <td class="text-break">{{ $preview['basename'] }}</td>
                                                         </tr>
                                                         <tr>
-                                                            <th scope="row">File Type :</th>
+                                                            <th scope="row">{{ __('File Type :') }}</th>
                                                             <td>{{ $preview['type_label'] }}</td>
                                                         </tr>
                                                         <tr>
-                                                            <th scope="row">MIME :</th>
+                                                            <th scope="row">{{ __('MIME :') }}</th>
                                                             <td class="text-break">{{ $preview['mime'] }}</td>
                                                         </tr>
                                                         <tr>
-                                                            <th scope="row">Size :</th>
+                                                            <th scope="row">{{ __('Size :') }}</th>
                                                             <td>{{ $this->formatBytes($preview['size_bytes']) }}</td>
                                                         </tr>
                                                         <tr>
-                                                            <th scope="row">Updated :</th>
+                                                            <th scope="row">{{ __('Updated :') }}</th>
                                                             <td>{{ optional($preview['updated_at'])->format('d M Y, h:i A') }}</td>
                                                         </tr>
                                                         <tr>
-                                                            <th scope="row">Path :</th>
+                                                            <th scope="row">{{ __('Path :') }}</th>
                                                             <td>
                                                                 <div class="user-select-all text-break small">{{ $preview['relative_path'] }}</div>
                                                             </td>
                                                         </tr>
                                                         <tr>
-                                                            <th scope="row">Disk :</th>
+                                                            <th scope="row">{{ __('Disk :') }}</th>
                                                             <td>{{ $preview['disk'] }}</td>
                                                         </tr>
                                                         <tr>
-                                                            <th scope="row">Tool :</th>
+                                                            <th scope="row">{{ __('Tool :') }}</th>
                                                             <td>{{ strtoupper(explode('/', $preview['relative_path'])[0] ?? '-') }}</td>
                                                         </tr>
                                                     </tbody>
@@ -1353,7 +1355,7 @@ class extends Component
 
                                             @if($linkedDelete)
                                                 <div class="alert alert-warning mt-3 mb-0">
-                                                    Deleting this file will remove its linked job folder too.
+                                                    {{ __('Deleting this file will remove its linked job folder too.') }}
                                                 </div>
                                             @endif
                                         </div>
@@ -1361,15 +1363,15 @@ class extends Component
                                         <div class="mt-auto border-top border-top-dashed py-3">
                                             <div class="hstack gap-2">
                                                 <a href="{{ $preview['download_url'] }}" target="_blank" rel="noopener noreferrer" class="btn btn-soft-primary w-100">
-                                                    <i class="ri-download-2-line align-bottom me-1"></i> Download
+                                                    <i class="ri-download-2-line align-bottom me-1"></i> {{ __('Download') }}
                                                 </a>
                                                 @if($preview['is_audio'])
                                                     <a href="{{ $preview['stream_url'] }}" target="_blank" rel="noopener noreferrer" class="btn btn-soft-success w-100">
-                                                        <i class="ri-play-circle-line align-bottom me-1"></i> Stream
+                                                        <i class="ri-play-circle-line align-bottom me-1"></i> {{ __('Stream') }}
                                                     </a>
                                                 @endif
                                                 <button type="button" class="btn btn-soft-danger w-100" wire:click="confirmDeleteFile('{{ $preview['relative_path'] }}')">
-                                                    <i class="ri-delete-bin-line align-bottom me-1"></i> Delete
+                                                    <i class="ri-delete-bin-line align-bottom me-1"></i> {{ __('Delete') }}
                                                 </button>
                                             </div>
                                         </div>
@@ -1378,7 +1380,7 @@ class extends Component
                             @else
                                 <div id="folder-overview" class="sticky-pane">
                                     <div class="d-flex align-items-center pb-3 border-bottom border-bottom-dashed">
-                                        <h5 class="flex-grow-1 fw-bold mb-0">Overview</h5>
+                                        <h5 class="flex-grow-1 fw-bold mb-0">{{ __('Overview') }}</h5>
                                     </div>
 
                                     <div class="mt-4">
@@ -1394,8 +1396,8 @@ class extends Component
                                                             </div>
                                                         </div>
                                                         <div class="flex-grow-1 ms-3">
-                                                            <h5 class="mb-1 fs-15">{{ $label }}</h5>
-                                                            <p class="mb-0 fs-12 text-muted">{{ number_format($stat['count']) }} files</p>
+                                                            <h5 class="mb-1 fs-15">{{ __($label) }}</h5>
+                                                            <p class="mb-0 fs-12 text-muted">{{ number_format($stat['count']) }} {{ __('files') }}</p>
                                                         </div>
                                                         <b>{{ $this->formatBytes($stat['size']) }}</b>
                                                     </div>
@@ -1410,9 +1412,9 @@ class extends Component
                                                 <i class="ri-lock-2-line text-info align-bottom display-6"></i>
                                             </div>
                                             <div class="flex-grow-1 ms-3">
-                                                <h5 class="text-info fs-14">Storage Rules</h5>
+                                                <h5 class="text-info fs-14">{{ __('Storage Rules') }}</h5>
                                                 <p class="text-muted mb-0">
-                                                    This page is read-only. Customers can stream, download, and delete only.
+                                                    {{ __('This page is read-only. Customers can stream, download, and delete only.') }}
                                                 </p>
                                             </div>
                                         </div>
@@ -1437,7 +1439,7 @@ class extends Component
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-0">
                     <div class="modal-header">
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" wire:click="cancelDelete"></button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="cancelDelete"></button>
                     </div>
                     <div class="modal-body">
                         <div class="mt-2 text-center">
@@ -1448,12 +1450,12 @@ class extends Component
                             </div>
 
                             <div class="mt-4 pt-2 fs-15 mx-4 mx-sm-5">
-                                <h4>Are you sure?</h4>
+                                <h4>{{ __('Are you sure?') }}</h4>
                                 <p class="text-muted mx-4 mb-0">
                                     @if($pendingDeleteType === 'folder')
-                                        Deleting this folder will permanently remove all files inside it.
+                                        {{ __('Deleting this folder will permanently remove all files inside it.') }}
                                     @else
-                                        Deleting this item may also remove all linked assets in the same job folder.
+                                        {{ __('Deleting this item may also remove all linked assets in the same job folder.') }}
                                     @endif
                                 </p>
 
@@ -1467,10 +1469,10 @@ class extends Component
 
                         <div class="d-flex gap-2 justify-content-center mt-4 mb-2">
                             <button type="button" class="btn w-sm btn-light" data-bs-dismiss="modal" wire:click="cancelDelete">
-                                Close
+                                {{ __('Close') }}
                             </button>
                             <button type="button" class="btn w-sm btn-danger" wire:click="deleteConfirmed">
-                                Yes, Delete It!
+                                {{ __('Yes, Delete It!') }}
                             </button>
                         </div>
                     </div>

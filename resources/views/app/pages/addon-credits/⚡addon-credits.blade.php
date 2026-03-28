@@ -3,17 +3,17 @@
 
 use Livewire\Component;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\On;
 use Illuminate\Support\Facades\DB;
 
 use App\Models\CreditProduct;
 use App\Models\CreditOrder;
+use App\Support\CustomerEmailNotifier;
+use App\Support\TelegramPaymentNotifier;
 use App\Services\Billing\CreditService;
 
 new
 #[Layout('app::layouts.app')]
-#[Title('Add-on Credits | METKURD')]
 class extends Component
 {
     public array $products = [];
@@ -65,7 +65,7 @@ class extends Component
         $exists = collect($this->products)->contains(fn ($p) => (int) $p['id'] === $productId);
         if (!$exists) {
             $this->messageType = 'danger';
-            $this->message = 'Selected add-on product was not found.';
+            $this->message = __('Selected add-on product was not found.');
             return;
         }
 
@@ -95,13 +95,13 @@ class extends Component
 
         if (!$customer) {
             $this->messageType = 'danger';
-            $this->message = 'Customer not found.';
+            $this->message = __('Customer not found.');
             return;
         }
 
         if (!$this->selectedProductId) {
             $this->messageType = 'danger';
-            $this->message = 'Please choose an add-on product first.';
+            $this->message = __('Please choose an add-on product first.');
             return;
         }
 
@@ -110,7 +110,7 @@ class extends Component
         $this->messageType = 'success';
 
         try {
-            DB::transaction(function () use ($customer) {
+            $purchase = DB::transaction(function () use ($customer) {
                 $product = CreditProduct::query()
                     ->where('is_active', true)
                     ->findOrFail($this->selectedProductId);
@@ -148,19 +148,53 @@ class extends Component
                         'ui' => 'addon-credits-page',
                     ]
                 );
+
+                return [
+                    'product' => $product,
+                    'order' => $order,
+                ];
             }, 3);
 
             $this->showConfirm = false;
             $this->selectedProductId = null;
             $this->messageType = 'success';
-            $this->message = 'Add-on credits purchased successfully and added to your add-on balance.';
+            $this->message = __('Add-on credits purchased successfully and added to your add-on balance.');
+
+            $freshCustomer = $customer->fresh(['profile']);
+
+            TelegramPaymentNotifier::send(
+                $freshCustomer,
+                'Add-on Credits',
+                (string) $purchase['product']->name,
+                [
+                    'Plan Code' => strtoupper((string) $purchase['product']->code),
+                    'Credits' => number_format((int) $purchase['product']->credits_amount),
+                    'Amount (USD)' => '$' . number_format((float) $purchase['product']->price_usd, 2),
+                    'Order Type' => (string) $purchase['order']->order_type,
+                    'Provider' => (string) $purchase['order']->provider,
+                    'Reference' => (string) $purchase['order']->provider_ref,
+                ],
+                'Add-on credits page'
+            );
+
+            CustomerEmailNotifier::sendAddonThankYou(
+                $freshCustomer,
+                [
+                    'product_name' => (string) $purchase['product']->name,
+                    'credits_amount' => (int) $purchase['product']->credits_amount,
+                    'amount_usd' => (float) $purchase['product']->price_usd,
+                    'added_on' => $purchase['order']->created_at?->format('F d, Y') ?? now()->format('F d, Y'),
+                    'status_label' => 'Completed',
+                ],
+                'Add-on credits page'
+            );
 
             $this->dispatch('header:refresh');
             $this->dispatch('customerPlanUpdated');
             $this->dispatch('customerStorageUpdated');
         } catch (\Throwable $e) {
             $this->messageType = 'danger';
-            $this->message = 'Failed: ' . $e->getMessage();
+            $this->message = __('Failed: :message', ['message' => $e->getMessage()]);
         } finally {
             $this->processing = false;
         }
@@ -187,7 +221,7 @@ class extends Component
             ?: $customer->activeServiceSubscription?->servicePlan;
 
         $planCode = (string) ($currentPlan?->code ?? 'free');
-        $planName = (string) ($currentPlan?->name ?? 'Free');
+        $planName = (string) ($currentPlan?->name ?? __('Free'));
 
         return view('app.pages.addon-credits.⚡addon-credits', [
             'combinedBalance' => $combinedBalance,
@@ -200,36 +234,38 @@ class extends Component
 };
 ?>
 
+<x-slot:title>{{ __('Add-on Credits') }} | {{ __('MET KURD') }}</x-slot:title>
+
 <div>
     <div class="row justify-content-center mt-4">
         <div class="col-lg-8">
             <div class="text-center mb-4 pb-2">
-                <h4 class="fs-22">Add-on Credits</h4>
+                <h4 class="fs-22">{{ __('Add-on Credits') }}</h4>
                 <p class="text-muted mb-2 fs-15">
-                    Current plan: <b>{{ strtoupper($planCode) }}</b> — {{ $planName }}
+                    {{ __('Current plan: :code - :name', ['code' => strtoupper($planCode), 'name' => $planName]) }}
                 </p>
 
                 <div class="d-flex justify-content-center flex-wrap gap-3 small">
                     <div>
-                        <span class="text-muted">Combined Balance:</span>
+                        <span class="text-muted">{{ __('Combined Balance:') }}</span>
                         <b>{{ number_format($combinedBalance) }}</b>
                     </div>
                     <div>
-                        <span class="text-muted">Subscription Credits:</span>
+                        <span class="text-muted">{{ __('Subscription Credits:') }}</span>
                         <b>{{ number_format($subscriptionBalance) }}</b>
                     </div>
                     <div>
-                        <span class="text-muted">Add-on Credits:</span>
+                        <span class="text-muted">{{ __('Add-on Credits:') }}</span>
                         <b>{{ number_format($addonBalance) }}</b>
                     </div>
                 </div>
 
                 <div class="alert alert-info mt-3 mb-0 text-start">
-                    <div><b>How it works:</b></div>
-                    <div>Add-on credits are one-time top-ups.</div>
-                    <div>They are kept separately from your monthly subscription credits.</div>
-                    <div>When spending credits, subscription credits are used first, then add-on credits.</div>
-                    <div>Changing your service plan does not remove your add-on credits.</div>
+                    <div><b>{{ __('How it works:') }}</b></div>
+                    <div>{{ __('Add-on credits are one-time top-ups.') }}</div>
+                    <div>{{ __('They are kept separately from your monthly subscription credits.') }}</div>
+                    <div>{{ __('When spending credits, subscription credits are used first, then add-on credits.') }}</div>
+                    <div>{{ __('Changing your service plan does not remove your add-on credits.') }}</div>
                 </div>
 
                 @if($message)
@@ -248,11 +284,11 @@ class extends Component
                             <div class="flex-grow-1">
                                 <h5 class="mb-1">{{ $p['name'] }}</h5>
                                 <p class="text-muted mb-1">{{ strtoupper($p['code']) }}</p>
-                                <span class="badge bg-soft-primary text-primary">Add-on Pack</span>
+                                <span class="badge bg-soft-primary text-primary">{{ __('Add-on Pack') }}</span>
                             </div>
 
                             <div class="ms-auto text-end">
-                                <div class="fw-semibold">{{ number_format($p['credits_amount']) }} credits</div>
+                                <div class="fw-semibold">{{ __(':count credits', ['count' => number_format($p['credits_amount'])]) }}</div>
                                 <div class="text-muted fs-12">${{ number_format($p['price_usd'], 2) }}</div>
                             </div>
                         </div>
@@ -265,7 +301,7 @@ class extends Component
                                     <i class="ri-checkbox-circle-fill fs-15 align-middle"></i>
                                 </div>
                                 <div class="flex-grow-1">
-                                    One-time credit top-up
+                                    {{ __('One-time credit top-up') }}
                                 </div>
                             </li>
 
@@ -274,7 +310,7 @@ class extends Component
                                     <i class="ri-checkbox-circle-fill fs-15 align-middle"></i>
                                 </div>
                                 <div class="flex-grow-1">
-                                    Preserved when switching plans
+                                    {{ __('Preserved when switching plans') }}
                                 </div>
                             </li>
 
@@ -283,7 +319,7 @@ class extends Component
                                     <i class="ri-checkbox-circle-fill fs-15 align-middle"></i>
                                 </div>
                                 <div class="flex-grow-1">
-                                    Used after subscription credits
+                                    {{ __('Used after subscription credits') }}
                                 </div>
                             </li>
                         </ul>
@@ -293,7 +329,7 @@ class extends Component
                                     wire:click="openConfirm({{ $p['id'] }})"
                                     wire:loading.attr="disabled"
                                     wire:target="openConfirm({{ $p['id'] }})">
-                                Buy Add-on (Fake Pay)
+                                {{ __('Buy Add-on (Fake Pay)') }}
                             </button>
                         </div>
                     </div>
@@ -302,7 +338,7 @@ class extends Component
         @empty
             <div class="col-lg-8">
                 <div class="alert alert-warning mb-0">
-                    No active add-on credit products found.
+                    {{ __('No active add-on credit products found.') }}
                 </div>
             </div>
         @endforelse
@@ -317,7 +353,7 @@ class extends Component
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Confirm Add-on Purchase</h5>
+                        <h5 class="modal-title">{{ __('Confirm Add-on Purchase') }}</h5>
                         <button type="button"
                                 class="btn-close"
                                 wire:click="closeConfirm"
@@ -326,26 +362,26 @@ class extends Component
 
                     <div class="modal-body">
                         <div class="alert alert-warning mb-3">
-                            This is a <b>fake payment</b> for testing.
+                            {{ __('This is a fake payment for testing.') }}
                         </div>
 
                         @if($selected)
                             <p class="mb-2">
-                                Product:
+                                {{ __('Product:') }}
                                 <b>{{ $selected['name'] }}</b>
                             </p>
                             <p class="mb-2">
-                                Credits:
+                                {{ __('Credits:') }}
                                 <b>{{ number_format($selected['credits_amount']) }}</b>
                             </p>
                             <p class="mb-2">
-                                Price:
+                                {{ __('Price:') }}
                                 <b>${{ number_format($selected['price_usd'], 2) }}</b>
                             </p>
                         @endif
 
                         <div class="small text-muted">
-                            These credits will be added to your <b>add-on credit bucket</b>, not your monthly subscription bucket.
+                            {{ __('These credits will be added to your add-on credit bucket, not your monthly subscription bucket.') }}
                         </div>
                     </div>
 
@@ -353,7 +389,7 @@ class extends Component
                         <button class="btn btn-light"
                                 wire:click="closeConfirm"
                                 @disabled($processing)">
-                            Cancel
+                            {{ __('Cancel') }}
                         </button>
 
                         <button class="btn btn-primary"
@@ -362,10 +398,10 @@ class extends Component
                                 wire:target="confirmPurchase"
                                 @disabled($processing)">
                             <span wire:loading.remove wire:target="confirmPurchase">
-                                Confirm Purchase
+                                {{ __('Confirm Purchase') }}
                             </span>
                             <span wire:loading wire:target="confirmPurchase">
-                                Processing...
+                                {{ __('Processing...') }}
                             </span>
                         </button>
                     </div>

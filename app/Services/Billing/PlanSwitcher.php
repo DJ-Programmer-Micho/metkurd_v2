@@ -21,6 +21,11 @@ class PlanSwitcher
     {
         return DB::transaction(function () use ($customer, $servicePlanId, $meta) {
             $plan = ServicePlan::where('is_active', true)->findOrFail($servicePlanId);
+            $billingCycle = strtolower(trim((string) ($meta['billing_cycle'] ?? 'monthly')));
+            $billingCycle = in_array($billingCycle, ['monthly', 'yearly'], true) ? $billingCycle : 'monthly';
+            $amountUsd = $billingCycle === 'yearly'
+                ? (float) ($plan->price_usd_yearly ?? 0)
+                : (float) ($plan->price_usd_monthly ?? 0);
 
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
@@ -30,11 +35,14 @@ class PlanSwitcher
                 'credit_product_id' => null,
                 'status' => 'paid',
                 'credits_amount' => (int) $plan->monthly_credits,
-                'amount_usd' => (float) ($plan->price_usd_monthly ?? 0),
+                'amount_usd' => $amountUsd,
                 'currency' => 'USD',
                 'provider' => 'fake',
                 'provider_ref' => 'FAKE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999),
-                'meta' => array_merge(['purpose' => 'service_plan_switch'], $meta),
+                'meta' => array_merge([
+                    'purpose' => 'service_plan_switch',
+                    'billing_cycle' => $billingCycle,
+                ], $meta),
             ]);
 
             $currentSub = $customer->activeServiceSubscription()->first();
@@ -64,6 +72,7 @@ class PlanSwitcher
                 'meta' => [
                     'order_id' => $order->id,
                     'provider' => 'fake',
+                    'billing_cycle' => $billingCycle,
                 ],
             ]);
 
@@ -109,6 +118,7 @@ class PlanSwitcher
                     'meta' => [
                         'order_id' => $order->id,
                         'plan_code' => $plan->code,
+                        'billing_cycle' => $billingCycle,
                     ],
                 ]
             );
@@ -132,6 +142,7 @@ class PlanSwitcher
                     'previous_plan_id' => $previousPlanId,
                     'grant_id' => $grant->id,
                     'order_id' => $order->id,
+                    'billing_cycle' => $billingCycle,
                 ],
             ]);
 

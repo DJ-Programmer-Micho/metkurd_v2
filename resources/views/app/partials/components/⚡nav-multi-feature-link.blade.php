@@ -85,10 +85,10 @@ new class extends Component
             aria-controls="{{ $collapseId }}"
         >
             <i class="{{ $icon }}"></i>
-            <span>{{ $label }}</span>
+            <span>{{ __($label) }}</span>
 
             @if($badge)
-                <span class="badge badge-pill bg-primary ms-2">{{ $badge }}</span>
+                <span class="badge badge-pill bg-primary ms-2">{{ __($badge) }}</span>
             @endif
         </a>
 

@@ -3,13 +3,11 @@
 use Livewire\Component;
 use Livewire\WithFileUploads;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 new #[Layout('app::layouts.app')]
-#[Title('Profile | METKURD')]
 class extends Component
 {
     use WithFileUploads;
@@ -162,7 +160,7 @@ class extends Component
         ]);
 
         if ($this->phoneChanged && !$this->phoneVerified) {
-            $this->dispatch('alert', type: 'error', message: 'Phone changed. Please verify before saving.');
+            $this->dispatch('alert', type: 'error', message: __('Phone changed. Please verify before saving.'));
             return;
         }
 
@@ -198,7 +196,7 @@ class extends Component
         $this->reset('avatar');
         $this->avatarVersion++;
 
-        $this->dispatch('alert', type: 'success', message: 'Profile updated successfully.');
+        $this->dispatch('alert', type: 'success', message: __('Profile updated successfully.'));
         $this->dispatch('bs:modal:hide', id: 'updateUserModal');
     }
 
@@ -223,7 +221,7 @@ class extends Component
         // TODO: send OTP via your provider
         $this->otpStep = 1;
 
-        $this->dispatch('alert', type: 'info', message: 'Verification code sent via ' . ucfirst($channel) . '.');
+        $this->dispatch('alert', type: 'info', message: __('Verification code sent via :channel.', ['channel' => __(ucfirst($channel))]));
     }
 
     public function backToProviders(): void
@@ -234,7 +232,7 @@ class extends Component
     public function resendPhoneOtp(): void
     {
         // TODO: resend OTP via chosen channel
-        $this->dispatch('alert', type: 'info', message: 'Code resent via ' . ucfirst($this->channel) . '.');
+        $this->dispatch('alert', type: 'info', message: __('Code resent via :channel.', ['channel' => __(ucfirst($this->channel))]));
     }
 
     public function verifyPhoneOtp(): void
@@ -242,7 +240,7 @@ class extends Component
         $code = $this->digit1.$this->digit2.$this->digit3.$this->digit4.$this->digit5.$this->digit6;
 
         if (strlen($code) !== 6) {
-            $this->dispatch('alert', type: 'error', message: 'Please enter the 6-digit code.');
+            $this->dispatch('alert', type: 'error', message: __('Please enter the 6-digit code.'));
             return;
         }
 
@@ -250,14 +248,14 @@ class extends Component
         $ok = true;
 
         if (!$ok) {
-            $this->dispatch('alert', type: 'error', message: 'Invalid code. Try again.');
+            $this->dispatch('alert', type: 'error', message: __('Invalid code. Try again.'));
             return;
         }
 
         $this->phoneVerified = true;
         $this->phoneChanged = true;
 
-        $this->dispatch('alert', type: 'success', message: 'Phone verified successfully.');
+        $this->dispatch('alert', type: 'success', message: __('Phone verified successfully.'));
         $this->dispatch('bs:modal:hide', id: 'phoneOtpModal');
     }
 
@@ -274,7 +272,7 @@ class extends Component
         $u = auth('app')->user();
 
         if (!\Illuminate\Support\Facades\Hash::check($this->old_password, $u->password)) {
-            $this->addError('old_password', 'Old password is incorrect.');
+            $this->addError('old_password', __('Old password is incorrect.'));
             return;
         }
 
@@ -283,6 +281,6 @@ class extends Component
 
         $this->reset(['old_password','new_password','new_password_confirmation']);
 
-        $this->dispatch('alert', type: 'success', message: 'Password changed successfully.');
+        $this->dispatch('alert', type: 'success', message: __('Password changed successfully.'));
     }
 };

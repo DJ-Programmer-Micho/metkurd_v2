@@ -365,7 +365,7 @@ trait ManagesServiceToolsPage
         }
 
         $this->validate($rules, [
-            'toolCode.regex' => 'Tool code must use lowercase letters, numbers, and underscores only.',
+            'toolCode.regex' => __('Tool code must use lowercase letters, numbers, and underscores only.'),
         ]);
 
         $meta = $this->decodeJsonField($this->toolMetaJson, 'toolMetaJson');
@@ -383,7 +383,7 @@ trait ManagesServiceToolsPage
 
         $tool->save();
 
-        $this->dispatch('alert', type: 'success', message: $this->editingToolId ? 'Tool updated successfully.' : 'Tool created successfully.');
+        $this->dispatch('alert', type: 'success', message: $this->editingToolId ? __('Tool updated successfully.') : __('Tool created successfully.'));
         $this->dispatch('services-tools:modal-hide', id: 'servicesToolModal');
         $this->resetToolForm();
     }
@@ -396,7 +396,7 @@ trait ManagesServiceToolsPage
         $this->dispatch(
             'alert',
             type: 'success',
-            message: $tool->is_active ? 'Tool moved back to active.' : 'Tool switched to maintenance mode.'
+            message: $tool->is_active ? __('Tool moved back to active.') : __('Tool switched to maintenance mode.')
         );
     }
 
@@ -458,7 +458,7 @@ trait ManagesServiceToolsPage
         }
 
         $this->validate($rules, [
-            'actionCode.regex' => 'Action code must use lowercase letters, numbers, and underscores only.',
+            'actionCode.regex' => __('Action code must use lowercase letters, numbers, and underscores only.'),
         ]);
 
         $tool = Tool::query()->findOrFail((int) $this->actionToolId);
@@ -476,7 +476,7 @@ trait ManagesServiceToolsPage
 
         if ($duplicate) {
             throw ValidationException::withMessages([
-                'actionCode' => 'This tool/action code combination already exists.',
+                'actionCode' => __('This tool/action code combination already exists.'),
             ]);
         }
 
@@ -496,7 +496,7 @@ trait ManagesServiceToolsPage
 
         $action->save();
 
-        $this->dispatch('alert', type: 'success', message: $this->editingActionId ? 'Tool action updated successfully.' : 'Tool action created successfully.');
+        $this->dispatch('alert', type: 'success', message: $this->editingActionId ? __('Tool action updated successfully.') : __('Tool action created successfully.'));
         $this->dispatch('services-tools:modal-hide', id: 'servicesToolActionModal');
         $this->resetActionForm();
     }
@@ -509,7 +509,7 @@ trait ManagesServiceToolsPage
         $this->dispatch(
             'alert',
             type: 'success',
-            message: $action->is_active ? 'Action moved back to active.' : 'Action switched to maintenance mode.'
+            message: $action->is_active ? __('Action moved back to active.') : __('Action switched to maintenance mode.')
         );
     }
 
@@ -524,7 +524,7 @@ trait ManagesServiceToolsPage
         $this->deleteLabel = $tool->name;
 
         if ($tool->actions_count > 0) {
-            $this->dispatch('alert', type: 'warning', message: 'Remove or reassign all actions before deleting this tool.');
+            $this->dispatch('alert', type: 'warning', message: __('Remove or reassign all actions before deleting this tool.'));
             return;
         }
 
@@ -540,7 +540,7 @@ trait ManagesServiceToolsPage
             ->findOrFail($actionId);
 
         if ($action->usage_events_count > 0) {
-            $this->dispatch('alert', type: 'warning', message: 'This action has usage history and cannot be deleted.');
+            $this->dispatch('alert', type: 'warning', message: __('This action has usage history and cannot be deleted.'));
             return;
         }
 
@@ -556,7 +556,7 @@ trait ManagesServiceToolsPage
     {
         if ($this->deleteTarget === 'tool' && $this->toolIdPendingDelete) {
             Tool::query()->findOrFail($this->toolIdPendingDelete)->delete();
-            $this->dispatch('alert', type: 'success', message: 'Tool deleted successfully.');
+            $this->dispatch('alert', type: 'success', message: __('Tool deleted successfully.'));
         }
 
         if ($this->deleteTarget === 'action' && $this->actionIdPendingDelete) {
@@ -564,7 +564,7 @@ trait ManagesServiceToolsPage
                 ToolAction::query()->findOrFail($this->actionIdPendingDelete)->delete();
             });
 
-            $this->dispatch('alert', type: 'success', message: 'Tool action deleted successfully.');
+            $this->dispatch('alert', type: 'success', message: __('Tool action deleted successfully.'));
         }
 
         $this->dispatch('services-tools:modal-hide', id: 'servicesToolDeleteModal');
@@ -595,10 +595,10 @@ trait ManagesServiceToolsPage
     public function metricLabel(?string $metricCode): string
     {
         if (!$metricCode) {
-            return 'Not set';
+            return __('Not set');
         }
 
-        return $this->metricOptions[$metricCode] ?? ucfirst(str_replace('_', ' ', $metricCode));
+        return __($this->metricOptions[$metricCode] ?? ucfirst(str_replace('_', ' ', $metricCode)));
     }
 
     public function statusBadgeClasses(bool $isActive): string
@@ -610,7 +610,7 @@ trait ManagesServiceToolsPage
 
     public function statusLabel(bool $isActive): string
     {
-        return $isActive ? 'Active' : 'Maintenance';
+        return $isActive ? __('Active') : __('Maintenance');
     }
 
     public function formatDecimal($value, int $precision = 2): string
@@ -624,13 +624,15 @@ trait ManagesServiceToolsPage
     public function formatPricingRange($minValue, $maxValue, int $ruleCount): string
     {
         if ($ruleCount <= 0 || $minValue === null || $maxValue === null) {
-            return 'No active pricing rule';
+            return __('No active pricing rule');
         }
 
         $min = $this->formatDecimal($minValue, 4);
         $max = $this->formatDecimal($maxValue, 4);
 
-        return $min === $max ? "{$min} credits" : "{$min} - {$max} credits";
+        return $min === $max
+            ? __(':value credits', ['value' => $min])
+            : __(':min - :max credits', ['min' => $min, 'max' => $max]);
     }
 
     protected function decodeJsonField(?string $value, string $field): array
@@ -645,7 +647,7 @@ trait ManagesServiceToolsPage
 
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
             throw ValidationException::withMessages([
-                $field => 'Please enter a valid JSON object.',
+                $field => __('Please enter a valid JSON object.'),
             ]);
         }
 

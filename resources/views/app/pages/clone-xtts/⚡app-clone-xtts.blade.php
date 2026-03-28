@@ -4,7 +4,6 @@ use Livewire\Component;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -27,7 +26,6 @@ use App\Services\XTTS\XttsJobSyncService;
 use App\Services\Security\JobExecutionLockService;
 new
 #[Layout('app::layouts.app')]
-#[Title('Clone XTTS | METKURD')]
 class extends Component
 {
     use WithPagination;
@@ -260,12 +258,12 @@ class extends Component
     public function sliders(): array
     {
         return [
-            ['key'=>'temperature','label'=>'Temperature','min'=>0,'max'=>2.5,'step'=>0.01,'val'=>$this->temperature],
-            ['key'=>'top_p','label'=>'Top P','min'=>0,'max'=>1,'step'=>0.01,'val'=>$this->top_p],
-            ['key'=>'top_k','label'=>'Top K','min'=>0,'max'=>100,'step'=>1,'val'=>$this->top_k],
-            ['key'=>'repetition_penalty','label'=>'Repetition Penalty','min'=>1,'max'=>8,'step'=>0.01,'val'=>$this->repetition_penalty],
-            ['key'=>'length_penalty','label'=>'Length Penalty','min'=>-5,'max'=>6,'step'=>0.01,'val'=>$this->length_penalty],
-            ['key'=>'speed','label'=>'Speed','min'=>0.5,'max'=>2,'step'=>0.01,'val'=>$this->speed],
+            ['key'=>'temperature','label'=>__('Temperature'),'min'=>0,'max'=>2.5,'step'=>0.01,'val'=>$this->temperature],
+            ['key'=>'top_p','label'=>__('Top P'),'min'=>0,'max'=>1,'step'=>0.01,'val'=>$this->top_p],
+            ['key'=>'top_k','label'=>__('Top K'),'min'=>0,'max'=>100,'step'=>1,'val'=>$this->top_k],
+            ['key'=>'repetition_penalty','label'=>__('Repetition Penalty'),'min'=>1,'max'=>8,'step'=>0.01,'val'=>$this->repetition_penalty],
+            ['key'=>'length_penalty','label'=>__('Length Penalty'),'min'=>-5,'max'=>6,'step'=>0.01,'val'=>$this->length_penalty],
+            ['key'=>'speed','label'=>__('Speed'),'min'=>0.5,'max'=>2,'step'=>0.01,'val'=>$this->speed],
         ];
     }
 
@@ -279,31 +277,31 @@ class extends Component
     public function generateBlockedReason(): ?string
     {
         if ($this->isGenerating()) {
-            return 'A generation is already in progress on this page.';
+            return __('A generation is already in progress on this page.');
         }
 
         if ($this->currentActiveJobsCount() >= $this->allowedConcurrentJobs()) {
-            return 'You reached your concurrent job limit for the current plan.';
+            return __('You reached your concurrent job limit for the current plan.');
         }
 
         if ($this->currentChars <= 0) {
-            return 'Please enter some text.';
+            return __('Please enter some text.');
         }
 
         if ($this->currentChars > $this->maxPerSubmit) {
-            return 'Text exceeds the max characters per submit.';
+            return __('Text exceeds the max characters per submit.');
         }
 
         if (!$this->referenceAudio) {
-            return 'Please upload a reference voice sample.';
+            return __('Please upload a reference voice sample.');
         }
 
         if ($this->creditsCost <= 0) {
-            return 'Pricing could not be calculated.';
+            return __('Pricing could not be calculated.');
         }
 
         if ($this->walletBalance < $this->creditsCost) {
-            return 'Not enough credits.';
+            return __('Not enough credits.');
         }
 
         return null;
@@ -517,7 +515,7 @@ class extends Component
         $this->hydrateCurrentJobFromDb();
 
         if ($this->currentActiveJobsCount() >= $this->allowedConcurrentJobs()) {
-            $this->dispatch('alert', type: 'warning', message: 'You reached your concurrent job limit for the current plan.');
+            $this->dispatch('alert', type: 'warning', message: __('You reached your concurrent job limit for the current plan.'));
             return;
         }
 
@@ -527,7 +525,7 @@ class extends Component
         }
 
         if ($this->isGenerating()) {
-            $this->dispatch('alert', type: 'warning', message: 'A generation is already in progress.');
+            $this->dispatch('alert', type: 'warning', message: __('A generation is already in progress.'));
             return;
         }
 
@@ -545,7 +543,7 @@ class extends Component
             : (int) ceil($chars * 1.2);
 
         if ($cost <= 0) {
-            $this->dispatch('alert', type: 'error', message: 'Pricing is not configured.');
+            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured.'));
             return;
         }
 
@@ -558,7 +556,7 @@ class extends Component
             ]);
         } catch (\Throwable $e) {
             $this->syncWallet();
-            $this->dispatch('alert', type: 'error', message: 'Not enough credits.');
+            $this->dispatch('alert', type: 'error', message: __('Not enough credits.'));
             return;
         }
 
@@ -614,7 +612,7 @@ class extends Component
                 'reason' => 'clone_lock_conflict',
             ]);
 
-            $this->dispatch('alert', type: 'warning', message: $lock['message'] ?? 'Clone XTTS is busy on another device.');
+            $this->dispatch('alert', type: 'warning', message: $lock['message'] ?? __('Clone XTTS is busy on another device.'));
             return;
         }
 
@@ -629,7 +627,7 @@ class extends Component
         try {
             $endpointId = data_get($tool->meta, 'runpod_endpoint_id') ?: config('runpod.endpoints.xtts');
             if (!$endpointId) {
-                throw new \RuntimeException('Clone XTTS endpoint id is missing.');
+                throw new \RuntimeException(__('Clone XTTS endpoint ID is missing.'));
             }
 
             $timeout = (int) (data_get($tool->meta, 'runpod_timeout') ?: config('runpod.timeout', 60));
@@ -692,7 +690,7 @@ class extends Component
 
             $rpId = (string) data_get($resp, 'id', '');
             if ($rpId === '') {
-                throw new \RuntimeException('RunPod did not return job id.');
+                throw new \RuntimeException(__('RunPod did not return a job ID.'));
             }
 
             MlJob::where('id', $jobId)->update([
@@ -717,7 +715,7 @@ class extends Component
                 'progress' => 20,
             ]);
 
-            $this->dispatch('alert', type: 'success', message: 'RunPod clone job started.');
+            $this->dispatch('alert', type: 'success', message: __('RunPod clone job started.'));
         } catch (\Throwable $e) {
             $this->dispatch('header:refresh');
 
@@ -757,7 +755,7 @@ class extends Component
 
             $this->dispatch('header:refresh');
             $this->dispatch('clone-xtts-job-state-clear');
-            $this->dispatch('alert', type: 'error', message: 'RunPod failed: ' . $e->getMessage());
+            $this->dispatch('alert', type: 'error', message: __('RunPod failed: :message', ['message' => $e->getMessage()]));
         }
     }
 
@@ -796,13 +794,13 @@ class extends Component
                 $this->dispatch('clone-xtts-renders-refresh');
                 $this->dispatch('clone-xtts-job-completed');
                 $this->dispatch('clone-xtts-job-state-clear');
-                $this->dispatch('alert', type: 'success', message: 'Done');
+                $this->dispatch('alert', type: 'success', message: __('Done'));
             }
 
             if (!empty($result['failed'])) {
                 $this->dispatch('header:refresh');
                 $this->dispatch('clone-xtts-job-state-clear');
-                $this->dispatch('alert', type: 'error', message: $result['message'] ?: 'Job failed.');
+                $this->dispatch('alert', type: 'error', message: $result['message'] ?: __('Job failed.'));
             }
         } catch (\Throwable $e) {
             Log::warning('RUNPOD_TTS_STATUS_FAIL', [
@@ -812,7 +810,7 @@ class extends Component
 
             MlJob::query()->where('id', $this->currentJobId)->update([
                 'status' => 'failed',
-                'error' => ['message' => 'Polling failed: ' . $e->getMessage()],
+                'error' => ['message' => __('Polling failed: :message', ['message' => $e->getMessage()])],
                 'finished_at' => now(),
             ]);
 
@@ -822,7 +820,7 @@ class extends Component
 
             $this->dispatch('header:refresh');
             $this->dispatch('clone-xtts-job-state-clear');
-            $this->dispatch('alert', type: 'error', message: 'Polling failed: ' . $e->getMessage());
+            $this->dispatch('alert', type: 'error', message: __('Polling failed: :message', ['message' => $e->getMessage()]));
         }
     }
 
@@ -840,7 +838,7 @@ class extends Component
             ->first();
 
         if (!$job) {
-            $this->dispatch('alert', type: 'error', message: 'Render not found.');
+            $this->dispatch('alert', type: 'error', message: __('Render not found.'));
             return;
         }
 
@@ -850,9 +848,9 @@ class extends Component
             $this->rendersRefreshKey++;
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('clone-xtts-renders-refresh');
-            $this->dispatch('alert', type: 'success', message: 'Deleted.');
+            $this->dispatch('alert', type: 'success', message: __('Deleted.'));
         } catch (\Throwable $e) {
-            $this->dispatch('alert', type: 'error', message: 'Delete failed: ' . $e->getMessage());
+            $this->dispatch('alert', type: 'error', message: __('Delete failed: :message', ['message' => $e->getMessage()]));
         }
     }
 
@@ -885,7 +883,7 @@ class extends Component
     public function openEliminateModal(): void
     {
         if (!$this->currentJobId || $this->jobFinished) {
-            $this->dispatch('alert', type: 'warning', message: 'There is no active job to eliminate.');
+            $this->dispatch('alert', type: 'warning', message: __('There is no active job to eliminate.'));
             return;
         }
 
@@ -902,7 +900,7 @@ class extends Component
         $this->showEliminateModal = false;
 
         if (!$this->currentJobId) {
-            $this->dispatch('alert', type: 'warning', message: 'No current job found.');
+            $this->dispatch('alert', type: 'warning', message: __('No current job found.'));
             $this->dispatch('clone-xtts-job-state-clear');
             $this->dispatch('clone-xtts-form-state-clear');
             return;
@@ -915,7 +913,7 @@ class extends Component
             $job->update([
                 'status' => 'failed',
                 'error' => [
-                    'message' => 'Eliminated by customer. Credits are not refundable.',
+                    'message' => __('Eliminated by customer. Credits are not refundable.'),
                     'type' => 'eliminated_by_customer',
                 ],
                 'finished_at' => now(),
@@ -952,7 +950,7 @@ class extends Component
         $this->dispatch('clone-xtts-job-state-clear');
         $this->dispatch('clone-xtts-form-state-clear');
         $this->dispatch('clone-xtts-renders-refresh');
-        $this->dispatch('alert', type: 'warning', message: 'Current job eliminated. Credits were not refunded.');
+        $this->dispatch('alert', type: 'warning', message: __('Current job eliminated. Credits were not refunded.'));
     }
 
     public function render()
@@ -1044,13 +1042,22 @@ class extends Component
 };
 ?>
 
+<x-slot:title>{{ __('Clone XTTS') }} | {{ __('MET KURD') }}</x-slot:title>
+
 <div id="clone-xtts-page-root">
     @if($currentJobId && !$jobFinished)
         <div wire:poll.4000ms="pollJob"></div>
     @endif
 
     @php
-        $status = strtoupper($currentStatus ?? 'IDLE');
+        $status = match($currentStatus) {
+            'queued' => __('Queued'),
+            'running' => __('Running'),
+            'saving' => __('Saving'),
+            'done' => __('Done'),
+            'failed' => __('Failed'),
+            default => __('Idle'),
+        };
 
         $badge = match($currentStatus) {
             'queued' => 'warning',
@@ -1079,8 +1086,8 @@ class extends Component
                 <div class="glass-load {{ $glassClass }} p-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div>
-                            <div class="fw-semibold">XTTS job status</div>
-                            <div class="small text-muted">Job ID: {{ $currentJobId ?: '—' }}</div>
+                            <div class="fw-semibold">{{ __('XTTS Job Status') }}</div>
+                            <div class="small text-muted">{{ __('Job ID:') }} {{ $currentJobId ?: '-' }}</div>
                         </div>
                         <span class="badge text-bg-{{ $badge }}">{{ $status }}</span>
                     </div>
@@ -1092,7 +1099,7 @@ class extends Component
                     <div class="d-flex align-items-center justify-content-between mt-2 small">
                         <span>{{ $progress }}%</span>
                         @if($jobFinished)
-                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">Hide</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">{{ __('Hide') }}</button>
                         @endif
                     </div>
                 </div>
@@ -1104,21 +1111,21 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                             <div>
-                                <strong>MK-CTTS (MET KURDISH CLONE TEXT-TO-SPEECH)</strong>
-                                <div class="text-muted small">Upload your voice sample and generate speech in the same style</div>
+                                <strong>{{ __('MK-CTTS (MET KURDISH CLONE TEXT-TO-SPEECH)') }}</strong>
+                                <div class="text-muted small">{{ __('Upload your voice sample and generate speech in the same style') }}</div>
                             </div>
 
                             <div class="d-flex gap-2 flex-wrap text-end small">
                                 <div class="mini-stat">
-                                    <div class="text-muted">Wallet</div>
+                                    <div class="text-muted">{{ __('Wallet') }}</div>
                                     <div class="fw-semibold">{{ number_format($walletBalance) }}</div>
                                 </div>
                                 <div class="mini-stat">
-                                    <div class="text-muted">Cost</div>
+                                    <div class="text-muted">{{ __('Cost') }}</div>
                                     <div class="fw-semibold">{{ number_format($creditsCost) }}</div>
                                 </div>
                                 <div class="mini-stat">
-                                    <div class="text-muted">Max/Submit</div>
+                                    <div class="text-muted">{{ __('Max/Submit') }}</div>
                                     <div class="fw-semibold">{{ number_format($maxPerSubmit) }}</div>
                                 </div>
                             </div>
@@ -1126,7 +1133,7 @@ class extends Component
 
                         <div class="card-body">
                             <div class="mb-3">
-                                <label class="form-label">Reference Voice Sample</label>
+                                <label class="form-label">{{ __('Reference Voice Sample') }}</label>
 
                                 <div wire:ignore>
                                     <input
@@ -1137,11 +1144,11 @@ class extends Component
                                 </div>
 
                                 <div class="small text-muted mt-2">
-                                    Recommended: clean speech, 10–30 seconds, low background noise.
+                                    {{ __('Recommended: clean speech, 10-30 seconds, low background noise.') }}
                                 </div>
 
                                 <div wire:loading wire:target="referenceAudio" class="small text-primary mt-2">
-                                    Uploading sample...
+                                    {{ __('Uploading sample...') }}
                                 </div>
 
                                 @if($referenceAudioName)
@@ -1149,8 +1156,7 @@ class extends Component
                                         <div class="fw-semibold small">{{ $referenceAudioName }}</div>
                                         <div class="small text-muted">
                                             {{ $referenceAudioMime ?: 'audio/*' }}
-                                            @if($referenceAudioBytes)
-                                                • {{ number_format($referenceAudioBytes) }} bytes
+                                            @if($referenceAudioBytes) | {{ __('Size: :bytes bytes', ['bytes' => number_format($referenceAudioBytes)]) }}
                                             @endif
                                         </div>
 
@@ -1160,7 +1166,7 @@ class extends Component
                                                 class="btn btn-sm btn-outline-danger"
                                                 wire:click="removeReferenceAudio"
                                             >
-                                                Remove sample
+                                                {{ __('Remove sample') }}
                                             </button>
                                         </div>
                                     </div>
@@ -1174,25 +1180,25 @@ class extends Component
                             <hr>
 
                             <div class="mt-3">
-                                <label class="form-label">Text</label>
+                                <label class="form-label">{{ __('Text') }}</label>
 
                                 <textarea
                                     class="form-control"
                                     rows="6"
                                     wire:model.live.debounce.250ms="text"
-                                    placeholder="Write a text"
+                                    placeholder="{{ __('Write a text') }}"
                                     dir="rtl"
                                 ></textarea>
 
                                 <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
                                     <div class="d-flex gap-3 small">
-                                        <span class="text-muted">Chars: <strong>{{ $this->currentChars }}</strong></span>
-                                        <span class="text-muted">Words: <strong>{{ $this->currentWords }}</strong></span>
-                                        <span class="text-muted">Credits: <strong>{{ $creditsCost }}</strong></span>
+                                        <span class="text-muted">{{ __('Chars:') }} <strong>{{ $this->currentChars }}</strong></span>
+                                        <span class="text-muted">{{ __('Words:') }} <strong>{{ $this->currentWords }}</strong></span>
+                                        <span class="text-muted">{{ __('Credits:') }} <strong>{{ $creditsCost }}</strong></span>
                                     </div>
 
                                     <button class="btn btn-sm btn-link p-0" wire:click="clearText" type="button">
-                                        Clear
+                                        {{ __('Clear') }}
                                     </button>
                                 </div>
 
@@ -1205,10 +1211,10 @@ class extends Component
 
                             <div class="row g-3 align-items-end">
                                 <div class="col-md-4">
-                                    <label class="form-label">Preset</label>
+                                    <label class="form-label">{{ __('Preset') }}</label>
                                     <select class="form-select" wire:model.live="selectedPreset">
                                         @foreach($presets as $k => $v)
-                                            <option value="{{ $k }}">{{ $v }}</option>
+                                            <option value="{{ $k }}">{{ __($v) }}</option>
                                         @endforeach
                                     </select>
                                 </div>
@@ -1226,7 +1232,7 @@ class extends Component
                                 </div> --}}
 
                                 <div class="col-md-2">
-                                    <label class="form-label">Max Words</label>
+                                    <label class="form-label">{{ __('Max Words') }}</label>
                                     <input type="number" class="form-control" wire:model.live="max_words" min="5" max="80">
                                     @error('max_words')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
@@ -1234,7 +1240,7 @@ class extends Component
                                 </div>
 
                                 <div class="col-md-2">
-                                    <label class="form-label">Fade (ms)</label>
+                                    <label class="form-label">{{ __('Fade (ms)') }}</label>
                                     <input type="number" class="form-control" wire:model.live="fade_ms" min="0" max="1000">
                                     @error('fade_ms')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
@@ -1244,7 +1250,7 @@ class extends Component
                                 <div class="col-md-12">
                                     <div class="form-check form-switch mt-2">
                                         <input class="form-check-input" type="checkbox" id="splitSwitchCloneXTTS" wire:model.live="split">
-                                        <label class="form-check-label" for="splitSwitchCloneXTTS">Split long text automatically</label>
+                                        <label class="form-check-label" for="splitSwitchCloneXTTS">{{ __('Split long text automatically') }}</label>
                                     </div>
                                 </div>
                             </div>
@@ -1312,22 +1318,22 @@ class extends Component
                                     id="btn-clone-xtts-generate"
                                 >
                                     <span wire:loading.remove wire:target="postCloneXtts,referenceAudio">
-                                        {{ $this->canGenerate ? 'Generate' : ($this->generateBlockedReason ?? 'Generate') }}
+                                        {{ $this->canGenerate ? __('Generate') : ($this->generateBlockedReason ?? __('Generate')) }}
                                     </span>
 
                                     <span wire:loading wire:target="referenceAudio">
                                         <span class="spinner-border spinner-border-sm me-1"></span>
-                                        Uploading sample...
+                                        {{ __('Uploading sample...') }}
                                     </span>
 
                                     <span wire:loading wire:target="postCloneXtts">
                                         <span class="spinner-border spinner-border-sm me-1"></span>
-                                        Starting...
+                                        {{ __('Starting...') }}
                                     </span>
                                 </button>
 
                                 <button class="btn btn-outline-secondary" wire:click="resetToDefaults" type="button">
-                                    Reset
+                                    {{ __('Reset') }}
                                 </button>
 
                                 <button
@@ -1336,12 +1342,12 @@ class extends Component
                                     type="button"
                                     @disabled(!$currentJobId || $jobFinished)
                                 >
-                                    Eliminate
+                                    {{ __('Eliminate') }}
                                 </button>
 
                                 @if($walletBalance < $creditsCost && $creditsCost > 0)
                                     <span class="small text-danger align-self-center">
-                                        Not enough credits for this generation.
+                                        {{ __('Not enough credits for this generation.') }}
                                     </span>
                                 @endif
                             </div>
@@ -1356,15 +1362,15 @@ class extends Component
                 <div class="turbo-inner">
                     <div class="card mb-0">
                         <div class="card-header d-flex justify-content-between align-items-center">
-                            <strong>Recent Renders</strong>
+                            <strong>{{ __('Recent Renders') }}</strong>
                             <button class="btn btn-sm btn-outline-secondary" wire:click="$refresh" type="button">
-                                Refresh
+                                {{ __('Refresh') }}
                             </button>
                         </div>
 
                         <div class="card-body">
                             @if($this->renders->count() === 0)
-                                <div class="text-muted">No renders yet.</div>
+                                <div class="text-muted">{{ __('No renders yet.') }}</div>
                             @else
                                 @foreach($this->renders as $r)
                                     <div
@@ -1375,10 +1381,10 @@ class extends Component
                                         <div class="d-flex justify-content-between gap-2">
                                             <div>
                                                 <div class="small text-muted">
-                                                    {{ $r['created_at'] }} • {{ $r['model'] }} • {{ $r['reference_name'] }}
+                                                    {{ __(':created | :model | :reference', ['created' => $r['created_at'], 'model' => $r['model'], 'reference' => $r['reference_name']]) }}
                                                 </div>
                                                 <div class="small text-muted">
-                                                    Words: {{ $r['words'] }} • Bytes: {{ number_format($r['bytes']) }}
+                                                    {{ __('Words: :words | Bytes: :bytes', ['words' => $r['words'], 'bytes' => number_format($r['bytes'])]) }}
                                                 </div>
                                             </div>
 
@@ -1388,7 +1394,7 @@ class extends Component
                                                         wire:loading.attr="disabled"
                                                         wire:target="deleteRender('{{ $r['id'] }}')"
                                                         type="button">
-                                                    Delete
+                                                    {{ __('Delete') }}
                                                 </button>
                                             </div>
                                         </div>
@@ -1406,13 +1412,13 @@ class extends Component
                                                             data-url="{{ $r['full_url'] }}"
                                                             data-latest="{{ $r['is_latest'] ? '1' : '0' }}"
                                                             data-preload-rank="{{ $loop->index }}">
-                                                        <i class="fa fa-play me-1"></i> Play/Pause
+                                                        <i class="fa fa-play me-1"></i> {{ __('Play/Pause') }}
                                                     </button>
 
                                                     <button type="button"
                                                             class="btn btn-outline-secondary btn-clone-xtts-stop"
                                                             data-job="{{ $r['id'] }}">
-                                                        <i class="fa fa-stop me-1"></i> Stop
+                                                        <i class="fa fa-stop me-1"></i> {{ __('Stop') }}
                                                     </button>
                                                 </div>
                                             </div>
@@ -1427,7 +1433,7 @@ class extends Component
                                                    href="{{ $r['download_url'] }}"
                                                    target="_blank"
                                                    rel="noopener">
-                                                    Download
+                                                    {{ __('Download') }}
                                                 </a>
                                             </div>
                                         </div>
@@ -1449,27 +1455,27 @@ class extends Component
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-danger">
                     <div class="modal-header">
-                        <h5 class="modal-title text-danger">Eliminate Current Job</h5>
+                        <h5 class="modal-title text-danger">{{ __('Eliminate Current Job') }}</h5>
                         <button type="button" class="btn-close" wire:click="closeEliminateModal"></button>
                     </div>
 
                     <div class="modal-body">
                         <p class="mb-2">
-                            Are you sure you want to eliminate the current job?
+                            {{ __('Are you sure you want to eliminate the current job?') }}
                         </p>
 
                         <div class="alert alert-warning mb-0">
-                            <strong>Warning:</strong> the credit will <strong>not</strong> be refunded and you will lose the charged credit for this job.
+                            <strong>{{ __('Warning:') }}</strong> {{ __('the credit will not be refunded and you will lose the charged credit for this job.') }}
                         </div>
                     </div>
 
                     <div class="modal-footer">
                         <button type="button" class="btn btn-light" wire:click="closeEliminateModal">
-                            Cancel
+                            {{ __('Cancel') }}
                         </button>
 
                         <button type="button" class="btn btn-danger" wire:click="eliminateCurrentJob">
-                            Yes, Eliminate
+                            {{ __('Yes, Eliminate') }}
                         </button>
                     </div>
                 </div>
@@ -1589,8 +1595,8 @@ class extends Component
             maxFileSize: '20MB',
             labelIdle: `
                 <div class="py-3">
-                    <div class="mb-1"><strong>Drag & Drop</strong> your reference audio here</div>
-                    <div class="small text-muted">or <span class="filepond--label-action">Browse</span></div>
+                    <div class="mb-1"><strong>${@js(__('Drag & Drop'))}</strong> ${@js(__('your reference audio here'))}</div>
+                    <div class="small text-muted">${@js(__('or'))} <span class="filepond--label-action">${@js(__('Browse'))}</span></div>
                 </div>
             `,
             server: {
@@ -1599,7 +1605,7 @@ class extends Component
                         'referenceAudio',
                         file,
                         () => load(file.name),
-                        (e) => error(typeof e === 'string' ? e : 'Upload failed'),
+                        (e) => error(typeof e === 'string' ? e : @js(__('Upload failed'))),
                         (event) => {
                             progress(
                                 event.lengthComputable,

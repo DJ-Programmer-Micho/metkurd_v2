@@ -2,13 +2,11 @@
 
 use App\Support\Admin\ManagesCustomerUsagePage;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
 
 new
 #[Layout('admin::layouts.app')]
-#[Title('Customers Usage | METKURD')]
 class extends Component
 {
     use ManagesCustomerUsagePage;
@@ -18,19 +16,21 @@ class extends Component
 };
 ?>
 
+<x-slot:title>{{ __('Customers Usage') }} | {{ __('MET KURD') }}</x-slot:title>
+
 <div class="container-fluid">
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
-                    <h4 class="mb-sm-0">Customer Usage</h4>
-                    <p class="text-muted mb-0">Analyze customer usage across all `MlJob` tool and action activity to identify the heaviest consumers and most used tools.</p>
+                    <h4 class="mb-sm-0">{{ __('Customer Usage') }}</h4>
+                    <p class="text-muted mb-0">{{ __('Analyze customer usage across all `MlJob` tool and action activity to identify the heaviest consumers and most used tools.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
                     @if ($this->selectedCustomer)
-                        <button type="button" class="btn btn-soft-info" wire:click="clearFocusedCustomer">Clear Focus</button>
+                        <button type="button" class="btn btn-soft-info" wire:click="clearFocusedCustomer">{{ __('Clear Focus') }}</button>
                     @endif
-                    <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">Clear Filters</button>
+                    <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
                 </div>
             </div>
         </div>
@@ -40,34 +40,34 @@ class extends Component
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate h-100">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Jobs</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Jobs') }}</p>
                     <h2 class="mb-1">{{ number_format($this->topStats['jobs']) }}</h2>
-                    <p class="text-muted mb-0">{{ $this->periodLabel($periodFilter) }} in the current customer scope.</p>
+                    <p class="text-muted mb-0">{{ __(':period in the current customer scope.', ['period' => $this->periodLabel($periodFilter)]) }}</p>
                 </div>
             </div>
         </div>
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate h-100">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Credits Consumed</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Credits Consumed') }}</p>
                     <h2 class="mb-1">{{ number_format($this->topStats['credits']) }}</h2>
-                    <p class="text-muted mb-0">Charged credits from all non-deleted jobs in scope.</p>
+                    <p class="text-muted mb-0">{{ __('Charged credits from all non-deleted jobs in scope.') }}</p>
                 </div>
             </div>
         </div>
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate h-100">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Customers with Activity</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Customers with Activity') }}</p>
                     <h2 class="mb-1">{{ number_format($this->topStats['customers']) }}</h2>
-                    <p class="text-muted mb-0">Distinct customers who have matching jobs in this view.</p>
+                    <p class="text-muted mb-0">{{ __('Distinct customers who have matching jobs in this view.') }}</p>
                 </div>
             </div>
         </div>
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate h-100">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Most Used Tool</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Most Used Tool') }}</p>
                     <h6 class="mb-0">{{ $this->topStats['top_tool'] }}</h6>
                 </div>
             </div>
@@ -78,38 +78,38 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-4">
-                    <label class="form-label text-muted text-uppercase fs-12">Search</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="Search customer username, email, or profile...">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search customer username, email, or profile...') }}">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-3 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">Focused Customer</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Focused Customer') }}</label>
                     <select class="form-select" wire:model.live="customerFilter">
-                        <option value="all">All customers</option>
+                        <option value="all">{{ __('All customers') }}</option>
                         @foreach ($this->customerDirectoryOptions as $customerOption)
                             <option value="{{ $customerOption->id }}">{{ $customerOption->username }} ({{ $customerOption->email }})</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">Period</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Period') }}</label>
                     <select class="form-select" wire:model.live="periodFilter">
-                        <option value="7">Last 7 days</option>
-                        <option value="30">Last 30 days</option>
-                        <option value="90">Last 90 days</option>
-                        <option value="365">Last 12 months</option>
-                        <option value="all">All time</option>
+                        <option value="7">{{ __('Last 7 days') }}</option>
+                        <option value="30">{{ __('Last 30 days') }}</option>
+                        <option value="90">{{ __('Last 90 days') }}</option>
+                        <option value="365">{{ __('Last 12 months') }}</option>
+                        <option value="all">{{ __('All time') }}</option>
                     </select>
                 </div>
                 <div class="col-xl-3 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">Job Status</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Job Status') }}</label>
                     <select class="form-select" wire:model.live="jobStatusFilter">
-                        <option value="all">All non-deleted jobs</option>
-                        <option value="done">Completed only</option>
-                        <option value="failed">Failed only</option>
-                        <option value="active">Queued / running / saving</option>
+                        <option value="all">{{ __('All non-deleted jobs') }}</option>
+                        <option value="done">{{ __('Completed only') }}</option>
+                        <option value="failed">{{ __('Failed only') }}</option>
+                        <option value="active">{{ __('Queued / running / saving') }}</option>
                     </select>
                 </div>
             </div>
@@ -120,16 +120,14 @@ class extends Component
         <div class="card border-info mb-3">
             <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-3">
                 <div>
-                    <h5 class="mb-1">Usage Focus: {{ $this->customerDisplayName($this->selectedCustomer) }}</h5>
+                    <h5 class="mb-1">{{ __('Usage Focus: :name', ['name' => $this->customerDisplayName($this->selectedCustomer)]) }}</h5>
                     <p class="text-muted mb-0">
-                        {{ number_format((int) ($this->selectedCustomer->jobs_count ?? 0)) }} jobs,
-                        {{ $this->formatCredits($this->selectedCustomer->consumed_credits) }} credits,
-                        plan {{ $this->selectedCustomer->servicePlan?->name ?? 'No active plan' }}.
+                        {{ __(':jobs jobs, :credits credits, plan :plan.', ['jobs' => number_format((int) ($this->selectedCustomer->jobs_count ?? 0)), 'credits' => $this->formatCredits($this->selectedCustomer->consumed_credits), 'plan' => $this->selectedCustomer->servicePlan?->name ?? __('No active plan')]) }}
                     </p>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
-                    <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $this->selectedCustomer->id]) }}" class="btn btn-soft-primary">Open Register</a>
-                    <button type="button" class="btn btn-soft-secondary" wire:click="clearFocusedCustomer">Show All Customers</button>
+                    <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $this->selectedCustomer->id]) }}" class="btn btn-soft-primary">{{ __('Open Register') }}</a>
+                    <button type="button" class="btn btn-soft-secondary" wire:click="clearFocusedCustomer">{{ __('Show All Customers') }}</button>
                 </div>
             </div>
         </div>
@@ -137,21 +135,21 @@ class extends Component
 
     <div class="card mb-3">
         <div class="card-header border-0">
-            <h5 class="card-title mb-1">Customer Usage Table</h5>
-            <p class="text-muted mb-0">See which customers are consuming the most credits and how much of that usage is successful versus failed.</p>
+            <h5 class="card-title mb-1">{{ __('Customer Usage Table') }}</h5>
+            <p class="text-muted mb-0">{{ __('See which customers are consuming the most credits and how much of that usage is successful versus failed.') }}</p>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light text-muted">
                         <tr class="text-uppercase">
-                            <th>Customer</th>
-                            <th>Plan</th>
-                            <th>Jobs</th>
-                            <th>Credits</th>
-                            <th>Storage</th>
-                            <th>Last Job</th>
-                            <th class="text-end">Actions</th>
+                            <th>{{ __('Customer') }}</th>
+                            <th>{{ __('Plan') }}</th>
+                            <th>{{ __('Jobs') }}</th>
+                            <th>{{ __('Credits') }}</th>
+                            <th>{{ __('Storage') }}</th>
+                            <th>{{ __('Last Job') }}</th>
+                            <th class="text-end">{{ __('Actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -164,31 +162,31 @@ class extends Component
                                         <span class="text-muted small">{{ $customer->email }}</span>
                                     </div>
                                 </td>
-                                <td><span class="badge {{ $this->planBadgeClasses($customer->servicePlan?->code) }}">{{ $customer->servicePlan?->name ?? 'No active plan' }}</span></td>
+                                <td><span class="badge {{ $this->planBadgeClasses($customer->servicePlan?->code) }}">{{ $customer->servicePlan?->name ?? __('No active plan') }}</span></td>
                                 <td>
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold">{{ number_format((int) ($customer->jobs_count ?? 0)) }}</span>
-                                        <span class="text-muted small">{{ number_format((int) ($customer->done_jobs_count ?? 0)) }} done / {{ number_format((int) ($customer->failed_jobs_count ?? 0)) }} failed</span>
+                                        <span class="text-muted small">{{ __(':done done / :failed failed', ['done' => number_format((int) ($customer->done_jobs_count ?? 0)), 'failed' => number_format((int) ($customer->failed_jobs_count ?? 0))]) }}</span>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold">{{ $this->formatCredits($customer->consumed_credits) }}</span>
-                                        <span class="text-muted small">{{ $this->formatMoney($customer->paid_order_amount) }} paid</span>
+                                        <span class="text-muted small">{{ __(':amount paid', ['amount' => $this->formatMoney($customer->paid_order_amount)]) }}</span>
                                     </div>
                                 </td>
                                 <td>{{ $this->formatBytes(data_get($customer, 'usage.storage_used_bytes')) }}</td>
-                                <td>{{ $customer->last_job_at ? \Illuminate\Support\Carbon::parse($customer->last_job_at)->diffForHumans() : 'No jobs yet' }}</td>
+                                <td>{{ $customer->last_job_at ? \Illuminate\Support\Carbon::parse($customer->last_job_at)->diffForHumans() : __('No jobs yet') }}</td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="focusCustomer({{ $customer->id }})">Focus</button>
-                                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-primary">Register</a>
+                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="focusCustomer({{ $customer->id }})">{{ __('Focus') }}</button>
+                                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Register') }}</a>
                                     </div>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="text-center py-5 text-muted">No usage rows matched the current filters.</td>
+                                <td colspan="7" class="text-center py-5 text-muted">{{ __('No usage rows matched the current filters.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -202,20 +200,20 @@ class extends Component
 
     <div class="card">
         <div class="card-header border-0">
-            <h5 class="card-title mb-1">{{ $this->selectedCustomer ? 'Focused Tool and Action Breakdown' : 'Global Tool and Action Breakdown' }}</h5>
-            <p class="text-muted mb-0">Grouped by tool and action so admin can quickly spot the most used integrations and entry points.</p>
+            <h5 class="card-title mb-1">{{ $this->selectedCustomer ? __('Focused Tool and Action Breakdown') : __('Global Tool and Action Breakdown') }}</h5>
+            <p class="text-muted mb-0">{{ __('Grouped by tool and action so admin can quickly spot the most used integrations and entry points.') }}</p>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light text-muted">
                         <tr class="text-uppercase">
-                            <th>Tool</th>
-                            <th>Action</th>
-                            <th>Jobs</th>
-                            <th>Done</th>
-                            <th>Failed</th>
-                            <th>Credits</th>
+                            <th>{{ __('Tool') }}</th>
+                            <th>{{ __('Action') }}</th>
+                            <th>{{ __('Jobs') }}</th>
+                            <th>{{ __('Done') }}</th>
+                            <th>{{ __('Failed') }}</th>
+                            <th>{{ __('Credits') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -240,7 +238,7 @@ class extends Component
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="text-center py-5 text-muted">No tool usage breakdown is available for the current scope.</td>
+                                <td colspan="6" class="text-center py-5 text-muted">{{ __('No tool usage breakdown is available for the current scope.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

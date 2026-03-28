@@ -82,8 +82,8 @@ trait ManagesCustomerRankingPage
             'service_plan_revenue' => (float) ((clone $servicePlanOrders)->sum('amount_usd') ?? 0),
             'storage_revenue' => (float) ((clone $storageOrders)->sum('amount_usd') ?? 0),
             'credit_product_revenue' => (float) ((clone $creditProductOrders)->sum('amount_usd') ?? 0),
-            'top_consumer' => $consumptionLeader ? $this->customerDisplayName($consumptionLeader) : 'No activity',
-            'top_buyer' => $purchaseLeader ? $this->customerDisplayName($purchaseLeader) : 'No purchases',
+            'top_consumer' => $consumptionLeader ? $this->customerDisplayName($consumptionLeader) : __('No activity'),
+            'top_buyer' => $purchaseLeader ? $this->customerDisplayName($purchaseLeader) : __('No purchases'),
         ];
     }
 

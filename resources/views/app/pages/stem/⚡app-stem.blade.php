@@ -3,7 +3,6 @@
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -25,7 +24,6 @@ use App\Services\Storage\CustomerOutputStorage;
 
 new
 #[Layout('app::layouts.app')]
-#[Title('STEM Separation | METKURD')]
 class extends Component
 {
     use WithPagination;
@@ -316,14 +314,14 @@ class extends Component
                 : sha1(($this->audioFileName ?? '') . '|' . ($this->audioFileBytes ?? 0));
 
             $this->syncCostPreview();
-            $this->dispatch('alert', type: 'success', message: 'Audio uploaded successfully.');
+            $this->dispatch('alert', type: 'success', message: __('Audio uploaded successfully.'));
         } catch (\Throwable $e) {
             Log::error('STEM_AUDIO_UPLOAD_FAIL', [
                 'message' => $e->getMessage(),
             ]);
 
             $this->resetAudioState();
-            $this->dispatch('alert', type: 'error', message: 'Failed to inspect the uploaded audio file.');
+            $this->dispatch('alert', type: 'error', message: __('Failed to inspect the uploaded audio file.'));
         }
     }
 
@@ -417,31 +415,31 @@ class extends Component
         $customer = auth('app')->user();
 
         if (!$customer) {
-            return 'You must be logged in.';
+            return __('You must be logged in.');
         }
 
         if ($this->currentJobId && !$this->jobFinished) {
-            return 'A stem separation job is already in progress.';
+            return __('A stem separation job is already in progress.');
         }
 
         if (method_exists($customer, 'isAllowed') && !$customer->isAllowed($this->fullActionCode())) {
-            return 'Your plan does not allow this STEM separation mode.';
+            return __('Your plan does not allow this STEM separation mode.');
         }
 
         if (!$this->audioFile) {
-            return 'Please upload an audio file.';
+            return __('Please upload an audio file.');
         }
 
         if ($this->audioDurationSec === null || $this->audioDurationSec <= 0) {
-            return 'Audio duration could not be detected.';
+            return __('Audio duration could not be detected.');
         }
 
         if ($this->creditsCost <= 0) {
-            return 'Pricing could not be calculated.';
+            return __('Pricing could not be calculated.');
         }
 
         if ($this->walletBalance < $this->creditsCost) {
-            return 'Not enough credits.';
+            return __('Not enough credits.');
         }
 
         return null;
@@ -489,7 +487,7 @@ class extends Component
             'stems' => $streams,
             'downloads' => $downloads,
             'meta' => (array) ($job->meta ?? []),
-            'input_name' => (string) data_get($job->input, 'audio_name', 'Untitled audio'),
+            'input_name' => (string) data_get($job->input, 'audio_name', __('Untitled audio')),
             'created_at' => optional($job->finished_at ?? $job->created_at)->format('Y-m-d H:i'),
             'created_at_human' => optional($job->finished_at ?? $job->created_at)->diffForHumans(),
         ];
@@ -518,31 +516,31 @@ class extends Component
         $this->hydrateCurrentJobFromDb();
 
         if ($this->currentJobId && !$this->jobFinished) {
-            $this->dispatch('alert', type: 'warning', message: 'A stem separation job is already in progress.');
+            $this->dispatch('alert', type: 'warning', message: __('A stem separation job is already in progress.'));
             return;
         }
 
         $customer = auth('app')->user();
         if (!$customer) {
-            $this->dispatch('alert', type: 'error', message: 'You must be logged in.');
+            $this->dispatch('alert', type: 'error', message: __('You must be logged in.'));
             return;
         }
 
         if (method_exists($customer, 'isAllowed') && !$customer->isAllowed($this->fullActionCode())) {
-            $this->dispatch('alert', type: 'error', message: 'Your plan does not allow this STEM separation mode.');
+            $this->dispatch('alert', type: 'error', message: __('Your plan does not allow this STEM separation mode.'));
             return;
         }
 
         $this->validate();
 
         if ($this->audioDurationSec === null || $this->audioDurationSec <= 0) {
-            $this->dispatch('alert', type: 'error', message: 'Audio duration could not be detected.');
+            $this->dispatch('alert', type: 'error', message: __('Audio duration could not be detected.'));
             return;
         }
 
         $needed = $this->requiredCredits();
         if ($needed <= 0) {
-            $this->dispatch('alert', type: 'error', message: 'Pricing is not configured for STEM separation.');
+            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured for STEM separation.'));
             return;
         }
 
@@ -566,7 +564,7 @@ class extends Component
                 $charged = true;
             } catch (\Throwable) {
                 $this->syncWallet();
-                $this->dispatch('alert', type: 'error', message: 'Not enough credits.');
+                $this->dispatch('alert', type: 'error', message: __('Not enough credits.'));
                 return;
             }
 
@@ -662,7 +660,7 @@ class extends Component
 
             if (!($lock['ok'] ?? false)) {
                 $refundReason = 'stem_lock_conflict';
-                throw new \RuntimeException((string) ($lock['message'] ?? 'Could not lock the STEM job.'));
+                throw new \RuntimeException((string) ($lock['message'] ?? __('Could not lock the STEM job.')));
             }
 
             $payload = $sync->buildRunpodInput(
@@ -677,7 +675,7 @@ class extends Component
 
             $endpointId = (string) (config('runpod.endpoints.stem') ?: env('RUNPOD_ENDPOINT_ID_STEM'));
             if ($endpointId === '') {
-                throw new \RuntimeException('RUNPOD_ENDPOINT_ID_STEM is missing.');
+                throw new \RuntimeException(__('RUNPOD_ENDPOINT_ID_STEM is missing.'));
             }
 
             $response = $runpod->run($endpointId, $payload);
@@ -709,7 +707,7 @@ class extends Component
                 'status' => 'running',
                 'progress' => 15,
             ]);
-            $this->dispatch('alert', type: 'success', message: 'Stem separation job submitted.');
+            $this->dispatch('alert', type: 'success', message: __('Stem separation job submitted.'));
             $this->syncWallet();
         } catch (\Throwable $e) {
             Log::error('STEM_SUBMIT_FAIL', [
@@ -817,7 +815,7 @@ class extends Component
             $this->dispatch('header:refresh');
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('stem-renders-refresh');
-            $this->dispatch('alert', type: 'success', message: (string) ($result['message'] ?? 'Stem separation completed.'));
+            $this->dispatch('alert', type: 'success', message: (string) ($result['message'] ?? __('Stem separation completed.')));
             $this->resetJobState();
             $this->syncLoadedRenderSelection();
 
@@ -828,7 +826,7 @@ class extends Component
             $this->dispatch('stem-job-state-clear');
             $this->dispatch('header:refresh');
             $this->dispatch('stem-renders-refresh');
-            $this->dispatch('alert', type: 'error', message: (string) ($result['message'] ?? 'Stem separation failed.'));
+            $this->dispatch('alert', type: 'error', message: (string) ($result['message'] ?? __('Stem separation failed.')));
             $this->resetJobState();
         }
     }
@@ -843,7 +841,7 @@ class extends Component
             ->first();
 
         if (!$job) {
-            $this->dispatch('alert', type: 'error', message: 'Render not found.');
+            $this->dispatch('alert', type: 'error', message: __('Render not found.'));
             return;
         }
 
@@ -860,7 +858,7 @@ class extends Component
             ->first();
 
         if (!$job) {
-            $this->dispatch('alert', type: 'error', message: 'Render not found.');
+            $this->dispatch('alert', type: 'error', message: __('Render not found.'));
             return;
         }
 
@@ -877,14 +875,14 @@ class extends Component
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('header:refresh');
             $this->dispatch('stem-renders-refresh');
-            $this->dispatch('alert', type: 'success', message: 'Render deleted.');
+            $this->dispatch('alert', type: 'success', message: __('Render deleted.'));
         } catch (\Throwable $e) {
             Log::error('STEM_DELETE_RENDER_FAIL', [
                 'job_id' => (string) $job->id,
                 'message' => $e->getMessage(),
             ]);
 
-            $this->dispatch('alert', type: 'error', message: 'Failed to delete render.');
+            $this->dispatch('alert', type: 'error', message: __('Failed to delete render.'));
         }
     }
 
@@ -966,11 +964,13 @@ class extends Component
         $this->dispatch('header:refresh');
         $this->dispatch('customerStorageUpdated');
         $this->dispatch('stem-renders-refresh');
-        $this->dispatch('alert', type: 'warning', message: 'Current STEM job eliminated. Credits were not refunded.');
+        $this->dispatch('alert', type: 'warning', message: __('Current STEM job eliminated. Credits were not refunded.'));
         $this->resetJobState();
     }
 };
 ?>
+
+<x-slot:title>{{ __('Stem Separation') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div id="stem-page-root">
     @if($currentJobId && !$jobFinished)
@@ -991,13 +991,13 @@ class extends Component
 
         $trackLabel = function ($track) {
             return match ($track) {
-                'original' => 'ORIGINAL',
-                'vocals' => 'VOCALS',
-                'instrumental' => 'INSTRUMENTAL',
-                'drums' => 'DRUMS',
-                'bass' => 'BASS',
-                'other' => 'OTHER',
-                default => strtoupper($track),
+                'original' => __('Original'),
+                'vocals' => __('Vocals'),
+                'instrumental' => __('Instrumental'),
+                'drums' => __('Drums'),
+                'bass' => __('Bass'),
+                'other' => __('Other'),
+                default => __(\Illuminate\Support\Str::headline((string) $track)),
             };
         };
 
@@ -1005,6 +1005,14 @@ class extends Component
         $latestTitle = $latestTitle ?: ($loadedRender['id'] ?? '-');
 
         $status = $currentStatus ?? 'queued';
+        $statusLabel = match ($status) {
+            'queued' => __('Queued'),
+            'running' => __('Running'),
+            'saving' => __('Saving'),
+            'done' => __('Done'),
+            'failed' => __('Failed'),
+            default => __('Queued'),
+        };
         $badge = match($status) {
             'queued' => 'secondary',
             'running' => 'info',
@@ -1035,7 +1043,7 @@ class extends Component
                                     {{ $currentStatus }}
                                 </span>
                                 <small class="tts-status-muted">
-                                    Job ID: <span class="font-weight-bold">{{ $currentJobId }}</span>
+                                    {{ __('Job ID:') }} <span class="font-weight-bold">{{ $currentJobId }}</span>
                                 </small>
                             </div>
 
@@ -1043,10 +1051,10 @@ class extends Component
                                 @if(!$jobFinished)
                                     <small class="tts-status-muted">
                                         <span class="spinner-border spinner-border-sm mr-1" role="status"></span>
-                                        Working...
+                                        {{ __('Working...') }}
                                     </small>
                                 @else
-                                    <small class="tts-status-muted">Finished</small>
+                                    <small class="tts-status-muted">{{ __('Finished') }}</small>
                                 @endif
                             </div>
                         </div>
@@ -1073,41 +1081,41 @@ class extends Component
                         <div class="card-body p-3 p-md-4">
                             <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
                                 <div>
-                                    <strong class="d-block">STEM</strong>
-                                    <small class="text-muted">Separate stems Music</small>
+                                    <strong class="d-block">{{ __('Stem Separation') }}</strong>
+                                    <small class="text-muted">{{ __('Separate music stems') }}</small>
                                 </div>
-                                <span class="badge badge-primary">Beta</span>
+                                <span class="badge badge-primary">{{ __('Beta') }}</span>
                             </div>
 
                             <div class="d-flex flex-wrap gap-3 mb-3 stem-top-mini-stats">
                                 <div class="stem-mini-stat">
-                                    <div class="text-muted small">Wallet</div>
+                                    <div class="text-muted small">{{ __('Wallet') }}</div>
                                     <div class="fw-semibold">{{ number_format($walletBalance) }}</div>
                                 </div>
                                 <div class="stem-mini-stat">
-                                    <div class="text-muted small">Cost</div>
+                                    <div class="text-muted small">{{ __('Cost') }}</div>
                                     <div class="fw-semibold">{{ number_format($creditsCost) }}</div>
                                 </div>
                                 @if($audioDurationMin)
                                     <div class="stem-mini-stat">
-                                        <div class="text-muted small">Minutes</div>
+                                        <div class="text-muted small">{{ __('Minutes') }}</div>
                                         <div class="fw-semibold">{{ number_format((float) $audioDurationMin, 2) }}</div>
                                     </div>
                                 @endif
                             </div>
 
                             <div class="stem-plugin-card mb-3">
-                                <label class="mb-1 font-weight-medium">Audio File</label>
+                                <label class="mb-1 font-weight-medium">{{ __('Audio File') }}</label>
                                 <div wire:ignore>
                                     <input type="file" id="stem-audio-pond">
                                 </div>
 
                                 <div wire:loading wire:target="audioFile" class="small text-primary mt-2">
-                                    Uploading audio...
+                                    {{ __('Uploading audio...') }}
                                 </div>
 
                                 <small class="text-muted d-block mt-2">
-                                    WAV recommended | Max 100MB
+                                    {{ __('WAV recommended | Max 100MB') }}
                                 </small>
                             </div>
 
@@ -1117,7 +1125,7 @@ class extends Component
                                         <div>
                                             <div class="fw-semibold">{{ $audioFileName }}</div>
                                             <div class="small text-muted">
-                                                {{ $audioDurationSec ? number_format($audioDurationSec, 2) . ' sec' : 'Unknown duration' }}
+                                                {{ $audioDurationSec ? number_format($audioDurationSec, 2) . ' ' . __('sec') : __('Unknown duration') }}
                                                 @if($audioFileBytes)
                                                     | {{ number_format($audioFileBytes / 1024 / 1024, 2) }} MB
                                                 @endif
@@ -1125,7 +1133,7 @@ class extends Component
                                         </div>
 
                                         <button class="btn btn-outline-danger btn-sm" wire:click="removeAudioFile" type="button">
-                                            Remove
+                                            {{ __('Remove') }}
                                         </button>
                                     </div>
                                 </div>
@@ -1143,35 +1151,35 @@ class extends Component
                                     >
                                         <span wire:loading.remove wire:target="submit,audioFile">
                                             <span class="mr-1" aria-hidden="true">▶</span>
-                                            {{ $this->canSeparate ? 'Separate' : ($this->separateBlockedReason ?? 'Separate') }}
+                                            {{ $this->canSeparate ? __('Separate') : ($this->separateBlockedReason ?? __('Separate')) }}
                                         </span>
 
                                         <span wire:loading wire:target="audioFile">
                                             <span class="spinner-border spinner-border-sm mr-1"></span>
-                                            Uploading audio...
+                                            {{ __('Uploading audio...') }}
                                         </span>
 
                                         <span wire:loading wire:target="submit">
                                             <span class="spinner-border spinner-border-sm mr-1"></span>
-                                            Sending...
+                                            {{ __('Sending...') }}
                                         </span>
                                     </button>
 
                                     <button class="btn btn-outline-secondary" wire:click="resetForm" type="button">
-                                        Clear
+                                        {{ __('Clear') }}
                                     </button>
                                 </div>
 
                                 @if($currentJobId && !$jobFinished)
                                     <button type="button" class="btn btn-outline-danger" wire:click="openEliminateModal">
-                                        Eliminate Current Job
+                                        {{ __('Eliminate Current Job') }}
                                     </button>
                                 @endif
                             </div>
 
                             @if($walletBalance < $creditsCost && $creditsCost > 0)
                                 <small class="text-danger d-block mt-2">
-                                    Not enough credits for this separation.
+                                    {{ __('Not enough credits for this separation.') }}
                                 </small>
                             @endif
                         </div>
@@ -1185,34 +1193,34 @@ class extends Component
                         <div class="card-body p-3 p-md-4">
                             <div class="d-flex align-items-center justify-content-between flex-wrap mb-3">
                                 <div>
-                                    <strong class="d-block">Latest Output</strong>
-                                    <small class="text-muted">Title: <b id="stem-latest-title">{{ $latestTitle }}</b></small>
+                                    <strong class="d-block">{{ __('Latest Output') }}</strong>
+                                    <small class="text-muted">{{ __('Title:') }} <b id="stem-latest-title">{{ $latestTitle }}</b></small>
                                 </div>
 
                                 <div class="d-flex align-items-center gap-2">
                                     @if($loadedRender && isset($loadedRender['downloads']['all']))
                                         <small id="stem-current-render-label" class="text-muted mt-2 mt-md-0 mr-2">
-                                            Render: <b id="stem-current-render-id">#{{ $loadedRender['id'] }}</b>
+                                            {{ __('Render:') }} <b id="stem-current-render-id">#{{ $loadedRender['id'] }}</b>
                                         </small>
                                         <a
                                             id="stem-download-all"
                                             href="{{ $loadedRender['downloads']['all'] ?? '#' }}"
                                             class="btn btn-sm btn-primary {{ isset($loadedRender['downloads']['all']) ? '' : 'disabled' }}"
-                                            title="Download All as ZIP"
+                                            title="{{ __('Download All as ZIP') }}"
                                         >
-                                            <i class="mdi mdi-download"></i> Download ZIP
+                                            <i class="mdi mdi-download"></i> {{ __('Download ZIP') }}
                                         </a>
                                     @else
                                         <small id="stem-current-render-label" class="text-muted mt-2 mt-md-0 mr-2 d-none">
-                                            Render: <b id="stem-current-render-id"></b>
+                                            {{ __('Render:') }} <b id="stem-current-render-id"></b>
                                         </small>
                                         <a
                                             id="stem-download-all"
                                             href="#"
                                             class="btn btn-sm btn-primary disabled"
-                                            title="Download All as ZIP"
+                                            title="{{ __('Download All as ZIP') }}"
                                         >
-                                            <i class="mdi mdi-download"></i> Download ZIP
+                                            <i class="mdi mdi-download"></i> {{ __('Download ZIP') }}
                                         </a>
                                     @endif
                                 </div>
@@ -1223,7 +1231,7 @@ class extends Component
                             <script type="application/json" id="stem-initial-render-data">{!! json_encode($loadedRender, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!}</script>
 
                             <div id="stem-empty-state" class="{{ $loadedRender ? 'd-none' : '' }}">
-                                <div class="text-muted small text-center py-4">No output selected yet.</div>
+                                <div class="text-muted small text-center py-4">{{ __('No output selected yet.') }}</div>
                             </div>
 
                             <div id="stem-tracks-wrapper" wire:ignore class="{{ $loadedRender ? '' : 'd-none' }}">
@@ -1234,10 +1242,10 @@ class extends Component
                                         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                                             <div class="d-flex align-items-center gap-2">
                                                 <button id="stem-master-play" type="button" class="btn btn-lg btn-success btn-master-play" {{ $loadedRender ? '' : 'disabled' }}>
-                                                    <i class="mdi mdi-play"></i> Play All
+                                                    <i class="mdi mdi-play"></i> {{ __('Play All') }}
                                                 </button>
                                                 <button id="stem-master-stop" type="button" class="btn btn-lg btn-outline-secondary btn-master-stop" {{ $loadedRender ? '' : 'disabled' }}>
-                                                    <i class="mdi mdi-stop"></i> Stop
+                                                    <i class="mdi mdi-stop"></i> {{ __('Stop') }}
                                                 </button>
                                             </div>
                                             <div class="master-time text-muted">
@@ -1258,13 +1266,13 @@ class extends Component
                                                     <div class="stem-track-label">
                                                         <span class="stem-badge">{{ $trackLabel($track) }}</span>
                                                         <div class="small text-muted mt-1">
-                                                            {{ $track === 'original' ? 'Original uploaded audio - muted by default' : 'Separated output track' }}
+                                                            {{ $track === 'original' ? __('Original uploaded audio - muted by default') : __('Separated output track') }}
                                                         </div>
                                                     </div>
 
                                                     <div class="stem-track-controls d-flex gap-2 flex-wrap">
                                                         <button type="button" class="btn btn-sm btn-stem-play track-play btn-outline-success" data-track="{{ $track }}">
-                                                            <i class="mdi mdi-play"></i> Play
+                                                            <i class="mdi mdi-play"></i> {{ __('Play') }}
                                                         </button>
 
                                                         <button type="button" class="btn btn-sm btn-stem-solo track-solo" data-track="{{ $track }}">
@@ -1272,7 +1280,7 @@ class extends Component
                                                         </button>
 
                                                         <button type="button" class="btn btn-sm btn-stem-mute track-mute {{ $isMutedByDefault ? 'active btn-warning' : 'btn-outline-warning' }}" data-track="{{ $track }}">
-                                                            <i class="mdi mdi-volume-off"></i> {{ $isMutedByDefault ? 'Muted' : 'Mute' }}
+                                                            <i class="mdi mdi-volume-off"></i> {{ $isMutedByDefault ? __('Muted') : __('Mute') }}
                                                         </button>
 
                                                         <a
@@ -1292,7 +1300,7 @@ class extends Component
                                 </div>
 
                                 <div class="small text-muted mt-3">
-                                    Recent renders and active job state are cached in browser storage for instant reload.
+                                    {{ __('Recent renders and active job state are cached in browser storage for instant reload.') }}
                                 </div>
                             </div>
                         </div>
@@ -1309,15 +1317,15 @@ class extends Component
                         <div class="card-body p-3 p-md-4 stem-param-rack">
                             <div class="d-flex align-items-center justify-content-between mb-3 gap-2 flex-wrap">
                                 <div>
-                                    <strong class="d-block">Parameters</strong>
-                                    <small class="text-muted">Tune the separation like an audio plugin before you render.</small>
+                                    <strong class="d-block">{{ __('Parameters') }}</strong>
+                                    <small class="text-muted">{{ __('Tune the separation like an audio plugin before you render.') }}</small>
                                 </div>
                                 <div class="d-flex align-items-center gap-2">
                                     <span class="small text-muted stem-param-sync" wire:loading wire:target="stems,model,stemCodec,stemBitrate">
-                                        Applying...
+                                        {{ __('Applying...') }}
                                     </span>
                                     <button wire:click="resetForm" class="btn btn-sm btn-outline-secondary" type="button">
-                                        <i class="mdi mdi-refresh"></i> Reset
+                                        <i class="mdi mdi-refresh"></i> {{ __('Reset') }}
                                     </button>
                                 </div>
                             </div>
@@ -1325,10 +1333,10 @@ class extends Component
                             <div class="stem-plugin-card mb-3">
                                 <div class="stem-plugin-card__head">
                                     <div>
-                                        <div class="stem-plugin-kicker">Separation</div>
-                                        <h6 class="stem-plugin-title mb-0">Stem Mode</h6>
+                                        <div class="stem-plugin-kicker">{{ __('Separation') }}</div>
+                                        <h6 class="stem-plugin-title mb-0">{{ __('Stem Mode') }}</h6>
                                     </div>
-                                    <span class="stem-plugin-value" id="stem-param-mode-copy">{{ $stems }} outputs</span>
+                                    <span class="stem-plugin-value" id="stem-param-mode-copy">{{ $stems }} {{ __('outputs') }}</span>
                                 </div>
                                 <div
                                     class="stem-choice-grid"
@@ -1342,8 +1350,8 @@ class extends Component
                                         data-field="stems"
                                         data-value="2"
                                     >
-                                        <span class="stem-choice-title">2 Stems</span>
-                                        <span class="stem-choice-meta">Vocals + Instrumental</span>
+                                        <span class="stem-choice-title">{{ __('2 Stems') }}</span>
+                                        <span class="stem-choice-meta">{{ __('Vocals + Instrumental') }}</span>
                                     </button>
 
                                     <button
@@ -1353,12 +1361,12 @@ class extends Component
                                         data-field="stems"
                                         data-value="4"
                                     >
-                                        <span class="stem-choice-title">4 Stems</span>
-                                        <span class="stem-choice-meta">Vocals, Drums, Bass, Other</span>
+                                        <span class="stem-choice-title">{{ __('4 Stems') }}</span>
+                                        <span class="stem-choice-meta">{{ __('Vocals, Drums, Bass, Other') }}</span>
                                     </button>
                                 </div>
                                 <small class="text-muted d-block mt-2">
-                                    2 = vocals + instrumental | 4 = vocals + drums + bass + other
+                                    {{ __('2 = vocals + instrumental | 4 = vocals + drums + bass + other') }}
                                 </small>
                             </div>
 
@@ -1380,8 +1388,8 @@ class extends Component
                             <div class="stem-plugin-card mb-3">
                                 <div class="stem-plugin-card__head">
                                     <div>
-                                        <div class="stem-plugin-kicker">Output</div>
-                                        <h6 class="stem-plugin-title mb-0">Format</h6>
+                                        <div class="stem-plugin-kicker">{{ __('Output') }}</div>
+                                        <h6 class="stem-plugin-title mb-0">{{ __('Format') }}</h6>
                                     </div>
                                 </div>
 
@@ -1397,8 +1405,8 @@ class extends Component
                                         data-field="stemCodec"
                                         data-value="mp3"
                                     >
-                                        <span class="stem-choice-title">MP3</span>
-                                        <span class="stem-choice-meta">Fast download-friendly delivery</span>
+                                        <span class="stem-choice-title">{{ __('MP3') }}</span>
+                                        <span class="stem-choice-meta">{{ __('Fast download-friendly delivery') }}</span>
                                     </button>
                                 </div>
                             </div>
@@ -1406,12 +1414,12 @@ class extends Component
                             <div class="stem-plugin-card mb-0">
                                 <div class="stem-plugin-card__head">
                                     <div>
-                                        <div class="stem-plugin-kicker">Export</div>
-                                        <h6 class="stem-plugin-title mb-0">Bitrate</h6>
+                                        <div class="stem-plugin-kicker">{{ __('Export') }}</div>
+                                        <h6 class="stem-plugin-title mb-0">{{ __('Bitrate') }}</h6>
                                     </div>
                                 </div>
 
-                                <label class="stem-plugin-label" for="stem-bitrate-select">Quality</label>
+                                <label class="stem-plugin-label" for="stem-bitrate-select">{{ __('Quality') }}</label>
                                 <select id="stem-bitrate-select" data-stem-select-field="stemBitrate" class="form-select stem-plugin-select">
                                     <option value="192k" @selected($stemBitrate === '192k')>192k</option>
                                 </select>
@@ -1420,14 +1428,14 @@ class extends Component
                             <div class="wasr-cost-preview stem-cost-preview rounded-3 p-3 mt-3">
                                 <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
                                     <div>
-                                        <div class="fw-semibold">Estimated Cost</div>
+                                        <div class="fw-semibold">{{ __('Estimated Cost') }}</div>
                                         <div class="small text-muted" id="stem-cost-mode-label">
-                                            {{ $stems === 4 ? '4-stem separation pricing' : '2-stem separation pricing' }}
+                                            {{ $stems === 4 ? __('4-stem separation pricing') : __('2-stem separation pricing') }}
                                         </div>
                                     </div>
 
                                     <div class="badge wasr-badge-credits px-3 py-2">
-                                        {{ number_format($creditsCost) }} credits
+                                        {{ number_format($creditsCost) }} {{ __('credits') }}
                                     </div>
                                 </div>
                             </div>
@@ -1442,7 +1450,7 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-body p-3 p-md-4">
                             <div class="d-flex align-items-center justify-content-between mb-2 gap-2 flex-wrap">
-                                <strong>Recent Renders</strong>
+                                <strong>{{ __('Recent Renders') }}</strong>
                                 <span class="badge badge-secondary">{{ $this->recentRenders->total() }}</span>
                             </div>
 
@@ -1450,13 +1458,13 @@ class extends Component
                                 <input
                                     type="text"
                                     class="form-control form-control-sm"
-                                    placeholder="Search..."
+                                    placeholder="{{ __('Search...') }}"
                                     wire:model.live.debounce.300ms="search"
                                 >
                             </div>
 
                             @if($this->recentRenders->count() === 0)
-                                <div class="text-muted small text-center py-4">No renders yet.</div>
+                                <div class="text-muted small text-center py-4">{{ __('No renders yet.') }}</div>
                             @else
                                 <div class="list-group">
                                     @foreach($this->recentRenders as $render)
@@ -1472,8 +1480,8 @@ class extends Component
                                                         <div class="d-flex align-items-center">
                                                             <i class="mdi mdi-music-note-eighth mr-2 render-cache-icon"></i>
                                                             <div>
-                                                                <b class="d-block text-truncate" style="max-width: 200px;">{{ $render['input_name'] ?: 'Untitled audio' }}</b>
-                                                                <small class="text-muted d-block">Mode: {{ $render['mode'] }}-Stem</small>
+                                                                <b class="d-block text-truncate" style="max-width: 200px;">{{ $render['input_name'] ?: __('Untitled audio') }}</b>
+                                                                <small class="text-muted d-block">{{ __('Mode: :mode-Stem', ['mode' => $render['mode']]) }}</small>
                                                                 <small class="text-muted d-block">{{ $render['created_at'] }}</small>
                                                             </div>
                                                         </div>
@@ -1481,7 +1489,7 @@ class extends Component
                                                 </div>
 
                                                 <div class="d-flex align-items-center gap-1 ml-2">
-                                                    <a href="{{ $render['downloads']['all'] }}" class="btn btn-sm btn-outline-primary" title="ZIP">
+                                                    <a href="{{ $render['downloads']['all'] }}" class="btn btn-sm btn-outline-primary" title="{{ __('ZIP') }}">
                                                         <i class="mdi mdi-download"></i>
                                                     </a>
 
@@ -1489,7 +1497,7 @@ class extends Component
                                                         type="button"
                                                         class="btn btn-sm btn-outline-danger"
                                                         wire:click.stop="deleteRender('{{ $render['id'] }}')"
-                                                        onclick="return confirm('Delete this render? This will remove files and deduct storage.');"
+                                                        onclick="return confirm(@js(__('Delete this render? This will remove files and deduct storage.')));"
                                                     >
                                                         <i class="mdi mdi-delete"></i>
                                                     </button>
@@ -1518,21 +1526,21 @@ class extends Component
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-0 shadow">
                     <div class="modal-header">
-                        <h5 class="modal-title">Eliminate current STEM job?</h5>
+                        <h5 class="modal-title">{{ __('Eliminate current STEM job?') }}</h5>
                         <button type="button" class="btn-close" wire:click="closeEliminateModal"></button>
                     </div>
                     <div class="modal-body">
                         <p class="mb-2">
-                            This will stop tracking the current STEM job and mark it as eliminated.
+                            {{ __('This will stop tracking the current STEM job and mark it as eliminated.') }}
                         </p>
                         <p class="mb-0 text-danger small">
-                            Credits are not refundable.
+                            {{ __('Credits are not refundable.') }}
                         </p>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" wire:click="closeEliminateModal">Cancel</button>
+                        <button type="button" class="btn btn-light" wire:click="closeEliminateModal">{{ __('Cancel') }}</button>
                         <button type="button" class="btn btn-danger" wire:click="eliminateCurrentJob">
-                            Eliminate
+                            {{ __('Eliminate') }}
                         </button>
                     </div>
                 </div>
@@ -1899,6 +1907,16 @@ class extends Component
     }
 
     const S = window.__STEM_POND__;
+    const STEM_PARAM_I18N = {
+        outputs: @js(__('outputs')),
+        pricing4: @js(__('4-stem separation pricing')),
+        pricing2: @js(__('2-stem separation pricing')),
+        dragDrop: @js(__('Drag & Drop')),
+        audioHere: @js(__('your audio file here')),
+        or: @js(__('or')),
+        browse: @js(__('Browse')),
+        uploadFailed: @js(__('Upload failed')),
+    };
     const FORM_KEY = 'stem_form_state_v3';
     const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
     const PARAM_DEFAULTS = {
@@ -1992,13 +2010,13 @@ class extends Component
         const costLabel = document.getElementById('stem-cost-mode-label');
 
         if (modeCopy) {
-            modeCopy.textContent = `${state.stems} outputs`;
+            modeCopy.textContent = `${state.stems} ${STEM_PARAM_I18N.outputs}`;
         }
 
         if (costLabel) {
             costLabel.textContent = state.stems === 4
-                ? '4-stem separation pricing'
-                : '2-stem separation pricing';
+                ? STEM_PARAM_I18N.pricing4
+                : STEM_PARAM_I18N.pricing2;
         }
     }
 
@@ -2212,8 +2230,8 @@ class extends Component
             maxFileSize: '100MB',
             labelIdle: `
                 <div class="py-3">
-                    <div class="mb-1"><strong>Drag & Drop</strong> your audio file here</div>
-                    <div class="small text-muted">or <span class="filepond--label-action">Browse</span></div>
+                    <div class="mb-1"><strong>${STEM_PARAM_I18N.dragDrop}</strong> ${STEM_PARAM_I18N.audioHere}</div>
+                    <div class="small text-muted">${STEM_PARAM_I18N.or} <span class="filepond--label-action">${STEM_PARAM_I18N.browse}</span></div>
                 </div>
             `,
             server: {
@@ -2222,7 +2240,7 @@ class extends Component
                         'audioFile',
                         file,
                         () => load(file.name),
-                        (e) => error(typeof e === 'string' ? e : 'Upload failed'),
+                        (e) => error(typeof e === 'string' ? e : STEM_PARAM_I18N.uploadFailed),
                         (event) => {
                             progress(
                                 event.lengthComputable,
@@ -2353,6 +2371,25 @@ class extends Component
     }
 
     const S = window.__STEM_RENDER_PAGE__;
+    const STEM_RENDER_I18N = {
+        preparing: @js(__('Preparing...')),
+        playAll: @js(__('Play All')),
+        pauseAll: @js(__('Pause All')),
+        play: @js(__('Play')),
+        pause: @js(__('Pause')),
+        loading: @js(__('Loading')),
+        muted: @js(__('Muted')),
+        mute: @js(__('Mute')),
+        original: @js(__('Original')),
+        vocals: @js(__('Vocals')),
+        instrumental: @js(__('Instrumental')),
+        drums: @js(__('Drums')),
+        bass: @js(__('Bass')),
+        other: @js(__('Other')),
+        originalDescription: @js(__('Original uploaded audio - muted by default')),
+        separatedTrack: @js(__('Separated output track')),
+        seekAll: @js(__('Click to seek all stems together')),
+    };
     const RENDER_KEY = 'stem_render_cache_v2';
     const LAST_RENDER_KEY = 'stem_last_render_id_v1';
     const JOB_KEY = 'stem_spa_job_v1';
@@ -2552,11 +2589,11 @@ class extends Component
             playBtn.classList.toggle('btn-outline-secondary', busy);
 
             if (busy) {
-                playBtn.innerHTML = '<span class="spinner-border spinner-border-sm mr-1"></span> Preparing...';
+                playBtn.innerHTML = `<span class="spinner-border spinner-border-sm mr-1"></span> ${STEM_RENDER_I18N.preparing}`;
             } else {
                 playBtn.innerHTML = S.isPlaying && !S.auditionTrack
-                    ? '<i class="mdi mdi-pause"></i> Pause All'
-                    : '<i class="mdi mdi-play"></i> Play All';
+                    ? `<i class="mdi mdi-pause"></i> ${STEM_RENDER_I18N.pauseAll}`
+                    : `<i class="mdi mdi-play"></i> ${STEM_RENDER_I18N.playAll}`;
             }
         }
 
@@ -2688,20 +2725,20 @@ class extends Component
 
     function trackLabel(track) {
         switch (track) {
-            case 'original': return 'ORIGINAL';
-            case 'vocals': return 'VOCALS';
-            case 'instrumental': return 'INSTRUMENTAL';
-            case 'drums': return 'DRUMS';
-            case 'bass': return 'BASS';
-            case 'other': return 'OTHER';
+            case 'original': return STEM_RENDER_I18N.original.toUpperCase();
+            case 'vocals': return STEM_RENDER_I18N.vocals.toUpperCase();
+            case 'instrumental': return STEM_RENDER_I18N.instrumental.toUpperCase();
+            case 'drums': return STEM_RENDER_I18N.drums.toUpperCase();
+            case 'bass': return STEM_RENDER_I18N.bass.toUpperCase();
+            case 'other': return STEM_RENDER_I18N.other.toUpperCase();
             default: return String(track || '').toUpperCase();
         }
     }
 
     function trackDescription(track) {
         return track === 'original'
-            ? 'Original uploaded audio - muted by default'
-            : 'Separated output track';
+            ? STEM_RENDER_I18N.originalDescription
+            : STEM_RENDER_I18N.separatedTrack;
     }
 
     function ensureTrackRows(render) {
@@ -2722,20 +2759,20 @@ class extends Component
                         </div>
                         <div class="stem-track-controls d-flex gap-2 flex-wrap">
                             <button type="button" class="btn btn-sm btn-stem-play track-play btn-outline-success" data-track="${track}">
-                                <i class="mdi mdi-play"></i> Play
+                                <i class="mdi mdi-play"></i> ${STEM_RENDER_I18N.play}
                             </button>
                             <button type="button" class="btn btn-sm btn-stem-solo track-solo" data-track="${track}">
                                 <i class="mdi mdi-headphones"></i> S
                             </button>
                             <button type="button" class="btn btn-sm btn-stem-mute track-mute ${muted ? 'active btn-warning' : 'btn-outline-warning'}" data-track="${track}">
-                                <i class="mdi mdi-volume-off"></i> ${muted ? 'Muted' : 'Mute'}
+                                <i class="mdi mdi-volume-off"></i> ${muted ? STEM_RENDER_I18N.muted : STEM_RENDER_I18N.mute}
                             </button>
                             <a href="${downloadUrl}" class="btn btn-sm btn-outline-primary${downloadUrl === '#' ? ' disabled' : ''}">
                                 <i class="mdi mdi-download"></i>
                             </a>
                         </div>
                     </div>
-                    <div id="wave-${track}" class="stem-wave tts-wave" title="Click to seek all stems together"></div>
+                    <div id="wave-${track}" class="stem-wave tts-wave" title="${STEM_RENDER_I18N.seekAll}"></div>
                 </div>
             `}).join('');
 
@@ -3091,13 +3128,13 @@ class extends Component
             button.setAttribute('aria-pressed', active ? 'true' : 'false');
 
             if (!ready || S.isLoadingBuffers) {
-                button.innerHTML = '<span class="spinner-border spinner-border-sm mr-1"></span> Loading';
+                button.innerHTML = `<span class="spinner-border spinner-border-sm mr-1"></span> ${STEM_RENDER_I18N.loading}`;
                 return;
             }
 
             button.innerHTML = active && S.isPlaying
-                ? '<i class="mdi mdi-pause"></i> Pause'
-                : '<i class="mdi mdi-play"></i> Play';
+                ? `<i class="mdi mdi-pause"></i> ${STEM_RENDER_I18N.pause}`
+                : `<i class="mdi mdi-play"></i> ${STEM_RENDER_I18N.play}`;
         });
 
         document.querySelectorAll('.track-solo').forEach((button) => {
@@ -3118,7 +3155,7 @@ class extends Component
             button.classList.toggle('btn-warning', muted);
             button.classList.toggle('btn-outline-warning', !muted);
             button.setAttribute('aria-pressed', muted ? 'true' : 'false');
-            button.innerHTML = `<i class="mdi mdi-volume-off"></i> ${muted ? 'Muted' : 'Mute'}`;
+            button.innerHTML = `<i class="mdi mdi-volume-off"></i> ${muted ? STEM_RENDER_I18N.muted : STEM_RENDER_I18N.mute}`;
         });
     }
 

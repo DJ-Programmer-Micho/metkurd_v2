@@ -16,7 +16,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <link rel="stylesheet" href="{{ asset('main/assets/vendor/line-awesome/line-awesome/line-awesome/css/line-awesome.min.css') }}">
+    {{-- <link rel="stylesheet" href="{{ asset('main/assets/vendor/line-awesome/line-awesome/line-awesome/css/line-awesome.min.css') }}"> --}}
     <link href="{{ asset('app/libs/swiper/swiper-bundle.min.css') }}" rel="stylesheet" type="text/css" />
     <script src="{{ asset('app/js/layout.js') }}"></script>
 
@@ -27,7 +27,7 @@
 
     <meta name="theme-color" content="#cc0022">
     <meta name="publisher" content="MET IRAQ">
-    <meta name="mobile-web-app-title" content="MET KURD">
+    <meta name="mobile-web-app-title" content="{{ __('MET KURD') }}">
     <meta name="author" content="Michel Shabo">
     <meta name="robots" content="index, follow">
 
@@ -40,7 +40,7 @@
     <link href="{{ asset('general/css/toaster.css') }}" rel="stylesheet" type="text/css">
     <script src="https://cdn.lordicon.com/lordicon.js"></script>
 
-    <title>{{ $title ?? 'METKURD | Auth' }}</title>
+    <title>{{ $title ?? __('Authentication') . ' | ' . __('MET KURD') }}</title>
 <style>
     
 </style>

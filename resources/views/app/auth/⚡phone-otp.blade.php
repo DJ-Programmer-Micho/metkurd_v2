@@ -1,13 +1,12 @@
-{{-- resources/views/app/auth/⚡phone-otp.blade.php --}}
 <?php
 
-use Livewire\Component;
-use Livewire\Attributes\Layout;
+use App\Models\CustomerProfile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
-use App\Models\CustomerProfile;
+use Livewire\Attributes\Layout;
+use Livewire\Component;
 
 new #[Layout('app::layouts.app-auth')] class extends Component
 {
@@ -24,13 +23,11 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     public string $digit5 = '';
     public string $digit6 = '';
 
-    // Settings
-    protected int $otpTtlSeconds = 300;      // 5 minutes
-    protected int $maxAttempts  = 5;        // lock after 5 wrong
-    protected int $lockSeconds  = 600;      // 10 minutes
-    protected int $cooldownSeconds = 60;    // resend cooldown
+    protected int $otpTtlSeconds = 300;
+    protected int $maxAttempts = 5;
+    protected int $lockSeconds = 600;
+    protected int $cooldownSeconds = 60;
 
-    // UI state (updated by tick())
     public int $expiresRemaining = 0;
     public int $cooldownRemaining = 0;
     public int $attemptsLeft = 5;
@@ -40,7 +37,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     {
         $user = Auth::guard('app')->user();
 
-        // ✅ load phone reliably (even if relation isn't loaded/defined correctly)
         $this->phone = (string) (
             optional($user->profile)->phone_number
             ?? CustomerProfile::where('customer_id', $user->id)->value('phone_number')
@@ -60,37 +56,34 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         $user = Auth::guard('app')->user();
 
         if ($user->phone_verify) {
-            $this->dispatch('alert', type: 'info', message: 'Phone already verified.');
-            return redirect()->to(route('app.home'));
+            $this->dispatch('alert', type: 'info', message: __('Phone already verified.'));
+            return redirect()->to(route('app.home',['locale' => app()->getLocale()]));
         }
 
         $this->syncState();
 
         if ($this->isLocked) {
-            $this->dispatch('alert', type: 'error', message: 'Too many attempts. Locked for '.$this->fmt($this->lockRemaining).'.');
+            $this->dispatch('alert', type: 'error', message: __('Too many attempts. Locked for :time.', ['time' => $this->fmt($this->lockRemaining)]));
             return;
         }
 
         if ($this->cooldownRemaining > 0) {
-            $this->dispatch('alert', type: 'warning', message: 'Please wait '.$this->fmt($this->cooldownRemaining).' before resending.');
+            $this->dispatch('alert', type: 'warning', message: __('Please wait :time before resending.', ['time' => $this->fmt($this->cooldownRemaining)]));
             return;
         }
 
         $this->validatePhoneOnly();
         $this->channel = $channel;
 
-        // Generate + store OTP (DB)
         $otp = (string) random_int(100000, 999999);
         $user->phone_otp_number = $otp;
         $user->save();
 
-        // Cache controls
         Cache::put($this->expiresKey(), now()->addSeconds($this->otpTtlSeconds)->timestamp, $this->otpTtlSeconds + 60);
         Cache::put($this->attemptsKey(), 0, $this->otpTtlSeconds + $this->lockSeconds + 600);
         Cache::put($this->cooldownKey(), now()->addSeconds($this->cooldownSeconds)->timestamp, $this->cooldownSeconds + 60);
-        Cache::forget($this->lockKey()); // optional: clear old lock when new OTP sent
+        Cache::forget($this->lockKey());
 
-        // StandingTech expects recipient without '+'
         $recipient = ltrim($this->phone, '+');
 
         try {
@@ -100,9 +93,9 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             $this->resetDigits();
             $this->syncState();
 
-            $this->dispatch('alert', type: 'success', message: 'Code sent. Please check your phone.');
+            $this->dispatch('alert', type: 'success', message: __('Code sent. Please check your phone.'));
         } catch (\Throwable $e) {
-            $this->dispatch('alert', type: 'error', message: 'Failed to send code. Please try another provider.');
+            $this->dispatch('alert', type: 'error', message: __('Failed to send code. Please try another provider.'));
         }
     }
 
@@ -117,6 +110,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     {
         $this->flag = 0;
         $this->resetErrorBag();
+        $this->resetDigits();
         $this->syncState();
     }
 
@@ -126,7 +120,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
         $user = Auth::guard('app')->user();
 
-        // ✅ Unique check (ignore current customer's profile row)
         $this->validate([
             'phone' => [
                 'required',
@@ -138,26 +131,25 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             ],
         ]);
 
-        // ✅ NEVER create duplicates: update or create by customer_id
         CustomerProfile::updateOrCreate(
             ['customer_id' => $user->id],
             ['phone_number' => $this->phone]
         );
 
-        // reset phone verification status since phone changed
         $user->phone_verify = false;
         $user->phone_verified_at = null;
         $user->phone_otp_number = null;
         $user->save();
 
-        // clear any old state
         $this->clearOtpState();
+        $this->resetDigits();
+        $this->channel = '';
 
-        // refresh phone (in case UI shows old value)
         $this->phone = (string) CustomerProfile::where('customer_id', $user->id)->value('phone_number');
 
-        $this->dispatch('alert', type: 'success', message: 'Phone updated. Choose a provider to receive a code.');
+        $this->dispatch('alert', type: 'success', message: __('Phone updated. Choose a provider to receive a code.'));
         $this->flag = 0;
+        $this->syncState();
     }
 
     public function confirm()
@@ -165,25 +157,28 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         $this->syncState();
 
         if ($this->isLocked) {
-            $this->dispatch('alert', type: 'error', message: 'Too many attempts. Locked for '.$this->fmt($this->lockRemaining).'.');
+            $this->dispatch('alert', type: 'error', message: __('Too many attempts. Locked for :time.', ['time' => $this->fmt($this->lockRemaining)]));
             return;
         }
 
         if ($this->isExpired) {
-            $this->dispatch('alert', type: 'warning', message: 'Code expired. Please resend a new code.');
+            $this->dispatch('alert', type: 'warning', message: __('Code expired. Please resend a new code.'));
             return;
         }
 
         $this->validate([
-            'digit1'=>['required','digits:1'],'digit2'=>['required','digits:1'],
-            'digit3'=>['required','digits:1'],'digit4'=>['required','digits:1'],
-            'digit5'=>['required','digits:1'],'digit6'=>['required','digits:1'],
+            'digit1' => ['required', 'digits:1'],
+            'digit2' => ['required', 'digits:1'],
+            'digit3' => ['required', 'digits:1'],
+            'digit4' => ['required', 'digits:1'],
+            'digit5' => ['required', 'digits:1'],
+            'digit6' => ['required', 'digits:1'],
         ]);
 
-        $code = $this->digit1.$this->digit2.$this->digit3.$this->digit4.$this->digit5.$this->digit6;
+        $code = $this->digit1 . $this->digit2 . $this->digit3 . $this->digit4 . $this->digit5 . $this->digit6;
         $user = Auth::guard('app')->user();
 
-        if (hash_equals((string)($user->phone_otp_number ?? ''), $code)) {
+        if (hash_equals((string) ($user->phone_otp_number ?? ''), $code)) {
             $user->phone_verify = true;
             $user->phone_verified_at = now();
             $user->phone_otp_number = null;
@@ -191,24 +186,22 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
             $this->clearOtpState();
 
-            $this->dispatch('alert', type: 'success', message: 'Phone verified successfully! Redirecting…');
-            return redirect()->to(route('app.home'));
+            $this->dispatch('alert', type: 'success', message: __('Phone verified successfully! Redirecting...'));
+            return redirect()->to(route('app.home',['locale' => app()->getLocale()]));
         }
 
-        // wrong code => attempts + lock
-        $attempts = (int) Cache::get($this->attemptsKey(), 0);
-        $attempts++;
+        $attempts = (int) Cache::get($this->attemptsKey(), 0) + 1;
         Cache::put($this->attemptsKey(), $attempts, $this->otpTtlSeconds + $this->lockSeconds + 600);
 
         if ($attempts >= $this->maxAttempts) {
             Cache::put($this->lockKey(), now()->addSeconds($this->lockSeconds)->timestamp, $this->lockSeconds + 60);
             $this->syncState();
-            $this->dispatch('alert', type: 'error', message: 'Too many wrong attempts. Locked for '.$this->fmt($this->lockRemaining).'.');
+            $this->dispatch('alert', type: 'error', message: __('Too many wrong attempts. Locked for :time.', ['time' => $this->fmt($this->lockRemaining)]));
             return;
         }
 
         $this->syncState();
-        $this->dispatch('alert', type: 'error', message: 'Invalid code. Please try again.');
+        $this->dispatch('alert', type: 'error', message: __('Invalid code. Please try again.'));
     }
 
     public function resend()
@@ -216,17 +209,17 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         $this->syncState();
 
         if ($this->isLocked) {
-            $this->dispatch('alert', type: 'error', message: 'Locked for '.$this->fmt($this->lockRemaining).'.');
+            $this->dispatch('alert', type: 'error', message: __('Locked for :time.', ['time' => $this->fmt($this->lockRemaining)]));
             return;
         }
 
         if ($this->cooldownRemaining > 0) {
-            $this->dispatch('alert', type: 'warning', message: 'Please wait '.$this->fmt($this->cooldownRemaining).' before requesting a new code.');
+            $this->dispatch('alert', type: 'warning', message: __('Please wait :time before requesting a new code.', ['time' => $this->fmt($this->cooldownRemaining)]));
             return;
         }
 
         if (! $this->channel) {
-            $this->dispatch('alert', type: 'info', message: 'Please choose a provider first.');
+            $this->dispatch('alert', type: 'info', message: __('Please choose a provider first.'));
             $this->flag = 0;
             return;
         }
@@ -235,25 +228,22 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         $this->sendCode($this->channel);
     }
 
-    // =========================
-    // StandingTech (send SAME OTP)
-    // =========================
     private function sendStandingTechOtp(string $type, string $recipient, string $otp): array
     {
-        $base   = config('services.standingtech.base',   env('STANDINGTECH_BASE_URL'));
-        $token  = config('services.standingtech.token',  env('STANDINGTECH_TOKEN'));
+        $base = config('services.standingtech.base', env('STANDINGTECH_BASE_URL'));
+        $token = config('services.standingtech.token', env('STANDINGTECH_TOKEN'));
         $sender = config('services.standingtech.sender', env('STANDINGTECH_SENDER_ID'));
 
-        if (!$base || !$token || !$sender) {
-            throw new \RuntimeException('StandingTech config missing (base/token/sender).');
+        if (! $base || ! $token || ! $sender) {
+            throw new \RuntimeException(__('StandingTech config is missing (base/token/sender).'));
         }
 
         $payload = [
-            'recipient' => $recipient,     // no +
+            'recipient' => $recipient,
             'sender_id' => $sender,
-            'type'      => $type,          // sms | whatsapp | telegram
-            'message'   => (string) $otp,  // send OUR otp
-            'lang'      => 'en',
+            'type' => $type,
+            'message' => (string) $otp,
+            'lang' => 'en',
         ];
 
         if ($type !== 'sms') {
@@ -272,9 +262,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         return $res->json();
     }
 
-    // =========================
-    // Computed / Helpers
-    // =========================
     public function fmt(int $seconds): string
     {
         $seconds = max(0, $seconds);
@@ -301,19 +288,19 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     private function syncState(): void
     {
         $uid = Auth::guard('app')->id();
-        if (!$uid) return;
+        if (! $uid) return;
 
         $now = now()->timestamp;
 
-        $expTs  = (int) Cache::get($this->expiresKey(), 0);
-        $cdTs   = (int) Cache::get($this->cooldownKey(), 0);
+        $expTs = (int) Cache::get($this->expiresKey(), 0);
+        $cdTs = (int) Cache::get($this->cooldownKey(), 0);
         $lockTs = (int) Cache::get($this->lockKey(), 0);
         $attempts = (int) Cache::get($this->attemptsKey(), 0);
 
-        $this->expiresRemaining  = $expTs  > 0 ? max(0, $expTs  - $now) : 0;
-        $this->cooldownRemaining = $cdTs   > 0 ? max(0, $cdTs   - $now) : 0;
-        $this->lockRemaining     = $lockTs > 0 ? max(0, $lockTs - $now) : 0;
-        $this->attemptsLeft      = max(0, $this->maxAttempts - $attempts);
+        $this->expiresRemaining = $expTs > 0 ? max(0, $expTs - $now) : 0;
+        $this->cooldownRemaining = $cdTs > 0 ? max(0, $cdTs - $now) : 0;
+        $this->lockRemaining = $lockTs > 0 ? max(0, $lockTs - $now) : 0;
+        $this->attemptsLeft = max(0, $this->maxAttempts - $attempts);
     }
 
     private function clearOtpState(): void
@@ -348,22 +335,44 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                 'max:30',
             ],
         ], [
-            'phone.required' => 'Phone number is required.',
-            'phone.regex' => 'Phone number must be in international format (+XXXXXXXXXXX).',
+            'phone.required' => __('Phone number is required.'),
+            'phone.regex' => __('Phone number must be in international format (+XXXXXXXXXXX).'),
         ]);
     }
 
-    private function expiresKey(): string  { return 'phone_otp_expires_'  . Auth::guard('app')->id(); }
-    private function attemptsKey(): string { return 'phone_otp_attempts_' . Auth::guard('app')->id(); }
-    private function lockKey(): string     { return 'phone_otp_lock_'     . Auth::guard('app')->id(); }
-    private function cooldownKey(): string { return 'phone_otp_cooldown_' . Auth::guard('app')->id(); }
+    private function expiresKey(): string
+    {
+        return 'phone_otp_expires_' . Auth::guard('app')->id();
+    }
+
+    private function attemptsKey(): string
+    {
+        return 'phone_otp_attempts_' . Auth::guard('app')->id();
+    }
+
+    private function lockKey(): string
+    {
+        return 'phone_otp_lock_' . Auth::guard('app')->id();
+    }
+
+    private function cooldownKey(): string
+    {
+        return 'phone_otp_cooldown_' . Auth::guard('app')->id();
+    }
 };
 
 ?>
 
-<div class="row" wire:poll.1s="tick">
+<x-slot:title>{{ __('Verify Phone') }} | {{ __('MET KURD') }}</x-slot:title>
+
+<div class="row"
+    @if ($flag === 1)
+        wire:poll.1s="tick"
+    @elseif ($flag === 0 && ($cooldownRemaining > 0 || $this->isLocked))
+        wire:poll.5s="tick"
+    @endif>
     <div class="col-lg-12">
-        <div class="card overflow-hidden m-0" style="box-shadow: -12px -6px 45px 10px rgb(204 0 34 / 0.15);">
+        <div class="card m-0" style="box-shadow: -12px -6px 45px 10px rgb(204 0 34 / 0.15);">
             <div class="row justify-content-center g-0">
                 <div class="col-lg-6">
                     <div class="p-lg-5 p-4 auth-one-bg h-100">
@@ -372,7 +381,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                             <div class="mb-4">
                                 <a wire:navigate href="/" class="d-block">
                                     <img src="{{ app('logo_1024_tran') }}" alt="" height="25">
-                                    MET KURD
+                                    {{ __('MET KURD') }}
                                 </a>
                             </div>
                             <div class="mt-auto">
@@ -388,13 +397,13 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                     </div>
                                     <div class="carousel-inner text-center text-white pb-5">
                                         <div class="carousel-item active">
-                                            <p class="fs-15 fst-italic">" Verify your phone to protect your account. "</p>
+                                            <p class="fs-15 fst-italic">" {{ __('Verify your phone to protect your account.') }} "</p>
                                         </div>
                                         <div class="carousel-item">
-                                            <p class="fs-15 fst-italic">" Strong security is part of METKURD experience. "</p>
+                                            <p class="fs-15 fst-italic">" {{ __('Strong security is part of the METKURD experience.') }} "</p>
                                         </div>
                                         <div class="carousel-item">
-                                            <p class="fs-15 fst-italic">" One more step and you're ready. "</p>
+                                            <p class="fs-15 fst-italic">" {{ __('One more step and you\'re ready.') }} "</p>
                                         </div>
                                     </div>
                                 </div>
@@ -406,8 +415,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
                 <div class="col-lg-6">
                     <div class="p-lg-5 p-4">
-                        {{-- STATE 0: choose provider --}}
                         @if ($flag === 0)
+                            <div wire:key="phone-otp-state-provider">
                             <div class="mb-4">
                                 <div class="avatar-lg mx-auto">
                                     <div class="avatar-title bg-light text-primary display-5 rounded-circle">
@@ -425,19 +434,18 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
                             <div class="text-muted text-center mx-lg-3 mb-4">
                                 <h4><b>{{ $phone ?: '—' }}</b></h4>
-                                <h5>Is This Your Phone number?</h5>
-                                <small>Please choose one of the Providers</small>
+                                <h5>{{ __('Is this your phone number?') }}</h5>
+                                <small>{{ __('Please choose one of the providers') }}</small>
 
-                                {{-- ✅ show cooldown / lock even in provider screen --}}
                                 <div class="mt-3 d-flex gap-2 justify-content-center flex-wrap">
-                                    <span class="badge bg-warning text-dark">Attempts left: {{ $attemptsLeft }}</span>
+                                    <span class="badge bg-warning text-dark">{{ __('Attempts left: :count', ['count' => $attemptsLeft]) }}</span>
 
                                     @if ($cooldownRemaining > 0)
-                                        <span class="badge bg-secondary">Cooldown: {{ $this->fmt($cooldownRemaining) }}</span>
+                                        <span class="badge bg-secondary">{{ __('Cooldown: :time', ['time' => $this->fmt($cooldownRemaining)]) }}</span>
                                     @endif
 
                                     @if ($this->isLocked)
-                                        <span class="badge bg-danger">Locked: {{ $this->fmt($lockRemaining) }}</span>
+                                        <span class="badge bg-danger">{{ __('Locked: :time', ['time' => $this->fmt($lockRemaining)]) }}</span>
                                     @endif
                                 </div>
                             </div>
@@ -451,7 +459,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                             wire:target="sendCode"
                                             @disabled($this->isLocked || $cooldownRemaining > 0)>
                                         <span wire:loading.remove wire:target="sendCode">
-                                            <img src="{{ app('whatsapp-logo') }}" width="30" alt=""> WhatsApp
+                                            <img src="{{ app('whatsapp-logo') }}" width="30" alt="{{ __('WhatsApp') }}"> {{ __('WhatsApp') }}
                                         </span>
                                         <span wire:loading wire:target="sendCode"
                                               class="d-none align-items-center gap-1"
@@ -470,7 +478,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                             wire:target="sendCode"
                                             @disabled($this->isLocked || $cooldownRemaining > 0)>
                                         <span wire:loading.remove wire:target="sendCode">
-                                            <img src="{{ app('telegram-logo') }}" width="30" alt=""> Telegram
+                                            <img src="{{ app('telegram-logo') }}" width="30" alt="{{ __('Telegram') }}"> {{ __('Telegram') }}
                                         </span>
                                         <span wire:loading wire:target="sendCode"
                                               class="d-none align-items-center gap-1"
@@ -489,7 +497,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                             wire:target="sendCode"
                                             @disabled($this->isLocked || $cooldownRemaining > 0)>
                                         <span wire:loading.remove wire:target="sendCode">
-                                            <img src="{{ app('sms-logo') }}" width="30" alt=""> SMS
+                                            <img src="{{ app('sms-logo') }}" width="30" alt="{{ __('SMS') }}"> {{ __('SMS') }}
                                         </span>
                                         <span wire:loading wire:target="sendCode"
                                               class="d-none align-items-center gap-1"
@@ -505,19 +513,20 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                             wire:click="editPhone"
                                             wire:loading.attr="disabled"
                                             wire:target="editPhone">
-                                        <span wire:loading.remove wire:target="editPhone">No, Let me update it</span>
+                                        <span wire:loading.remove wire:target="editPhone">{{ __('No, let me update it') }}</span>
                                         <span wire:loading wire:target="editPhone"
                                               class="d-none align-items-center gap-2"
                                               wire:loading.class.remove="d-none"
                                               wire:loading.class="d-inline-flex">
-                                            <span class="spinner-border spinner-border-sm"></span> Opening…
+                                            <span class="spinner-border spinner-border-sm"></span> {{ __('Opening...') }}
                                         </span>
                                     </button>
                                 </div>
                             </div>
+                            </div>
 
-                        {{-- STATE 2: edit phone --}}
                         @elseif ($flag === 2)
+                            <div wire:key="phone-otp-state-edit">
                             <div class="mb-4">
                                 <div class="avatar-lg mx-auto">
                                     <div class="avatar-title bg-light text-primary display-5 rounded-circle">
@@ -532,51 +541,61 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                             </div>
 
                             <div class="text-muted text-center mx-lg-3 mb-3">
-                                <h5>Edit Your Phone Number</h5>
+                                <h5>{{ __('Edit your phone number') }}</h5>
                             </div>
 
-                            <div class="mb-3">
-                                <label for="phone" class="form-label">Phone <span class="text-danger">*</span></label>
-                                <input type="tel"
-                                       class="form-control"
-                                       id="phone"
-                                       wire:model.defer="phone"
-                                       placeholder="+9647500000000"
-                                       inputmode="tel"
-                                       required>
-                                @error('phone') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
+<form wire:submit.prevent="savePhone" id="phone-edit-form">
+    <div class="mb-3">
+        <label for="phone" class="form-label">{{ __('Phone') }} <span class="text-danger">*</span></label>
+
+        <input type="hidden" id="phone_hidden" wire:model.defer="phone">
+
+        <div wire:ignore>
+            <input type="tel"
+                class="form-control"
+                id="phone"
+                placeholder="{{ __('phone number') }}"
+                inputmode="tel"
+                autocomplete="tel"
+                dir="ltr"
+                required>
+        </div>
+
+        @error('phone') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
+        <div id="phone_client_error" class="text-danger small mt-1" style="display:none;"></div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button class="btn btn-primary" type="submit"
+                wire:loading.attr="disabled"
+                wire:target="savePhone">
+            <span wire:loading.remove wire:target="savePhone">{{ __('Save & Choose Provider') }}</span>
+            <span wire:loading wire:target="savePhone"
+                  class="d-none align-items-center gap-2"
+                  wire:loading.class.remove="d-none"
+                  wire:loading.class="d-inline-flex">
+                <span class="spinner-border spinner-border-sm"></span> {{ __('Saving...') }}
+            </span>
+        </button>
+
+        <button class="btn btn-secondary" type="button"
+                wire:click="goBack"
+                wire:loading.attr="disabled"
+                wire:target="goBack">
+            <span wire:loading.remove wire:target="goBack">{{ __('Cancel') }}</span>
+            <span wire:loading wire:target="goBack"
+                  class="d-none align-items-center gap-2"
+                  wire:loading.class.remove="d-none"
+                  wire:loading.class="d-inline-flex">
+                <span class="spinner-border spinner-border-sm"></span> {{ __('Closing...') }}
+            </span>
+        </button>
+    </div>
+</form>
                             </div>
 
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-primary" type="button"
-                                        wire:click="savePhone"
-                                        wire:loading.attr="disabled"
-                                        wire:target="savePhone">
-                                    <span wire:loading.remove wire:target="savePhone">Save & Choose Provider</span>
-                                    <span wire:loading wire:target="savePhone"
-                                          class="d-none align-items-center gap-2"
-                                          wire:loading.class.remove="d-none"
-                                          wire:loading.class="d-inline-flex">
-                                        <span class="spinner-border spinner-border-sm"></span> Saving…
-                                    </span>
-                                </button>
-
-                                <button class="btn btn-secondary" type="button"
-                                        wire:click="goBack"
-                                        wire:loading.attr="disabled"
-                                        wire:target="goBack">
-                                    <span wire:loading.remove wire:target="goBack">Cancel</span>
-                                    <span wire:loading wire:target="goBack"
-                                          class="d-none align-items-center gap-2"
-                                          wire:loading.class.remove="d-none"
-                                          wire:loading.class="d-inline-flex">
-                                        <span class="spinner-border spinner-border-sm"></span> Closing…
-                                    </span>
-                                </button>
-                            </div>
-
-                        {{-- STATE 1: enter code --}}
                         @else
+                            <div wire:key="phone-otp-state-code">
                             <div class="mb-4">
                                 <div class="avatar-lg mx-auto">
                                     <div class="avatar-title bg-light text-primary display-5 rounded-circle">
@@ -591,23 +610,22 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                             </div>
 
                             <div class="text-muted text-center mx-lg-3">
-                                <h4>Please enter the 6 digit code sent to <b>{{ $phone }}</b></h4>
+                                <h4>{{ __('Please enter the 6-digit code sent to') }} <b>{{ $phone }}</b></h4>
 
-                                {{-- ✅ show all state badges in-card --}}
                                 <div class="mt-3 d-flex gap-2 justify-content-center flex-wrap">
-                                    <span class="badge bg-info">Expires in: {{ $this->fmt($expiresRemaining) }}</span>
-                                    <span class="badge bg-warning text-dark">Attempts left: {{ $attemptsLeft }}</span>
+                                    <span class="badge bg-info">{{ __('Expires in: :time', ['time' => $this->fmt($expiresRemaining)]) }}</span>
+                                    <span class="badge bg-warning text-dark">{{ __('Attempts left: :count', ['count' => $attemptsLeft]) }}</span>
 
                                     @if ($cooldownRemaining > 0)
-                                        <span class="badge bg-secondary">Cooldown: {{ $this->fmt($cooldownRemaining) }}</span>
+                                        <span class="badge bg-secondary">{{ __('Cooldown: :time', ['time' => $this->fmt($cooldownRemaining)]) }}</span>
                                     @endif
 
                                     @if ($this->isExpired)
-                                        <span class="badge bg-danger">Expired</span>
+                                        <span class="badge bg-danger">{{ __('Expired') }}</span>
                                     @endif
 
                                     @if ($this->isLocked)
-                                        <span class="badge bg-danger">Locked: {{ $this->fmt($lockRemaining) }}</span>
+                                        <span class="badge bg-danger">{{ __('Locked: :time', ['time' => $this->fmt($lockRemaining)]) }}</span>
                                     @endif
                                 </div>
                             </div>
@@ -618,7 +636,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                         @foreach (['digit1','digit2','digit3','digit4','digit5','digit6'] as $i => $model)
                                             <div class="col-2">
                                                 <div class="mb-3">
-                                                    <label for="digit{{ $i+1 }}-input" class="visually-hidden">Digit {{ $i+1 }}</label>
+                                                    <label for="digit{{ $i+1 }}-input" class="visually-hidden">{{ __('Digit :number', ['number' => $i + 1]) }}</label>
                                                     <input type="text"
                                                            class="form-control form-control-lg bg-light border-light text-center"
                                                            wire:model.defer="{{ $model }}"
@@ -637,12 +655,12 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                                 wire:loading.attr="disabled"
                                                 wire:target="confirm"
                                                 @disabled($this->inputsDisabled)>
-                                            <span wire:loading.remove wire:target="confirm">Confirm</span>
+                                            <span wire:loading.remove wire:target="confirm">{{ __('Confirm') }}</span>
                                             <span wire:loading wire:target="confirm"
                                                   class="d-none align-items-center gap-2"
                                                   wire:loading.class.remove="d-none"
                                                   wire:loading.class="d-inline-flex">
-                                                <span class="spinner-border spinner-border-sm"></span> Verifying…
+                                                <span class="spinner-border spinner-border-sm"></span> {{ __('Verifying...') }}
                                             </span>
                                         </button>
                                     </div>
@@ -650,15 +668,16 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                             </div>
 
                             <div class="mt-3 text-center">
-                                <p class="mb-0">Didn't receive a code?
+                                <p class="mb-0">{{ __('Didn\'t receive a code?') }}
                                     <a href="#"
                                        wire:click.prevent="resend"
                                        wire:loading.attr="disabled"
                                        wire:target="resend"
                                        class="fw-semibold text-primary text-decoration-underline {{ ($cooldownRemaining > 0 || $this->isLocked) ? 'pe-none opacity-50' : '' }}">
-                                        {{ $cooldownRemaining > 0 ? "Resend in ".$this->fmt($cooldownRemaining) : 'Resend' }}
+                                        {{ $cooldownRemaining > 0 ? __('Resend in :time', ['time' => $this->fmt($cooldownRemaining)]) : __('Resend') }}
                                     </a>
                                 </p>
+                            </div>
                             </div>
                         @endif
                     </div>
@@ -668,24 +687,326 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         </div>
     </div>
 </div>
+@push('styles')
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/css/intlTelInput.css">
+<style>
+    .iti {
+        width: 100%;
+        display: block;
+        z-index: 9999;
+    }
+
+    .iti input {
+        width: 100% !important;
+    }
+
+    /* Dark dropdown shell */
+    .iti__dropdown-content {
+        background: #111827 !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 14px !important;
+        box-shadow: 0 18px 40px rgba(0,0,0,0.45) !important;
+        color: #e5e7eb !important;
+    }
+    .iti .iti__selected-dial-code {
+        margin-right: 4px;
+    }
+    /* Country list area */
+    .iti__country-list {
+        background: #111827 !important;
+        color: #e5e7eb !important;
+    }
+
+    /* Each country row */
+    .iti__country {
+        padding: 10px 12px !important;
+        transition: background-color .18s ease, color .18s ease;
+    }
+
+    .iti__country:hover {
+        background: rgba(255,255,255,0.06) !important;
+    }
+
+    /* Highlighted / active row */
+    .iti__country.iti__highlight,
+    .iti__country.iti__active {
+        background: rgba(204, 0, 34, 0.18) !important;
+        color: #ffffff !important;
+    }
+
+    /* Country name */
+    .iti__country-name {
+        color: #f3f4f6 !important;
+    }
+
+    /* Dial code */
+    .iti__dial-code {
+        color: #9ca3af !important;
+    }
+
+    .iti__country.iti__highlight .iti__dial-code,
+    .iti__country:hover .iti__dial-code {
+        color: #d1d5db !important;
+    }
+
+    /* Search box wrapper */
+    .iti__search-input {
+        background: #0f172a !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        color: #f9fafb !important;
+        border-radius: 10px !important;
+        padding: 10px 12px !important;
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+    .iti__search-input::placeholder {
+        color: #6b7280 !important;
+    }
+
+    .iti__search-input:focus {
+        border-color: rgba(204, 0, 34, 0.55) !important;
+        box-shadow: 0 0 0 3px rgba(204, 0, 34, 0.15) !important;
+    }
+
+    /* Selected flag button area */
+    .iti__selected-country {
+        background: #1f2937 !important;
+        border-right: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .iti__selected-country:hover {
+        background: #243041 !important;
+    }
+
+    /* Arrow color */
+    .iti__arrow {
+        border-top-color: #d1d5db !important;
+    }
+
+    /* Scrollbar */
+    .iti__country-list::-webkit-scrollbar {
+        width: 10px;
+    }
+
+    .iti__country-list::-webkit-scrollbar-track {
+        background: #0b1220;
+    }
+
+    .iti__country-list::-webkit-scrollbar-thumb {
+        background: #374151;
+        border-radius: 999px;
+    }
+
+    .iti__country-list::-webkit-scrollbar-thumb:hover {
+        background: #4b5563;
+    }
+</style>
+@endpush
 
 @push('scripts')
 <script>
 window.moveToNext = function (index, e) {
-  const id = 'digit' + index + '-input';
-  const input = document.getElementById(id);
-  if (!input || input.disabled) return;
+    const id = 'digit' + index + '-input';
+    const input = document.getElementById(id);
+    if (!input || input.disabled) return;
 
-  const key = e.key || '';
-  if (/^\d$/.test(input.value)) {
-    const next = document.getElementById('digit' + (index + 1) + '-input');
-    if (next && !next.disabled) next.focus();
-  } else if (key === 'Backspace') {
-    const prev = document.getElementById('digit' + (index - 1) + '-input');
-    if (prev && !prev.disabled) prev.focus();
-  } else {
-    input.value = input.value.replace(/\D/g, '').slice(0,1);
-  }
+    const key = e.key || '';
+    input.value = input.value.replace(/\D/g, '').slice(0, 1);
+
+    if (/^\d$/.test(input.value)) {
+        const next = document.getElementById('digit' + (index + 1) + '-input');
+        if (next && !next.disabled) next.focus();
+    } else if (key === 'Backspace') {
+        const prev = document.getElementById('digit' + (index - 1) + '-input');
+        if (prev && !prev.disabled) prev.focus();
+    }
+};
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/js/intlTelInput.min.js"></script>
+<script>
+(() => {
+    const PHONE_INVALID_MESSAGE = window.phoneOtpInvalidMessage || 'Please enter a valid phone number.';
+    const phoneState = {
+        iti: null,
+        input: null,
+    };
+
+    function getLivewireComponent() {
+        const el = document.getElementById('phone')?.closest('[wire\\:id]');
+        if (!el || !window.Livewire) return null;
+        return window.Livewire.find(el.getAttribute('wire:id'));
+    }
+
+    function showPhoneClientError(message = '') {
+        const el = document.getElementById('phone_client_error');
+        if (!el) return;
+
+        if (message) {
+            el.textContent = message;
+            el.style.display = 'block';
+        } else {
+            el.textContent = '';
+            el.style.display = 'none';
+        }
+    }
+
+    function destroyPhoneInput() {
+        if (phoneState.iti && typeof phoneState.iti.destroy === 'function') {
+            phoneState.iti.destroy();
+        }
+
+        phoneState.iti = null;
+        phoneState.input = null;
+    }
+
+    function pushPhoneToLivewire(value) {
+        const hidden = document.getElementById('phone_hidden');
+        if (hidden && hidden.value !== value) {
+            hidden.value = value;
+            hidden.dispatchEvent(new Event('input', { bubbles: true }));
+            hidden.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+
+    function getFormattedPhone(rawValue = '') {
+        if (!phoneState.iti) return '';
+
+        try {
+            const number = phoneState.iti.getNumber() || '';
+            if (number) return number;
+        } catch (error) {
+        }
+
+        const digits = (rawValue || phoneState.input?.value || '').replace(/\D+/g, '');
+        const dialCode = phoneState.iti.getSelectedCountryData()?.dialCode || '';
+
+        if (!digits || !dialCode) return '';
+
+        return digits.startsWith(dialCode)
+            ? `+${digits}`
+            : `+${dialCode}${digits}`;
+    }
+
+    function syncPhoneValue({ validate = false } = {}) {
+        const input = document.getElementById('phone');
+        if (!input || !phoneState.iti) return false;
+
+        const rawValue = input.value.trim();
+        const fullNumber = getFormattedPhone(rawValue);
+
+        if (!rawValue) {
+            pushPhoneToLivewire('');
+            showPhoneClientError('');
+            return false;
+        }
+
+        if (validate) {
+            const utilsReady = typeof window.intlTelInputUtils !== 'undefined';
+
+            if (utilsReady && typeof phoneState.iti.isValidNumber === 'function' && !phoneState.iti.isValidNumber()) {
+                pushPhoneToLivewire('');
+                showPhoneClientError(PHONE_INVALID_MESSAGE);
+                return false;
+            }
+        }
+
+        if (fullNumber) {
+            pushPhoneToLivewire(fullNumber);
+        }
+
+        showPhoneClientError('');
+        return true;
+    }
+
+    function initPhoneInput() {
+        const input = document.getElementById('phone');
+        const hidden = document.getElementById('phone_hidden');
+
+        if (!input || !hidden || typeof window.intlTelInput === 'undefined') {
+            destroyPhoneInput();
+            return;
+        }
+
+        if (phoneState.input !== input) {
+            destroyPhoneInput();
+            phoneState.input = input;
+        }
+
+        if (input.dataset.itiInitialized === 'true' && phoneState.iti) {
+            syncPhoneValue();
+            return;
+        }
+
+        phoneState.iti = window.intlTelInput(input, {
+            initialCountry: 'iq',
+            countryOrder: ['iq', 'de', 'us'],
+            onlyCountries: ['iq', 'tr', 'us', 'de', 'ir', 'fr', 'se', 'at', 'be', 'dk', 'it', 'nl', 'es', 'ch', 'gb', 'ax', 'au', 'ca'],
+            nationalMode: false,
+            separateDialCode: true,
+            autoPlaceholder: 'polite',
+            formatAsYouType: true,
+            strictMode: false,
+            dropdownContainer: document.body,
+            loadUtils: () => import('https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/js/utils.js'),
+        });
+
+        input.dataset.itiInitialized = 'true';
+
+        if (hidden.value) {
+            try {
+                phoneState.iti.setNumber(hidden.value);
+            } catch (e) {}
+        }
+
+        input.addEventListener('input', () => syncPhoneValue({ validate: false }));
+        input.addEventListener('blur', () => syncPhoneValue({ validate: true }));
+        input.addEventListener('countrychange', () => syncPhoneValue({ validate: true }));
+
+        syncPhoneValue({ validate: false });
+    }
+
+function bindPhoneFormSubmit() {
+    const form = document.getElementById('phone-edit-form');
+    if (!form || form.dataset.phoneSubmitBound === 'true') return;
+
+    form.addEventListener('submit', (e) => {
+        const ok = syncPhoneValue({ validate: true });
+
+        if (!ok) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            return;
+        }
+
+        const latest = getFormattedPhone(document.getElementById('phone')?.value || '');
+        if (latest) {
+            pushPhoneToLivewire(latest);
+        }
+    }, true);
+
+    form.dataset.phoneSubmitBound = 'true';
 }
+
+    function init() {
+        initPhoneInput();
+        bindPhoneFormSubmit();
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('livewire:navigated', init);
+    document.addEventListener('livewire:initialized', init);
+
+    if (window.Livewire && typeof window.Livewire.hook === 'function' && !window.__phoneOtpMorphHookBound) {
+        window.__phoneOtpMorphHookBound = true;
+        window.Livewire.hook('morphed', () => {
+            requestAnimationFrame(init);
+        });
+    }
+
+    init();
+})();
 </script>
 @endpush

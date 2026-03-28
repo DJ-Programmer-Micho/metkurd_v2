@@ -2,13 +2,11 @@
 
 use App\Support\Admin\ManagesCustomerListPage;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
 
 new
 #[Layout('admin::layouts.app')]
-#[Title('Customers List | METKURD')]
 class extends Component
 {
     use ManagesCustomerListPage;
@@ -18,17 +16,19 @@ class extends Component
 };
 ?>
 
+<x-slot:title>{{ __('Customers List') }} | {{ __('MET KURD') }}</x-slot:title>
+
 <div class="container-fluid">
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
-                    <h4 class="mb-sm-0">Customers Directory</h4>
-                    <p class="text-muted mb-0">Search, verify, suspend, and inspect customer accounts from one operational table.</p>
+                    <h4 class="mb-sm-0">{{ __('Customers Directory') }}</h4>
+                    <p class="text-muted mb-0">{{ __('Search, verify, suspend, and inspect customer accounts from one operational table.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
-                    <a wire:navigate href="{{ route('admin.customers.suspended', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-danger">Suspended List</a>
-                    <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">Clear Filters</button>
+                    <a wire:navigate href="{{ route('admin.customers.suspended', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-danger">{{ __('Suspended List') }}</a>
+                    <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
                 </div>
             </div>
         </div>
@@ -38,36 +38,36 @@ class extends Component
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate h-100">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Customers</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Customers') }}</p>
                     <h2 class="mb-1">{{ number_format($this->topStats['customers']) }}</h2>
-                    <p class="text-muted mb-0">Total accounts in the customer registry.</p>
+                    <p class="text-muted mb-0">{{ __('Total accounts in the customer registry.') }}</p>
                 </div>
             </div>
         </div>
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate h-100">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Active Accounts</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Active Accounts') }}</p>
                     <h2 class="mb-1">{{ number_format($this->topStats['active']) }}</h2>
-                    <p class="text-muted mb-0">Accounts currently able to access the application.</p>
+                    <p class="text-muted mb-0">{{ __('Accounts currently able to access the application.') }}</p>
                 </div>
             </div>
         </div>
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate h-100">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Suspended</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Suspended') }}</p>
                     <h2 class="mb-1">{{ number_format($this->topStats['suspended']) }}</h2>
-                    <p class="text-muted mb-0">Accounts with `status = 0` and blocked access.</p>
+                    <p class="text-muted mb-0">{{ __('Accounts with `status = 0` and blocked access.') }}</p>
                 </div>
             </div>
         </div>
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate h-100">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-1">Fully Verified</p>
+                    <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Fully Verified') }}</p>
                     <h2 class="mb-1">{{ number_format($this->topStats['verified']) }}</h2>
-                    <p class="text-muted mb-0">Accounts with both email and phone verification completed.</p>
+                    <p class="text-muted mb-0">{{ __('Accounts with both email and phone verification completed.') }}</p>
                 </div>
             </div>
         </div>
@@ -77,36 +77,36 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-5">
-                    <label class="form-label text-muted text-uppercase fs-12">Search</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="Search username, email, plan, location, or profile...">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search username, email, plan, location, or profile...') }}">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">Status</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Status') }}</label>
                     <select class="form-select" wire:model.live="statusFilter">
-                        <option value="all">All statuses</option>
-                        <option value="active">Active</option>
-                        <option value="suspended">Suspended</option>
+                        <option value="all">{{ __('All statuses') }}</option>
+                        <option value="active">{{ __('Active') }}</option>
+                        <option value="suspended">{{ __('Suspended') }}</option>
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">Plan</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Plan') }}</label>
                     <select class="form-select" wire:model.live="planFilter">
-                        <option value="all">All plans</option>
-                        <option value="none">No active plan</option>
+                        <option value="all">{{ __('All plans') }}</option>
+                        <option value="none">{{ __('No active plan') }}</option>
                         @foreach ($this->customerPlanOptions as $plan)
                             <option value="{{ $plan->id }}">{{ $plan->name }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="col-xl-3 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">Verification</label>
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Verification') }}</label>
                     <select class="form-select" wire:model.live="verificationFilter">
-                        <option value="all">Any verification state</option>
-                        <option value="verified">Fully verified</option>
-                        <option value="needs_attention">Needs attention</option>
+                        <option value="all">{{ __('Any verification state') }}</option>
+                        <option value="verified">{{ __('Fully verified') }}</option>
+                        <option value="needs_attention">{{ __('Needs attention') }}</option>
                     </select>
                 </div>
             </div>
@@ -117,30 +117,30 @@ class extends Component
         <div class="card-header border-0">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
                 <div>
-                    <h5 class="card-title mb-1">Customer List</h5>
-                    <p class="text-muted mb-0">Use the quick view modal for context, then jump directly into register or usage pages when deeper follow-up is needed.</p>
+                    <h5 class="card-title mb-1">{{ __('Customer List') }}</h5>
+                    <p class="text-muted mb-0">{{ __('Use the quick view modal for context, then jump directly into register or usage pages when deeper follow-up is needed.') }}</p>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button type="button" class="btn btn-sm {{ $sortColumn === 'created_at' ? 'btn-secondary' : 'btn-soft-secondary' }}" wire:click="sortByColumn('created_at')">
-                        Newest
+                        {{ __('Newest') }}
                         @if ($sortColumn === 'created_at')
                             <i class="ri-arrow-{{ $sortDirection === 'asc' ? 'up' : 'down' }}-line align-bottom ms-1"></i>
                         @endif
                     </button>
                     <button type="button" class="btn btn-sm {{ $sortColumn === 'paid_order_amount' ? 'btn-secondary' : 'btn-soft-secondary' }}" wire:click="sortByColumn('paid_order_amount')">
-                        Spend
+                        {{ __('Spend') }}
                         @if ($sortColumn === 'paid_order_amount')
                             <i class="ri-arrow-{{ $sortDirection === 'asc' ? 'up' : 'down' }}-line align-bottom ms-1"></i>
                         @endif
                     </button>
                     <button type="button" class="btn btn-sm {{ $sortColumn === 'consumed_credits' ? 'btn-secondary' : 'btn-soft-secondary' }}" wire:click="sortByColumn('consumed_credits')">
-                        Usage
+                        {{ __('Usage') }}
                         @if ($sortColumn === 'consumed_credits')
                             <i class="ri-arrow-{{ $sortDirection === 'asc' ? 'up' : 'down' }}-line align-bottom ms-1"></i>
                         @endif
                     </button>
                     <button type="button" class="btn btn-sm {{ $sortColumn === 'username' ? 'btn-secondary' : 'btn-soft-secondary' }}" wire:click="sortByColumn('username')">
-                        Name
+                        {{ __('Name') }}
                         @if ($sortColumn === 'username')
                             <i class="ri-arrow-{{ $sortDirection === 'asc' ? 'up' : 'down' }}-line align-bottom ms-1"></i>
                         @endif
@@ -153,13 +153,13 @@ class extends Component
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light text-muted">
                         <tr class="text-uppercase">
-                            <th>Customer</th>
-                            <th>Contact / Location</th>
-                            <th>Plan / Wallet</th>
-                            <th>Usage Snapshot</th>
-                            <th>Verification</th>
-                            <th>Status</th>
-                            <th class="text-end">Actions</th>
+                            <th>{{ __('Customer') }}</th>
+                            <th>{{ __('Contact / Location') }}</th>
+                            <th>{{ __('Plan / Wallet') }}</th>
+                            <th>{{ __('Usage Snapshot') }}</th>
+                            <th>{{ __('Verification') }}</th>
+                            <th>{{ __('Status') }}</th>
+                            <th class="text-end">{{ __('Actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -180,35 +180,35 @@ class extends Component
                                 <td>
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold">{{ $this->customerLocation($customer) }}</span>
-                                        <span class="text-muted small">{{ data_get($customer, 'profile.phone_number', 'No phone on file') }}</span>
-                                        <span class="text-muted small">Joined {{ $customer->created_at?->format('M d, Y') ?? 'n/a' }}</span>
+                                        <span class="text-muted small">{{ data_get($customer, 'profile.phone_number', __('No phone on file')) }}</span>
+                                        <span class="text-muted small">{{ __('Joined :date', ['date' => $customer->created_at?->format('M d, Y') ?? __('n/a')]) }}</span>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column gap-1">
-                                        <span class="badge {{ $this->planBadgeClasses($plan?->code) }}">{{ $plan?->name ?? 'No active plan' }}</span>
-                                        <span class="text-muted small">Balance: {{ $this->formatCredits($wallet?->balance_credits) }} credits</span>
-                                        <span class="text-muted small">Spent: {{ $this->formatCredits($wallet?->lifetime_spent) }} credits</span>
+                                        <span class="badge {{ $this->planBadgeClasses($plan?->code) }}">{{ $plan?->name ?? __('No active plan') }}</span>
+                                        <span class="text-muted small">{{ __('Balance: :credits credits', ['credits' => $this->formatCredits($wallet?->balance_credits)]) }}</span>
+                                        <span class="text-muted small">{{ __('Spent: :credits credits', ['credits' => $this->formatCredits($wallet?->lifetime_spent)]) }}</span>
                                         @if ($subscription?->cycle_ends_on)
-                                            <span class="text-muted small">Cycle ends {{ $subscription->cycle_ends_on->format('M d, Y') }}</span>
+                                            <span class="text-muted small">{{ __('Cycle ends :date', ['date' => $subscription->cycle_ends_on->format('M d, Y')]) }}</span>
                                         @endif
                                     </div>
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ number_format((int) ($customer->jobs_count ?? 0)) }} jobs</span>
-                                        <span class="text-muted small">{{ $this->formatCredits($customer->consumed_credits) }} credits consumed</span>
-                                        <span class="text-muted small">{{ $this->formatMoney($customer->paid_order_amount) }} paid total</span>
-                                        <span class="text-muted small">Plans {{ $this->formatMoney($customer->service_plan_amount_spent) }} • Storage {{ $this->formatMoney($customer->storage_amount_spent) }} • Products {{ $this->formatMoney($customer->credit_product_amount_spent) }}</span>
+                                        <span class="fw-semibold">{{ __(':count jobs', ['count' => number_format((int) ($customer->jobs_count ?? 0))]) }}</span>
+                                        <span class="text-muted small">{{ __(':credits credits consumed', ['credits' => $this->formatCredits($customer->consumed_credits)]) }}</span>
+                                        <span class="text-muted small">{{ __(':amount paid total', ['amount' => $this->formatMoney($customer->paid_order_amount)]) }}</span>
+                                        <span class="text-muted small">{{ __('Plans :plans | Storage :storage | Products :products', ['plans' => $this->formatMoney($customer->service_plan_amount_spent), 'storage' => $this->formatMoney($customer->storage_amount_spent), 'products' => $this->formatMoney($customer->credit_product_amount_spent)]) }}</span>
                                         <span class="text-muted small">
-                                            {{ $customer->last_job_at ? \Illuminate\Support\Carbon::parse($customer->last_job_at)->diffForHumans() : 'No jobs yet' }}
+                                            {{ $customer->last_job_at ? \Illuminate\Support\Carbon::parse($customer->last_job_at)->diffForHumans() : __('No jobs yet') }}
                                         </span>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="d-flex flex-wrap gap-1">
-                                        <span class="badge {{ $this->verificationBadgeClasses((bool) $customer->email_verify) }}">Email {{ $customer->email_verify ? 'OK' : 'Pending' }}</span>
-                                        <span class="badge {{ $this->verificationBadgeClasses((bool) $customer->phone_verify) }}">Phone {{ $customer->phone_verify ? 'OK' : 'Pending' }}</span>
+                                        <span class="badge {{ $this->verificationBadgeClasses((bool) $customer->email_verify) }}">{{ __('Email') }} {{ $customer->email_verify ? __('Verified') : __('Pending') }}</span>
+                                        <span class="badge {{ $this->verificationBadgeClasses((bool) $customer->phone_verify) }}">{{ __('Phone') }} {{ $customer->phone_verify ? __('Verified') : __('Pending') }}</span>
                                     </div>
                                 </td>
                                 <td>
@@ -216,18 +216,18 @@ class extends Component
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openCustomerView({{ $customer->id }})">View</button>
-                                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-primary">Register</a>
-                                        <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-secondary">Usage</a>
+                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openCustomerView({{ $customer->id }})">{{ __('View') }}</button>
+                                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Register') }}</a>
+                                        <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-secondary">{{ __('Usage') }}</a>
                                         <button type="button" class="btn btn-sm {{ (int) $customer->status === 0 ? 'btn-soft-success' : 'btn-soft-danger' }}" wire:click="toggleCustomerStatus({{ $customer->id }})">
-                                            {{ (int) $customer->status === 0 ? 'Restore' : 'Suspend' }}
+                                            {{ (int) $customer->status === 0 ? __('Restore') : __('Suspend') }}
                                         </button>
                                     </div>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="text-center py-5 text-muted">No customers matched the current filters.</td>
+                                <td colspan="7" class="text-center py-5 text-muted">{{ __('No customers matched the current filters.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -244,10 +244,10 @@ class extends Component
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
-                        <h5 class="modal-title mb-1">Customer Quick View</h5>
-                        <p class="text-muted mb-0">Operational context without leaving the directory screen.</p>
+                        <h5 class="modal-title mb-1">{{ __('Customer Quick View') }}</h5>
+                        <p class="text-muted mb-0">{{ __('Operational context without leaving the directory screen.') }}</p>
                     </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" wire:click="closeCustomerView"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="closeCustomerView"></button>
                 </div>
                 <div class="modal-body">
                     @if ($this->viewingCustomer)
@@ -268,33 +268,33 @@ class extends Component
                                     </div>
                                     <div class="small text-muted mb-2">{{ $focusedCustomer->email }}</div>
                                     <div class="small mb-2">{{ $this->customerLocation($focusedCustomer) }}</div>
-                                    <div class="small mb-2">{{ data_get($focusedCustomer, 'profile.phone_number', 'No phone') }}</div>
-                                    <div class="small mb-2">Joined {{ $focusedCustomer->created_at?->format('M d, Y H:i') ?? 'n/a' }}</div>
-                                    <div class="small">Brand: {{ data_get($focusedCustomer, 'profile.brand_name', 'Not set') }}</div>
+                                    <div class="small mb-2">{{ data_get($focusedCustomer, 'profile.phone_number', __('No phone')) }}</div>
+                                    <div class="small mb-2">{{ __('Joined :date', ['date' => $focusedCustomer->created_at?->format('M d, Y H:i') ?? __('n/a')]) }}</div>
+                                    <div class="small">{{ __('Brand: :value', ['value' => data_get($focusedCustomer, 'profile.brand_name', __('Not set'))]) }}</div>
                                 </div>
                             </div>
                             <div class="col-lg-4">
                                 <div class="border rounded p-3 h-100">
-                                    <h6 class="text-uppercase text-muted fs-12 mb-3">Plan and Wallet</h6>
-                                    <div class="mb-2"><span class="fw-semibold">Plan:</span> {{ $focusedPlan?->name ?? 'No active plan' }}</div>
-                                    <div class="mb-2"><span class="fw-semibold">Balance:</span> {{ $this->formatCredits($focusedWallet?->balance_credits) }} credits</div>
-                                    <div class="mb-2"><span class="fw-semibold">Lifetime earned:</span> {{ $this->formatCredits($focusedWallet?->lifetime_earned) }}</div>
-                                    <div class="mb-2"><span class="fw-semibold">Lifetime spent:</span> {{ $this->formatCredits($focusedWallet?->lifetime_spent) }}</div>
-                                    <div class="mb-2"><span class="fw-semibold">Purchased credits:</span> {{ $this->formatCredits($focusedCustomer->paid_order_credits) }}</div>
-                                    <div class="mb-2"><span class="fw-semibold">Paid revenue:</span> {{ $this->formatMoney($focusedCustomer->paid_order_amount) }}</div>
-                                    <div class="small text-muted mb-2">Plans {{ $this->formatMoney($focusedCustomer->service_plan_amount_spent) }} • Storage {{ $this->formatMoney($focusedCustomer->storage_amount_spent) }} • Products {{ $this->formatMoney($focusedCustomer->credit_product_amount_spent) }}</div>
-                                    <div><span class="fw-semibold">Storage used:</span> {{ $this->formatBytes(data_get($focusedCustomer, 'usage.storage_used_bytes')) }}</div>
+                                    <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Plan and Wallet') }}</h6>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Plan:') }}</span> {{ $focusedPlan?->name ?? __('No active plan') }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Balance:') }}</span> {{ __(':credits credits', ['credits' => $this->formatCredits($focusedWallet?->balance_credits)]) }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Lifetime earned:') }}</span> {{ $this->formatCredits($focusedWallet?->lifetime_earned) }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Lifetime spent:') }}</span> {{ $this->formatCredits($focusedWallet?->lifetime_spent) }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Purchased credits:') }}</span> {{ $this->formatCredits($focusedCustomer->paid_order_credits) }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Paid revenue:') }}</span> {{ $this->formatMoney($focusedCustomer->paid_order_amount) }}</div>
+                                    <div class="small text-muted mb-2">{{ __('Plans :plans | Storage :storage | Products :products', ['plans' => $this->formatMoney($focusedCustomer->service_plan_amount_spent), 'storage' => $this->formatMoney($focusedCustomer->storage_amount_spent), 'products' => $this->formatMoney($focusedCustomer->credit_product_amount_spent)]) }}</div>
+                                    <div><span class="fw-semibold">{{ __('Storage used:') }}</span> {{ $this->formatBytes(data_get($focusedCustomer, 'usage.storage_used_bytes')) }}</div>
                                 </div>
                             </div>
                             <div class="col-lg-4">
                                 <div class="border rounded p-3 h-100">
-                                    <h6 class="text-uppercase text-muted fs-12 mb-3">Verification and Activity</h6>
-                                    <div class="mb-2"><span class="fw-semibold">Email:</span> {{ $focusedCustomer->email_verify ? 'Verified' : 'Pending' }}</div>
-                                    <div class="mb-2"><span class="fw-semibold">Phone:</span> {{ $focusedCustomer->phone_verify ? 'Verified' : 'Pending' }}</div>
-                                    <div class="mb-2"><span class="fw-semibold">Jobs:</span> {{ number_format((int) ($focusedCustomer->jobs_count ?? 0)) }}</div>
-                                    <div class="mb-2"><span class="fw-semibold">Credits consumed:</span> {{ $this->formatCredits($focusedCustomer->consumed_credits) }}</div>
-                                    <div class="mb-2"><span class="fw-semibold">Paid orders:</span> {{ number_format((int) ($focusedCustomer->paid_orders_count ?? 0)) }}</div>
-                                    <div><span class="fw-semibold">Files:</span> {{ number_format((int) ($focusedCustomer->customer_files_count ?? 0)) }}</div>
+                                    <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Verification and Activity') }}</h6>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Email:') }}</span> {{ $focusedCustomer->email_verify ? __('Verified') : __('Pending') }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Phone:') }}</span> {{ $focusedCustomer->phone_verify ? __('Verified') : __('Pending') }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Jobs:') }}</span> {{ number_format((int) ($focusedCustomer->jobs_count ?? 0)) }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Credits consumed:') }}</span> {{ $this->formatCredits($focusedCustomer->consumed_credits) }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Paid orders:') }}</span> {{ number_format((int) ($focusedCustomer->paid_orders_count ?? 0)) }}</div>
+                                    <div><span class="fw-semibold">{{ __('Files:') }}</span> {{ number_format((int) ($focusedCustomer->customer_files_count ?? 0)) }}</div>
                                 </div>
                             </div>
                         </div>
@@ -303,17 +303,17 @@ class extends Component
                             <div class="col-lg-6">
                                 <div class="border rounded p-3 h-100">
                                     <div class="d-flex align-items-center justify-content-between mb-3">
-                                        <h6 class="mb-0">Recent Jobs</h6>
-                                        <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $focusedCustomer->id]) }}" class="btn btn-sm btn-soft-secondary">Open Usage</a>
+                                        <h6 class="mb-0">{{ __('Recent Jobs') }}</h6>
+                                        <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $focusedCustomer->id]) }}" class="btn btn-sm btn-soft-secondary">{{ __('Open Usage') }}</a>
                                     </div>
                                     <div class="table-responsive">
                                         <table class="table table-sm align-middle mb-0">
                                             <thead class="table-light">
                                                 <tr>
-                                                    <th>Tool</th>
-                                                    <th>Status</th>
-                                                    <th>Credits</th>
-                                                    <th>When</th>
+                                                    <th>{{ __('Tool') }}</th>
+                                                    <th>{{ __('Status') }}</th>
+                                                    <th>{{ __('Credits') }}</th>
+                                                    <th>{{ __('When') }}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -321,17 +321,17 @@ class extends Component
                                                     <tr>
                                                         <td>
                                                             <div class="d-flex flex-column">
-                                                                <span class="fw-semibold">{{ $job->tool?->name ?? $job->toolAction?->tool?->name ?? 'Unknown tool' }}</span>
+                                                                <span class="fw-semibold">{{ $job->tool?->name ?? $job->toolAction?->tool?->name ?? __('Unknown tool') }}</span>
                                                                 <span class="text-muted small">{{ $job->toolAction?->full_code ?? $job->job_kind }}</span>
                                                             </div>
                                                         </td>
                                                         <td><span class="badge bg-light text-body">{{ $job->status }}</span></td>
                                                         <td>{{ $this->formatCredits($job->credits_charged) }}</td>
-                                                        <td>{{ $job->created_at?->diffForHumans() ?? 'n/a' }}</td>
+                                                        <td>{{ $job->created_at?->diffForHumans() ?? __('n/a') }}</td>
                                                     </tr>
                                                 @empty
                                                     <tr>
-                                                        <td colspan="4" class="text-center py-3 text-muted">No jobs recorded for this customer yet.</td>
+                                                        <td colspan="4" class="text-center py-3 text-muted">{{ __('No jobs recorded for this customer yet.') }}</td>
                                                     </tr>
                                                 @endforelse
                                             </tbody>
@@ -342,17 +342,17 @@ class extends Component
                             <div class="col-lg-6">
                                 <div class="border rounded p-3 h-100">
                                     <div class="d-flex align-items-center justify-content-between mb-3">
-                                        <h6 class="mb-0">Recent Purchases</h6>
-                                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $focusedCustomer->id]) }}" class="btn btn-sm btn-soft-primary">Open Register</a>
+                                        <h6 class="mb-0">{{ __('Recent Purchases') }}</h6>
+                                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $focusedCustomer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Open Register') }}</a>
                                     </div>
                                     <div class="table-responsive">
                                         <table class="table table-sm align-middle mb-0">
                                             <thead class="table-light">
                                                 <tr>
-                                                    <th>Type</th>
-                                                    <th>Credits</th>
-                                                    <th>Amount</th>
-                                                    <th>Date</th>
+                                                    <th>{{ __('Type') }}</th>
+                                                    <th>{{ __('Credits') }}</th>
+                                                    <th>{{ __('Amount') }}</th>
+                                                    <th>{{ __('Date') }}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -361,16 +361,16 @@ class extends Component
                                                         <td>
                                                             <div class="d-flex flex-column">
                                                                 <span class="fw-semibold">{{ $this->paymentSourceLabel($order->source_type, $order->order_type) }}</span>
-                                                                <span class="text-muted small">{{ $order->servicePlan?->name ?? $order->creditProduct?->name ?? ($order->source_type ?? 'Manual') }}</span>
+                                                                <span class="text-muted small">{{ $order->servicePlan?->name ?? $order->creditProduct?->name ?? ($order->source_type ?? __('Manual')) }}</span>
                                                             </div>
                                                         </td>
                                                         <td>{{ $this->formatCredits($order->credits_amount) }}</td>
                                                         <td>{{ $this->formatMoney($order->amount_usd) }}</td>
-                                                        <td>{{ $order->created_at?->format('M d, Y') ?? 'n/a' }}</td>
+                                                        <td>{{ $order->created_at?->format('M d, Y') ?? __('n/a') }}</td>
                                                     </tr>
                                                 @empty
                                                     <tr>
-                                                        <td colspan="4" class="text-center py-3 text-muted">No paid credit orders recorded.</td>
+                                                        <td colspan="4" class="text-center py-3 text-muted">{{ __('No paid credit orders recorded.') }}</td>
                                                     </tr>
                                                 @endforelse
                                             </tbody>
@@ -380,14 +380,14 @@ class extends Component
                             </div>
                         </div>
                     @else
-                        <div class="text-center py-5 text-muted">Select a customer from the directory to inspect account details.</div>
+                        <div class="text-center py-5 text-muted">{{ __('Select a customer from the directory to inspect account details.') }}</div>
                     @endif
                 </div>
                 <div class="modal-footer">
                     @if ($this->viewingCustomer)
-                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $this->viewingCustomer->id]) }}" class="btn btn-primary">Open Register</a>
+                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $this->viewingCustomer->id]) }}" class="btn btn-primary">{{ __('Open Register') }}</a>
                     @endif
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="closeCustomerView">Close</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="closeCustomerView">{{ __('Close') }}</button>
                 </div>
             </div>
         </div>

@@ -94,7 +94,7 @@ new class extends Component
 
 <div style="min-width:220px;" class="px-0 mb-3" wire:key="header-chip-{{ $refreshKey }}">
     <div class="d-flex justify-content-between align-items-center mb-1">
-        <small class="text-muted">Credits</small>
+        <small class="text-muted">{{ __('Credits') }}</small>
         <small class="fw-semibold">{{ number_format($this->balance) }} / {{ number_format($this->monthly) }}</small>
     </div>
     <div class="progress" style="height:6px;">
@@ -102,8 +102,8 @@ new class extends Component
     </div>
 
     <div class="d-flex justify-content-between align-items-center mt-2 mb-1">
-        <small class="text-muted">Storage</small>
-        <small class="fw-semibold">{{ number_format($this->usedMb) }}MB / {{ number_format($this->quotaMb) }}MB</small>
+        <small class="text-muted">{{ __('Storage') }}</small>
+        <small class="fw-semibold">{{ __(':used MB / :total MB', ['used' => number_format($this->usedMb), 'total' => number_format($this->quotaMb)]) }}</small>
     </div>
     <div class="progress" style="height:6px;">
         <div class="progress-bar bg-info" style="width: {{ $this->storagePct }}%;"></div>

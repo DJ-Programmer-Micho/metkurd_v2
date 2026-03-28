@@ -26,6 +26,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/set-locale', [LocalizationMainMiddleware::class, 'setLocale'])->name('setLocale');
 
+require __DIR__.'/landing.php';
+
 /*
 |--------------------------------------------------------------------------
 | Admin Auth (guest)
@@ -53,6 +55,7 @@ Route::prefix('{locale}/'.app('aurl'))
         Route::livewire('/customers/list', 'admin::pages.customers.adm-customers-list')->name('admin.customers.list');
         Route::livewire('/customers/ranking', 'admin::pages.customers.adm-customers-ranking')->name('admin.customers.ranking');
         Route::livewire('/customers/register', 'admin::pages.customers.adm-customers-register')->name('admin.customers.register');    
+        Route::livewire('/customers/phone-countries', 'admin::pages.customers.adm-customers-phone-countries')->name('admin.customers.phone-countries');
         Route::livewire('/customers/usage', 'admin::pages.customers.adm-customers-usage')->name('admin.customers.usage');
         Route::livewire('/customers/suspended', 'admin::pages.customers.adm-customers-suspended')->name('admin.customers.suspended');
         Route::livewire('/packs/plans', 'admin::pages.payments.adm-payments-plans')->name('admin.payments.plans');
@@ -232,12 +235,6 @@ Route::prefix('{locale}')
 | Landing
 |--------------------------------------------------------------------------
 */
-Route::get('/en', fn () => view('welcome'));
-
-
-
-
-
 // Route::prefix('admin')->name('admin.')->group(function () {
 //     Route::middleware('guest:admin')->group(function () {
 //         Route::get('/signin', ...)->name('signin');

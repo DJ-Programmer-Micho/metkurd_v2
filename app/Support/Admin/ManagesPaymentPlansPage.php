@@ -266,7 +266,7 @@ trait ManagesPaymentPlansPage
         $this->dispatch(
             'alert',
             type: 'success',
-            message: $this->editingPlanId ? 'Service plan updated successfully.' : 'Service plan created successfully.'
+            message: $this->editingPlanId ? __('Service plan updated successfully.') : __('Service plan created successfully.')
         );
 
         $this->resetPlanForm();
@@ -281,7 +281,7 @@ trait ManagesPaymentPlansPage
         $this->dispatch(
             'alert',
             type: 'success',
-            message: $plan->is_active ? 'Plan activated successfully.' : 'Plan deactivated successfully.'
+            message: $plan->is_active ? __('Plan activated successfully.') : __('Plan deactivated successfully.')
         );
     }
 
@@ -311,7 +311,7 @@ trait ManagesPaymentPlansPage
             $this->dispatch(
                 'alert',
                 type: 'error',
-                message: 'This plan has related subscriptions, pricing, entitlements, or orders. Deactivate it instead of deleting.'
+                message: __('This plan has related subscriptions, pricing, entitlements, or orders. Deactivate it instead of deleting.')
             );
 
             return;
@@ -320,7 +320,7 @@ trait ManagesPaymentPlansPage
         $plan->delete();
         $this->resetDeleteState();
         $this->dispatch('payments-plans:modal-hide', id: 'paymentPlanDeleteModal');
-        $this->dispatch('alert', type: 'success', message: 'Service plan deleted successfully.');
+        $this->dispatch('alert', type: 'success', message: __('Service plan deleted successfully.'));
     }
 
     public function resetPlanForm(): void

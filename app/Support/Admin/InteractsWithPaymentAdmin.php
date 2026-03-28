@@ -18,7 +18,7 @@ trait InteractsWithPaymentAdmin
 
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
             throw ValidationException::withMessages([
-                $field => 'Enter valid JSON data.',
+                $field => __('Enter valid JSON data.'),
             ]);
         }
 

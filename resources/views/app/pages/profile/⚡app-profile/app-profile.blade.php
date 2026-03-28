@@ -1,4 +1,6 @@
 <div>
+    <x-slot:title>{{ __('Profile') }} | {{ __('MET KURD') }}</x-slot:title>
+
     @push('styles')
         <style>
             .profile-wid-bg::before {
@@ -118,8 +120,8 @@
                             <li class="mb-1 badge bg-primary-subtle text-primary" style="font-size: 0.90em">{{ __('TEXT-TO-SPEECH') }}</li>
                             <li class="mb-1 badge bg-info-subtle text-info" style="font-size: 0.90em">{{ __('SPEECH-TO-TEXT / ASR') }}</li>
                             <li class="mb-1 badge bg-danger-subtle text-danger" style="font-size: 0.90em">{{ __('AUDIO SPLITTER') }}</li>
-                            <li class="mb-1 badge bg-success-subtle text-success" style="font-size: 0.90em">{{ __('AUDIO SEPARATOR') }}</li>
-                            <li class="mb-1 badge bg-warning-subtle text-warning" style="font-size: 0.90em">{{ __('OCR') }}</li>
+                            <li class="mb-1 badge bg-success-subtle text-success" style="font-size: 0.90em">{{ __('Stem Separation') }}</li>
+                            <li class="mb-1 badge bg-warning-subtle text-warning" style="font-size: 0.90em">{{ __('Optical Character Recognition') }}</li>
                         </ul>
                     </div>
                 </div>
@@ -195,40 +197,40 @@
                                 <form wire:submit.prevent="updatePassword">
                                     <div class="row g-2">
                                         <div class="col-lg-4">
-                                            <label class="form-label">Old Password*</label>
-                                            <input type="password" wire:model.defer="old_password" class="form-control" placeholder="Enter current password">
+                                            <label class="form-label">{{ __('Old Password') }}*</label>
+                                            <input type="password" wire:model.defer="old_password" class="form-control" placeholder="{{ __('Enter current password') }}">
                                             @error('old_password') <span class="text-danger">{{ $message }}</span> @enderror
                                             <div class="mt-2">
-                                                Forgot Password? <a href="{{ route('app.password.email') }}" class="text-danger">Send reset link to my email</a>
+                                                {{ __('Forgot Password?') }} <a href="{{ route('app.password.email') }}" class="text-danger">{{ __('Send reset link to my email') }}</a>
                                             </div>
                                         </div>
 
                                         <div class="col-lg-4">
-                                            <label class="form-label">New Password*</label>
-                                            <input type="password" wire:model.defer="new_password" id="newpasswordInput" class="form-control" placeholder="Enter new password">
+                                            <label class="form-label">{{ __('New Password') }}*</label>
+                                            <input type="password" wire:model.defer="new_password" id="newpasswordInput" class="form-control" placeholder="{{ __('Enter new password') }}">
                                             @error('new_password') <span class="text-danger">{{ $message }}</span> @enderror
                                         </div>
 
                                         <div class="col-lg-4">
-                                            <label class="form-label">Confirm Password*</label>
-                                            <input type="password" wire:model.defer="new_password_confirmation" class="form-control" placeholder="Confirm password">
+                                            <label class="form-label">{{ __('Confirm Password') }}*</label>
+                                            <input type="password" wire:model.defer="new_password_confirmation" class="form-control" placeholder="{{ __('Confirm password') }}">
                                             @error('new_password_confirmation') <span class="text-danger">{{ $message }}</span> @enderror
                                         </div>
 
                                         <div class="col-lg-12">
                                             <div id="password-contain" class="p-3 bg-light mb-3 rounded">
-                                                <h5 class="fs-13">Password must contain:</h5>
-                                                <p id="pass-lower"   class="invalid fs-12 mb-2"> At least one lowercase letter</p>
-                                                <p id="pass-upper"   class="invalid fs-12 mb-2"> At least one uppercase letter</p>
-                                                <p id="pass-number"  class="invalid fs-12 mb-2"> At least one number</p>
-                                                <p id="pass-special" class="invalid fs-12 mb-2"> At least one special character</p>
-                                                <p id="pass-length"  class="invalid fs-12 mb-0"> At least 8 characters</p>
+                                                <h5 class="fs-13">{{ __('Password must contain:') }}</h5>
+                                                <p id="pass-lower"   class="invalid fs-12 mb-2">{{ __('At least one lowercase letter') }}</p>
+                                                <p id="pass-upper"   class="invalid fs-12 mb-2">{{ __('At least one uppercase letter') }}</p>
+                                                <p id="pass-number"  class="invalid fs-12 mb-2">{{ __('At least one number') }}</p>
+                                                <p id="pass-special" class="invalid fs-12 mb-2">{{ __('At least one special character') }}</p>
+                                                <p id="pass-length"  class="invalid fs-12 mb-0">{{ __('At least 8 characters') }}</p>
                                             </div>
                                         </div>
 
                                         <div class="col-lg-12">
                                             <div class="text-end">
-                                                <button type="submit" class="btn btn-success">Change Password</button>
+                                                <button type="submit" class="btn btn-success">{{ __('Change Password') }}</button>
                                             </div>
                                         </div>
                                     </div>
@@ -251,7 +253,7 @@
                     <div class="modal-body">
                         <div class="modal-header mb-3">
                             <h5 class="modal-title">{{ __('Edit User') }}</h5>
-                            <button type="button" class="btn btn-danger" onclick="window.ProfilePage.closeModal('updateUserModal')" aria-label="Close">
+                            <button type="button" class="btn btn-danger" onclick="window.ProfilePage.closeModal('updateUserModal')" aria-label="{{ __('Close') }}">
                                 <i class="fas fa-times"></i>
                             </button>
                         </div>
@@ -288,20 +290,20 @@
 
                                     @if($phoneChanged && !$phoneVerified)
                                         <button type="button" class="btn btn-warning" wire:click="openPhoneOtpProviders">
-                                            <i class="ri-shield-check-line"></i> Verify
+                                            <i class="ri-shield-check-line"></i> {{ __('Verify') }}
                                         </button>
                                     @endif
 
                                     @if($phoneVerified)
                                         <span class="input-group-text bg-success text-white">
-                                            <i class="ri-checkbox-circle-fill"></i> Verified
+                                            <i class="ri-checkbox-circle-fill"></i> {{ __('Verified') }}
                                         </span>
                                     @endif
                                 </div>
 
                                 @if($phoneChanged && !$phoneVerified)
                                     <small class="text-warning">
-                                        <i class="ri-alert-line"></i> Phone number changed. Please verify before saving.
+                                        <i class="ri-alert-line"></i> {{ __('Phone number changed. Please verify before saving.') }}
                                     </small>
                                 @endif
 
@@ -312,7 +314,7 @@
                                 <label class="form-label">{{ __('Job Title') }}</label>
                                 <select class="form-select @error('jobTitleEdit') is-invalid @enderror" wire:model.defer="jobTitleEdit">
                                     @foreach($jobTitleOptions as $value => $label)
-                                        <option value="{{ $value }}">{{ $label }}</option>
+                                        <option value="{{ $value }}">{{ __($label) }}</option>
                                     @endforeach
                                 </select>
                                 @error('jobTitleEdit') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
@@ -322,7 +324,7 @@
                                 <label class="form-label">{{ __('Email Address') }}</label>
                                 <input type="email" class="form-control bg-dark text-muted" wire:model.defer="emailEdit" readonly disabled>
                                 <small class="text-muted">
-                                    <i class="ri-lock-line"></i> Email cannot be changed for security reasons.
+                                    <i class="ri-lock-line"></i> {{ __('Email cannot be changed for security reasons.') }}
                                 </small>
                             </div>
 
@@ -357,34 +359,34 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
-                        <i class="ri-shield-check-line text-primary"></i> Verify Phone Number
+                        <i class="ri-shield-check-line text-primary"></i> {{ __('Verify Phone Number') }}
                     </h5>
-                    <button type="button" class="btn-close" wire:click="closePhoneOtpModal" aria-label="Close"></button>
+                    <button type="button" class="btn-close" wire:click="closePhoneOtpModal" aria-label="{{ __('Close') }}"></button>
                 </div>
 
                 <div class="modal-body">
                     <div class="text-center mb-3">
-                        <p class="text-muted">We'll send a verification code to:</p>
+                        <p class="text-muted">{{ __('We\'ll send a verification code to:') }}</p>
                         <h6 class="text-primary">{{ $phoneEdit }}</h6>
                     </div>
 
                     @if($otpStep === 0)
                         <div class="d-grid gap-2">
                             <button type="button" class="btn btn-outline-success" wire:click="sendPhoneOtp('sms')">
-                                <i class="ri-message-2-line"></i> Send via SMS
+                                <i class="ri-message-2-line"></i> {{ __('Send via SMS') }}
                             </button>
                             <button type="button" class="btn btn-outline-primary" wire:click="sendPhoneOtp('whatsapp')">
-                                <i class="ri-whatsapp-line"></i> Send via WhatsApp
+                                <i class="ri-whatsapp-line"></i> {{ __('Send via WhatsApp') }}
                             </button>
                             <button type="button" class="btn btn-outline-info" wire:click="sendPhoneOtp('telegram')">
-                                <i class="ri-telegram-line"></i> Send via Telegram
+                                <i class="ri-telegram-line"></i> {{ __('Send via Telegram') }}
                             </button>
                         </div>
                     @endif
 
                     @if($otpStep === 1)
                         <p class="text-center text-muted mb-3">
-                            Enter the 6-digit code sent via <strong>{{ ucfirst($channel) }}</strong>
+                            {{ __('Enter the 6-digit code sent via') }} <strong>{{ __(ucfirst($channel)) }}</strong>
                         </p>
 
                         <div class="row justify-content-center mb-3">
@@ -401,13 +403,13 @@
 
                         <div class="d-grid gap-2">
                             <button type="button" class="btn btn-success" wire:click="verifyPhoneOtp">
-                                <i class="ri-check-line"></i> Verify Code
+                                <i class="ri-check-line"></i> {{ __('Verify Code') }}
                             </button>
                             <button type="button" class="btn btn-link text-muted" wire:click="resendPhoneOtp">
-                                <i class="ri-refresh-line"></i> Resend Code
+                                <i class="ri-refresh-line"></i> {{ __('Resend Code') }}
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="backToProviders">
-                                <i class="ri-arrow-left-line"></i> Back to providers
+                                <i class="ri-arrow-left-line"></i> {{ __('Back to providers') }}
                             </button>
                         </div>
                     @endif

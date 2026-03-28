@@ -295,12 +295,12 @@ trait InteractsWithCustomerAdmin
     public function periodLabel(string $periodFilter): string
     {
         return match ($periodFilter) {
-            '7' => 'Last 7 days',
-            '30' => 'Last 30 days',
-            '90' => 'Last 90 days',
-            '365' => 'Last 12 months',
-            'all' => 'All time',
-            default => 'Last 30 days',
+            '7' => __('Last 7 days'),
+            '30' => __('Last 30 days'),
+            '90' => __('Last 90 days'),
+            '365' => __('Last 12 months'),
+            'all' => __('All time'),
+            default => __('Last 30 days'),
         };
     }
 
@@ -310,7 +310,7 @@ trait InteractsWithCustomerAdmin
         $lastName = trim((string) data_get($customer, 'profile.last_name', ''));
         $fullName = trim($firstName . ' ' . $lastName);
 
-        return $fullName !== '' ? $fullName : (string) ($customer->username ?? 'Customer');
+        return $fullName !== '' ? $fullName : (string) ($customer->username ?? __('Customer'));
     }
 
     public function customerLocation($customer): string
@@ -319,12 +319,12 @@ trait InteractsWithCustomerAdmin
         $country = trim((string) data_get($customer, 'profile.country', ''));
         $parts = array_values(array_filter([$city, $country], fn ($value) => $value !== ''));
 
-        return $parts !== [] ? implode(', ', $parts) : 'Location not set';
+        return $parts !== [] ? implode(', ', $parts) : __('Location not set');
     }
 
     public function customerStatusLabel($status): string
     {
-        return (int) ($status ?? 1) === 0 ? 'Suspended' : 'Active';
+        return (int) ($status ?? 1) === 0 ? __('Suspended') : __('Active');
     }
 
     public function customerStatusBadgeClasses($status): string
@@ -349,10 +349,10 @@ trait InteractsWithCustomerAdmin
     public function paymentSourceLabel(?string $sourceType, ?string $orderType = null): string
     {
         return match (true) {
-            $sourceType === 'storage_plan' => 'Storage Plan',
-            $sourceType === 'service_plan', $orderType === 'subscription' => 'Service Plan',
-            in_array($sourceType, ['credit_product', 'addon'], true), in_array($orderType, ['addon', 'addon_purchase', 'credit'], true) => 'Credit Product',
-            default => ucwords(str_replace('_', ' ', (string) ($sourceType ?: $orderType ?: 'manual'))),
+            $sourceType === 'storage_plan' => __('Storage Plan'),
+            $sourceType === 'service_plan', $orderType === 'subscription' => __('Service Plan'),
+            in_array($sourceType, ['credit_product', 'addon'], true), in_array($orderType, ['addon', 'addon_purchase', 'credit'], true) => __('Credit Product'),
+            default => __(ucwords(str_replace('_', ' ', (string) ($sourceType ?: $orderType ?: 'manual')))),
         };
     }
 

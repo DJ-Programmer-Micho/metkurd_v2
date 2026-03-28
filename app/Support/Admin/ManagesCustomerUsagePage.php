@@ -109,7 +109,7 @@ trait ManagesCustomerUsagePage
             'jobs' => (int) (clone $jobs)->count(),
             'credits' => (int) ((clone $jobs)->sum('credits_charged') ?? 0),
             'customers' => (int) (clone $jobs)->distinct('customer_id')->count('customer_id'),
-            'top_tool' => $topTool?->tool_name ?? 'No usage yet',
+            'top_tool' => $topTool?->tool_name ?? __('No usage yet'),
         ];
     }
 

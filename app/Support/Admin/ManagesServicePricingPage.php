@@ -272,7 +272,7 @@ trait ManagesServicePricingPage
 
         $rule->save();
 
-        $this->dispatch('alert', type: 'success', message: $this->editingRuleId ? 'Pricing rule updated successfully.' : 'Pricing rule created successfully.');
+        $this->dispatch('alert', type: 'success', message: $this->editingRuleId ? __('Pricing rule updated successfully.') : __('Pricing rule created successfully.'));
         $this->dispatch('services-pricing:modal-hide', id: 'servicePricingRuleModal');
         $this->resetRuleForm();
     }
@@ -281,14 +281,14 @@ trait ManagesServicePricingPage
     {
         $rule = PricingRule::query()->findOrFail($ruleId);
         $rule->update(['is_active' => !$rule->is_active]);
-        $this->dispatch('alert', type: 'success', message: $rule->is_active ? 'Pricing rule activated.' : 'Pricing rule deactivated.');
+        $this->dispatch('alert', type: 'success', message: $rule->is_active ? __('Pricing rule activated.') : __('Pricing rule deactivated.'));
     }
 
     public function confirmPricingRuleDelete(int $ruleId): void
     {
         $rule = PricingRule::query()->with('toolAction:id,name,full_code')->findOrFail($ruleId);
         $this->ruleIdPendingDelete = $rule->id;
-        $this->deleteLabel = $rule->toolAction?->full_code ?? ('Rule #' . $rule->id);
+        $this->deleteLabel = $rule->toolAction?->full_code ?? __('Rule #:id', ['id' => $rule->id]);
         $this->dispatch('services-pricing:modal-show', id: 'servicePricingDeleteModal');
     }
 
@@ -296,7 +296,7 @@ trait ManagesServicePricingPage
     {
         if ($this->ruleIdPendingDelete) {
             PricingRule::query()->findOrFail($this->ruleIdPendingDelete)->delete();
-            $this->dispatch('alert', type: 'success', message: 'Pricing rule deleted successfully.');
+            $this->dispatch('alert', type: 'success', message: __('Pricing rule deleted successfully.'));
         }
 
         $this->dispatch('services-pricing:modal-hide', id: 'servicePricingDeleteModal');
@@ -355,7 +355,7 @@ trait ManagesServicePricingPage
 
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
             throw ValidationException::withMessages([
-                $field => 'Please enter a valid JSON object.',
+                $field => __('Please enter a valid JSON object.'),
             ]);
         }
 

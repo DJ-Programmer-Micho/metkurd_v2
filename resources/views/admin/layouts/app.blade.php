@@ -32,7 +32,7 @@
     <link href="{{ asset('app/css/app.min.css') }}" rel="stylesheet" type="text/css" />
     <link href="{{ asset('general/css/toaster.css') }}" rel="stylesheet" type="text/css">
 
-    <title>{{ $title ?? 'APP | METKURD' }}</title>
+    <title>{{ $title ?? __('APP | METKURD') }}</title>
 
     @stack('styles')
     @vite('resources/js/app.js')

@@ -112,14 +112,14 @@ new class extends Component {
             if ($i < $this->allowedSlots) {
                 $slots[] = $items[$i] ?? [
                     'route' => null,
-                    'title' => 'Available slot',
+                    'title' => __('Available slot'),
                     'isClickable' => false,
                     'cellClass' => 'mk-slot-idle',
                 ];
             } else {
                 $slots[] = [
                     'route' => null,
-                    'title' => 'Locked by plan',
+                    'title' => __('Locked by plan'),
                     'isClickable' => false,
                     'cellClass' => 'mk-slot-locked',
                 ];
@@ -147,13 +147,13 @@ new class extends Component {
             $slots[] = $i < $allowed
                 ? [
                     'route' => null,
-                    'title' => 'Available slot',
+                    'title' => __('Available slot'),
                     'isClickable' => false,
                     'cellClass' => 'mk-slot-idle',
                 ]
                 : [
                     'route' => null,
-                    'title' => 'Locked by plan',
+                    'title' => __('Locked by plan'),
                     'isClickable' => false,
                     'cellClass' => 'mk-slot-locked',
                 ];
@@ -175,13 +175,13 @@ new class extends Component {
         <div wire:poll.20000ms="pollJobs"></div>
     @endif
 
-    <div class="mk-slot-summary" aria-label="Active jobs">
+    <div class="mk-slot-summary" aria-label="{{ __('Active jobs') }}">
         <span class="mk-slot-summary__count">{{ $activeJobs }}</span>
-        <span class="mk-slot-summary__label">/ {{ $allowedSlots }}</span>
+        <span class="mk-slot-summary__label">{{ __('of :count', ['count' => $allowedSlots]) }}</span>
     </div>
 
     <div class="d-flex align-items-center gap-2 px-2 py-2 rounded-4 mk-slot-board"
-         aria-label="Process queue">
+         aria-label="{{ __('Process queue') }}">
         @foreach($slotsData as $slot)
             @if($slot['isClickable'] && $slot['route'])
                 <a href="{{ $slot['route'] }}"

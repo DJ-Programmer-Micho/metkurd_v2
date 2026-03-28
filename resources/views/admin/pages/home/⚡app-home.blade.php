@@ -2,17 +2,17 @@
 
 use App\Support\Admin\ManagesAdminHomePage;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
 new
 #[Layout('admin::layouts.app')]
-#[Title('Analysis Dashboard | METKURD')]
 class extends Component
 {
     use ManagesAdminHomePage;
 };
 ?>
+
+<x-slot:title>{{ __('Analysis Dashboard') }} | {{ __('MET KURD') }}</x-slot:title>
 
 @php
     $stats = $this->overviewStats;
@@ -28,24 +28,24 @@ class extends Component
                 <div class="card-body p-4 p-lg-5 position-relative">
                     <div class="row align-items-end g-4">
                         <div class="col-xl-8">
-                            <span class="badge text-bg-light text-uppercase fw-semibold mb-3">Admin Analysis</span>
-                            <h2 class="text-white mb-2">Live operating snapshot for plans, customers, purchase flow, and tool consumption.</h2>
+                            <span class="badge text-bg-light text-uppercase fw-semibold mb-3">{{ __('Admin Analysis') }}</span>
+                            <h2 class="text-white mb-2">{{ __('Live operating snapshot for plans, customers, purchase flow, and tool consumption.') }}</h2>
                             <p class="text-white-50 mb-0 analysis-hero-copy">
-                                This dashboard uses grouped database aggregates and short-lived caching to keep the admin overview fast as orders, subscriptions, and `MlJob` history grow.
+                                {{ __('This dashboard uses grouped database aggregates and short-lived caching to keep the admin overview fast as orders, subscriptions, and `MlJob` history grow.') }}
                             </p>
                         </div>
                         <div class="col-xl-4">
                             <div class="analysis-panel p-3 rounded-4">
-                                <label class="form-label text-uppercase fs-12 text-white-50 mb-2">Analysis Window</label>
+                                <label class="form-label text-uppercase fs-12 text-white-50 mb-2">{{ __('Analysis Window') }}</label>
                                 <select class="form-select bg-white border-0" wire:model.live="periodFilter">
-                                    <option value="7">Last 7 days</option>
-                                    <option value="30">Last 30 days</option>
-                                    <option value="90">Last 90 days</option>
-                                    <option value="365">Last 12 months</option>
-                                    <option value="all">All time</option>
+                                    <option value="7">{{ __('Last 7 days') }}</option>
+                                    <option value="30">{{ __('Last 30 days') }}</option>
+                                    <option value="90">{{ __('Last 90 days') }}</option>
+                                    <option value="365">{{ __('Last 12 months') }}</option>
+                                    <option value="all">{{ __('All time') }}</option>
                                 </select>
                                 <div class="small text-white-50 mt-2">
-                                    Showing {{ $this->periodLabel($periodFilter) }} for revenue, purchases, and usage-heavy sections. Snapshot cache: 5 minutes.
+                                    {{ __('Showing :period for revenue, purchases, and usage-heavy sections. Snapshot cache: 5 minutes.', ['period' => $this->periodLabel($periodFilter)]) }}
                                 </div>
                             </div>
                         </div>
@@ -61,54 +61,54 @@ class extends Component
         <div class="col-xxl-2 col-xl-4 col-md-6">
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">Customers</p>
+                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Customers') }}</p>
                     <h3 class="mb-1">{{ number_format($stats['customers_total']) }}</h3>
-                    <div class="text-muted small">{{ number_format($stats['period_new_customers']) }} registered in {{ strtolower($this->periodLabel($periodFilter)) }}</div>
+                    <div class="text-muted small">{{ __(':count registered in :period', ['count' => number_format($stats['period_new_customers']), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
             </div>
         </div>
         <div class="col-xxl-2 col-xl-4 col-md-6">
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">Paid Plans</p>
+                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Paid Plans') }}</p>
                     <h3 class="mb-1">{{ number_format($stats['paid_subscribers']) }}</h3>
-                    <div class="text-muted small">{{ $this->formatPercent($stats['paid_subscriber_share']) }} of active customers</div>
+                    <div class="text-muted small">{{ __(':value of active customers', ['value' => $this->formatPercent($stats['paid_subscriber_share'])]) }}</div>
                 </div>
             </div>
         </div>
         <div class="col-xxl-2 col-xl-4 col-md-6">
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">Revenue</p>
+                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Revenue') }}</p>
                     <h3 class="mb-1">{{ $this->formatMoney($stats['revenue_total']) }}</h3>
-                    <div class="text-muted small">{{ $this->formatMoney($stats['revenue_period']) }} in {{ strtolower($this->periodLabel($periodFilter)) }}</div>
+                    <div class="text-muted small">{{ __(':amount in :period', ['amount' => $this->formatMoney($stats['revenue_period']), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
             </div>
         </div>
         <div class="col-xxl-2 col-xl-4 col-md-6">
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">Credits Sold</p>
+                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Credits Sold') }}</p>
                     <h3 class="mb-1">{{ $this->formatCredits($stats['credits_sold_total']) }}</h3>
-                    <div class="text-muted small">{{ $this->formatCredits($stats['credits_sold_period']) }} sold in this window</div>
+                    <div class="text-muted small">{{ __(':credits sold in this window', ['credits' => $this->formatCredits($stats['credits_sold_period'])]) }}</div>
                 </div>
             </div>
         </div>
         <div class="col-xxl-2 col-xl-4 col-md-6">
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">Consumption</p>
+                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Consumption') }}</p>
                     <h3 class="mb-1">{{ $this->formatCredits($stats['consumed_total']) }}</h3>
-                    <div class="text-muted small">{{ $this->formatCredits($stats['consumed_period']) }} consumed in this window</div>
+                    <div class="text-muted small">{{ __(':credits consumed in this window', ['credits' => $this->formatCredits($stats['consumed_period'])]) }}</div>
                 </div>
             </div>
         </div>
         <div class="col-xxl-2 col-xl-4 col-md-6">
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">Jobs</p>
+                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Jobs') }}</p>
                     <h3 class="mb-1">{{ number_format($stats['jobs_total']) }}</h3>
-                    <div class="text-muted small">{{ $this->formatPercent($stats['success_rate']) }} success rate, {{ number_format($stats['active_jobs']) }} live</div>
+                    <div class="text-muted small">{{ __(':rate success rate, :count live', ['rate' => $this->formatPercent($stats['success_rate']), 'count' => number_format($stats['active_jobs'])]) }}</div>
                 </div>
             </div>
         </div>
@@ -118,27 +118,27 @@ class extends Component
         <div class="col-xl-4 col-md-6">
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">Service Plans Revenue</p>
+                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Service Plans Revenue') }}</p>
                     <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'service_plan.revenue_total', 0)) }}</h3>
-                    <div class="text-muted small">{{ number_format((int) data_get($revenueSources, 'service_plan.orders_period', 0)) }} orders and {{ $this->formatMoney(data_get($revenueSources, 'service_plan.revenue_period', 0)) }} in {{ strtolower($this->periodLabel($periodFilter)) }}</div>
+                    <div class="text-muted small">{{ __(':orders orders and :amount in :period', ['orders' => number_format((int) data_get($revenueSources, 'service_plan.orders_period', 0)), 'amount' => $this->formatMoney(data_get($revenueSources, 'service_plan.revenue_period', 0)), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
             </div>
         </div>
         <div class="col-xl-4 col-md-6">
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">Storage Plans Revenue</p>
+                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Storage Plans Revenue') }}</p>
                     <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'storage_plan.revenue_total', 0)) }}</h3>
-                    <div class="text-muted small">{{ number_format((int) data_get($revenueSources, 'storage_plan.orders_period', 0)) }} orders and {{ $this->formatMoney(data_get($revenueSources, 'storage_plan.revenue_period', 0)) }} in {{ strtolower($this->periodLabel($periodFilter)) }}</div>
+                    <div class="text-muted small">{{ __(':orders orders and :amount in :period', ['orders' => number_format((int) data_get($revenueSources, 'storage_plan.orders_period', 0)), 'amount' => $this->formatMoney(data_get($revenueSources, 'storage_plan.revenue_period', 0)), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
             </div>
         </div>
         <div class="col-xl-4 col-md-6">
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">Credit Products Revenue</p>
+                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Credit Products Revenue') }}</p>
                     <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'credit_product.revenue_total', 0)) }}</h3>
-                    <div class="text-muted small">{{ number_format((int) data_get($revenueSources, 'credit_product.orders_period', 0)) }} orders and {{ $this->formatMoney(data_get($revenueSources, 'credit_product.revenue_period', 0)) }} in {{ strtolower($this->periodLabel($periodFilter)) }}</div>
+                    <div class="text-muted small">{{ __(':orders orders and :amount in :period', ['orders' => number_format((int) data_get($revenueSources, 'credit_product.orders_period', 0)), 'amount' => $this->formatMoney(data_get($revenueSources, 'credit_product.revenue_period', 0)), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
             </div>
         </div>
@@ -148,8 +148,8 @@ class extends Component
         <div class="col-xxl-8">
             <div class="card h-100 analysis-chart-card">
                 <div class="card-header border-0">
-                    <h5 class="card-title mb-1">Operational Trend</h5>
-                    <p class="text-muted mb-0">A compact 14-day view of job flow, registrations, and paid revenue.</p>
+                    <h5 class="card-title mb-1">{{ __('Operational Trend') }}</h5>
+                    <p class="text-muted mb-0">{{ __('A compact 14-day view of job flow, registrations, and paid revenue.') }}</p>
                 </div>
                 <div class="card-body">
                     <div class="analysis-chart-wrap analysis-chart-wrap-lg">
@@ -162,8 +162,8 @@ class extends Component
         <div class="col-xxl-4">
             <div class="card h-100 analysis-chart-card">
                 <div class="card-header border-0">
-                    <h5 class="card-title mb-1">Revenue by Payment Source</h5>
-                    <p class="text-muted mb-0">How paid revenue is split across service plans, storage plans, and credit products.</p>
+                    <h5 class="card-title mb-1">{{ __('Revenue by Payment Source') }}</h5>
+                    <p class="text-muted mb-0">{{ __('How paid revenue is split across service plans, storage plans, and credit products.') }}</p>
                 </div>
                 <div class="card-body">
                     <div class="analysis-chart-wrap analysis-chart-wrap-md">
@@ -178,8 +178,8 @@ class extends Component
         <div class="col-xl-5">
             <div class="card h-100 analysis-chart-card">
                 <div class="card-header border-0">
-                    <h5 class="card-title mb-1">Plan Distribution</h5>
-                    <p class="text-muted mb-0">Active subscriber spread across service plans right now.</p>
+                    <h5 class="card-title mb-1">{{ __('Plan Distribution') }}</h5>
+                    <p class="text-muted mb-0">{{ __('Active subscriber spread across service plans right now.') }}</p>
                 </div>
                 <div class="card-body">
                     <div class="analysis-chart-wrap">
@@ -192,8 +192,8 @@ class extends Component
         <div class="col-xl-7">
             <div class="card h-100 analysis-chart-card">
                 <div class="card-header border-0">
-                    <h5 class="card-title mb-1">Top Tools by Credits</h5>
-                    <p class="text-muted mb-0">Usage leaders for the selected window, with job totals in the tooltip.</p>
+                    <h5 class="card-title mb-1">{{ __('Top Tools by Credits') }}</h5>
+                    <p class="text-muted mb-0">{{ __('Usage leaders for the selected window, with job totals in the tooltip.') }}</p>
                 </div>
                 <div class="card-body">
                     <div class="analysis-chart-wrap">
@@ -208,22 +208,22 @@ class extends Component
         <div class="col-xl-8">
             <div class="card h-100">
                 <div class="card-header border-0">
-                    <h5 class="card-title mb-1">Plan Health</h5>
-                    <p class="text-muted mb-0">Current subscriber distribution with revenue and credits sold during {{ strtolower($this->periodLabel($periodFilter)) }}.</p>
+                    <h5 class="card-title mb-1">{{ __('Plan Health') }}</h5>
+                    <p class="text-muted mb-0">{{ __('Current subscriber distribution with revenue and credits sold during :period.', ['period' => $this->periodLabel($periodFilter)]) }}</p>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
                             <thead class="table-light text-muted">
                                 <tr class="text-uppercase">
-                                    <th>Plan</th>
-                                    <th>Type</th>
-                                    <th>Active Subscribers</th>
-                                    <th>Monthly Credits</th>
-                                    <th>Price</th>
-                                    <th>Paid Orders</th>
-                                    <th>Revenue</th>
-                                    <th>Credits Sold</th>
+                                    <th>{{ __('Plan') }}</th>
+                                    <th>{{ __('Type') }}</th>
+                                    <th>{{ __('Active Subscribers') }}</th>
+                                    <th>{{ __('Monthly Credits') }}</th>
+                                    <th>{{ __('Price') }}</th>
+                                    <th>{{ __('Paid Orders') }}</th>
+                                    <th>{{ __('Revenue') }}</th>
+                                    <th>{{ __('Credits Sold') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -237,7 +237,7 @@ class extends Component
                                         </td>
                                         <td>
                                             <span class="badge {{ $plan->is_free ? 'bg-light text-body' : 'bg-info-subtle text-info' }}">
-                                                {{ $plan->is_free ? 'Free' : 'Paid' }}
+                                                {{ $plan->is_free ? __('Free') : __('Paid') }}
                                             </span>
                                         </td>
                                         <td>{{ number_format((int) ($plan->active_subscribers ?? 0)) }}</td>
@@ -249,7 +249,7 @@ class extends Component
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="8" class="text-center py-5 text-muted">No plan analytics are available yet.</td>
+                                        <td colspan="8" class="text-center py-5 text-muted">{{ __('No plan analytics are available yet.') }}</td>
                                     </tr>
                                 @endforelse
                             </tbody>
@@ -262,8 +262,8 @@ class extends Component
         <div class="col-xl-4">
             <div class="card h-100">
                 <div class="card-header border-0">
-                    <h5 class="card-title mb-1">Purchase Mix</h5>
-                    <p class="text-muted mb-0">Breakdown of paid orders by payment source in the selected window.</p>
+                    <h5 class="card-title mb-1">{{ __('Purchase Mix') }}</h5>
+                    <p class="text-muted mb-0">{{ __('Breakdown of paid orders by payment source in the selected window.') }}</p>
                 </div>
                 <div class="card-body">
                     <div class="d-flex flex-column gap-3">
@@ -272,11 +272,11 @@ class extends Component
                                 <div class="d-flex align-items-start justify-content-between gap-3">
                                     <div>
                                         <h6 class="mb-1">{{ $row->label ?? $row->category }}</h6>
-                                        <div class="text-muted small">{{ number_format((int) ($row->orders ?? 0)) }} orders from {{ number_format((int) ($row->customers ?? 0)) }} customers</div>
+                                        <div class="text-muted small">{{ __(':orders orders from :customers customers', ['orders' => number_format((int) ($row->orders ?? 0)), 'customers' => number_format((int) ($row->customers ?? 0))]) }}</div>
                                     </div>
                                     <div class="text-end">
                                         <div class="fw-semibold">{{ $this->formatMoney($row->revenue) }}</div>
-                                        <div class="text-muted small">{{ $this->formatCredits($row->credits) }} credits</div>
+                                        <div class="text-muted small">{{ __(':credits credits', ['credits' => $this->formatCredits($row->credits)]) }}</div>
                                     </div>
                                 </div>
                                 <div class="progress mt-3" style="height: 7px;">
@@ -284,7 +284,7 @@ class extends Component
                                 </div>
                             </div>
                         @empty
-                            <div class="text-muted">No paid purchase activity matched the current window.</div>
+                            <div class="text-muted">{{ __('No paid purchase activity matched the current window.') }}</div>
                         @endforelse
                     </div>
                 </div>
@@ -296,19 +296,19 @@ class extends Component
         <div class="col-xl-7">
             <div class="card h-100">
                 <div class="card-header border-0">
-                    <h5 class="card-title mb-1">Tool Consumption</h5>
-                    <p class="text-muted mb-0">Top tools by credits and job volume in {{ strtolower($this->periodLabel($periodFilter)) }}.</p>
+                    <h5 class="card-title mb-1">{{ __('Tool Consumption') }}</h5>
+                    <p class="text-muted mb-0">{{ __('Top tools by credits and job volume in :period.', ['period' => strtolower($this->periodLabel($periodFilter))]) }}</p>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
                             <thead class="table-light text-muted">
                                 <tr class="text-uppercase">
-                                    <th>Tool</th>
-                                    <th>Customers</th>
-                                    <th>Jobs</th>
-                                    <th>Done / Failed</th>
-                                    <th>Credits</th>
+                                    <th>{{ __('Tool') }}</th>
+                                    <th>{{ __('Customers') }}</th>
+                                    <th>{{ __('Jobs') }}</th>
+                                    <th>{{ __('Done / Failed') }}</th>
+                                    <th>{{ __('Credits') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -322,12 +322,12 @@ class extends Component
                                         </td>
                                         <td>{{ number_format((int) ($tool->customers ?? 0)) }}</td>
                                         <td>{{ number_format((int) ($tool->jobs ?? 0)) }}</td>
-                                        <td>{{ number_format((int) ($tool->completed_jobs ?? 0)) }} / {{ number_format((int) ($tool->failed_jobs ?? 0)) }}</td>
+                                        <td>{{ __(':done / :failed', ['done' => number_format((int) ($tool->completed_jobs ?? 0)), 'failed' => number_format((int) ($tool->failed_jobs ?? 0))]) }}</td>
                                         <td>{{ $this->formatCredits($tool->credits) }}</td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="5" class="text-center py-5 text-muted">No tool usage matched the current window.</td>
+                                        <td colspan="5" class="text-center py-5 text-muted">{{ __('No tool usage matched the current window.') }}</td>
                                     </tr>
                                 @endforelse
                             </tbody>
@@ -340,8 +340,8 @@ class extends Component
         <div class="col-xl-5">
             <div class="card h-100">
                 <div class="card-header border-0">
-                    <h5 class="card-title mb-1">Geographic Footprint</h5>
-                    <p class="text-muted mb-0">Top customer countries with revenue in the current analysis window.</p>
+                    <h5 class="card-title mb-1">{{ __('Geographic Footprint') }}</h5>
+                    <p class="text-muted mb-0">{{ __('Top customer countries with revenue in the current analysis window.') }}</p>
                 </div>
                 <div class="card-body">
                     <div class="d-flex flex-column gap-3">
@@ -350,11 +350,11 @@ class extends Component
                                 <div class="d-flex align-items-start justify-content-between gap-3">
                                     <div>
                                         <h6 class="mb-1">{{ $country->country }}</h6>
-                                        <div class="text-muted small">{{ number_format((int) ($country->active_customers ?? 0)) }} active of {{ number_format((int) ($country->customers ?? 0)) }} customers</div>
+                                        <div class="text-muted small">{{ __(':active active of :customers customers', ['active' => number_format((int) ($country->active_customers ?? 0)), 'customers' => number_format((int) ($country->customers ?? 0))]) }}</div>
                                     </div>
                                     <div class="text-end">
                                         <div class="fw-semibold">{{ $this->formatMoney($country->revenue) }}</div>
-                                        <div class="text-muted small">period revenue</div>
+                                        <div class="text-muted small">{{ __('period revenue') }}</div>
                                     </div>
                                 </div>
                                 <div class="progress mt-3" style="height: 7px;">
@@ -362,7 +362,7 @@ class extends Component
                                 </div>
                             </div>
                         @empty
-                            <div class="text-muted">No profile geography data is available yet.</div>
+                            <div class="text-muted">{{ __('No profile geography data is available yet.') }}</div>
                         @endforelse
                     </div>
                 </div>
@@ -372,19 +372,19 @@ class extends Component
 
     <div class="card">
         <div class="card-header border-0">
-            <h5 class="card-title mb-1">Recent 14-Day Activity</h5>
-            <p class="text-muted mb-0">Compact daily timeline for registrations, paid revenue, jobs, and credit consumption.</p>
+            <h5 class="card-title mb-1">{{ __('Recent 14-Day Activity') }}</h5>
+            <p class="text-muted mb-0">{{ __('Compact daily timeline for registrations, paid revenue, jobs, and credit consumption.') }}</p>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light text-muted">
                         <tr class="text-uppercase">
-                            <th>Date</th>
-                            <th>New Customers</th>
-                            <th>Paid Revenue</th>
-                            <th>Jobs</th>
-                            <th style="min-width: 220px;">Credits</th>
+                            <th>{{ __('Date') }}</th>
+                            <th>{{ __('New Customers') }}</th>
+                            <th>{{ __('Paid Revenue') }}</th>
+                            <th>{{ __('Jobs') }}</th>
+                            <th style="min-width: 220px;">{{ __('Credits') }}</th>
                         </tr>
                     </thead>
                     <tbody>

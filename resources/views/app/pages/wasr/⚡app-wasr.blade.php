@@ -4,7 +4,6 @@ use Livewire\Component;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -26,7 +25,6 @@ use App\Services\Media\AudioProbeService;
 
 new
 #[Layout('app::layouts.app')]
-#[Title('SPEECH-TO-TEXT | METKURD')]
 class extends Component
 {
     use WithPagination;
@@ -93,8 +91,8 @@ class extends Component
     public int $transcriptionsRefreshKey = 0;
 
     public array $languageOptions = [
-        'ckb' => 'سۆرانی (Sorani Kurdish)',
-        'ar'  => 'Arabic (عربي)',
+        'ckb' => 'Sorani Kurdish',
+        'ar'  => 'Arabic',
         'en'  => 'English',
     ];
 
@@ -184,7 +182,7 @@ class extends Component
         return [
             [
                 'key'   => 'beamSize',
-                'label' => 'Beam Size',
+                'label' => __('Beam Size'),
                 'min'   => 1,
                 'max'   => 20,
                 'step'  => 1,
@@ -192,7 +190,7 @@ class extends Component
             ],
             [
                 'key'   => 'chunkLengthS',
-                'label' => 'Chunk Length (s)',
+                'label' => __('Chunk Length (s)'),
                 'min'   => 5,
                 'max'   => 120,
                 'step'  => 5,
@@ -200,7 +198,7 @@ class extends Component
             ],
             [
                 'key'   => 'strideLeftS',
-                'label' => 'Stride Left (s)',
+                'label' => __('Stride Left (s)'),
                 'min'   => 0,
                 'max'   => 30,
                 'step'  => 1,
@@ -208,7 +206,7 @@ class extends Component
             ],
             [
                 'key'   => 'strideRightS',
-                'label' => 'Stride Right (s)',
+                'label' => __('Stride Right (s)'),
                 'min'   => 0,
                 'max'   => 30,
                 'step'  => 1,
@@ -227,27 +225,27 @@ class extends Component
     public function transcribeBlockedReason(): ?string
     {
         if ($this->isProcessing()) {
-            return 'A transcription is already in progress.';
+            return __('A transcription is already in progress.');
         }
 
         if ($this->currentActiveJobsCount() >= $this->allowedConcurrentJobs()) {
-            return 'You reached your concurrent job limit for the current plan.';
+            return __('You reached your concurrent job limit for the current plan.');
         }
 
         if (!$this->audioFile) {
-            return 'Please upload an audio file.';
+            return __('Please upload an audio file.');
         }
 
         if ($this->audioBillableMin <= 0) {
-            return 'Could not determine audio duration.';
+            return __('Could not determine audio duration.');
         }
 
         if ($this->creditsCost <= 0) {
-            return 'Pricing could not be calculated.';
+            return __('Pricing could not be calculated.');
         }
 
         if ($this->walletBalance < $this->creditsCost) {
-            return 'Not enough credits.';
+            return __('Not enough credits.');
         }
 
         return null;
@@ -283,12 +281,12 @@ class extends Component
                 $text = (string) data_get($j->output, 'text', '');
 
                 $snippet = mb_strlen($text) > 280
-                    ? mb_substr($text, 0, 220) . '…'
+                    ? mb_substr($text, 0, 220) . '...'
                     : $text;
 
             return [
                 'id'              => $jobId,
-                'audio_name'      => data_get($j->input, 'audio_name', 'Uploaded Audio'),
+                'audio_name'      => data_get($j->input, 'audio_name', __('Uploaded Audio')),
                 'language'        => data_get($j->input, 'lang', 'ckb'),
                 'created_at'      => optional($j->finished_at ?? $j->created_at)->format('Y-m-d H:i'),
                 'text'            => $text,
@@ -574,7 +572,7 @@ class extends Component
         $this->hydrateCurrentJobFromDb();
 
         if ($this->isProcessing()) {
-            $this->dispatch('alert', type: 'warning', message: 'A transcription is already in progress.');
+            $this->dispatch('alert', type: 'warning', message: __('A transcription is already in progress.'));
             return;
         }
 
@@ -582,19 +580,19 @@ class extends Component
 
         $customer = auth('app')->user();
         if (!$customer) {
-            $this->dispatch('alert', type: 'error', message: 'You must be logged in.');
+            $this->dispatch('alert', type: 'error', message: __('You must be logged in.'));
             return;
         }
 
         [$tool, $action] = $this->findToolAndAction();
 
         if (method_exists($customer, 'isAllowed') && !$customer->isAllowed($action->full_code)) {
-            $this->dispatch('alert', type: 'error', message: 'Your plan does not allow WASR.');
+            $this->dispatch('alert', type: 'error', message: __('Your plan does not allow WASR.'));
             return;
         }
 
         if ($this->creditsCost <= 0 || $this->audioBillableMin <= 0) {
-            $this->dispatch('alert', type: 'error', message: 'Could not calculate billing for this file.');
+            $this->dispatch('alert', type: 'error', message: __('Could not calculate billing for this file.'));
             return;
         }
 
@@ -609,7 +607,7 @@ class extends Component
             ]);
         } catch (\Throwable $e) {
             $this->syncWallet();
-            $this->dispatch('alert', type: 'error', message: 'Not enough credits.');
+            $this->dispatch('alert', type: 'error', message: __('Not enough credits.'));
             return;
         }
 
@@ -695,7 +693,7 @@ class extends Component
             );
 
             if (!($lock['ok'] ?? false)) {
-                throw new \RuntimeException((string) ($lock['message'] ?? 'Could not acquire ASR lock.'));
+                throw new \RuntimeException((string) ($lock['message'] ?? __('Could not acquire ASR lock.')));
             }
 
             $endpointId = (string) (
@@ -705,7 +703,7 @@ class extends Component
             );
 
             if ($endpointId === '') {
-                throw new \RuntimeException('RUNPOD_ENDPOINT_ID_WASR is missing.');
+                throw new \RuntimeException(__('RUNPOD_ENDPOINT_ID_WASR is missing.'));
             }
 
             $timeout = (int) (data_get($tool->meta, 'runpod_timeout') ?: config('runpod.timeout', 60));
@@ -722,7 +720,7 @@ class extends Component
 
             $providerJobId = (string) data_get($resp, 'id', '');
             if ($providerJobId === '') {
-                throw new \RuntimeException('RunPod did not return job id.');
+                throw new \RuntimeException(__('RunPod did not return a job ID.'));
             }
 
             MlJob::query()->where('id', $jobId)->update([
@@ -743,7 +741,7 @@ class extends Component
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('wasr-transcriptions-refresh');
             $this->dispatch('wasr-renders-refresh');
-            $this->dispatch('alert', type: 'info', message: 'WASR job started.');
+            $this->dispatch('alert', type: 'info', message: __('WASR job started.'));
 
             $this->syncWallet();
         } catch (\Throwable $e) {
@@ -816,14 +814,14 @@ class extends Component
                 $this->dispatch('wasr-transcriptions-refresh');
                 $this->dispatch('wasr-renders-refresh');
                 $this->dispatch('header:refresh');
-                $this->dispatch('alert', type: 'success', message: 'Transcription completed.');
+                $this->dispatch('alert', type: 'success', message: __('Transcription completed.'));
             }
 
             if (($result['failed'] ?? false) === true) {
                 $this->jobFinished = true;
                 $this->showJobStatus = true;
 
-                $msg = (string) ($result['message'] ?? 'Transcription failed.');
+                $msg = (string) ($result['message'] ?? __('Transcription failed.'));
                 $this->dispatch('header:refresh');
                 $this->dispatch('alert', type: 'error', message: $msg);
             }
@@ -838,12 +836,12 @@ class extends Component
     public function copyTranscript(): void
     {
         if (trim($this->transcriptionText) === '') {
-            $this->dispatch('alert', type: 'warning', message: 'No transcription to copy.');
+            $this->dispatch('alert', type: 'warning', message: __('No transcription to copy.'));
             return;
         }
 
         $this->dispatch('wasr-copy-text', text: $this->transcriptionText);
-        $this->dispatch('alert', type: 'success', message: 'Transcription copied.');
+        $this->dispatch('alert', type: 'success', message: __('Transcription copied.'));
     }
 
     public function openEliminateModal(): void
@@ -875,7 +873,7 @@ class extends Component
             $job->update([
                 'status' => 'failed',
                 'error' => [
-                    'message' => 'Eliminated by customer. Credits are not refundable.',
+                    'message' => __('Eliminated by customer. Credits are not refundable.'),
                     'type' => 'eliminated_by_customer',
                 ],
                 'finished_at' => now(),
@@ -909,7 +907,7 @@ class extends Component
         $this->dispatch('header:refresh');
         $this->dispatch('wasr-transcriptions-refresh');
         $this->dispatch('wasr-renders-refresh');
-        $this->dispatch('alert', type: 'warning', message: 'Current WASR job eliminated. Credits were not refunded.');
+        $this->dispatch('alert', type: 'warning', message: __('Current WASR job eliminated. Credits were not refunded.'));
     }
 
     public function deleteTranscription(string $jobId, AsrJobSyncService $sync): void
@@ -930,7 +928,7 @@ class extends Component
         $this->dispatch('header:refresh');
         $this->dispatch('wasr-transcriptions-refresh');
         $this->dispatch('wasr-renders-refresh');
-        $this->dispatch('alert', type: 'success', message: 'Transcription deleted.');
+        $this->dispatch('alert', type: 'success', message: __('Transcription deleted.'));
     }
 
     public function resetForm(): void
@@ -953,13 +951,22 @@ class extends Component
 };
 ?>
 
+<x-slot:title>{{ __('Speech to Text') }} | {{ __('MET KURD') }}</x-slot:title>
+
 <div id="wasr-page-root">
     @if($currentJobId && !$jobFinished)
         <div wire:poll.5000ms="pollJob"></div>
     @endif
 
     @php
-        $status = strtoupper($currentStatus ?? 'IDLE');
+        $status = match($currentStatus) {
+            'queued' => __('Queued'),
+            'running' => __('Running'),
+            'saving' => __('Saving'),
+            'done' => __('Done'),
+            'failed' => __('Failed'),
+            default => __('Idle'),
+        };
         $badge = match($currentStatus) {
             'queued'  => 'warning',
             'running' => 'info',
@@ -985,8 +992,8 @@ class extends Component
                 <div class="glass-load {{ $glassClass }} p-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div>
-                            <div class="fw-semibold">ASR transcription status</div>
-                            <div class="small text-muted">Job ID: {{ $currentJobId ?: '—' }}</div>
+                            <div class="fw-semibold">{{ __('ASR Transcription Status') }}</div>
+                            <div class="small text-muted">{{ __('Job ID:') }} {{ $currentJobId ?: '-' }}</div>
                         </div>
                         <span class="badge text-bg-{{ $badge }} fs-6 px-3 py-2">{{ $status }}</span>
                     </div>
@@ -1001,7 +1008,7 @@ class extends Component
                     <div class="d-flex align-items-center justify-content-between mt-2 small">
                         <span class="text-muted">{{ $progress }}%</span>
                         @if($jobFinished)
-                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">Hide</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">{{ __('Hide') }}</button>
                         @endif
                     </div>
                 </div>
@@ -1014,31 +1021,31 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                             <div>
-                                <strong>WASR (WELL AUTOMATIC-SPEECH-RECOGNITION)</strong>
-                                <div class="text-muted small">Upload your audio and generate a full transcription</div>
+                                <strong>{{ __('WASR (WELL AUTOMATIC-SPEECH-RECOGNITION)') }}</strong>
+                                <div class="text-muted small">{{ __('Upload your audio and generate a full transcription') }}</div>
                             </div>
 
                             <div class="d-flex gap-2 flex-wrap text-end small">
                                 <div class="mini-stat">
-                                    <div class="text-muted">Wallet</div>
+                                    <div class="text-muted">{{ __('Wallet') }}</div>
                                     <div class="fw-semibold">{{ number_format($walletBalance) }}</div>
                                 </div>
 
                                 <div class="mini-stat">
-                                    <div class="text-muted">Cost</div>
+                                    <div class="text-muted">{{ __('Cost') }}</div>
                                     <div class="fw-semibold">{{ number_format($creditsCost) }}</div>
                                 </div>
 
                                 @if($audioDurationMin)
                                     <div class="mini-stat">
-                                        <div class="text-muted">Minutes</div>
+                                        <div class="text-muted">{{ __('Minutes') }}</div>
                                         <div class="fw-semibold">{{ number_format((float) $audioDurationMin, 2) }}</div>
                                     </div>
                                 @endif
 
                                 @if($audioBillableMin > 0)
                                     <div class="mini-stat">
-                                        <div class="text-muted">Billable</div>
+                                        <div class="text-muted">{{ __('Billable') }}</div>
                                         <div class="fw-semibold">{{ $audioBillableMin }}</div>
                                     </div>
                                 @endif
@@ -1047,7 +1054,7 @@ class extends Component
 
                         <div class="card-body">
                             <div class="mb-3">
-                                <label class="form-label">Audio File</label>
+                                <label class="form-label">{{ __('Audio File') }}</label>
 
                                 <div wire:ignore>
                                     <input
@@ -1058,11 +1065,11 @@ class extends Component
                                 </div>
 
                                 <div class="small text-muted mt-2">
-                                    Supported: WAV, MP3, M4A, AAC, OGG, FLAC, WebM — max 100 MB
+                                    {{ __('Supported: WAV, MP3, M4A, AAC, OGG, FLAC, WebM - max 100 MB') }}
                                 </div>
 
                                 <div wire:loading wire:target="audioFile" class="small text-primary mt-2">
-                                    Uploading audio...
+                                    {{ __('Uploading audio...') }}
                                 </div>
 
                                 @if($audioFileName)
@@ -1072,11 +1079,11 @@ class extends Component
                                             {{ $audioFileMime ?: 'audio/*' }}
 
                                             @if($audioFileBytes)
-                                                • {{ number_format($audioFileBytes) }} bytes
+                                                | {{ __('Size: :bytes bytes', ['bytes' => number_format($audioFileBytes)]) }}
                                             @endif
 
                                             @if($audioDurationMin)
-                                                • {{ number_format((float) $audioDurationMin, 2) }} min
+                                                | {{ __('Duration: :minutes min', ['minutes' => number_format((float) $audioDurationMin, 2)]) }}
                                             @endif
                                         </div>
 
@@ -1086,7 +1093,7 @@ class extends Component
                                                 class="btn btn-sm btn-outline-danger"
                                                 wire:click="removeAudioFile"
                                             >
-                                                Remove file
+                                                {{ __('Remove file') }}
                                             </button>
                                         </div>
                                     </div>
@@ -1101,10 +1108,10 @@ class extends Component
 
                             <div class="row g-3 align-items-end mb-1">
                                 <div class="col-md-6">
-                                    <label class="form-label">Language</label>
+                                    <label class="form-label">{{ __('Language') }}</label>
                                     <select class="form-select" wire:model.live="language">
                                         @foreach($languageOptions as $code => $label)
-                                            <option value="{{ $code }}">{{ $label }}</option>
+                                            <option value="{{ $code }}">{{ __($label) }}</option>
                                         @endforeach
                                     </select>
                                     @error('language')
@@ -1167,9 +1174,7 @@ class extends Component
 
                             @if($audioDurationMin && $creditsCost > 0)
                                 <div class="wasr-cost-preview rounded-3 p-3 mt-3 small">
-                                    Exact duration: <strong>{{ number_format((float) $audioDurationMin, 2) }} min</strong>
-                                    → billed as <strong>{{ $audioBillableMin }} min</strong>
-                                    = <strong>{{ number_format($creditsCost) }} credits</strong>
+                                                | {{ __('Duration: :minutes min', ['minutes' => number_format((float) $audioDurationMin, 2)]) }}
                                 </div>
                             @endif
 
@@ -1184,22 +1189,22 @@ class extends Component
                                     id="btn-wasr-transcribe"
                                 >
                                     <span wire:loading.remove wire:target="postWasr,audioFile">
-                                        {{ $this->canTranscribe ? 'Transcribe' : ($this->transcribeBlockedReason ?? 'Transcribe') }}
+                                        {{ $this->canTranscribe ? __('Transcribe') : ($this->transcribeBlockedReason ?? __('Transcribe')) }}
                                     </span>
 
                                     <span wire:loading wire:target="audioFile">
                                         <span class="spinner-border spinner-border-sm me-1"></span>
-                                        Uploading audio...
+                                        {{ __('Uploading audio...') }}
                                     </span>
 
                                     <span wire:loading wire:target="postWasr">
                                         <span class="spinner-border spinner-border-sm me-1"></span>
-                                        Starting...
+                                        {{ __('Starting...') }}
                                     </span>
                                 </button>
 
                                 <button class="btn btn-outline-secondary" wire:click="resetForm" type="button">
-                                    Reset
+                                    {{ __('Reset') }}
                                 </button>
 
                                 <button
@@ -1208,12 +1213,12 @@ class extends Component
                                     type="button"
                                     @disabled(!$currentJobId || $jobFinished)
                                 >
-                                    Eliminate
+                                    {{ __('Eliminate') }}
                                 </button>
 
                                 @if($walletBalance < $creditsCost && $creditsCost > 0)
                                     <span class="small text-danger align-self-center">
-                                        Not enough credits for this transcription.
+                                        {{ __('Not enough credits for this transcription.') }}
                                     </span>
                                 @endif
                             </div>
@@ -1229,19 +1234,19 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-3">
                             <div>
-                                <strong>Recent Transcriptions</strong>
-                                <div class="small text-muted">Your latest speech-to-text outputs in one place.</div>
+                                <strong>{{ __('Recent Transcriptions') }}</strong>
+                                <div class="small text-muted">{{ __('Your latest speech-to-text outputs in one place.') }}</div>
                             </div>
 
                             <div class="d-flex gap-2">
                                 @if($latestFinishedJobId)
                                     <button class="btn btn-sm btn-outline-primary" wire:click="copyTranscript" type="button">
-                                        Copy
+                                        {{ __('Copy') }}
                                     </button>
                                 @endif
 
                                 <button class="btn btn-sm btn-outline-secondary" wire:click="$refresh" type="button">
-                                    Refresh
+                                    {{ __('Refresh') }}
                                 </button>
                             </div>
                         </div>
@@ -1251,21 +1256,21 @@ class extends Component
                                 <div class="wasr-latest-panel mb-4">
                                     <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
                                         <div>
-                                            <div class="wasr-section-caption">Latest Result</div>
-                                            <div class="fw-semibold">Ready to copy or export</div>
+                                            <div class="wasr-section-caption">{{ __('Latest Result') }}</div>
+                                            <div class="fw-semibold">{{ __('Ready to copy or export') }}</div>
                                         </div>
 
                                         @if($latestFinishedJobId)
                                             <div class="d-flex gap-2 flex-wrap">
                                                 <button class="btn btn-sm btn-primary" wire:click="copyTranscript" type="button">
-                                                    Copy Transcript
+                                                    {{ __('Copy Transcript') }}
                                                 </button>
 
                                                 <a
                                                     class="btn btn-sm btn-outline-success"
                                                     href="{{ route('app.renders.wasr.txt', ['locale' => app()->getLocale(), 'jobId' => $latestFinishedJobId]) }}"
                                                 >
-                                                    Download TXT
+                                                    {{ __('Download TXT') }}
                                                 </a>
                                             </div>
                                         @endif
@@ -1279,7 +1284,7 @@ class extends Component
 
                             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                                 <div>
-                                    <div class="wasr-section-caption">History</div>
+                                    <div class="wasr-section-caption">{{ __('History') }}</div>
                                     <div class="small text-muted">
                                         {{ $this->transcriptions->count() }}
                                         {{ $this->transcriptions->count() === 1 ? 'transcription' : 'transcriptions' }}
@@ -1290,8 +1295,8 @@ class extends Component
 
                             @if($this->transcriptions->count() === 0)
                                 <div class="wasr-empty-state text-center">
-                                    <div class="fw-semibold mb-1">No transcriptions yet</div>
-                                    <div class="small text-muted">Upload an audio file and your transcription history will appear here.</div>
+                                    <div class="fw-semibold mb-1">{{ __('No transcriptions yet') }}</div>
+                                    <div class="small text-muted">{{ __('Upload an audio file and your transcription history will appear here.') }}</div>
                                 </div>
                             @else
                                 @foreach($this->transcriptions as $r)
@@ -1306,7 +1311,7 @@ class extends Component
                                                     <strong class="text-truncate">{{ $r['audio_name'] }}</strong>
 
                                                     @if($r['is_latest'])
-                                                        <span class="badge text-bg-primary">Latest</span>
+                                                        <span class="badge text-bg-primary">{{ __('Latest') }}</span>
                                                     @endif
 
                                                     <span class="badge wasr-badge-credits">
@@ -1317,13 +1322,13 @@ class extends Component
                                                 <div class="wasr-transcript-meta small text-muted mt-2">
                                                     {{ $r['created_at'] }}
                                                     @if($r['duration_mins'] > 0)
-                                                        • {{ number_format((float) $r['duration_mins'], 2) }} min
+                                                        | {{ __('Duration: :minutes min', ['minutes' => number_format((float) $r['duration_mins'], 2)]) }}
                                                     @endif
                                                     @if($r['word_count'] > 0)
-                                                        • {{ number_format($r['word_count']) }} words
+                                                        | {{ __('Words: :count', ['count' => number_format($r['word_count'])]) }}
                                                     @endif
                                                     @if($r['char_count'] > 0)
-                                                        • {{ number_format($r['char_count']) }} chars
+                                                        | {{ __('Chars: :count', ['count' => number_format($r['char_count'])]) }}
                                                     @endif
                                                 </div>
                                                     @if(!empty($r['audio_url']))
@@ -1338,13 +1343,13 @@ class extends Component
                                                                             data-url="{{ $r['audio_url'] }}"
                                                                             data-latest="{{ $r['is_latest'] ? '1' : '0' }}"
                                                                             data-preload-rank="{{ $loop->index }}">
-                                                                        <i class="fa fa-play me-1"></i> Play/Pause
+                                                                        <i class="fa fa-play me-1"></i> {{ __('Play/Pause') }}
                                                                     </button>
 
                                                                     <button type="button"
                                                                             class="btn btn-outline-secondary btn-wasr-stop"
                                                                             data-job="{{ $r['id'] }}">
-                                                                        <i class="fa fa-stop me-1"></i> Stop
+                                                                        <i class="fa fa-stop me-1"></i> {{ __('Stop') }}
                                                                     </button>
                                                                 </div>
                                                             </div>
@@ -1355,7 +1360,7 @@ class extends Component
                                                             </div>
 
                                                             <a class="btn btn-sm btn-outline-success" href="{{ $r['download_url'] }}">
-                                                                Download TXT
+                                                                {{ __('Download TXT') }}
                                                             </a>
                                                             <button
                                                                 class="btn btn-sm btn-outline-danger"
@@ -1364,12 +1369,12 @@ class extends Component
                                                                 wire:target="deleteTranscription('{{ $r['id'] }}')"
                                                                 type="button"
                                                             >
-                                                                Delete
+                                                                {{ __('Delete') }}
                                                             </button>
                                                         </div>
                                                     @endif
                                                 <div class="wasr-snippet-wrap mt-3">
-                                                    <div class="wasr-section-caption mb-2">Transcript Preview</div>
+                                                    <div class="wasr-section-caption mb-2">{{ __('Transcript Preview') }}</div>
                                                     <div class="wasr-snippet small">
                                                         {{ $r['snippet'] }}
                                                     </div>
@@ -1397,27 +1402,27 @@ class extends Component
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-danger">
                     <div class="modal-header">
-                        <h5 class="modal-title text-danger">Eliminate Current Job</h5>
+                        <h5 class="modal-title text-danger">{{ __('Eliminate Current Job') }}</h5>
                         <button type="button" class="btn-close" wire:click="closeEliminateModal"></button>
                     </div>
 
                     <div class="modal-body">
                         <p class="mb-2">
-                            Are you sure you want to eliminate the current job?
+                            {{ __('Are you sure you want to eliminate the current job?') }}
                         </p>
 
                         <div class="alert alert-warning mb-0">
-                            <strong>Warning:</strong> the credit will <strong>not</strong> be refunded and you will lose the charged credit for this job.
+                            <strong>{{ __('Warning:') }}</strong> {{ __('the credit will not be refunded and you will lose the charged credit for this job.') }}
                         </div>
                     </div>
 
                     <div class="modal-footer">
                         <button type="button" class="btn btn-light" wire:click="closeEliminateModal">
-                            Cancel
+                            {{ __('Cancel') }}
                         </button>
 
                         <button type="button" class="btn btn-danger" wire:click="eliminateCurrentJob">
-                            Yes, Eliminate
+                            {{ __('Yes, Eliminate') }}
                         </button>
                     </div>
                 </div>
@@ -1718,8 +1723,8 @@ class extends Component
             maxFileSize: '100MB',
             labelIdle: `
                 <div class="py-3">
-                    <div class="mb-1"><strong>Drag & Drop</strong> your audio file here</div>
-                    <div class="small text-muted">or <span class="filepond--label-action">Browse</span></div>
+                    <div class="mb-1"><strong>${@js(__('Drag & Drop'))}</strong> ${@js(__('your audio file here'))}</div>
+                    <div class="small text-muted">${@js(__('or'))} <span class="filepond--label-action">${@js(__('Browse'))}</span></div>
                 </div>
             `,
             server: {
@@ -1728,7 +1733,7 @@ class extends Component
                         'audioFile',
                         file,
                         () => load(file.name),
-                        (e) => error(typeof e === 'string' ? e : 'Upload failed'),
+                        (e) => error(typeof e === 'string' ? e : @js(__('Upload failed'))),
                         (event) => {
                             progress(
                                 event.lengthComputable,

@@ -53,10 +53,10 @@ trait ManagesAdminHomePage
     public function paymentSourceLabel(string $key): string
     {
         return match ($key) {
-            'service_plan' => 'Service Plans',
-            'storage_plan' => 'Storage Plans',
-            'credit_product' => 'Credit Products',
-            default => 'Other Orders',
+            'service_plan' => __('Service Plans'),
+            'storage_plan' => __('Storage Plans'),
+            'credit_product' => __('Credit Products'),
+            default => __('Other Orders'),
         };
     }
 
@@ -394,19 +394,19 @@ trait ManagesAdminHomePage
                 'revenue' => $activityRows->pluck('revenue')->map(fn ($value) => (float) $value)->values()->all(),
             ],
             'purchase_mix' => [
-                'labels' => $purchaseMix->map(fn ($row) => (string) ($row->label ?? $row->category ?? 'Other Orders'))->values()->all(),
+                'labels' => $purchaseMix->map(fn ($row) => (string) __((string) ($row->label ?? $row->category ?? 'Other Orders')))->values()->all(),
                 'revenue' => $purchaseMix->map(fn ($row) => (float) ($row->revenue ?? 0))->values()->all(),
                 'orders' => $purchaseMix->map(fn ($row) => (int) ($row->orders ?? 0))->values()->all(),
                 'credits' => $purchaseMix->map(fn ($row) => (int) ($row->credits ?? 0))->values()->all(),
             ],
             'top_tools' => [
-                'labels' => $topTools->map(fn ($row) => (string) ($row->tool_name ?? 'Unknown Tool'))->values()->all(),
+                'labels' => $topTools->map(fn ($row) => (string) __((string) ($row->tool_name ?? 'Unknown Tool')))->values()->all(),
                 'codes' => $topTools->map(fn ($row) => (string) ($row->tool_code ?? 'unknown'))->values()->all(),
                 'credits' => $topTools->map(fn ($row) => (int) ($row->credits ?? 0))->values()->all(),
                 'jobs' => $topTools->map(fn ($row) => (int) ($row->jobs ?? 0))->values()->all(),
             ],
             'plan_mix' => [
-                'labels' => $planMix->map(fn ($row) => (string) ($row->name ?? 'Unknown Plan'))->values()->all(),
+                'labels' => $planMix->map(fn ($row) => (string) __((string) ($row->name ?? 'Unknown Plan')))->values()->all(),
                 'codes' => $planMix->map(fn ($row) => (string) ($row->code ?? 'unknown'))->values()->all(),
                 'subscribers' => $planMix->map(fn ($row) => (int) ($row->active_subscribers ?? 0))->values()->all(),
                 'revenue' => $planMix->map(fn ($row) => (float) ($row->revenue ?? 0))->values()->all(),
@@ -417,12 +417,12 @@ trait ManagesAdminHomePage
     public function periodLabel(string $periodFilter): string
     {
         return match ($periodFilter) {
-            '7' => 'Last 7 days',
-            '30' => 'Last 30 days',
-            '90' => 'Last 90 days',
-            '365' => 'Last 12 months',
-            'all' => 'All time',
-            default => 'Last 30 days',
+            '7' => __('Last 7 days'),
+            '30' => __('Last 30 days'),
+            '90' => __('Last 90 days'),
+            '365' => __('Last 12 months'),
+            'all' => __('All time'),
+            default => __('Last 30 days'),
         };
     }
 

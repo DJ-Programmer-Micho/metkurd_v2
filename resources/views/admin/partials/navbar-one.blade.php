@@ -5,28 +5,28 @@
         <!-- Dark Logo-->
         <a href="/" class="logo logo-dark mt-2">
             <span class="logo-sm mt-0">
-                <img src="{{ asset(app('logo_1024_tran')) }}" alt="METKURD" height="25">
+                <img src="{{ asset(app('logo_1024_tran')) }}" alt="{{ __('METKURD') }}" height="25">
             </span>
             <span class="logo-lg mt-0">
                 <div class="d-flex align-items-center" style="vertical-align: middle">
                     <div>
-                        <img src="{{ asset(app('logo_1024_tran')) }}" alt="METKURD" height="50">
+                        <img src="{{ asset(app('logo_1024_tran')) }}" alt="{{ __('METKURD') }}" height="50">
                     </div>
-                    <div class="h3 mt-2 mx-1 text-white">MET KURD</div>
+                    <div class="h3 mt-2 mx-1 text-white">{{ __('MET KURD') }}</div>
                 </div>
             </span>
         </a>
         <!-- Light Logo-->
         <a href="/" class="logo logo-light mt-2">
             <span class="logo-sm mt-0">
-                <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="METKURD" height="40">
+                <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="{{ __('METKURD') }}" height="40">
             </span>
             <span class="logo-lg mt-0">
                 <div class="d-flex align-items-center" style="vertical-align: middle">
                     <div>
-                        <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="METKURD" height="50">
+                        <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="{{ __('METKURD') }}" height="50">
                     </div>
-                    <div class="h3 mt-2 mx-1 text-white">MET KURD</div>
+                    <div class="h3 mt-2 mx-1 text-white">{{ __('MET KURD') }}</div>
                 </div>
             </span>
         </a>
@@ -49,7 +49,7 @@
                     :label="__('Home')"
                 />
                 {{-- </x-app.auth.nav-multi-feature-link> --}}
-                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">Services</span></li>
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Services') }}</span></li>
 
                 <livewire:partials.components.nav-multi-feature-link
                     id="sidebarService"
@@ -83,7 +83,7 @@
                     />
                 </livewire:partials.components.nav-multi-feature-link>
 
-                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">Customers</span></li>
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Customers') }}</span></li>
 
                 <livewire:partials.components.nav-multi-feature-link
                     id="sidebarCustomer"
@@ -111,6 +111,12 @@
                     />
 
                     <livewire:partials.components.nav-feature-link
+                        route="admin.customers.phone-countries"
+                        icon="bx bxs-microphone-alt"
+                        :label="__('Phone Countries')"
+                    />
+
+                    <livewire:partials.components.nav-feature-link
                         route="admin.customers.usage"
                         icon="bx bxs-microphone-alt"
                         :label="__('Usage')"
@@ -124,7 +130,7 @@
 
                 </livewire:partials.components.nav-multi-feature-link>
 
-                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">Payments</span></li>
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Payments') }}</span></li>
 
                 <livewire:partials.components.nav-multi-feature-link
                     id="sidebarPayments"

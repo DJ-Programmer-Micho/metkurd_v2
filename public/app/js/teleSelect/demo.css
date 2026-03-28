@@ -1,0 +1,18 @@
+.phone * {
+
+  direction: ltr;
+}
+
+
+.iti{
+  width: 100%;
+}
+
+.phone ul:lang(ar){
+  left:0
+}
+
+
+.phone > label{
+  display: block !important;
+}

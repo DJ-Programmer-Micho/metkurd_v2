@@ -1,7 +1,6 @@
 <?php
 
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -27,7 +26,6 @@ use App\Services\XTTS\XttsJobSyncService;
 use App\Services\Security\JobExecutionLockService;
 new
 #[Layout('app::layouts.app')]
-#[Title('XTTS | METKURD')]
 class extends Component
 {
     use WithPagination;
@@ -265,12 +263,12 @@ class extends Component
     public function sliders(): array
     {
         return [
-            ['key'=>'temperature','label'=>'Temperature','min'=>0,'max'=>2.5,'step'=>0.01,'val'=>$this->temperature],
-            ['key'=>'top_p','label'=>'Top P','min'=>0,'max'=>1,'step'=>0.01,'val'=>$this->top_p],
-            ['key'=>'top_k','label'=>'Top K','min'=>0,'max'=>100,'step'=>1,'val'=>$this->top_k],
-            ['key'=>'repetition_penalty','label'=>'Repetition Penalty','min'=>1,'max'=>8,'step'=>0.01,'val'=>$this->repetition_penalty],
-            ['key'=>'length_penalty','label'=>'Length Penalty','min'=>-5,'max'=>6,'step'=>0.01,'val'=>$this->length_penalty],
-            ['key'=>'speed','label'=>'Speed','min'=>0.5,'max'=>2,'step'=>0.01,'val'=>$this->speed],
+            ['key'=>'temperature','label'=>__('Temperature'),'min'=>0,'max'=>2.5,'step'=>0.01,'val'=>$this->temperature],
+            ['key'=>'top_p','label'=>__('Top P'),'min'=>0,'max'=>1,'step'=>0.01,'val'=>$this->top_p],
+            ['key'=>'top_k','label'=>__('Top K'),'min'=>0,'max'=>100,'step'=>1,'val'=>$this->top_k],
+            ['key'=>'repetition_penalty','label'=>__('Repetition Penalty'),'min'=>1,'max'=>8,'step'=>0.01,'val'=>$this->repetition_penalty],
+            ['key'=>'length_penalty','label'=>__('Length Penalty'),'min'=>-5,'max'=>6,'step'=>0.01,'val'=>$this->length_penalty],
+            ['key'=>'speed','label'=>__('Speed'),'min'=>0.5,'max'=>2,'step'=>0.01,'val'=>$this->speed],
         ];
     }
 
@@ -284,35 +282,35 @@ class extends Component
     public function generateBlockedReason(): ?string
     {
         if ($this->isGenerating()) {
-            return 'A generation is already in progress on this page.';
+            return __('A generation is already in progress on this page.');
         }
 
         if ($this->currentActiveJobsCount() >= $this->allowedConcurrentJobs()) {
-            return 'You reached your concurrent job limit for the current plan.';
+            return __('You reached your concurrent job limit for the current plan.');
         }
 
         if ($this->currentChars <= 0) {
-            return 'Please enter some text.';
+            return __('Please enter some text.');
         }
 
         if ($this->currentChars > $this->maxPerSubmit) {
-            return 'Text exceeds the max characters per submit.';
+            return __('Text exceeds the max characters per submit.');
         }
 
         if (empty($this->availableSpeakers)) {
-            return 'No voices are available for your current plan.';
+            return __('No voices are available for your current plan.');
         }
 
         if (!array_key_exists($this->speaker_id, $this->availableSpeakers)) {
-            return 'Selected voice is not available for your current plan.';
+            return __('Selected voice is not available for your current plan.');
         }
 
         if ($this->creditsCost <= 0) {
-            return 'Pricing could not be calculated.';
+            return __('Pricing could not be calculated.');
         }
 
         if ($this->walletBalance < $this->creditsCost) {
-            return 'Not enough credits.';
+            return __('Not enough credits.');
         }
 
         return null;
@@ -349,7 +347,7 @@ class extends Component
 
                 return [
                     'id' => $jobId,
-                    'speaker' => data_get($j->input, 'speaker_id', '—'),
+                    'speaker' => data_get($j->input, 'speaker_id', '-'),
                     'model' => 'MK-TTS)',
                     'created_at' => optional($j->finished_at ?? $j->created_at)->format('Y-m-d H:i'),
                     'full_url' => route('app.renders.xtts.stream', [
@@ -466,7 +464,7 @@ class extends Component
             'text' => ['required', 'string', 'min:1', 'max:' . $this->maxPerSubmit],
             'speaker_id' => ['required', 'string', function ($attribute, $value, $fail) {
                 if (!array_key_exists((string) $value, $this->availableSpeakers)) {
-                    $fail('The selected speaker is not available for your plan.');
+                    $fail(__('The selected speaker is not available for your plan.'));
                 }
             }],
             'language' => 'required|string|min:1|max:8',
@@ -510,7 +508,7 @@ class extends Component
         $action = ToolAction::where('full_code', $this->fullActionCode)->first();
 
         if (!$tool || !$action) {
-            throw new \RuntimeException("Tool or ToolAction missing ({$this->toolCode} / {$this->fullActionCode}).");
+            throw new \RuntimeException(__('Tool or ToolAction is missing for :tool.', ['tool' => "{$this->toolCode} / {$this->fullActionCode}"]));
         }
 
         return [$tool, $action];
@@ -524,7 +522,7 @@ class extends Component
         $actionCode = $this->fullActionCode;
         $this->hydrateCurrentJobFromDb();
         if ($this->currentActiveJobsCount() >= $this->allowedConcurrentJobs()) {
-            $this->dispatch('alert', type: 'warning', message: 'You reached your concurrent job limit for the current plan.');
+            $this->dispatch('alert', type: 'warning', message: __('You reached your concurrent job limit for the current plan.'));
             return;
         }
         if (method_exists($c, 'isAllowed') && !$c->isAllowed($actionCode)) {
@@ -533,7 +531,7 @@ class extends Component
         }
 
         if ($this->isGenerating()) {
-            $this->dispatch('alert', type: 'warning', message: 'A generation is already in progress.');
+            $this->dispatch('alert', type: 'warning', message: __('A generation is already in progress.'));
             return;
         }
 
@@ -552,7 +550,7 @@ class extends Component
             : (int) ceil($chars * 1.0);
 
         if ($cost <= 0) {
-            $this->dispatch('alert', type: 'error', message: 'Pricing is not configured.');
+            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured.'));
             return;
         }
 
@@ -565,7 +563,7 @@ class extends Component
             ]);
         } catch (\Throwable $e) {
             $this->syncWallet();
-            $this->dispatch('alert', type: 'error', message: 'Not enough credits.');
+            $this->dispatch('alert', type: 'error', message: __('Not enough credits.'));
             return;
         }
 
@@ -609,7 +607,7 @@ class extends Component
         try {
             $endpointId = data_get($tool->meta, 'runpod_endpoint_id') ?: config('runpod.endpoints.xtts');
             if (!$endpointId) {
-                throw new \RuntimeException('XTTS endpoint id is missing.');
+                throw new \RuntimeException(__('XTTS endpoint ID is missing.'));
             }
 
             $timeout = (int) (data_get($tool->meta, 'runpod_timeout') ?: config('runpod.timeout', 60));
@@ -630,7 +628,7 @@ class extends Component
 
             $rpId = (string) data_get($resp, 'id', '');
             if ($rpId === '') {
-                throw new \RuntimeException('RunPod did not return job id.');
+                throw new \RuntimeException(__('RunPod did not return a job ID.'));
             }
 
             MlJob::where('id', $jobId)->update([
@@ -656,7 +654,7 @@ class extends Component
                 'progress'    => 20,
             ]);
 
-            $this->dispatch('alert', type: 'success', message: 'RunPod job started.');
+            $this->dispatch('alert', type: 'success', message: __('RunPod job started.'));
         } catch (\Throwable $e) {
             $this->dispatch('header:refresh');
             $credits->refund((int) $c->id, $cost, 'tts_refund', [
@@ -678,7 +676,7 @@ class extends Component
             
             $this->dispatch('header:refresh');
             $this->dispatch('xtts-job-state-clear');
-            $this->dispatch('alert', type: 'error', message: 'RunPod failed: ' . $e->getMessage());
+            $this->dispatch('alert', type: 'error', message: __('RunPod failed: :message', ['message' => $e->getMessage()]));
         }
     }
 
@@ -717,13 +715,13 @@ class extends Component
                 $this->dispatch('xtts-renders-refresh');
                 $this->dispatch('xtts-job-completed');
                 $this->dispatch('xtts-job-state-clear');
-                $this->dispatch('alert', type: 'success', message: 'Done');
+                $this->dispatch('alert', type: 'success', message: __('Done'));
             }
 
             if (!empty($result['failed'])) {
                 $this->dispatch('header:refresh');
                 $this->dispatch('xtts-job-state-clear');
-                $this->dispatch('alert', type: 'error', message: $result['message'] ?: 'Job failed.');
+                $this->dispatch('alert', type: 'error', message: $result['message'] ?: __('Job failed.'));
             }
         } catch (\Throwable $e) {
             Log::warning('RUNPOD_TTS_STATUS_FAIL', [
@@ -733,7 +731,7 @@ class extends Component
 
             MlJob::query()->where('id', $this->currentJobId)->update([
                 'status' => 'failed',
-                'error' => ['message' => 'Polling failed: ' . $e->getMessage()],
+                'error' => ['message' => __('Polling failed: :message', ['message' => $e->getMessage()])],
                 'finished_at' => now(),
             ]);
 
@@ -743,7 +741,7 @@ class extends Component
 
             $this->dispatch('header:refresh');
             $this->dispatch('xtts-job-state-clear');
-            $this->dispatch('alert', type: 'error', message: 'Polling failed: ' . $e->getMessage());
+            $this->dispatch('alert', type: 'error', message: __('Polling failed: :message', ['message' => $e->getMessage()]));
         }
     }
 
@@ -761,7 +759,7 @@ class extends Component
             ->first();
 
         if (!$job) {
-            $this->dispatch('alert', type: 'error', message: 'Render not found.');
+            $this->dispatch('alert', type: 'error', message: __('Render not found.'));
             return;
         }
 
@@ -771,9 +769,9 @@ class extends Component
             $this->rendersRefreshKey++;
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('xtts-renders-refresh');
-            $this->dispatch('alert', type: 'success', message: 'Deleted.');
+            $this->dispatch('alert', type: 'success', message: __('Deleted.'));
         } catch (\Throwable $e) {
-            $this->dispatch('alert', type: 'error', message: 'Delete failed: ' . $e->getMessage());
+            $this->dispatch('alert', type: 'error', message: __('Delete failed: :message', ['message' => $e->getMessage()]));
         }
     }
 
@@ -803,7 +801,7 @@ class extends Component
         public function openEliminateModal(): void
     {
         if (!$this->currentJobId || $this->jobFinished) {
-            $this->dispatch('alert', type: 'warning', message: 'There is no active job to eliminate.');
+            $this->dispatch('alert', type: 'warning', message: __('There is no active job to eliminate.'));
             return;
         }
 
@@ -820,7 +818,7 @@ class extends Component
         $this->showEliminateModal = false;
 
         if (!$this->currentJobId) {
-            $this->dispatch('alert', type: 'warning', message: 'No current job found.');
+            $this->dispatch('alert', type: 'warning', message: __('No current job found.'));
             $this->dispatch('xtts-job-state-clear');
             $this->dispatch('xtts-form-state-clear');
             return;
@@ -833,7 +831,7 @@ class extends Component
             $job->update([
                 'status' => 'failed',
                 'error' => [
-                    'message' => 'Eliminated by customer. Credits are not refundable.',
+                    'message' => __('Eliminated by customer. Credits are not refundable.'),
                     'type' => 'eliminated_by_customer',
                 ],
                 'finished_at' => now(),
@@ -870,7 +868,7 @@ class extends Component
         $this->dispatch('xtts-job-state-clear');
         $this->dispatch('xtts-form-state-clear');
         $this->dispatch('xtts-renders-refresh');
-        $this->dispatch('alert', type: 'warning', message: 'Current job eliminated. Credits were not refunded.');
+        $this->dispatch('alert', type: 'warning', message: __('Current job eliminated. Credits were not refunded.'));
     }
     
     public function render()
@@ -960,6 +958,8 @@ class extends Component
 };
 ?>
 
+    <x-slot:title>{{ __('XTTS') }} | {{ __('MET KURD') }}</x-slot:title>
+
     <div id="xtts-page-root">
     {{-- Poll only when a job is actively running --}}
     @if($currentJobId && !$jobFinished)
@@ -967,7 +967,14 @@ class extends Component
     @endif
 
     @php
-        $status = strtoupper($currentStatus ?? 'IDLE');
+        $status = match($currentStatus) {
+            'queued' => __('Queued'),
+            'running' => __('Running'),
+            'saving' => __('Saving'),
+            'done' => __('Done'),
+            'failed' => __('Failed'),
+            default => __('Idle'),
+        };
 
         $badge = match($currentStatus) {
             'queued' => 'warning',
@@ -999,8 +1006,8 @@ class extends Component
                 <div class="glass-load {{ $glassClass }} p-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div>
-                            <div class="fw-semibold">XTTS job status</div>
-                            <div class="small text-muted">Job ID: {{ $currentJobId ?: '—' }}</div>
+                            <div class="fw-semibold">{{ __('XTTS Job Status') }}</div>
+                            <div class="small text-muted">{{ __('Job ID:') }} {{ $currentJobId ?: '-' }}</div>
                         </div>
                         <span class="badge text-bg-{{ $badge }}">{{ $status }}</span>
                     </div>
@@ -1012,7 +1019,7 @@ class extends Component
                     <div class="d-flex align-items-center justify-content-between mt-2 small">
                         <span>{{ $progress }}%</span>
                         @if($jobFinished)
-                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">Hide</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="hideJobStatus">{{ __('Hide') }}</button>
                         @endif
                     </div>
                 </div>
@@ -1024,21 +1031,21 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                             <div>
-                                <strong>MK-TTS (MET KURDISH TEXT-TO-SPEECH)</strong>
-                                <div class="text-muted small">Dynamic voice access based on customer plan</div>
+                                <strong>{{ __('MK-TTS (MET KURDISH TEXT-TO-SPEECH)') }}</strong>
+                                <div class="text-muted small">{{ __('Dynamic voice access based on customer plan') }}</div>
                             </div>
 
                             <div class="d-flex gap-2 flex-wrap text-end small">
                                 <div class="mini-stat">
-                                    <div class="text-muted">Wallet</div>
+                                    <div class="text-muted">{{ __('Wallet') }}</div>
                                     <div class="fw-semibold">{{ number_format($walletBalance) }}</div>
                                 </div>
                                 <div class="mini-stat">
-                                    <div class="text-muted">Cost</div>
+                                    <div class="text-muted">{{ __('Cost') }}</div>
                                     <div class="fw-semibold">{{ number_format($creditsCost) }}</div>
                                 </div>
                                 <div class="mini-stat">
-                                    <div class="text-muted">Max/Submit</div>
+                                    <div class="text-muted">{{ __('Max/Submit') }}</div>
                                     <div class="fw-semibold">{{ number_format($maxPerSubmit) }}</div>
                                 </div>
                             </div>
@@ -1046,25 +1053,25 @@ class extends Component
 
                         <div class="card-body">
                             <div class="mt-3">
-                                <label class="form-label">Text</label>
+                                <label class="form-label">{{ __('Text') }}</label>
 
                                 <textarea
                                     class="form-control"
                                     rows="6"
                                     wire:model.live.debounce.250ms="text"
-                                    placeholder="Write a text"
+                                    placeholder="{{ __('Write a text') }}"
                                     dir="rtl"
                                 ></textarea>
 
                                 <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
                                     <div class="d-flex gap-3 small">
-                                        <span class="text-muted">Chars: <strong>{{ $this->currentChars }}</strong></span>
-                                        <span class="text-muted">Words: <strong>{{ $this->currentWords }}</strong></span>
-                                        <span class="text-muted">Credits: <strong>{{ $creditsCost }}</strong></span>
+                                        <span class="text-muted">{{ __('Chars:') }} <strong>{{ $this->currentChars }}</strong></span>
+                                        <span class="text-muted">{{ __('Words:') }} <strong>{{ $this->currentWords }}</strong></span>
+                                        <span class="text-muted">{{ __('Credits:') }} <strong>{{ $creditsCost }}</strong></span>
                                     </div>
 
                                     <button class="btn btn-sm btn-link p-0" wire:click="clearText" type="button">
-                                        Clear
+                                        {{ __('Clear') }}
                                     </button>
                                 </div>
 
@@ -1077,12 +1084,12 @@ class extends Component
 
                             <div class="row g-3 align-items-end">
                                 <div class="col-md-4">
-                                    <label class="form-label">Speaker</label>
+                                    <label class="form-label">{{ __('Speaker') }}</label>
                                     <select class="form-select" wire:model.live="speaker_id">
                                         @forelse($this->availableSpeakers as $k => $v)
                                             <option value="{{ $k }}">{{ $v }}</option>
                                         @empty
-                                            <option value="">No voices available</option>
+                                            <option value="">{{ __('No voices available') }}</option>
                                         @endforelse
                                     </select>
 
@@ -1104,16 +1111,16 @@ class extends Component
                                 </div> --}}
 
                                 <div class="col-md-3">
-                                    <label class="form-label">Preset</label>
+                                    <label class="form-label">{{ __('Preset') }}</label>
                                     <select class="form-select" wire:model.live="selectedPreset">
                                         @foreach($presets as $k => $v)
-                                            <option value="{{ $k }}">{{ $v }}</option>
+                                            <option value="{{ $k }}">{{ __($v) }}</option>
                                         @endforeach
                                     </select>
                                 </div>
 
                                 <div class="col-md-2">
-                                    <label class="form-label">Max Words</label>
+                                    <label class="form-label">{{ __('Max Words') }}</label>
                                     <input type="number" class="form-control" wire:model.live="max_words" min="5" max="80">
                                     @error('max_words')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
@@ -1121,7 +1128,7 @@ class extends Component
                                 </div>
 
                                 <div class="col-md-2">
-                                    <label class="form-label">Fade (ms)</label>
+                                    <label class="form-label">{{ __('Fade (ms)') }}</label>
                                     <input type="number" class="form-control" wire:model.live="fade_ms" min="0" max="1000">
                                     @error('fade_ms')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
@@ -1131,13 +1138,13 @@ class extends Component
                                 <div class="col-md-12">
                                     <div class="form-check form-switch mt-2">
                                         <input class="form-check-input" type="checkbox" id="splitSwitchXTTS" wire:model.live="split">
-                                        <label class="form-check-label" for="splitSwitchXTTS">Split long text automatically</label>
+                                        <label class="form-check-label" for="splitSwitchXTTS">{{ __('Split long text automatically') }}</label>
                                     </div>
                                 </div>
                             </div>
 
                             {{-- =====================================================
-                                 SLIDERS — Alpine handles the UI, $wire.set syncs to Livewire
+                                 SLIDERS Ã¢â‚¬â€ Alpine handles the UI, $wire.set syncs to Livewire
                                  wire:ignore prevents Livewire re-renders from resetting slider position
                                  ===================================================== --}}
                             <div class="row g-3 mt-1">
@@ -1203,16 +1210,16 @@ class extends Component
                                     id="btn-xtts-generate"
                                 >
                                     <span wire:loading.remove wire:target="postXtts">
-                                        {{ $this->canGenerate ? 'Generate' : ($this->generateBlockedReason ?? 'Generate') }}
+                                        {{ $this->canGenerate ? __('Generate') : ($this->generateBlockedReason ?? __('Generate')) }}
                                     </span>
                                     <span wire:loading wire:target="postXtts">
                                         <span class="spinner-border spinner-border-sm me-1"></span>
-                                        Starting...
+                                        {{ __('Starting...') }}
                                     </span>
                                 </button>
 
                                 <button class="btn btn-outline-secondary" wire:click="resetToDefaults" type="button">
-                                    Reset
+                                    {{ __('Reset') }}
                                 </button>
 
                                 <button
@@ -1221,11 +1228,11 @@ class extends Component
                                     type="button"
                                     @disabled(!$currentJobId || $jobFinished)
                                 >
-                                    Eliminate
+                                    {{ __('Eliminate') }}
                                 </button>
                                 @if($walletBalance < $creditsCost && $creditsCost > 0)
                                     <span class="small text-danger align-self-center">
-                                        Not enough credits for this generation.
+                                        {{ __('Not enough credits for this generation.') }}
                                     </span>
                                 @endif
                             </div>
@@ -1240,15 +1247,15 @@ class extends Component
                 <div class="turbo-inner">
                     <div class="card mb-0">
                         <div class="card-header d-flex justify-content-between align-items-center">
-                            <strong>Recent Renders</strong>
+                            <strong>{{ __('Recent Renders') }}</strong>
                             <button class="btn btn-sm btn-outline-secondary" wire:click="$refresh" type="button">
-                                Refresh
+                                {{ __('Refresh') }}
                             </button>
                         </div>
 
                         <div class="card-body">
                             @if($this->renders->count() === 0)
-                                <div class="text-muted">No renders yet.</div>
+                                <div class="text-muted">{{ __('No renders yet.') }}</div>
                             @else
                                 @foreach($this->renders as $r)
                                     <div
@@ -1259,10 +1266,10 @@ class extends Component
                                         <div class="d-flex justify-content-between gap-2">
                                             <div>
                                                 <div class="small text-muted">
-                                                    {{ $r['created_at'] }} • {{ $r['model'] }} • {{ $r['speaker'] }}
+                                                    {{ __(':created | :model | :speaker', ['created' => $r['created_at'], 'model' => $r['model'], 'speaker' => $r['speaker']]) }}
                                                 </div>
                                                 <div class="small text-muted">
-                                                    Words: {{ $r['words'] }} • Bytes: {{ number_format($r['bytes']) }}
+                                                    {{ __('Words: :words | Bytes: :bytes', ['words' => $r['words'], 'bytes' => number_format($r['bytes'])]) }}
                                                 </div>
                                             </div>
 
@@ -1272,7 +1279,7 @@ class extends Component
                                                         wire:loading.attr="disabled"
                                                         wire:target="deleteRender('{{ $r['id'] }}')"
                                                         type="button">
-                                                    Delete
+                                                    {{ __('Delete') }}
                                                 </button>
                                             </div>
                                         </div>
@@ -1295,13 +1302,13 @@ class extends Component
                                                             data-url="{{ $r['full_url'] }}"
                                                             data-latest="{{ $r['is_latest'] ? '1' : '0' }}"
                                                             data-preload-rank="{{ $loop->index }}">
-                                                        <i class="fa fa-play me-1"></i> Play/Pause
+                                                        <i class="fa fa-play me-1"></i> {{ __('Play/Pause') }}
                                                     </button>
 
                                                     <button type="button"
                                                             class="btn btn-outline-secondary btn-xtts-stop"
                                                             data-job="{{ $r['id'] }}">
-                                                        <i class="fa fa-stop me-1"></i> Stop
+                                                        <i class="fa fa-stop me-1"></i> {{ __('Stop') }}
                                                     </button>
                                                 </div>
                                             </div>
@@ -1316,7 +1323,7 @@ class extends Component
                                                    href="{{ $r['download_url'] }}"
                                                    target="_blank"
                                                    rel="noopener">
-                                                    Download
+                                                    {{ __('Download') }}
                                                 </a>
                                             </div>
                                         </div>
@@ -1338,27 +1345,27 @@ class extends Component
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-danger">
                     <div class="modal-header">
-                        <h5 class="modal-title text-danger">Eliminate Current Job</h5>
+                        <h5 class="modal-title text-danger">{{ __('Eliminate Current Job') }}</h5>
                         <button type="button" class="btn-close" wire:click="closeEliminateModal"></button>
                     </div>
 
                     <div class="modal-body">
                         <p class="mb-2">
-                            Are you sure you want to eliminate the current job?
+                            {{ __('Are you sure you want to eliminate the current job?') }}
                         </p>
 
                         <div class="alert alert-warning mb-0">
-                            <strong>Warning:</strong> the credit will <strong>not</strong> be refunded and you will lose the charged credit for this job.
+                            <strong>{{ __('Warning:') }}</strong> {{ __('the credit will not be refunded and you will lose the charged credit for this job.') }}
                         </div>
                     </div>
 
                     <div class="modal-footer">
                         <button type="button" class="btn btn-light" wire:click="closeEliminateModal">
-                            Cancel
+                            {{ __('Cancel') }}
                         </button>
 
                         <button type="button" class="btn btn-danger" wire:click="eliminateCurrentJob">
-                            Yes, Eliminate
+                            {{ __('Yes, Eliminate') }}
                         </button>
                     </div>
                 </div>
@@ -1375,24 +1382,24 @@ class extends Component
 (function () {
     'use strict';
 
-    // ─── Singleton namespace ──────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Singleton namespace Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     if (!window.__XTTS_WAVE__) window.__XTTS_WAVE__ = {};
     const S = window.__XTTS_WAVE__;
 
-    S.previewWS     = S.previewWS     || new Map(); // jobId → WaveSurfer
-    S.previewMeta   = S.previewMeta   || new Map(); // jobId → { url, blobUrl }
+    S.previewWS     = S.previewWS     || new Map(); // jobId Ã¢â€ â€™ WaveSurfer
+    S.previewMeta   = S.previewMeta   || new Map(); // jobId Ã¢â€ â€™ { url, blobUrl }
     S.previewInit   = S.previewInit   || new Set(); // jobIds already preloaded
-    S.pendingFetch  = S.pendingFetch  || new Map(); // url → Promise<Blob>
+    S.pendingFetch  = S.pendingFetch  || new Map(); // url Ã¢â€ â€™ Promise<Blob>
     S.eventsBound   = S.eventsBound   || false;
     S.commitHooked  = S.commitHooked  || false;
     S.formWatchBoot = S.formWatchBoot || false;
 
-    // ─── Cache config ─────────────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Cache config Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     const CACHE_NAME    = 'xtts-audio-v4';
     const CACHE_MAX     = 30;
     const PRELOAD_LIMIT = 10;
 
-    // ─── SPA / navigation persistence via localStorage ────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ SPA / navigation persistence via localStorage Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     const SPA_KEY  = 'xtts_spa_job';
     const FORM_KEY = 'xtts_form_state_v1';
 
@@ -1400,7 +1407,7 @@ class extends Component
         const n = Number(value);
         return Number.isFinite(n) ? n : fallback;
     }
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function formatTime(sec) {
         sec = Math.max(0, sec || 0);
         const m = String(Math.floor(sec / 60)).padStart(2, '0');
@@ -1444,7 +1451,7 @@ class extends Component
         }
     }
 
-    // ─── Audio Cache ──────────────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Audio Cache Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     async function openCache() {
         return caches.open(CACHE_NAME);
     }
@@ -1495,7 +1502,7 @@ class extends Component
         return promise;
     }
 
-    // ─── Blob URL management ─────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Blob URL management Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     async function getBlobUrl(jobId, url) {
         const meta = S.previewMeta.get(jobId);
         if (meta && meta.url === url && meta.blobUrl) {
@@ -1513,7 +1520,7 @@ class extends Component
         return blobUrl;
     }
 
-    // ─── WaveSurfer lifecycle ─────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ WaveSurfer lifecycle Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function destroyPreview(jobId) {
         const ws = S.previewWS.get(jobId);
         if (ws) {
@@ -1595,7 +1602,7 @@ class extends Component
         return ws;
     }
 
-    // ─── Button binding ───────────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Button binding Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function bindPreviewButtons() {
         document.querySelectorAll('.btn-xtts-preview[data-job][data-url]').forEach(btn => {
             if (btn.dataset.bound === '1') return;
@@ -1624,7 +1631,7 @@ class extends Component
         });
     }
 
-    // ─── Preload + render waveforms eagerly ───────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Preload + render waveforms eagerly Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     async function preloadAndRenderRecentAudio() {
         const buttons = Array.from(
             document.querySelectorAll('.btn-xtts-preview[data-job][data-url]')
@@ -1653,7 +1660,7 @@ class extends Component
         }
     }
 
-    // ─── Auto-scroll & highlight latest render after job completes ────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Auto-scroll & highlight latest render after job completes Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function highlightLatestRender() {
         const firstCard = document.querySelector('.render-card');
         if (!firstCard) return;
@@ -1676,7 +1683,7 @@ class extends Component
         }
     }
 
-    // ─── SPA state helpers ────────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ SPA state helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function spaSave(data) {
         try {
             localStorage.setItem(SPA_KEY, JSON.stringify({ ...data, ts: Date.now() }));
@@ -1727,7 +1734,7 @@ class extends Component
         }
     }
 
-    // ─── Form persistence helpers ─────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Form persistence helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function formSave() {
         try {
             const lw = getLivewireComponent();
@@ -1843,7 +1850,7 @@ class extends Component
         });
     }
 
-    // ─── Livewire event listeners ─────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Livewire event listeners Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function registerLivewireEvents() {
         if (!window.Livewire || S.eventsBound) return;
         S.eventsBound = true;
@@ -1890,7 +1897,7 @@ class extends Component
         }
     }
 
-    // ─── Page boot ────────────────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Page boot Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function bootXttsPage() {
         const runBoot = () => {
             const root = document.getElementById('xtts-page-root');
@@ -1912,7 +1919,7 @@ class extends Component
         setTimeout(runBoot, 0);
     }
 
-    // ─── Cleanup on navigation ────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Cleanup on navigation Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function teardownXttsPage() {
         formSave();
 
@@ -1931,7 +1938,7 @@ class extends Component
         S.formWatchBoot = false;
     }
 
-    // ─── Initialise ───────────────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Initialise Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     document.addEventListener('livewire:initialized', bootXttsPage);
     document.addEventListener('livewire:navigated', bootXttsPage);
     document.addEventListener('livewire:navigating', teardownXttsPage);

@@ -1,4 +1,4 @@
-{{-- resources/views/app/auth/⚡signin-one.blade.php --}}
+{{-- resources/views/app/auth/âš¡signin-one.blade.php --}}
 <?php
 
 use Livewire\Component;
@@ -30,7 +30,7 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
 
         if (RateLimiter::tooManyAttempts($key, 8)) {
             $seconds = RateLimiter::availableIn($key);
-            $this->dispatch('alert', type: 'error', message: "Too many attempts. Try again in {$seconds}s.");
+            $this->dispatch('alert', type: 'error', message: __('Too many attempts. Try again in :seconds seconds.', ['seconds' => $seconds]));
             return;
         }
 
@@ -43,14 +43,14 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
 
         if (! $ok) {
             RateLimiter::hit($key, 60);
-            throw ValidationException::withMessages(['login' => 'Invalid credentials.']);
+            throw ValidationException::withMessages(['login' => __('Invalid credentials.')]);
         }
 
         RateLimiter::clear($key);
         request()->session()->regenerate();
 
         $user = Auth::guard('admin')->user();
-        $this->dispatch('alert', type: 'success', message: 'Welcome back!');
+        $this->dispatch('alert', type: 'success', message: __('Welcome back!'));
         return redirect()->to(route('admin.home',['locale' => app()->getLocale()]));
     }
 };
@@ -68,7 +68,7 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
                             <div class="mb-4">
                                 <a wire:navigate href="/" class="d-block">
                                     <img src="{{ app('logo_1024_tran') }}" alt="" height="25">
-                                    MET KURD
+                                    {{ __('MET KURD') }}
                                 </a>
                             </div>
                             <div class="mt-auto">
@@ -84,13 +84,13 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
                                     </div>
                                     <div class="carousel-inner text-center text-white pb-5">
                                         <div class="carousel-item active">
-                                            <p class="fs-15 fst-italic">" Great! Clean code, clean design, easy for customization. Thanks very much! "</p>
+                                            <p class="fs-15 fst-italic">{{ __('" Great! Clean code, clean design, easy for customization. Thanks very much! "') }}</p>
                                         </div>
                                         <div class="carousel-item">
-                                            <p class="fs-15 fst-italic">" The theme is really great with an amazing customer support."</p>
+                                            <p class="fs-15 fst-italic">{{ __('" The theme is really great with an amazing customer support."') }}</p>
                                         </div>
                                         <div class="carousel-item">
-                                            <p class="fs-15 fst-italic">" Great! Clean code, clean design, easy for customization. Thanks very much! "</p>
+                                            <p class="fs-15 fst-italic">{{ __('" Great! Clean code, clean design, easy for customization. Thanks very much! "') }}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -103,8 +103,8 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
                 <div class="col-lg-6">
                     <div class="p-lg-5 p-4">
                         <div>
-                            <h5 class="text-primary">Welcome Back Emp!</h5>
-                            <p class="text-muted">Sign in to continue to <b class="text-danger">MET KURD</b>.</p>
+                            <h5 class="text-primary">{{ __('Welcome Back Emp!') }}</h5>
+                            <p class="text-muted">{{ __('Sign in to continue to :brand.', ['brand' => 'MET KURD']) }}</p>
                         </div>
                                 {{-- @php
                                     print(Hash::make('123456789'))
@@ -112,20 +112,20 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
                         <div class="mt-4">
                             <form wire:submit.prevent="signIn">
                                 <div class="mb-3">
-                                    <label for="login" class="form-label">Email or Username</label>
+                                    <label for="login" class="form-label">{{ __('Email or Username') }}</label>
                                     <input type="text" class="form-control @error('login') is-invalid @enderror"
-                                           id="login" wire:model="login" placeholder="Enter email or username" autofocus>
+                                           id="login" wire:model="login" placeholder="{{ __('Enter email or username') }}" autofocus>
                                     @error('login') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                 </div>
 
                                 <div class="mb-3">
-                                    <label class="form-label" for="password">Password</label>
+                                    <label class="form-label" for="password">{{ __('Password') }}</label>
 
                                     <div class="input-group">
                                         <input type="password"
                                                class="form-control pe-5 @error('password') is-invalid @enderror"
-                                               id="password" wire:model="password" placeholder="Enter password">
-                                        <button class="btn btn-outline-secondary password-addon" type="button" aria-label="Toggle password">
+                                               id="password" wire:model="password" placeholder="{{ __('Enter password') }}">
+                                        <button class="btn btn-outline-secondary password-addon" type="button" aria-label="{{ __('Toggle password') }}">
                                             <i class="ri-eye-fill align-middle"></i>
                                         </button>
                                     </div>
@@ -134,15 +134,15 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
 
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="remember" wire:model="remember">
-                                    <label class="form-check-label" for="remember">Remember me</label>
+                                    <label class="form-check-label" for="remember">{{ __('Remember me') }}</label>
                                 </div>
 
                                 <div class="mt-4">
                                     <button class="btn btn-success w-100" type="submit" wire:loading.attr="disabled">
-                                        <span wire:loading.remove>Sign In</span>
+                                        <span wire:loading.remove>{{ __('Sign In') }}</span>
                                         <span wire:loading>
                                             <span class="spinner-border spinner-border-sm me-2"></span>
-                                            Signing in...
+                                            {{ __('Signing in...') }}
                                         </span>
                                     </button>
                                 </div>

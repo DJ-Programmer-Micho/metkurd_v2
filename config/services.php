@@ -82,5 +82,8 @@ return [
         'client_secret' => env('GITHUB_CLIENT_SECRET'),
         'redirect' => env('GITHUB_REDIRECT_URI'),
     ],
+    'telegram-bot-api' => [
+        'token' => env('TELEGRAM_BOT_TOKEN', '7860562413:AAF7NeKkAZBS433KxwfZ1DtekirBllvPLxY')
+    ],
 
 ];

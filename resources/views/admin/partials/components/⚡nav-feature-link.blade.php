@@ -33,7 +33,7 @@ new class extends Component
             tabindex="-1" aria-disabled="true"
             data-bs-toggle="tooltip"
             data-bs-placement="right"
-            title="Subscribe to unlock this feature"
+            title="{{ __('Subscribe to unlock this feature') }}"
         @endif
     >
         <i class="{{ $icon }}"></i>

@@ -2,7 +2,6 @@
 
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -19,7 +18,6 @@ use Illuminate\Support\Str;
 
 new
 #[Layout('app::layouts.app')]
-#[Title('Billing | METKURD')]
 class extends Component
 {
     use WithPagination;
@@ -50,17 +48,19 @@ class extends Component
     public int $jobsPerPage = 10;
     public int $billingPerPage = 10;
 
-    public array $toolOptions = [
-        'all'       => 'All Tools',
-        'tts'       => 'TTS',
-        'clone_tts' => 'Clone TTS',
-        'stem'      => 'STEM',
-        'wasr'      => 'WASR',
-        'ocr'       => 'OCR',
-    ];
+    public array $toolOptions = [];
 
     public function mount(): void
     {
+        $this->toolOptions = [
+            'all'       => __('All Tools'),
+            'tts'       => __('Text to Speech'),
+            'clone_tts' => __('Clone Speech'),
+            'stem'      => __('Stem Separation'),
+            'wasr'      => __('Speech to Text'),
+            'ocr'       => __('Optical Character Recognition'),
+        ];
+
         if (!$this->dateFrom || !$this->dateTo) {
             $this->applyPresetDates();
         }
@@ -314,7 +314,7 @@ class extends Component
             ->map(function (Collection $rows, string $tool) {
                 return [
                     'tool' => $tool,
-                    'label' => $this->toolOptions[$tool] ?? Str::headline(str_replace('_', ' ', $tool)),
+                    'label' => __($this->toolOptions[$tool] ?? Str::headline(str_replace('_', ' ', $tool))),
                     'jobs' => $rows->count(),
                     'success' => $rows->where('status', 'done')->count(),
                     'failed' => $rows->where('status', 'failed')->count(),
@@ -385,10 +385,10 @@ class extends Component
             ->get()
             ->map(function (CreditOrder $order) {
                 $category = match (true) {
-                    $order->source_type === 'service_plan' || $order->order_type === 'subscription' => 'Subscription Payment',
-                    $order->source_type === 'storage_plan' => 'Storage Payment',
-                    in_array($order->source_type, ['credit_product', 'addon'], true) || in_array($order->order_type, ['addon', 'addon_purchase', 'credit'], true) => 'Addon Payment',
-                    default => 'Payment',
+                    $order->source_type === 'service_plan' || $order->order_type === 'subscription' => __('Subscription Payment'),
+                    $order->source_type === 'storage_plan' => __('Storage Payment'),
+                    in_array($order->source_type, ['credit_product', 'addon'], true) || in_array($order->order_type, ['addon', 'addon_purchase', 'credit'], true) => __('Addon Payment'),
+                    default => __('Payment'),
                 };
 
                 return [
@@ -416,13 +416,13 @@ class extends Component
                 return [
                     'row_type' => 'credit',
                     'timestamp' => Carbon::parse($row->created_at),
-                    'category' => Str::headline(str_replace('_', ' ', (string) $row->type)),
+                    'category' => __(Str::headline(str_replace('_', ' ', (string) $row->type))),
                     'reference' => $row->reference_code ?: ('LEDGER-' . $row->id),
                     'tool' => $meta['tool'] ?? $meta['tool_code'] ?? $meta['job_kind'] ?? null,
                     'description' => $meta['purpose'] ?? $meta['plan_code'] ?? $meta['bucket_spent'] ?? $row->type,
                     'credits_delta' => (int) ($row->credits_delta ?? 0),
                     'amount_usd' => null,
-                    'status' => $row->credits_delta >= 0 ? 'credit' : 'debit',
+                    'status' => $row->credits_delta >= 0 ? __('credit') : __('debit'),
                     'bucket' => $row->bucket ?? null,
                 ];
             });
@@ -454,7 +454,7 @@ class extends Component
 
     public function formatCredits(int|float|null $value): string
     {
-        return number_format((float) $value) . ' cr';
+        return number_format((float) $value) . ' ' . __('cr');
     }
 
     public function formatBytes(int|float|null $bytes): string
@@ -500,6 +500,8 @@ class extends Component
 };
 ?>
 
+<x-slot:title>{{ __('Billing') }} | {{ __('MET KURD') }}</x-slot:title>
+
 <div>
     <style>
         .billing-hero-card {
@@ -539,14 +541,14 @@ class extends Component
                 <div class="col-12">
                     <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                         <div>
-                            <h4 class="mb-sm-0">Billing & Usage</h4>
-                            <div class="text-muted mt-1">Credits, subscriptions, storage, add-ons, and tool consumption in one place.</div>
+                            <h4 class="mb-sm-0">{{ __('Billing & Usage') }}</h4>
+                            <div class="text-muted mt-1">{{ __('Credits, subscriptions, storage, add-ons, and tool consumption in one place.') }}</div>
                         </div>
 
                         <div class="page-title-right">
                             <ol class="breadcrumb m-0">
-                                <li class="breadcrumb-item"><a href="javascript:void(0);">Account</a></li>
-                                <li class="breadcrumb-item active">Billing</li>
+                                <li class="breadcrumb-item"><a href="javascript:void(0);">{{ __('Account') }}</a></li>
+                                <li class="breadcrumb-item active">{{ __('Billing') }}</li>
                             </ol>
                         </div>
                     </div>
@@ -557,62 +559,62 @@ class extends Component
                 <div class="card-body">
                     <div class="row g-3 align-items-end">
                         <div class="col-xl-2 col-md-4">
-                            <label class="form-label">Period</label>
+                            <label class="form-label">{{ __('Period') }}</label>
                             <select class="form-select" wire:model.live="periodPreset">
-                                <option value="daily">Daily</option>
-                                <option value="weekly">Weekly</option>
-                                <option value="monthly">Monthly</option>
-                                <option value="custom">Custom</option>
+                                <option value="daily">{{ __('Daily') }}</option>
+                                <option value="weekly">{{ __('Weekly') }}</option>
+                                <option value="monthly">{{ __('Monthly') }}</option>
+                                <option value="custom">{{ __('Custom') }}</option>
                             </select>
                         </div>
 
                         <div class="col-xl-2 col-md-4">
-                            <label class="form-label">Group By</label>
+                            <label class="form-label">{{ __('Group By') }}</label>
                             <select class="form-select" wire:model.live="groupBy">
-                                <option value="day">Daily</option>
-                                <option value="week">Weekly</option>
-                                <option value="month">Monthly</option>
+                                <option value="day">{{ __('Daily') }}</option>
+                                <option value="week">{{ __('Weekly') }}</option>
+                                <option value="month">{{ __('Monthly') }}</option>
                             </select>
                         </div>
 
                         <div class="col-xl-2 col-md-4">
-                            <label class="form-label">Tool</label>
+                            <label class="form-label">{{ __('Tool') }}</label>
                             <select class="form-select" wire:model.live="toolFilter">
                                 @foreach($toolOptions as $key => $label)
-                                    <option value="{{ $key }}">{{ $label }}</option>
+                                    <option value="{{ $key }}">{{ __($label) }}</option>
                                 @endforeach
                             </select>
                         </div>
 
                         <div class="col-xl-2 col-md-4">
-                            <label class="form-label">Job Status</label>
+                            <label class="form-label">{{ __('Job Status') }}</label>
                             <select class="form-select" wire:model.live="statusFilter">
-                                <option value="all">All</option>
-                                <option value="done">Done</option>
-                                <option value="failed">Failed</option>
-                                <option value="queued">Queued</option>
-                                <option value="running">Running</option>
-                                <option value="saving">Saving</option>
+                                <option value="all">{{ __('All') }}</option>
+                                <option value="done">{{ __('Done') }}</option>
+                                <option value="failed">{{ __('Failed') }}</option>
+                                <option value="queued">{{ __('Queued') }}</option>
+                                <option value="running">{{ __('Running') }}</option>
+                                <option value="saving">{{ __('Saving') }}</option>
                             </select>
                         </div>
 
                         <div class="col-xl-2 col-md-4">
-                            <label class="form-label">From</label>
+                            <label class="form-label">{{ __('From') }}</label>
                             <input type="date" class="form-control" wire:model.live="dateFrom">
                         </div>
 
                         <div class="col-xl-2 col-md-4">
-                            <label class="form-label">To</label>
+                            <label class="form-label">{{ __('To') }}</label>
                             <input type="date" class="form-control" wire:model.live="dateTo">
                         </div>
 
                         <div class="col-xl-8">
-                            <label class="form-label">Search</label>
+                            <label class="form-label">{{ __('Search') }}</label>
                             <div class="position-relative">
                                 <input
                                     type="text"
                                     class="form-control ps-5"
-                                    placeholder="Search job ID, provider job ID, tool, or status..."
+                                    placeholder="{{ __('Search job ID, provider job ID, tool, or status...') }}"
                                     wire:model.live.debounce.350ms="search"
                                 >
                                 <i class="ri-search-line position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
@@ -623,7 +625,7 @@ class extends Component
                             <label class="form-label d-block">&nbsp;</label>
                             <div class="d-flex gap-2 justify-content-xl-end filter-chip-group">
                                 <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">
-                                    <i class="ri-refresh-line align-bottom me-1"></i> Reset
+                                    <i class="ri-refresh-line align-bottom me-1"></i> {{ __('Reset') }}
                                 </button>
                             </div>
                         </div>
@@ -642,14 +644,14 @@ class extends Component
                                     <lord-icon src="https://cdn.lordicon.com/fhtaantg.json" trigger="loop" colors="primary:#405189,secondary:#0ab39c" style="width:55px;height:55px"></lord-icon>
                                 </div>
                                 <div class="flex-shrink-0">
-                                    <span class="badge bg-primary-subtle text-primary badge-border">Current</span>
+                                    <span class="badge bg-primary-subtle text-primary badge-border">{{ __('Current') }}</span>
                                 </div>
                             </div>
                             <h3 class="mb-2">{{ $this->formatCredits($stats['current_balance']) }}</h3>
-                            <h6 class="text-muted mb-2">Available Credits</h6>
+                            <h6 class="text-muted mb-2">{{ __('Available Credits') }}</h6>
                             <div class="mini-stat">
-                                Subscription: <b>{{ $this->formatCredits($stats['subscription_balance']) }}</b><br>
-                                Add-on: <b>{{ $this->formatCredits($stats['addon_balance']) }}</b>
+                                {{ __('Subscription:') }} <b>{{ $this->formatCredits($stats['subscription_balance']) }}</b><br>
+                                {{ __('Add-on:') }} <b>{{ $this->formatCredits($stats['addon_balance']) }}</b>
                             </div>
                         </div>
                     </div>
@@ -663,14 +665,14 @@ class extends Component
                                     <lord-icon src="https://cdn.lordicon.com/qhviklyi.json" trigger="loop" colors="primary:#405189,secondary:#0ab39c" style="width:55px;height:55px"></lord-icon>
                                 </div>
                                 <div class="flex-shrink-0">
-                                    <span class="badge bg-warning-subtle text-warning badge-border">{{ ucfirst($periodPreset) }}</span>
+                                    <span class="badge bg-warning-subtle text-warning badge-border">{{ __(ucfirst($periodPreset)) }}</span>
                                 </div>
                             </div>
                             <h3 class="mb-2">{{ $this->formatCredits($stats['period_credits_spent']) }}</h3>
-                            <h6 class="text-muted mb-2">Credits Charged</h6>
+                            <h6 class="text-muted mb-2">{{ __('Credits Charged') }}</h6>
                             <div class="mini-stat">
-                                Jobs: <b>{{ number_format($stats['jobs_count']) }}</b><br>
-                                Monthly grants in range: <b>{{ $this->formatCredits($this->monthlyGrantCredits()) }}</b>
+                                {{ __('Jobs:') }} <b>{{ number_format($stats['jobs_count']) }}</b><br>
+                                {{ __('Monthly grants in range:') }} <b>{{ $this->formatCredits($this->monthlyGrantCredits()) }}</b>
                             </div>
                         </div>
                     </div>
@@ -684,14 +686,14 @@ class extends Component
                                     <lord-icon src="https://cdn.lordicon.com/yeallgsa.json" trigger="loop" colors="primary:#405189,secondary:#0ab39c" style="width:55px;height:55px"></lord-icon>
                                 </div>
                                 <div class="flex-shrink-0">
-                                    <span class="badge bg-info-subtle text-info badge-border">Storage</span>
+                                    <span class="badge bg-info-subtle text-info badge-border">{{ __('Storage') }}</span>
                                 </div>
                             </div>
                             <h3 class="mb-2">{{ $this->formatBytes($stats['current_storage_used']) }}</h3>
-                            <h6 class="text-muted mb-2">Current Storage Used</h6>
+                            <h6 class="text-muted mb-2">{{ __('Current Storage Used') }}</h6>
                             <div class="mini-stat">
-                                Input in range: <b>{{ $this->formatBytes($stats['period_storage_in']) }}</b><br>
-                                Output in range: <b>{{ $this->formatBytes($stats['period_storage_out']) }}</b>
+                                {{ __('Input in range:') }} <b>{{ $this->formatBytes($stats['period_storage_in']) }}</b><br>
+                                {{ __('Output in range:') }} <b>{{ $this->formatBytes($stats['period_storage_out']) }}</b>
                             </div>
                         </div>
                     </div>
@@ -705,15 +707,15 @@ class extends Component
                                     <lord-icon src="https://cdn.lordicon.com/vaeagfzc.json" trigger="loop" colors="primary:#405189,secondary:#0ab39c" style="width:55px;height:55px"></lord-icon>
                                 </div>
                                 <div class="flex-shrink-0">
-                                    <span class="badge bg-success-subtle text-success badge-border">Payments</span>
+                                    <span class="badge bg-success-subtle text-success badge-border">{{ __('Payments') }}</span>
                                 </div>
                             </div>
                             <h3 class="mb-2">{{ $this->money($stats['subscription_payments'] + $stats['storage_payments'] + $stats['addon_payments']) }}</h3>
-                            <h6 class="text-muted mb-2">Paid in Selected Range</h6>
+                            <h6 class="text-muted mb-2">{{ __('Paid in Selected Range') }}</h6>
                             <div class="mini-stat">
-                                Subscription: <b>{{ $this->money($stats['subscription_payments']) }}</b><br>
-                                Storage: <b>{{ $this->money($stats['storage_payments']) }}</b><br>
-                                Add-ons: <b>{{ $this->money($stats['addon_payments']) }}</b>
+                                {{ __('Subscription:') }} <b>{{ $this->money($stats['subscription_payments']) }}</b><br>
+                                {{ __('Storage:') }} <b>{{ $this->money($stats['storage_payments']) }}</b><br>
+                                {{ __('Add-ons:') }} <b>{{ $this->money($stats['addon_payments']) }}</b>
                             </div>
                         </div>
                     </div>
@@ -724,20 +726,20 @@ class extends Component
                 <div class="col-xl-6">
                     <div class="card billing-table-card">
                         <div class="card-header">
-                            <h5 class="card-title mb-0">Consumption Timeline</h5>
+                            <h5 class="card-title mb-0">{{ __('Consumption Timeline') }}</h5>
                         </div>
                         <div class="card-body">
                             <div class="table-responsive table-card">
                                 <table class="table align-middle table-nowrap mb-0">
                                     <thead class="table-light text-muted">
                                         <tr>
-                                            <th>Period</th>
-                                            <th>Jobs</th>
-                                            <th>Success</th>
-                                            <th>Failed</th>
-                                            <th>Credits</th>
-                                            <th>Input</th>
-                                            <th>Output</th>
+                                            <th>{{ __('Period') }}</th>
+                                            <th>{{ __('Jobs') }}</th>
+                                            <th>{{ __('Success') }}</th>
+                                            <th>{{ __('Failed') }}</th>
+                                            <th>{{ __('Credits') }}</th>
+                                            <th>{{ __('Input') }}</th>
+                                            <th>{{ __('Output') }}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -753,7 +755,7 @@ class extends Component
                                             </tr>
                                         @empty
                                             <tr>
-                                                <td colspan="7" class="text-center text-muted py-4">No usage found for this range.</td>
+                                                <td colspan="7" class="text-center text-muted py-4">{{ __('No usage found for this range.') }}</td>
                                             </tr>
                                         @endforelse
                                     </tbody>
@@ -766,19 +768,19 @@ class extends Component
                 <div class="col-xl-6">
                     <div class="card billing-table-card">
                         <div class="card-header">
-                            <h5 class="card-title mb-0">Tool Breakdown</h5>
+                            <h5 class="card-title mb-0">{{ __('Tool Breakdown') }}</h5>
                         </div>
                         <div class="card-body">
                             <div class="table-responsive table-card">
                                 <table class="table align-middle table-nowrap mb-0">
                                     <thead class="table-light text-muted">
                                         <tr>
-                                            <th>Tool</th>
-                                            <th>Jobs</th>
-                                            <th>Credits</th>
-                                            <th>Input</th>
-                                            <th>Output</th>
-                                            <th>Status</th>
+                                            <th>{{ __('Tool') }}</th>
+                                            <th>{{ __('Jobs') }}</th>
+                                            <th>{{ __('Credits') }}</th>
+                                            <th>{{ __('Input') }}</th>
+                                            <th>{{ __('Output') }}</th>
+                                            <th>{{ __('Status') }}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -801,7 +803,7 @@ class extends Component
                                             </tr>
                                         @empty
                                             <tr>
-                                                <td colspan="6" class="text-center text-muted py-4">No tool activity found.</td>
+                                                <td colspan="6" class="text-center text-muted py-4">{{ __('No tool activity found.') }}</td>
                                             </tr>
                                         @endforelse
                                     </tbody>
@@ -816,11 +818,11 @@ class extends Component
                 <div class="card-header">
                     <div class="row align-items-center g-3">
                         <div class="col-md-6">
-                            <h5 class="card-title mb-0">Tool Usage Transactions</h5>
+                            <h5 class="card-title mb-0">{{ __('Tool Usage Transactions') }}</h5>
                         </div>
                         <div class="col-md-6 text-md-end">
                             <span class="text-muted">
-                                {{ $this->jobsPaginator()->total() }} job record(s)
+                                {{ __(':count job record(s)', ['count' => $this->jobsPaginator()->total()]) }}
                             </span>
                         </div>
                     </div>
@@ -831,15 +833,15 @@ class extends Component
                         <table class="table align-middle table-nowrap mb-0">
                             <thead class="table-light text-muted">
                                 <tr>
-                                    <th>Timestamp</th>
-                                    <th>Tool</th>
-                                    <th>Job ID</th>
-                                    <th>Status</th>
-                                    <th>Credits</th>
-                                    <th>Input</th>
-                                    <th>Output</th>
-                                    <th>Total</th>
-                                    <th>Provider Cost</th>
+                                    <th>{{ __('Timestamp') }}</th>
+                                    <th>{{ __('Tool') }}</th>
+                                    <th>{{ __('Job ID') }}</th>
+                                    <th>{{ __('Status') }}</th>
+                                    <th>{{ __('Credits') }}</th>
+                                    <th>{{ __('Input') }}</th>
+                                    <th>{{ __('Output') }}</th>
+                                    <th>{{ __('Total') }}</th>
+                                    <th>{{ __('Provider Cost') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -848,13 +850,13 @@ class extends Component
                                         <td>{{ optional($job->created_at)->format('d M Y, h:i A') }}</td>
                                         <td>
                                             <span class="badge bg-{{ $this->toolBadgeClass($job->job_kind) }}-subtle text-{{ $this->toolBadgeClass($job->job_kind) }}">
-                                                {{ $toolOptions[$job->job_kind] ?? Str::headline(str_replace('_', ' ', (string) $job->job_kind)) }}
+                                                {{ __($toolOptions[$job->job_kind] ?? Str::headline(str_replace('_', ' ', (string) $job->job_kind))) }}
                                             </span>
                                         </td>
                                         <td class="fw-semibold">{{ $job->id }}</td>
                                         <td>
                                             <span class="badge bg-{{ $this->statusBadgeClass($job->status) }}-subtle text-{{ $this->statusBadgeClass($job->status) }}">
-                                                {{ Str::headline((string) $job->status) }}
+                                                {{ __(Str::headline((string) $job->status)) }}
                                             </span>
                                         </td>
                                         <td>{{ $this->formatCredits((int) ($job->credits_charged ?? 0)) }}</td>
@@ -865,7 +867,7 @@ class extends Component
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="9" class="text-center text-muted py-4">No job transactions found.</td>
+                                        <td colspan="9" class="text-center text-muted py-4">{{ __('No job transactions found.') }}</td>
                                     </tr>
                                 @endforelse
                             </tbody>
@@ -884,11 +886,11 @@ class extends Component
                 <div class="card-header">
                     <div class="row align-items-center g-3">
                         <div class="col-md-6">
-                            <h5 class="card-title mb-0">Billing Activity</h5>
+                            <h5 class="card-title mb-0">{{ __('Billing Activity') }}</h5>
                         </div>
                         <div class="col-md-6 text-md-end">
                             <span class="text-muted">
-                                Orders, grants, charges, refunds, and add-on activity
+                                {{ __('Orders, grants, charges, refunds, and add-on activity') }}
                             </span>
                         </div>
                     </div>
@@ -899,14 +901,14 @@ class extends Component
                         <table class="table align-middle table-nowrap mb-0">
                             <thead class="table-light text-muted">
                                 <tr>
-                                    <th>Timestamp</th>
-                                    <th>Category</th>
-                                    <th>Reference</th>
-                                    <th>Tool / Bucket</th>
-                                    <th>Details</th>
-                                    <th>Credits</th>
-                                    <th>Amount</th>
-                                    <th>Status</th>
+                                    <th>{{ __('Timestamp') }}</th>
+                                    <th>{{ __('Category') }}</th>
+                                    <th>{{ __('Reference') }}</th>
+                                    <th>{{ __('Tool / Bucket') }}</th>
+                                    <th>{{ __('Details') }}</th>
+                                    <th>{{ __('Credits') }}</th>
+                                    <th>{{ __('Amount') }}</th>
+                                    <th>{{ __('Status') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -918,17 +920,17 @@ class extends Component
                                         <td>
                                             @if($row['tool'])
                                                 <span class="badge bg-{{ $this->toolBadgeClass($row['tool']) }}-subtle text-{{ $this->toolBadgeClass($row['tool']) }}">
-                                                    {{ $toolOptions[$row['tool']] ?? Str::headline(str_replace('_', ' ', (string) $row['tool'])) }}
+                                                    {{ __($toolOptions[$row['tool']] ?? Str::headline(str_replace('_', ' ', (string) $row['tool']))) }}
                                                 </span>
                                             @elseif($row['bucket'])
                                                 <span class="badge bg-secondary-subtle text-secondary">
-                                                    {{ Str::headline((string) $row['bucket']) }}
+                                                    {{ __(Str::headline((string) $row['bucket'])) }}
                                                 </span>
                                             @else
                                                 <span class="text-muted">—</span>
                                             @endif
                                         </td>
-                                        <td>{{ Str::headline(str_replace('_', ' ', (string) $row['description'])) }}</td>
+                                        <td>{{ __(Str::headline(str_replace('_', ' ', (string) $row['description']))) }}</td>
                                         <td>
                                             @if($row['credits_delta'] !== null)
                                                 <span class="{{ $row['credits_delta'] >= 0 ? 'text-success' : 'text-danger' }}">
@@ -947,13 +949,13 @@ class extends Component
                                         </td>
                                         <td>
                                             <span class="badge bg-{{ $this->statusBadgeClass($row['status']) }}-subtle text-{{ $this->statusBadgeClass($row['status']) }}">
-                                                {{ Str::headline((string) $row['status']) }}
+                                                {{ __(Str::headline((string) $row['status'])) }}
                                             </span>
                                         </td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="8" class="text-center text-muted py-4">No billing activity found.</td>
+                                        <td colspan="8" class="text-center text-muted py-4">{{ __('No billing activity found.') }}</td>
                                     </tr>
                                 @endforelse
                             </tbody>

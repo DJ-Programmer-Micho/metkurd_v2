@@ -1,18 +1,23 @@
 <?php
 
-use Livewire\Component;
 use Livewire\Attributes\Layout;
+use Livewire\Component;
 
 new #[Layout('app::layouts.app-auth')] class extends Component
 {
-    public function mount(){
+    public function mount()
+    {
         $customer = auth('app')->user();
-        if($customer && $customer->status != 0) {
-            $this->redirectRoute('app.home');  
+
+        if ($customer && $customer->status != 0) {
+            $this->redirectRoute('app.home');
         }
     }
 };
+
 ?>
+
+<x-slot:title>{{ __('Account Suspended') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div>
     <div class="row justify-content-center">
@@ -25,8 +30,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                     </lord-icon>
 
                     <div class="mt-4 pt-2">
-                        <h5>Your account is Suspended</h5>
-                        <p class="text-muted mb-0">If you think this is a mistake, please send an Email to</p>
+                        <h5>{{ __('Your account is suspended') }}</h5>
+                        <p class="text-muted mb-0">{{ __('If you think this is a mistake, please send an email to') }}</p>
                         <a href="mailto:support@metkurd.com" class="fw-semibold text-primary text-decoration-underline">support@metkurd.com</a>
                     </div>
                 </div>

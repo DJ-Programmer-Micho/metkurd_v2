@@ -3,13 +3,13 @@
 
 use Livewire\Component;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use App\Models\StoragePlan;
+use App\Support\CustomerEmailNotifier;
+use App\Support\TelegramPaymentNotifier;
 use App\Services\Billing\PlanSwitcher;
 
 new
 #[Layout('app::layouts.app')]
-#[Title('Storage Plan | METKURD')]
 class extends Component
 {
     public array $plans = [];
@@ -68,8 +68,14 @@ class extends Component
     public function confirmChange(): void
     {
         $customer = auth('app')->user();
+        $selectedPlan = collect($this->plans)->firstWhere('id', $this->selectedPlanId);
 
         if (!$this->selectedPlanId) {
+            return;
+        }
+
+        if (! $selectedPlan) {
+            $this->message = 'Selected storage plan was not found.';
             return;
         }
 
@@ -91,6 +97,32 @@ class extends Component
             $this->showConfirm = false;
             $this->selectedPlanId = null;
             $this->message = 'Storage plan updated successfully.';
+
+            $freshCustomer = $customer->fresh(['profile']);
+
+            TelegramPaymentNotifier::send(
+                $freshCustomer,
+                'Storage Plan',
+                (string) $selectedPlan['name'],
+                [
+                    'Plan Code' => strtoupper((string) $selectedPlan['code']),
+                    'Storage Quota (MB)' => number_format((int) $selectedPlan['quota_mb']),
+                    'Amount (USD)' => '$' . number_format((float) $selectedPlan['price_usd'], 2),
+                    'Provider' => 'fake',
+                ],
+                'Storage plan page'
+            );
+
+            CustomerEmailNotifier::sendStorageThankYou(
+                $freshCustomer,
+                [
+                    'plan_name' => (string) $selectedPlan['name'],
+                    'quota_mb' => (int) $selectedPlan['quota_mb'],
+                    'amount_usd' => (float) $selectedPlan['price_usd'],
+                    'activated_on' => now()->format('F d, Y'),
+                ],
+                'Storage plan page'
+            );
 
             $this->dispatch('header:refresh');
             $this->dispatch('customerStorageUpdated');
@@ -126,20 +158,22 @@ class extends Component
 };
 ?>
 
+<x-slot:title>{{ __('Storage Plan') }} | {{ __('MET KURD') }}</x-slot:title>
+
 <div>
     <div class="row justify-content-center mt-4">
         <div class="col-lg-8">
             <div class="text-center mb-4 pb-2">
-                <h4 class="fs-22">Storage Plans</h4>
+                <h4 class="fs-22">{{ __('Storage Plans') }}</h4>
 
                 <p class="text-muted mb-1 fs-15">
-                    Used: <b>{{ number_format($usedMb) }} MB</b> /
-                    Quota: <b>{{ number_format($quotaMb) }} MB</b>
+                    {{ __('Used:') }} <b>{{ number_format($usedMb) }} MB</b> /
+                    {{ __('Quota:') }} <b>{{ number_format($quotaMb) }} MB</b>
                 </p>
 
                 <div class="mx-auto mt-3" style="max-width: 420px;">
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                        <small class="text-muted">Storage usage</small>
+                        <small class="text-muted">{{ __('Storage usage') }}</small>
                         <small class="fw-semibold">{{ $storagePct }}%</small>
                     </div>
                     <div class="progress" style="height: 8px;">
@@ -151,7 +185,7 @@ class extends Component
 
                 @if($overQuota)
                     <div class="alert alert-danger mt-3 mb-0">
-                        You are currently <b>over quota</b>. Uploads should be blocked until you upgrade or delete files.
+                        {{ __('You are currently over quota. Uploads should be blocked until you upgrade or delete files.') }}
                     </div>
                 @endif
 
@@ -178,26 +212,26 @@ class extends Component
                             </div>
                             <div class="ms-auto text-end">
                                 <div class="fw-semibold">{{ number_format($p['quota_mb']) }} MB</div>
-                                <div class="text-muted fs-12">quota</div>
+                                <div class="text-muted fs-12">{{ __('quota') }}</div>
                                 <div class="fw-semibold mt-2">${{ number_format($p['price_usd'], 2) }}</div>
-                                <div class="text-muted fs-12">per change</div>
+                                <div class="text-muted fs-12">{{ __('per change') }}</div>
                             </div>
                         </div>
 
                         <p class="text-muted mb-3">
-                            Storage quota for uploads and generated outputs.
+                            {{ __('Storage quota for uploads and generated outputs.') }}
                         </p>
 
                         <div class="mt-3 pt-2">
                             @if($isCurrent)
                                 <button class="btn btn-success w-100" disabled>
-                                    Your Current Plan
+                                    {{ __('Your Current Plan') }}
                                 </button>
                             @else
                                 <button class="btn btn-info w-100"
                                         wire:click="openConfirm({{ $p['id'] }})"
                                         wire:loading.attr="disabled">
-                                    Change Plan (Fake Pay)
+                                    {{ __('Change Plan (Fake Pay)') }}
                                 </button>
                             @endif
                         </div>
@@ -216,44 +250,43 @@ class extends Component
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Confirm Storage Change</h5>
+                        <h5 class="modal-title">{{ __('Confirm Storage Change') }}</h5>
                         <button type="button" class="btn-close" wire:click="closeConfirm" @disabled($processing)></button>
                     </div>
 
                     <div class="modal-body">
                         <div class="alert alert-warning mb-3">
-                            This is a <b>fake payment</b> for testing.
+                            {{ __('This is a fake payment for testing.') }}
                         </div>
 
                         @if($selected)
                             <p class="mb-2">
-                                You are switching to:
+                                {{ __('You are switching to:') }}
                                 <b>{{ $selected['name'] }}</b>
                                 ({{ strtoupper($selected['code']) }})
                             </p>
                             <p class="mb-2">
-                                New quota:
+                                {{ __('New quota:') }}
                                 <b>{{ number_format($selected['quota_mb']) }} MB</b>
                             </p>
                             <p class="mb-2">
-                                Price:
+                                {{ __('Price:') }}
                                 <b>${{ number_format($selected['price_usd'], 2) }}</b>
                             </p>
                         @endif
 
                         <div class="small text-muted">
-                            If you downgrade below your used storage, the plan can still be activated,
-                            but your account will remain marked as <b>over quota</b> until you delete files or upgrade again.
+                            {{ __('If you downgrade below your used storage, the plan can still be activated, but your account will remain marked as over quota until you delete files or upgrade again.') }}
                         </div>
                     </div>
 
                     <div class="modal-footer">
-                        <button class="btn btn-light" wire:click="closeConfirm" @disabled($processing)>Cancel</button>
+                        <button class="btn btn-light" wire:click="closeConfirm" @disabled($processing)>{{ __('Cancel') }}</button>
                         <button class="btn btn-primary" wire:click="confirmChange" @disabled($processing)>
                             @if($processing)
-                                Processing...
+                                {{ __('Processing...') }}
                             @else
-                                Confirm
+                                {{ __('Confirm') }}
                             @endif
                         </button>
                     </div>

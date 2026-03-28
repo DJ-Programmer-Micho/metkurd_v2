@@ -5,28 +5,28 @@
         <!-- Dark Logo-->
         <a href="/" class="logo logo-dark mt-2">
             <span class="logo-sm mt-0">
-                <img src="{{ asset(app('logo_1024_tran')) }}" alt="METKURD" height="25">
+                <img src="{{ asset(app('logo_1024_tran')) }}" alt="{{ __('METKURD') }}" height="25">
             </span>
             <span class="logo-lg mt-0">
                 <div class="d-flex align-items-center" style="vertical-align: middle">
                     <div>
-                        <img src="{{ asset(app('logo_1024_tran')) }}" alt="METKURD" height="50">
+                        <img src="{{ asset(app('logo_1024_tran')) }}" alt="{{ __('METKURD') }}" height="50">
                     </div>
-                    <div class="h3 mt-2 mx-1 text-white">MET KURD</div>
+                    <div class="h3 mt-2 mx-1 text-white">{{ __('MET KURD') }}</div>
                 </div>
             </span>
         </a>
         <!-- Light Logo-->
         <a href="/" class="logo logo-light mt-2">
             <span class="logo-sm mt-0">
-                <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="METKURD" height="40">
+                <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="{{ __('METKURD') }}" height="40">
             </span>
             <span class="logo-lg mt-0">
                 <div class="d-flex align-items-center" style="vertical-align: middle">
                     <div>
-                        <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="METKURD" height="50">
+                        <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="{{ __('METKURD') }}" height="50">
                     </div>
-                    <div class="h3 mt-2 mx-1 text-white">MET KURD</div>
+                    <div class="h3 mt-2 mx-1 text-white">{{ __('MET KURD') }}</div>
                 </div>
             </span>
         </a>
@@ -67,26 +67,26 @@
                     :label="__('Home')"
                 />
                 {{-- </x-app.auth.nav-multi-feature-link> --}}
-                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">SPEECH TOOLS</span></li>
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Speech Tools') }}</span></li>
 
                 <livewire:partials.components.nav-feature-link
                     :route="'app.xtts'"
                     icon="ri-volume-up-line"
-                    label="TEXT-TO-SPEECH"
+                    :label="__('Text to Speech')"
                     tool-codes="tts"
                 />
 
                 <livewire:partials.components.nav-feature-link 
                     :route="'app.clone-xtts'"
                     icon="bx bx-user-voice"
-                    label="Clone Speech"
+                    :label="__('Clone Speech')"
                     tool-codes="clone_tts"
                 />
 
                 <livewire:partials.components.nav-feature-link 
                     :route="'app.wasr'"
                     icon="ri-file-text-line"
-                    :label="__('SPEECH_TO_TEXT')"
+                    :label="__('Speech to Text')"
                     tool-codes="asr"
                 />
 
@@ -114,27 +114,27 @@
                     />
                 </livewire:partials.components.nav-multi-feature-link> --}}
 
-                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">MUSIC TOOLS</span></li>
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Music Tools') }}</span></li>
                     <livewire:partials.components.nav-feature-link
                         :route="'app.stem'"
                         icon="bx bx-music"
-                        :label="__('STEM')"
+                        :label="__('Stem Separation')"
                         tool-codes="stem"
                     />
 
-                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">DOCUMENT TOOLS</span></li>
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Document Tools') }}</span></li>
                 <livewire:partials.components.nav-feature-link
                     :route="'app.ocr'"
                     icon="bx bx-aperture"
-                    :label="__('OPTICAL CHARACTER RECOGNITION')"
+                    :label="__('Optical Character Recognition')"
                     tool-codes="ocr"
                 />
 
-                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">YouTube</span></li>
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('YouTube') }}</span></li>
                 <livewire:partials.components.nav-feature-link
                     :route="'app.youtube'"
                     icon="ri-youtube-line"
-                    :label="__('YOUTUBE DOWNLOADER')"
+                    :label="__('YouTube Downloader')"
                     :tool-codes="['youtube_audio', 'youtube_video']"
                 />
 

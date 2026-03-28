@@ -8,28 +8,28 @@
             <div class="navbar-brand-box horizontal-logo">
                 <a href="/" class="logo logo-dark">
                     <span class="logo-sm mt-2">
-                        <img src="{{ asset(app('logo_1024_tran')) }}" alt="METKURD" height="25">
+                        <img src="{{ asset(app('logo_1024_tran')) }}" alt="{{ __('METKURD') }}" height="25">
                     </span>
                     <span class="logo-lg mt-1">
                         <div class="d-flex align-items-center" style="vertical-align: middle">
                             <div>
-                                <img src="{{ asset(app('logo_1024_tran')) }}" alt="METKURD" height="50">
+                                <img src="{{ asset(app('logo_1024_tran')) }}" alt="{{ __('METKURD') }}" height="50">
                             </div>
-                            <div class="h3 mt-2 mx-1 text-white">MET KURD</div>
+                            <div class="h3 mt-2 mx-1 text-white">{{ __('MET KURD') }}</div>
                         </div>
                     </span>
                 </a>
                 <!-- Light Logo-->
                 <a href="/" class="logo logo-light">
                     <span class="logo-sm mt-0">
-                        <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="METKURD" height="40">
+                        <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="{{ __('METKURD') }}" height="40">
                     </span>
                     <span class="logo-lg mt-1">
                         <div class="d-flex align-items-center" style="vertical-align: middle">
                             <div>
-                                <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="METKURD" height="50">
+                                <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="{{ __('METKURD') }}" height="50">
                             </div>
-                            <div class="h3 mt-2 mx-1 text-white">MET KURD</div>
+                            <div class="h3 mt-2 mx-1 text-white">{{ __('MET KURD') }}</div>
                         </div>
                     </span>
                 </a>
@@ -46,7 +46,7 @@
             <!-- App Search-->
             {{-- <form class="app-search d-none d-md-block">
                 <div class="position-relative">
-                    <input type="text" class="form-control" placeholder="Search..." autocomplete="off" id="search-options" value="">
+                    <input type="text" class="form-control" placeholder="{{ __('Search...') }}" autocomplete="off" id="search-options" value="">
                     <span class="mdi mdi-magnify search-widget-icon"></span>
                     <span class="mdi mdi-close-circle search-widget-icon search-widget-icon-close d-none" id="search-close-options"></span>
                 </div>
@@ -54,39 +54,39 @@
                     <div data-simplebar style="max-height: 320px;">
                         <!-- item-->
                         <div class="dropdown-header">
-                            <h6 class="text-overflow text-muted mb-0 text-uppercase">Recent Searches</h6>
+                            <h6 class="text-overflow text-muted mb-0 text-uppercase">{{ __('Recent Searches') }}</h6>
                         </div>
 
                         <div class="dropdown-item bg-transparent text-wrap">
-                            <a href="index.html" class="btn btn-soft-secondary btn-sm rounded-pill">how to setup <i class="mdi mdi-magnify ms-1"></i></a>
-                            <a href="index.html" class="btn btn-soft-secondary btn-sm rounded-pill">buttons <i class="mdi mdi-magnify ms-1"></i></a>
+                            <a href="index.html" class="btn btn-soft-secondary btn-sm rounded-pill">{{ __('How to setup') }} <i class="mdi mdi-magnify ms-1"></i></a>
+                            <a href="index.html" class="btn btn-soft-secondary btn-sm rounded-pill">{{ __('Buttons') }} <i class="mdi mdi-magnify ms-1"></i></a>
                         </div>
                         <!-- item-->
                         <div class="dropdown-header mt-2">
-                            <h6 class="text-overflow text-muted mb-1 text-uppercase">Pages</h6>
+                            <h6 class="text-overflow text-muted mb-1 text-uppercase">{{ __('Pages') }}</h6>
                         </div>
 
                         <!-- item-->
                         <a href="javascript:void(0);" class="dropdown-item notify-item">
                             <i class="ri-bubble-chart-line align-middle fs-18 text-muted me-2"></i>
-                            <span>Analytics Dashboard</span>
+                            <span>{{ __('Analytics Dashboard') }}</span>
                         </a>
 
                         <!-- item-->
                         <a href="javascript:void(0);" class="dropdown-item notify-item">
                             <i class="ri-lifebuoy-line align-middle fs-18 text-muted me-2"></i>
-                            <span>Help Center</span>Notifications
+                            <span>{{ __('Help Center') }}</span>
                         </a>
 
                         <!-- item-->
                         <a href="javascript:void(0);" class="dropdown-item notify-item">
                             <i class="ri-user-settings-line align-middle fs-18 text-muted me-2"></i>
-                            <span>My account settings</span>
+                            <span>{{ __('My account settings') }}</span>
                         </a>
 
                         <!-- item-->
                         <div class="dropdown-header mt-2">
-                            <h6 class="text-overflow text-muted mb-2 text-uppercase">Members</h6>
+                            <h6 class="text-overflow text-muted mb-2 text-uppercase">{{ __('Members') }}</h6>
                         </div>
 
                         <div class="notification-list">
@@ -95,8 +95,8 @@
                                 <div class="d-flex">
                                     <img src="assets/images/users/avatar-2.jpg" class="me-3 rounded-circle avatar-xs" alt="user-pic">
                                     <div class="flex-grow-1">
-                                        <h6 class="m-0">Angela Bernier</h6>
-                                        <span class="fs-11 mb-0 text-muted">Manager</span>
+                                        <h6 class="m-0">{{ __('Angela Bernier') }}</h6>
+                                        <span class="fs-11 mb-0 text-muted">{{ __('Manager') }}</span>
                                     </div>
                                 </div>
                             </a>
@@ -105,8 +105,8 @@
                                 <div class="d-flex">
                                     <img src="assets/images/users/avatar-3.jpg" class="me-3 rounded-circle avatar-xs" alt="user-pic">
                                     <div class="flex-grow-1">
-                                        <h6 class="m-0">David Grasso</h6>
-                                        <span class="fs-11 mb-0 text-muted">Web Designer</span>
+                                        <h6 class="m-0">{{ __('David Grasso') }}</h6>
+                                        <span class="fs-11 mb-0 text-muted">{{ __('Web Designer') }}</span>
                                     </div>
                                 </div>
                             </a>
@@ -115,8 +115,8 @@
                                 <div class="d-flex">
                                     <img src="assets/images/users/avatar-5.jpg" class="me-3 rounded-circle avatar-xs" alt="user-pic">
                                     <div class="flex-grow-1">
-                                        <h6 class="m-0">Mike Bunch</h6>
-                                        <span class="fs-11 mb-0 text-muted">React Developer</span>
+                                        <h6 class="m-0">{{ __('Mike Bunch') }}</h6>
+                                        <span class="fs-11 mb-0 text-muted">{{ __('React Developer') }}</span>
                                     </div>
                                 </div>
                             </a>
@@ -140,7 +140,7 @@
                     <form class="p-3">
                         <div class="form-group m-0">
                             <div class="input-group">
-                                <input type="text" class="form-control" placeholder="Search ..." aria-label="Recipient's username">
+                                <input type="text" class="form-control" placeholder="{{ __('Search ...') }}" aria-label="{{ __('Recipient\'s username') }}">
                                 <button class="btn btn-primary" type="submit"><i class="mdi mdi-magnify"></i></button>
                             </div>
                         </div>
@@ -150,7 +150,7 @@
 
             <div class="dropdown ms-1 topbar-head-dropdown header-item" wire:ignore>
                 <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                    <img id="header-lang-img" src="{{asset('/lang/'.app()->getLocale().'.png')}}" alt="Header Language" height="30" class="rounded">
+                    <img id="header-lang-img" src="{{asset('/lang/'.app()->getLocale().'.png')}}" alt="{{ __('Header Language') }}" height="30" class="rounded">
                 </button>
 
                 <div class="dropdown-menu dropdown-menu-end">
@@ -167,9 +167,9 @@
                     </a>
 
                     <!-- item-->
-                    <a href="javascript:void(0);" class="dropdown-item notify-item language" data-lang="ar" title="Arabic">
+                    <a href="javascript:void(0);" class="dropdown-item notify-item language" data-lang="ar" title="{{ __('Arabic') }}">
                         <img src="assets/images/flags/ae.svg" alt="user-image" class="me-2 rounded" height="18">
-                        <span class="align-middle">Arabic</span>
+                        <span class="align-middle">{{ __('Arabic') }}</span>
                     </a> --}}
                 </div>
             </div>
@@ -193,7 +193,7 @@ $notifications = [];
             <div class="dropdown topbar-head-dropdown ms-1 header-item" id="notificationDropdown">
                 <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle" id="page-header-notifications-dropdown" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-haspopup="true" aria-expanded="false">
                     <i class='bx bx-bell fs-22'></i>
-                    <span class="position-absolute topbar-badge fs-10 translate-middle badge rounded-pill bg-danger">{{$notificationsCount}}<span class="visually-hidden">unread messages</span></span>
+                    <span class="position-absolute topbar-badge fs-10 translate-middle badge rounded-pill bg-danger">{{$notificationsCount}}<span class="visually-hidden">{{ __('Unread messages') }}</span></span>
                 </button>
                 <div class="dropdown-menu dropdown-menu-lg dropdown-menu-end p-0" aria-labelledby="page-header-notifications-dropdown">
 
@@ -255,11 +255,11 @@ $notifications = [];
                                         <img src="assets/images/users/avatar-2.jpg" class="me-3 rounded-circle avatar-xs flex-shrink-0" alt="user-pic">
                                         <div class="flex-grow-1">
                                             <a href="#!" class="stretched-link">
-                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">Angela Bernier</h6>
+                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">{{ __('Angela Bernier') }}</h6>
                                             </a>
                                             <div class="fs-13 text-muted">
                                                 <p class="mb-1">Answered to your comment on the cash flow forecast's
-                                                    graph 🔔.</p>
+                                                    graph ðŸ””.</p>
                                             </div>
                                             <p class="mb-0 fs-11 fw-medium text-uppercase text-muted">
                                                 <span><i class="mdi mdi-clock-outline"></i> 48 min ago</span>
@@ -304,10 +304,10 @@ $notifications = [];
                                         <img src="assets/images/users/avatar-8.jpg" class="me-3 rounded-circle avatar-xs flex-shrink-0" alt="user-pic">
                                         <div class="flex-grow-1">
                                             <a href="#!" class="stretched-link">
-                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">Maureen Gibson</h6>
+                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">{{ __('Maureen Gibson') }}</h6>
                                             </a>
                                             <div class="fs-13 text-muted">
-                                                <p class="mb-1">We talked about a project on linkedin.</p>
+                                                <p class="mb-1">{{ __('We talked about a project on linkedin.') }}</p>
                                             </div>
                                             <p class="mb-0 fs-11 fw-medium text-uppercase text-muted">
                                                 <span><i class="mdi mdi-clock-outline"></i> 4 hrs ago</span>
@@ -337,10 +337,10 @@ $notifications = [];
                                         <img src="assets/images/users/avatar-3.jpg" class="me-3 rounded-circle avatar-xs" alt="user-pic">
                                         <div class="flex-grow-1">
                                             <a href="#!" class="stretched-link">
-                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">James Lemire</h6>
+                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">{{ __('James Lemire') }}</h6>
                                             </a>
                                             <div class="fs-13 text-muted">
-                                                <p class="mb-1">We talked about a project on linkedin.</p>
+                                                <p class="mb-1">{{ __('We talked about a project on linkedin.') }}</p>
                                             </div>
                                             <p class="mb-0 fs-11 fw-medium text-uppercase text-muted">
                                                 <span><i class="mdi mdi-clock-outline"></i> 30 min ago</span>
@@ -360,11 +360,11 @@ $notifications = [];
                                         <img src="assets/images/users/avatar-2.jpg" class="me-3 rounded-circle avatar-xs" alt="user-pic">
                                         <div class="flex-grow-1">
                                             <a href="#!" class="stretched-link">
-                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">Angela Bernier</h6>
+                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">{{ __('Angela Bernier') }}</h6>
                                             </a>
                                             <div class="fs-13 text-muted">
                                                 <p class="mb-1">Answered to your comment on the cash flow forecast's
-                                                    graph 🔔.</p>
+                                                    graph ðŸ””.</p>
                                             </div>
                                             <p class="mb-0 fs-11 fw-medium text-uppercase text-muted">
                                                 <span><i class="mdi mdi-clock-outline"></i> 2 hrs ago</span>
@@ -384,10 +384,10 @@ $notifications = [];
                                         <img src="assets/images/users/avatar-6.jpg" class="me-3 rounded-circle avatar-xs" alt="user-pic">
                                         <div class="flex-grow-1">
                                             <a href="#!" class="stretched-link">
-                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">Kenneth Brown</h6>
+                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">{{ __('Kenneth Brown') }}</h6>
                                             </a>
                                             <div class="fs-13 text-muted">
-                                                <p class="mb-1">Mentionned you in his comment on 📃 invoice #12501.
+                                                <p class="mb-1">Mentionned you in his comment on ðŸ“ƒ invoice #12501.
                                                 </p>
                                             </div>
                                             <p class="mb-0 fs-11 fw-medium text-uppercase text-muted">
@@ -408,10 +408,10 @@ $notifications = [];
                                         <img src="assets/images/users/avatar-8.jpg" class="me-3 rounded-circle avatar-xs" alt="user-pic">
                                         <div class="flex-grow-1">
                                             <a href="#!" class="stretched-link">
-                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">Maureen Gibson</h6>
+                                                <h6 class="mt-0 mb-1 fs-13 fw-semibold">{{ __('Maureen Gibson') }}</h6>
                                             </a>
                                             <div class="fs-13 text-muted">
-                                                <p class="mb-1">We talked about a project on linkedin.</p>
+                                                <p class="mb-1">{{ __('We talked about a project on linkedin.') }}</p>
                                             </div>
                                             <p class="mb-0 fs-11 fw-medium text-uppercase text-muted">
                                                 <span><i class="mdi mdi-clock-outline"></i> 3 days ago</span>
@@ -436,7 +436,7 @@ $notifications = [];
 
                         <div class="notification-actions" id="notification-actions">
                             <div class="d-flex text-muted justify-content-center">
-                                Select <div id="select-content" class="text-body fw-semibold px-1">0</div> Result <button type="button" class="btn btn-link link-danger p-0 ms-3" data-bs-toggle="modal" data-bs-target="#removeNotificationModal">Remove</button>
+                                Select <div id="select-content" class="text-body fw-semibold px-1">0</div> Result <button type="button" class="btn btn-link link-danger p-0 ms-3" data-bs-toggle="modal" data-bs-target="#removeNotificationModal">{{ __('Remove') }}</button>
                             </div>
                         </div> --}}
                     </div>
@@ -458,8 +458,8 @@ $notifications = [];
                     <h6 class="dropdown-header">{{__('Welcome')}} {{auth()->guard('admin')->user()->profile->first_name}}</h6>
                     <a wire:navigate.hover class="dropdown-item" href="{{ route('app.profile',['locale' => app()->getLocale()]) }}"><i class="mdi mdi-account-circle text-muted fs-16 align-middle me-1"></i> <span class="align-middle">{{__('Profile')}}</span></a>
                     {{-- <a class="dropdown-item" href="apps-chat.html"><i class="mdi mdi-message-text-outline text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Messages</span></a>
-                    <a class="dropdown-item" href="apps-tasks-kanban.html"><i class="mdi mdi-calendar-check-outline text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Taskboard</span></a>
-                    <a class="dropdown-item" href="pages-faqs.html"><i class="mdi mdi-lifebuoy text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Help</span></a> --}}
+                    <a class="dropdown-item" href="apps-tasks-kanban.html"><i class="mdi mdi-calendar-check-outline text-muted fs-16 align-middle me-1"></i> <span class="align-middle">{{ __('Taskboard') }}</span></a>
+                    <a class="dropdown-item" href="pages-faqs.html"><i class="mdi mdi-lifebuoy text-muted fs-16 align-middle me-1"></i> <span class="align-middle">{{ __('Help') }}</span></a> --}}
                     {{-- @if (hasRole([1, 2, 6])) --}}
                     {{-- <a class="dropdown-item" href="pages-profile.html"><i class="mdi mdi-wallet text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Balance : <b>$5971.67</b></span></a> --}}
                     {{-- @endif --}}

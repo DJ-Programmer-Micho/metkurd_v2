@@ -40,7 +40,7 @@
     <link href="{{ asset('general/css/toaster.css') }}" rel="stylesheet" type="text/css">
     <script src="https://cdn.lordicon.com/lordicon.js"></script>
 
-    <title>{{ $title ?? 'METKURD | Auth' }}</title>
+    <title>{{ $title ?? __('METKURD | Auth') }}</title>
 <style>
     
 </style>

@@ -212,7 +212,7 @@ trait ManagesPaymentAddonsPage
         $this->dispatch(
             'alert',
             type: 'success',
-            message: $this->editingProductId ? 'Credit product updated successfully.' : 'Credit product created successfully.'
+            message: $this->editingProductId ? __('Credit product updated successfully.') : __('Credit product created successfully.')
         );
 
         $this->resetProductForm();
@@ -227,7 +227,7 @@ trait ManagesPaymentAddonsPage
         $this->dispatch(
             'alert',
             type: 'success',
-            message: $product->is_active ? 'Credit product activated successfully.' : 'Credit product deactivated successfully.'
+            message: $product->is_active ? __('Credit product activated successfully.') : __('Credit product deactivated successfully.')
         );
     }
 
@@ -249,7 +249,7 @@ trait ManagesPaymentAddonsPage
             $this->dispatch(
                 'alert',
                 type: 'error',
-                message: 'This credit product has paid orders. Deactivate it instead of deleting.'
+                message: __('This credit product has paid orders. Deactivate it instead of deleting.')
             );
 
             return;
@@ -258,7 +258,7 @@ trait ManagesPaymentAddonsPage
         $product->delete();
         $this->resetDeleteState();
         $this->dispatch('payments-addons:modal-hide', id: 'paymentAddonDeleteModal');
-        $this->dispatch('alert', type: 'success', message: 'Credit product deleted successfully.');
+        $this->dispatch('alert', type: 'success', message: __('Credit product deleted successfully.'));
     }
 
     public function resetProductForm(): void

@@ -8,28 +8,28 @@
             <div class="navbar-brand-box horizontal-logo">
                 <a href="/" class="logo logo-dark">
                     <span class="logo-sm mt-2">
-                        <img src="{{ asset(app('logo_1024_tran')) }}" alt="METKURD" height="25">
+                        <img src="{{ asset(app('logo_1024_tran')) }}" alt="{{ __('METKURD') }}" height="25">
                     </span>
                     <span class="logo-lg mt-1">
                         <div class="d-flex align-items-center" style="vertical-align: middle">
                             <div>
-                                <img src="{{ asset(app('logo_1024_tran')) }}" alt="METKURD" height="50">
+                                <img src="{{ asset(app('logo_1024_tran')) }}" alt="{{ __('METKURD') }}" height="50">
                             </div>
-                            <div class="h3 mt-2 mx-1 text-white">MET KURD</div>
+                            <div class="h3 mt-2 mx-1 text-white">{{ __('MET KURD') }}</div>
                         </div>
                     </span>
                 </a>
                 <!-- Light Logo-->
                 <a href="/" class="logo logo-light">
                     <span class="logo-sm mt-0">
-                        <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="METKURD" height="40">
+                        <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="{{ __('METKURD') }}" height="40">
                     </span>
                     <span class="logo-lg mt-1">
                         <div class="d-flex align-items-center" style="vertical-align: middle">
                             <div>
-                                <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="METKURD" height="50">
+                                <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="{{ __('METKURD') }}" height="50">
                             </div>
-                            <div class="h3 mt-2 mx-1 text-white">MET KURD</div>
+                            <div class="h3 mt-2 mx-1 text-white">{{ __('MET KURD') }}</div>
                         </div>
                     </span>
                 </a>
@@ -149,7 +149,7 @@
 
             <div class="dropdown ms-1 topbar-head-dropdown header-item" wire:ignore>
                 <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                    <img id="header-lang-img" src="{{asset('/lang/'.app()->getLocale().'.png')}}" alt="Header Language" height="30" class="rounded">
+                    <img id="header-lang-img" src="{{asset('/lang/'.app()->getLocale().'.png')}}" alt="{{ __('Header Language') }}" height="30" class="rounded">
                 </button>
 
                 <div class="dropdown-menu dropdown-menu-end">
@@ -464,7 +464,7 @@ $notifications = [];
                             <img class="rounded-circle header-profile-user"
                                 style="width:38px;height:38px;object-fit:cover;"
                                 src="{{ auth('app')->user()->profile->avatar_url ?? app('userImg') }}"
-                                alt="{{ auth('app')->user()->profile->first_name ?? 'User' }}">
+                                alt="{{ auth('app')->user()->profile->first_name ?? __('User') }}">
 
                             {{-- ✅ badge position fixed --}}
                             <span class="position-absolute badge rounded-pill {{ $planClass }}"

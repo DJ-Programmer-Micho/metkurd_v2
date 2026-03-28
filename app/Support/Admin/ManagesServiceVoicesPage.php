@@ -266,7 +266,7 @@ trait ManagesServiceVoicesPage
 
         $voice->save();
 
-        $this->dispatch('alert', type: 'success', message: $this->editingVoiceId ? 'Voice updated successfully.' : 'Voice created successfully.');
+        $this->dispatch('alert', type: 'success', message: $this->editingVoiceId ? __('Voice updated successfully.') : __('Voice created successfully.'));
         $this->dispatch('services-voices:modal-hide', id: 'serviceVoiceModal');
         $this->resetVoiceForm();
     }
@@ -275,7 +275,7 @@ trait ManagesServiceVoicesPage
     {
         $voice = Voice::query()->findOrFail($voiceId);
         $voice->update(['is_active' => !$voice->is_active]);
-        $this->dispatch('alert', type: 'success', message: $voice->is_active ? 'Voice activated.' : 'Voice moved to maintenance.');
+        $this->dispatch('alert', type: 'success', message: $voice->is_active ? __('Voice activated.') : __('Voice moved to maintenance.'));
     }
 
     public function openAccessCreateModal(?int $voiceId = null): void
@@ -324,7 +324,7 @@ trait ManagesServiceVoicesPage
 
         if ($duplicate) {
             throw ValidationException::withMessages([
-                'accessPlanId' => 'This plan already has an access row for the selected voice.',
+                'accessPlanId' => __('This plan already has an access row for the selected voice.'),
             ]);
         }
 
@@ -347,7 +347,7 @@ trait ManagesServiceVoicesPage
 
         $access->save();
 
-        $this->dispatch('alert', type: 'success', message: $this->editingAccessId ? 'Voice access updated successfully.' : 'Voice access created successfully.');
+        $this->dispatch('alert', type: 'success', message: $this->editingAccessId ? __('Voice access updated successfully.') : __('Voice access created successfully.'));
         $this->dispatch('services-voices:modal-hide', id: 'serviceVoiceAccessModal');
         $this->resetAccessForm();
     }
@@ -356,7 +356,7 @@ trait ManagesServiceVoicesPage
     {
         $access = PlanVoiceAccess::query()->findOrFail($accessId);
         $access->update(['is_active' => !$access->is_active]);
-        $this->dispatch('alert', type: 'success', message: $access->is_active ? 'Plan access activated.' : 'Plan access moved to maintenance.');
+        $this->dispatch('alert', type: 'success', message: $access->is_active ? __('Plan access activated.') : __('Plan access moved to maintenance.'));
     }
 
     public function confirmVoiceDelete(int $voiceId): void
@@ -375,7 +375,7 @@ trait ManagesServiceVoicesPage
         $this->accessIdPendingDelete = $access->id;
         $this->voiceIdPendingDelete = null;
         $this->deleteTarget = 'access';
-        $this->deleteLabel = ($access->servicePlan?->name ?? 'Plan') . ' / ' . ($access->voice?->name ?? 'Voice');
+        $this->deleteLabel = ($access->servicePlan?->name ?? __('Plan')) . ' / ' . ($access->voice?->name ?? __('Voice'));
         $this->dispatch('services-voices:modal-show', id: 'serviceVoiceDeleteModal');
     }
 
@@ -383,12 +383,12 @@ trait ManagesServiceVoicesPage
     {
         if ($this->deleteTarget === 'voice' && $this->voiceIdPendingDelete) {
             Voice::query()->findOrFail($this->voiceIdPendingDelete)->delete();
-            $this->dispatch('alert', type: 'success', message: 'Voice deleted successfully.');
+            $this->dispatch('alert', type: 'success', message: __('Voice deleted successfully.'));
         }
 
         if ($this->deleteTarget === 'access' && $this->accessIdPendingDelete) {
             PlanVoiceAccess::query()->findOrFail($this->accessIdPendingDelete)->delete();
-            $this->dispatch('alert', type: 'success', message: 'Voice access deleted successfully.');
+            $this->dispatch('alert', type: 'success', message: __('Voice access deleted successfully.'));
         }
 
         $this->dispatch('services-voices:modal-hide', id: 'serviceVoiceDeleteModal');
@@ -453,7 +453,7 @@ trait ManagesServiceVoicesPage
 
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
             throw ValidationException::withMessages([
-                $field => 'Please enter a valid JSON object.',
+                $field => __('Please enter a valid JSON object.'),
             ]);
         }
 
