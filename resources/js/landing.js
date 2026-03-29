@@ -56,8 +56,22 @@ function initReveal(scope = document) {
         return;
     }
 
-    if (!('IntersectionObserver' in window)) {
-        items.forEach((item) => item.classList.add('in-view'));
+    const revealNow = (item) => {
+        item.classList.remove('reveal-pending');
+        item.classList.add('in-view');
+    };
+
+    const shouldRevealImmediately = (item) => {
+        const rect = item.getBoundingClientRect();
+
+        return rect.top <= window.innerHeight * 0.9 && rect.bottom >= 0;
+    };
+
+    if (
+        !('IntersectionObserver' in window)
+        || window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+        items.forEach((item) => revealNow(item));
         return;
     }
 
@@ -68,7 +82,7 @@ function initReveal(scope = document) {
                     return;
                 }
 
-                entry.target.classList.add('in-view');
+                revealNow(entry.target);
                 window.__landingRevealObserver.unobserve(entry.target);
             });
         }, {
@@ -77,12 +91,30 @@ function initReveal(scope = document) {
     }
 
     items.forEach((item) => {
-        if (item.classList.contains('in-view') || item.dataset.revealObserved === 'true') {
+        if (item.classList.contains('in-view')) {
+            return;
+        }
+
+        if (shouldRevealImmediately(item)) {
+            revealNow(item);
+            return;
+        }
+
+        item.classList.add('reveal-pending');
+
+        if (item.dataset.revealObserved === 'true') {
             return;
         }
 
         item.dataset.revealObserved = 'true';
         window.__landingRevealObserver.observe(item);
+    });
+}
+
+function forceRevealVisible(scope = document) {
+    scope.querySelectorAll('.reveal').forEach((item) => {
+        item.classList.remove('reveal-pending');
+        item.classList.add('in-view');
     });
 }
 
@@ -143,6 +175,9 @@ if (!window[LANDING_BOOT_FLAG]) {
     window[LANDING_BOOT_FLAG] = true;
 
     document.addEventListener('DOMContentLoaded', () => bootLanding(document));
+    document.addEventListener('livewire:navigating', () => {
+        forceRevealVisible(document);
+    });
     document.addEventListener('livewire:navigated', () => {
         requestAnimationFrame(() => bootLanding(document));
     });

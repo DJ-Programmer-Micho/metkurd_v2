@@ -69,7 +69,7 @@
     @stack('styles')
     {{ $head ?? '' }}
 </head>
-<body>
+<body class="{{ $direction === 'rtl' ? 'landing-rtl' : 'landing-ltr' }}">
     <livewire:landing::components.navigation />
 
     <main id="main-content">
