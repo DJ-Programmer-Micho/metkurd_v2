@@ -255,7 +255,21 @@
                 });
             }
 
+            function resolveScope(scope) {
+                if (scope && typeof scope.querySelectorAll === 'function') {
+                    return scope;
+                }
+
+                return document;
+            }
+
+            function pageScope() {
+                return document.querySelector('.page-content') || document;
+            }
+
             function disposeBootstrapInstances(scope = document) {
+                scope = resolveScope(scope);
+
                 if (typeof bootstrap === 'undefined') return;
 
                 scope.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
@@ -280,6 +294,8 @@
             }
 
             function initBootstrapPlugins(scope = document) {
+                scope = resolveScope(scope);
+
                 if (typeof bootstrap === 'undefined') return;
 
                 scope.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
@@ -295,25 +311,42 @@
                 });
             }
 
-            function initFeather() {
-                if (typeof feather !== 'undefined') {
+            function initFeather(scope = document) {
+                scope = resolveScope(scope);
+
+                if (typeof feather !== 'undefined' && scope.querySelector('[data-feather]')) {
                     feather.replace();
                 }
             }
 
-            function initWaves() {
+            function initWaves(scope = document) {
+                scope = resolveScope(scope);
+
                 if (typeof Waves !== 'undefined') {
                     try {
-                        Waves.init();
-                        Waves.attach('.btn, .btn-icon, .waves-effect');
+                        if (!window.__APP_WAVES_INIT__) {
+                            Waves.init();
+                            window.__APP_WAVES_INIT__ = true;
+                        }
+
+                        scope.querySelectorAll('.btn, .btn-icon, .waves-effect').forEach((el) => {
+                            if (el.dataset.wavesBound === '1') {
+                                return;
+                            }
+
+                            Waves.attach(el);
+                            el.dataset.wavesBound = '1';
+                        });
                     } catch (_) {}
                 }
             }
 
-            function initSimplebar() {
+            function initSimplebar(scope = document) {
+                scope = resolveScope(scope);
+
                 if (typeof SimpleBar === 'undefined') return;
 
-                document.querySelectorAll('[data-simplebar]').forEach((el) => {
+                scope.querySelectorAll('[data-simplebar]').forEach((el) => {
                     if (!el.SimpleBar) {
                         new SimpleBar(el);
                     }
@@ -389,11 +422,12 @@
             }
 
             function bootLayout(scope = document) {
+                scope = resolveScope(scope);
                 restoreThemeState();
                 initBootstrapPlugins(scope);
-                initFeather();
-                initWaves();
-                initSimplebar();
+                initFeather(scope);
+                initWaves(scope);
+                initSimplebar(scope);
                 initThemeInteractions();
             }
 
@@ -403,14 +437,14 @@
             });
 
             document.addEventListener('livewire:navigating', function () {
-                disposeBootstrapInstances(document);
+                disposeBootstrapInstances(pageScope());
             });
 
             document.addEventListener('livewire:navigated', function () {
                 initToastrListener();
 
                 requestAnimationFrame(() => {
-                    bootLayout(document);
+                    bootLayout(pageScope());
                     resetMobileSidebarState();
                 });
             });

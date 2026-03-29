@@ -4,6 +4,7 @@ namespace App\Http\Controllers\App\Services;
 
 use App\Http\Controllers\Controller;
 use App\Models\MlJob;
+use App\Support\AppRenderPayloads;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -184,5 +185,12 @@ class StemRenderController extends Controller
         return response()
             ->download($tmpZip, "stem-{$job->id}.zip")
             ->deleteFileAfterSend(true);
+    }
+
+    public function payload(string $locale, string $jobId)
+    {
+        $job = $this->jobOrFail($jobId);
+
+        return response()->json(AppRenderPayloads::stem($job, $locale));
     }
 }

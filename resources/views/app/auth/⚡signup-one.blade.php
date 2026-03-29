@@ -440,7 +440,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
                         <div class="mt-5 text-center">
                             <p class="mb-0">{{ __('Already have an account?') }}
-                                <a wire:navigate.hover href="{{ route('app.signin') }}" class="fw-semibold text-primary text-decoration-underline"> {{ __('Sign in') }}</a>
+                                <a wire:navigate href="{{ route('app.signin') }}" class="fw-semibold text-primary text-decoration-underline"> {{ __('Sign in') }}</a>
                             </p>
                         </div>
 

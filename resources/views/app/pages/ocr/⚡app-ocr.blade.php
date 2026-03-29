@@ -20,6 +20,7 @@ use App\Services\OCR\OcrJobSyncService;
 use App\Services\Providers\RunPodProvider;
 use App\Services\Security\JobExecutionLockService;
 use App\Services\Storage\CustomerOutputStorage;
+use App\Support\AppRenderPayloads;
 
 new
 #[Layout('app::layouts.app')]
@@ -67,7 +68,7 @@ class extends Component
     public string $search = '';
     public bool $showEliminateModal = false;
     public ?string $latestFinishedJobId = null;
-    public ?array $loadedRender = null;
+    public ?string $selectedRenderId = null;
     public int $rendersRefreshKey = 0;
     public int $walletBalance = 0;
     public int $creditsCost = 0;
@@ -137,10 +138,7 @@ class extends Component
 
         $paginator->setCollection(
             $paginator->getCollection()->values()->map(function (MlJob $job, int $index) {
-                return array_merge(
-                    $this->buildRenderPayload($job),
-                    ['is_latest' => $index === 0]
-                );
+                return array_merge(AppRenderPayloads::ocrSummary($job), ['is_latest' => $index === 0]);
             })
         );
 
@@ -463,63 +461,33 @@ class extends Component
         return "renders/{$folder}/ocr/{$jobId}";
     }
 
-    protected function buildRenderPayload(MlJob $job): array
+    protected function setLoadedRenderFromJob(MlJob $job, bool $dispatchBrowserEvent = true): void
     {
-        $locale = app()->getLocale();
-        $textPath = (string) data_get($job->output, 'text.path', '');
-        $jsonPath = (string) data_get($job->output, 'json.path', '');
-        $inputPath = (string) data_get($job->input, 'file_path', '');
         $jobId = (string) $job->id;
-
-        return [
-            'id' => $jobId,
-            'input_name' => (string) data_get($job->input, 'file_name', __('Untitled PDF')),
-            'input_url' => $inputPath !== '' ? route('app.renders.ocr.input', [
-                'locale' => $locale,
-                'jobId' => $jobId,
-            ]) . '?proxy=1' : null,
-            'page_range' => (string) data_get($job->input, 'page_range', ''),
-            'pages' => (int) data_get($job->input, 'pages_estimated', 0),
-            'lang' => (string) data_get($job->input, 'lang', 'ckb'),
-            'dpi' => (int) data_get($job->input, 'dpi', 200),
-            'psm' => (int) data_get($job->input, 'psm', 6),
-            'oem' => (int) data_get($job->input, 'oem', 3),
-            'normalize' => (bool) data_get($job->input, 'normalize', false),
-            'text_view_url' => $textPath !== '' ? route('app.renders.ocr.text.view', [
-                'locale' => $locale,
-                'jobId' => $jobId,
-            ]) . '?proxy=1' : null,
-            'text_download_url' => $textPath !== '' ? route('app.renders.ocr.text', [
-                'locale' => $locale,
-                'jobId' => $jobId,
-            ]) : null,
-            'json_view_url' => $jsonPath !== '' ? route('app.renders.ocr.json.view', [
-                'locale' => $locale,
-                'jobId' => $jobId,
-            ]) . '?proxy=1' : null,
-            'json_download_url' => $jsonPath !== '' ? route('app.renders.ocr.json', [
-                'locale' => $locale,
-                'jobId' => $jobId,
-            ]) : null,
-            'text_path' => $textPath,
-            'json_path' => $jsonPath,
-            'meta' => (array) ($job->meta ?? []),
-            'created_at' => optional($job->finished_at ?? $job->created_at)->format('Y-m-d H:i'),
-            'created_at_human' => optional($job->finished_at ?? $job->created_at)->diffForHumans(),
-        ];
-    }
-
-    protected function setLoadedRenderFromJob(MlJob $job, bool $dispatchBrowserEvent = true): array
-    {
-        $render = $this->buildRenderPayload($job);
-        $this->loadedRender = $render;
-        $this->latestFinishedJobId = (string) $job->id;
+        $this->selectedRenderId = $jobId;
 
         if ($dispatchBrowserEvent) {
-            $this->dispatch('ocr-render-loaded', render: $render);
+            $this->dispatch('ocr-render-selected', jobId: $jobId);
+        }
+    }
+
+    #[Computed]
+    public function selectedRenderSummary(): ?array
+    {
+        $jobId = (string) ($this->selectedRenderId ?: $this->latestFinishedJobId ?: '');
+
+        if ($jobId === '') {
+            return null;
         }
 
-        return $render;
+        $job = MlJob::query()
+            ->where('id', $jobId)
+            ->where('customer_id', auth('app')->id())
+            ->where('job_kind', $this->jobKind)
+            ->where('status', 'done')
+            ->first();
+
+        return $job ? AppRenderPayloads::ocrSummary($job) : null;
     }
 
     public function submit(
@@ -832,8 +800,8 @@ class extends Component
                 ->first();
 
             if ($fresh) {
-                $render = $this->setLoadedRenderFromJob($fresh);
-                $this->dispatch('ocr-job-completed', render: $render);
+                $this->setLoadedRenderFromJob($fresh, false);
+                $this->dispatch('ocr-job-completed', jobId: (string) $fresh->id);
             } else {
                 $this->dispatch('ocr-job-completed');
             }
@@ -892,13 +860,23 @@ class extends Component
         try {
             $storage->deleteOcrOutputs($job);
 
-            if (($this->loadedRender['id'] ?? null) === (string) $job->id) {
-                $this->loadedRender = null;
-                $this->dispatch('ocr-render-cleared');
+            $deletedCurrentSelection = $this->selectedRenderId === (string) $job->id;
+
+            if ($deletedCurrentSelection) {
+                $this->selectedRenderId = null;
             }
 
             $this->resetPage();
             $this->hydrateLatestFinishedRender();
+
+            if ($deletedCurrentSelection) {
+                if ($this->latestFinishedJobId) {
+                    $this->dispatch('ocr-render-selected', jobId: $this->latestFinishedJobId);
+                } else {
+                    $this->dispatch('ocr-render-cleared');
+                }
+            }
+
             $this->dispatch('customerStorageUpdated');
             $this->dispatch('header:refresh');
             $this->dispatch('ocr-renders-refresh');
@@ -1006,11 +984,12 @@ class extends Component
 
 <div id="ocr-page-root">
     @if($currentJobId && !$jobFinished)
-        <div wire:poll.keep-alive.3000ms="pollJob"></div>
+        <div wire:poll.visible.6000ms="pollJob"></div>
     @endif
 
     @php
-        $latestTitle = $loadedRender['input_name'] ?? ($loadedRender['id'] ?? 'â€”');
+        $selectedRenderSummary = $this->selectedRenderSummary();
+        $latestTitle = $selectedRenderSummary['input_name'] ?? ($selectedRenderSummary['id'] ?? 'â€”');
 
         $status = $currentStatus ?? 'queued';
         $statusLabel = match($status) {
@@ -1199,15 +1178,15 @@ class extends Component
                                 </div>
 
                                 <div class="d-flex align-items-center gap-2">
-                                    @if($loadedRender && $loadedRender['text_download_url'])
+                                    @if($selectedRenderSummary && $selectedRenderSummary['text_download_url'])
                                         <small class="text-muted mt-2 mt-md-0 mr-2">
-                                            {{ __('Render:') }} <b>#{{ $loadedRender['id'] }}</b>
+                                            {{ __('Render:') }} <b>#{{ $selectedRenderSummary['id'] }}</b>
                                         </small>
-                                        <a href="{{ $loadedRender['text_download_url'] }}" class="btn btn-sm btn-primary" target="_blank" rel="noopener">
+                                        <a href="{{ $selectedRenderSummary['text_download_url'] }}" class="btn btn-sm btn-primary" target="_blank" rel="noopener">
                                             <i class="mdi mdi-download"></i> {{ __('Download TXT') }}
                                         </a>
-                                        @if($loadedRender['json_view_url'])
-                                            <a href="{{ $loadedRender['json_view_url'] }}" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">
+                                        @if($selectedRenderSummary['json_view_url'])
+                                            <a href="{{ $selectedRenderSummary['json_view_url'] }}" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">
                                                 <i class="mdi mdi-code-json"></i> {{ __('JSON') }}
                                             </a>
                                         @endif
@@ -1215,11 +1194,18 @@ class extends Component
                                 </div>
                             </div>
 
-                            <div id="ocr-output-empty" class="{{ $loadedRender ? 'd-none' : '' }}">
+                            <input type="hidden" id="ocr-selected-render-id" value="{{ $selectedRenderSummary['id'] ?? '' }}">
+                            <input
+                                type="hidden"
+                                id="ocr-render-payload-url-template"
+                                value="{{ route('app.renders.ocr.payload', ['locale' => app()->getLocale(), 'jobId' => '__JOB_ID__']) }}"
+                            >
+
+                            <div id="ocr-output-empty" class="{{ $selectedRenderSummary ? 'd-none' : '' }}">
                                 <div class="text-muted small text-center py-4">{{ __('No OCR result selected yet.') }}</div>
                             </div>
 
-                            <div id="ocr-output-wrap" class="{{ $loadedRender ? '' : 'd-none' }}">
+                            <div id="ocr-output-wrap" class="{{ $selectedRenderSummary ? '' : 'd-none' }}">
                                 <div class="ocr-output-meta mb-3">
                                     <div class="row g-2">
                                         {{-- <div class="col-md-3 col-6">
@@ -1231,19 +1217,19 @@ class extends Component
                                         <div class="col-md-4 col-6">
                                             <div class="ocr-meta-chip">
                                                 <span class="text-muted small d-block">{{ __('Range') }}</span>
-                                                <strong>{{ ($loadedRender['page_range'] ?? '') !== '' ? $loadedRender['page_range'] : __('All pages') }}</strong>
+                                                <strong>{{ ($selectedRenderSummary['page_range'] ?? '') !== '' ? $selectedRenderSummary['page_range'] : __('All pages') }}</strong>
                                             </div>
                                         </div>
                                         <div class="col-md-4 col-6">
                                             <div class="ocr-meta-chip">
                                                 <span class="text-muted small d-block">{{ __('DPI') }}</span>
-                                                <strong>{{ $loadedRender['dpi'] ?? 200 }}</strong>
+                                                <strong>{{ $selectedRenderSummary['dpi'] ?? 200 }}</strong>
                                             </div>
                                         </div>
                                         <div class="col-md-4 col-6">
                                             <div class="ocr-meta-chip">
                                                 <span class="text-muted small d-block">{{ __('PSM / OEM') }}</span>
-                                                <strong>{{ ($loadedRender['psm'] ?? 6) . ' / ' . ($loadedRender['oem'] ?? 3) }}</strong>
+                                                <strong>{{ ($selectedRenderSummary['psm'] ?? 6) . ' / ' . ($selectedRenderSummary['oem'] ?? 3) }}</strong>
                                             </div>
                                         </div>
                                     </div>
@@ -1283,7 +1269,7 @@ class extends Component
 
                             {{-- <div class="mb-3">
                                 <label class="mb-1"><b>Language</b></label>
-                                <select wire:model.live="lang" class="form-control rounded-pill">
+                                <select wire:model.change="lang" class="form-control rounded-pill">
                                     <option value="ckb">ckb</option>
                                     <option value="ara">ara</option>
                                     <option value="eng">eng</option>
@@ -1298,7 +1284,7 @@ class extends Component
 
                             <div class="mb-3">
                                 <label class="mb-1"><b>{{ __('Page Range') }}</b></label>
-                                <input type="text" wire:model.live.debounce.300ms="pageRange" class="form-control rounded-pill" placeholder="{{ __('e.g. 1-3,5,8-10') }}">
+                                <input type="text" wire:model.change="pageRange" class="form-control rounded-pill" placeholder="{{ __('e.g. 1-3,5,8-10') }}">
                                 <small class="text-muted d-block mt-2">{{ __('Leave empty to OCR the full PDF.') }}</small>
                             </div>
 
@@ -1307,7 +1293,7 @@ class extends Component
                             <div class="row g-3 mb-3">
                                 <div class="col-md-4">
                                     <label class="mb-1"><b>{{ __('DPI') }}</b></label>
-                                    <select wire:model.live="dpi" class="form-control rounded-pill">
+                                    <select wire:model.change="dpi" class="form-control rounded-pill">
                                         <option value="150">150</option>
                                         <option value="200">200</option>
                                         <option value="300">300</option>
@@ -1316,7 +1302,7 @@ class extends Component
                                 </div>
                                 <div class="col-md-4">
                                     <label class="mb-1"><b>{{ __('PSM') }}</b></label>
-                                    <select wire:model.live="psm" class="form-control rounded-pill">
+                                    <select wire:model.change="psm" class="form-control rounded-pill">
                                         @for($i = 0; $i <= 13; $i++)
                                             <option value="{{ $i }}">{{ $i }}</option>
                                         @endfor
@@ -1324,7 +1310,7 @@ class extends Component
                                 </div>
                                 <div class="col-md-4">
                                     <label class="mb-1"><b>{{ __('OEM') }}</b></label>
-                                    <select wire:model.live="oem" class="form-control rounded-pill">
+                                    <select wire:model.change="oem" class="form-control rounded-pill">
                                         <option value="0">0</option>
                                         <option value="1">1</option>
                                         <option value="2">2</option>
@@ -1340,23 +1326,23 @@ class extends Component
 
                                 <div class="ocr-check-grid">
                                     <label class="ocr-check-item">
-                                        <input type="checkbox" wire:model.live="normalize">
+                                        <input type="checkbox" wire:model.change="normalize">
                                         <span>{{ __('Normalize to Sorani') }}</span>
                                     </label>
                                     <label class="ocr-check-item">
-                                        <input type="checkbox" wire:model.live="grayscale">
+                                        <input type="checkbox" wire:model.change="grayscale">
                                         <span>{{ __('Grayscale') }}</span>
                                     </label>
                                     <label class="ocr-check-item">
-                                        <input type="checkbox" wire:model.live="autocontrast">
+                                        <input type="checkbox" wire:model.change="autocontrast">
                                         <span>{{ __('Auto Contrast') }}</span>
                                     </label>
                                     <label class="ocr-check-item">
-                                        <input type="checkbox" wire:model.live="sharpen">
+                                        <input type="checkbox" wire:model.change="sharpen">
                                         <span>{{ __('Sharpen') }}</span>
                                     </label>
                                     <label class="ocr-check-item">
-                                        <input type="checkbox" wire:model.live="binarize">
+                                        <input type="checkbox" wire:model.change="binarize">
                                         <span>{{ __('Binarize') }}</span>
                                     </label>
                                 </div>
@@ -1433,7 +1419,7 @@ class extends Component
                                     type="text"
                                     class="form-control form-control-sm"
                                     placeholder="{{ __('Search...') }}"
-                                    wire:model.live.debounce.300ms="search"
+                                    wire:model.live.debounce.500ms="search"
                                 >
                             </div>
 
@@ -1907,7 +1893,7 @@ class extends Component
                         currentBlobUrl: null,
                         activePages: null,
                         activeIndex: 0,
-                        currentRender: @js($loadedRender),
+                        currentRender: null,
                         textUrl: null,
                         eventsBound: false,
                         commitHooked: false,
@@ -1955,6 +1941,20 @@ class extends Component
                     } catch (_) {
                         return null;
                     }
+                }
+
+                function getSelectedRenderIdFromDom() {
+                    return String(qs('ocr-selected-render-id')?.value || '');
+                }
+
+                function buildOcrPayloadUrl(jobId) {
+                    const template = qs('ocr-render-payload-url-template')?.value || '';
+
+                    if (!template || !jobId) {
+                        return '';
+                    }
+
+                    return template.replace('__JOB_ID__', encodeURIComponent(String(jobId)));
                 }
 
                 function qs(id) {
@@ -2507,6 +2507,36 @@ class extends Component
                     }
                 }
 
+                async function loadRenderById(jobId) {
+                    const normalizedId = String(jobId || '');
+
+                    if (!normalizedId) {
+                        await applyRender(null, { persist: false });
+                        return null;
+                    }
+
+                    const url = buildOcrPayloadUrl(normalizedId);
+                    if (!url) {
+                        return null;
+                    }
+
+                    const response = await fetch(url, {
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json',
+                        },
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Failed to load OCR render (${response.status})`);
+                    }
+
+                    const render = await response.json();
+                    await applyRender(render, { persist: false });
+
+                    return render;
+                }
+
                 async function applyRender(render, { persist = true } = {}) {
                     S.currentRender = render || null;
 
@@ -2703,9 +2733,11 @@ class extends Component
                         formClear();
                     });
 
-                    Livewire.on('ocr-render-loaded', async (event) => {
-                        const render = event?.render || null;
-                        await applyRender(render, { persist: false });
+                    Livewire.on('ocr-render-selected', async (event) => {
+                        const jobId = event?.jobId || null;
+                        if (jobId) {
+                            await loadRenderById(jobId);
+                        }
                     });
 
                     Livewire.on('ocr-render-cleared', async () => {
@@ -2732,9 +2764,9 @@ class extends Component
 
                     Livewire.on('ocr-job-completed', async (event) => {
                         try { localStorage.removeItem('ocr_spa_job_v1'); } catch (_) {}
-                        const render = event?.render || null;
-                        if (render) {
-                            await applyRender(render, { persist: false });
+                        const jobId = event?.jobId || null;
+                        if (jobId) {
+                            await loadRenderById(jobId);
                         }
                     });
 
@@ -2765,9 +2797,9 @@ class extends Component
                         formRestoreIfNeeded();
                         watchAndPersistForm();
 
-                        const initial = S.currentRender;
-                        if (initial && initial.id) {
-                            await applyRender(initial, { persist: false });
+                        const selectedRenderId = getSelectedRenderIdFromDom();
+                        if (selectedRenderId) {
+                            await loadRenderById(selectedRenderId);
                         } else {
                             clearViewerUi();
                         }

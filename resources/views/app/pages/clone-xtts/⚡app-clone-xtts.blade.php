@@ -17,6 +17,7 @@ use App\Models\Tool;
 use App\Models\ToolAction;
 use App\Models\MlJob;
 use App\Models\CustomerUsage;
+use App\Support\AppToolCatalog;
 
 use App\Services\Providers\RunPodProvider;
 use App\Services\Billing\CreditService;
@@ -315,7 +316,7 @@ class extends Component
         $customerId = auth('app')->id();
         $locale = app()->getLocale();
 
-        $toolId = Tool::where('code', $this->toolCode)->value('id');
+        $toolId = app(AppToolCatalog::class)->toolId($this->toolCode);
 
         $paginator = MlJob::query()
             ->where('customer_id', $customerId)
@@ -433,9 +434,7 @@ class extends Component
             return 0;
         }
 
-        $toolId = Tool::query()
-            ->where('code', $this->toolCode)
-            ->value('id');
+        $toolId = app(AppToolCatalog::class)->toolId($this->toolCode);
 
         if (!$toolId) {
             return 0;
@@ -827,7 +826,7 @@ class extends Component
     public function deleteRender(string $jobId, XttsJobSyncService $sync): void
     {
         $customerId = auth('app')->id();
-        $toolId = Tool::where('code', $this->toolCode)->value('id');
+        $toolId = app(AppToolCatalog::class)->toolId($this->toolCode);
 
         $job = MlJob::query()
             ->with('tool')
@@ -961,7 +960,7 @@ class extends Component
     protected function hydrateCurrentJobFromDb(): void
     {
         $customerId = auth('app')->id();
-        $toolId = Tool::where('code', $this->toolCode)->value('id');
+        $toolId = app(AppToolCatalog::class)->toolId($this->toolCode);
 
         if (!$customerId || !$toolId) {
             return;
@@ -1046,7 +1045,7 @@ class extends Component
 
 <div id="clone-xtts-page-root">
     @if($currentJobId && !$jobFinished)
-        <div wire:poll.4000ms="pollJob"></div>
+        <div wire:poll.visible.6000ms="pollJob"></div>
     @endif
 
     @php
@@ -1212,7 +1211,7 @@ class extends Component
                             <div class="row g-3 align-items-end">
                                 <div class="col-md-4">
                                     <label class="form-label">{{ __('Preset') }}</label>
-                                    <select class="form-select" wire:model.live="selectedPreset">
+                                    <select class="form-select" wire:model.change="selectedPreset">
                                         @foreach($presets as $k => $v)
                                             <option value="{{ $k }}">{{ __($v) }}</option>
                                         @endforeach
@@ -1223,7 +1222,7 @@ class extends Component
                                     <label class="form-label">Language</label>
                                     <input type="text"
                                            class="form-control"
-                                           wire:model.live.debounce.300ms="language"
+                                           wire:model.change="language"
                                            maxlength="8"
                                            placeholder="ar">
                                     @error('language')
@@ -1233,7 +1232,7 @@ class extends Component
 
                                 <div class="col-md-2">
                                     <label class="form-label">{{ __('Max Words') }}</label>
-                                    <input type="number" class="form-control" wire:model.live="max_words" min="5" max="80">
+                                    <input type="number" class="form-control" wire:model.change="max_words" min="5" max="80">
                                     @error('max_words')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
                                     @enderror
@@ -1241,7 +1240,7 @@ class extends Component
 
                                 <div class="col-md-2">
                                     <label class="form-label">{{ __('Fade (ms)') }}</label>
-                                    <input type="number" class="form-control" wire:model.live="fade_ms" min="0" max="1000">
+                                    <input type="number" class="form-control" wire:model.change="fade_ms" min="0" max="1000">
                                     @error('fade_ms')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
                                     @enderror
@@ -1249,7 +1248,7 @@ class extends Component
 
                                 <div class="col-md-12">
                                     <div class="form-check form-switch mt-2">
-                                        <input class="form-check-input" type="checkbox" id="splitSwitchCloneXTTS" wire:model.live="split">
+                                        <input class="form-check-input" type="checkbox" id="splitSwitchCloneXTTS" wire:model.change="split">
                                         <label class="form-check-label" for="splitSwitchCloneXTTS">{{ __('Split long text automatically') }}</label>
                                     </div>
                                 </div>
@@ -2180,11 +2179,6 @@ class extends Component
             formRestoreIfNeeded();
             watchAndPersistForm();
 
-            const idle = 'requestIdleCallback' in window
-                ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
-                : (cb) => setTimeout(cb, 500);
-
-            idle(() => preloadAndRenderRecentAudio());
         };
 
         setTimeout(runBoot, 0);

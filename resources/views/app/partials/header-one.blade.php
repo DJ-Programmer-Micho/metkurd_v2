@@ -452,16 +452,8 @@ $notifications = [];
             
             <livewire:partials.process-slots />
             @php
-                $c =  auth('app')->user();
-                $planCode = $c?->serviceCode() ?? 'free';
-                $planName = strtoupper($planCode);
-
-                $planClass = match ($planCode) {
-                    'premium' => 'bg-warning text-dark',
-                    'pro'     => 'bg-success',
-                    'student' => 'bg-info',
-                    default   => 'bg-secondary',
-                };
+                $shell = app(\App\Support\AppShellData::class)->forCurrentCustomer();
+                $profile = $shell['profile'] ?? null;
             @endphp
             <div class="dropdown ms-sm-3 header-item topbar-user" wire:ignore>
                 <button type="button" class="btn" id="page-header-user-dropdown"
@@ -471,48 +463,48 @@ $notifications = [];
                         <div class="position-relative me-2">
                             <img class="rounded-circle header-profile-user"
                                 style="width:38px;height:38px;object-fit:cover;"
-                                src="{{ auth('app')->user()->profile->avatar_url ?? app('userImg') }}"
-                                alt="{{ auth('app')->user()->profile->first_name ?? __('User') }}">
+                                src="{{ $profile?->avatar_url ?? app('userImg') }}"
+                                alt="{{ $profile?->first_name ?? __('User') }}">
 
                             {{-- ✅ badge position fixed --}}
-                            <span class="position-absolute badge rounded-pill {{ $planClass }}"
+                            <span class="position-absolute badge rounded-pill {{ $shell['plan_class'] ?? 'bg-secondary' }}"
                                 style="right:-8px; font-size:10px; padding:4px 6px; margin-top:27px;">
-                                {{ $planName }}
+                                {{ $shell['plan_name'] ?? 'FREE' }}
                             </span>
                         </div>
 
                         <span class="text-start">
                             <span class="d-none d-xl-inline-block fw-medium user-name-text">
-                                {{ auth('app')->user()->profile->first_name }} {{ auth('app')->user()->profile->last_name }}
+                                {{ trim(($profile?->first_name ?? '') . ' ' . ($profile?->last_name ?? '')) }}
                             </span>
                         </span>
 
                     </span>
                 </button>
                 <div class="dropdown-menu dropdown-menu-end">
-                    <h6 class="dropdown-header">{{__('Welcome')}} {{ auth('app')->user()->profile->first_name }}</h6>
-                    <a wire:navigate.hover class="dropdown-item" href="{{ route('app.profile',['locale' => app()->getLocale()]) }}">
+                    <h6 class="dropdown-header">{{ __('Welcome') }} {{ $profile?->first_name ?? __('Customer') }}</h6>
+                    <a wire:navigate class="dropdown-item" href="{{ route('app.profile',['locale' => app()->getLocale()]) }}">
                         <i class="mdi mdi-account-circle text-muted fs-16 align-middle me-1"></i>
                         <span class="align-middle">{{__('Profile')}}</span>
                     </a>
-                    <a wire:navigate.hover class="dropdown-item" href="{{ route('app.storage',['locale' => app()->getLocale()]) }}">
+                    <a wire:navigate class="dropdown-item" href="{{ route('app.storage',['locale' => app()->getLocale()]) }}">
                         <i class="mdi mdi-database-outline text-muted fs-16 align-middle me-1"></i>
                         <span class="align-middle">{{__('My Storage')}}</span>
                     </a>
-                    <a wire:navigate.hover class="dropdown-item" href="{{ route('app.billing',['locale' => app()->getLocale()]) }}">
+                    <a wire:navigate class="dropdown-item" href="{{ route('app.billing',['locale' => app()->getLocale()]) }}">
                         <i class="mdi mdi-chart-pie text-muted fs-16 align-middle me-1"></i>
                         <span class="align-middle">{{__('Billing')}}</span>
                     </a>
                     <hr class="my-1">
-                    <a wire:navigate.hover class="dropdown-item" href="{{ route('subscription-plan',['locale' => app()->getLocale()]) }}">
+                    <a wire:navigate class="dropdown-item" href="{{ route('subscription-plan',['locale' => app()->getLocale()]) }}">
                         <i class="mdi mdi-star-shooting-outline text-info fs-16 align-middle me-1"></i>
                         <span class="align-middle">{{__('Upgrade Plan')}}</span>
                     </a>
-                    <a wire:navigate.hover class="dropdown-item" href="{{ route('storage-plan',['locale' => app()->getLocale()]) }}">
+                    <a wire:navigate class="dropdown-item" href="{{ route('storage-plan',['locale' => app()->getLocale()]) }}">
                         <i class="mdi mdi-harddisk-plus fs-16 text-primary align-middle me-1"></i>
                         <span class="align-middle">{{__('Upgrade Storage')}}</span>
                     </a>
-                    <a wire:navigate.hover class="dropdown-item" href="{{ route('addon-credits',['locale' => app()->getLocale()]) }}">
+                    <a wire:navigate class="dropdown-item" href="{{ route('addon-credits',['locale' => app()->getLocale()]) }}">
                         <i class="mdi mdi-plus-circle-multiple-outline text-warning fs-16 align-middle me-1"></i>
                         <span class="align-middle">{{__('Buy Credits')}}</span>
                     </a>

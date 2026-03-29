@@ -242,12 +242,30 @@ class extends Component
     }
 
     #[Computed]
+    public function jobsSnapshot(): Collection
+    {
+        return (clone $this->jobsBaseQuery())
+            ->orderBy('created_at')
+            ->get([
+                'id',
+                'provider_job_id',
+                'job_kind',
+                'status',
+                'credits_charged',
+                'storage_in_bytes',
+                'storage_out_bytes',
+                'provider_cost_usd',
+                'created_at',
+            ]);
+    }
+
+    #[Computed]
     public function topStats(): array
     {
         $wallet = $this->wallet();
         $usage = $this->usage();
 
-        $jobs = (clone $this->jobsBaseQuery())->get();
+        $jobs = $this->jobsSnapshot();
 
         $creditsSpent = (int) $jobs->sum(fn ($job) => (int) ($job->credits_charged ?? 0));
         $storageIn = (int) $jobs->sum(fn ($job) => (int) ($job->storage_in_bytes ?? 0));
@@ -307,7 +325,7 @@ class extends Component
     #[Computed]
     public function toolBreakdown(): Collection
     {
-        $jobs = (clone $this->jobsBaseQuery())->get();
+        $jobs = $this->jobsSnapshot();
 
         return $jobs
             ->groupBy(fn ($job) => (string) ($job->job_kind ?: 'unknown'))
@@ -331,9 +349,7 @@ class extends Component
     #[Computed]
     public function timelineBreakdown(): Collection
     {
-        $jobs = (clone $this->jobsBaseQuery())
-            ->orderBy('created_at')
-            ->get();
+        $jobs = $this->jobsSnapshot();
 
         return $jobs
             ->groupBy(function ($job) {
@@ -366,7 +382,17 @@ class extends Component
             ->orderByDesc('created_at')
             ->paginate(
                 perPage: $this->jobsPerPage,
-                columns: ['*'],
+                columns: [
+                    'id',
+                    'provider_job_id',
+                    'job_kind',
+                    'status',
+                    'credits_charged',
+                    'storage_in_bytes',
+                    'storage_out_bytes',
+                    'provider_cost_usd',
+                    'created_at',
+                ],
                 pageName: 'jobsPage',
                 page: $this->getPage('jobsPage')
             );
@@ -560,7 +586,7 @@ class extends Component
                     <div class="row g-3 align-items-end">
                         <div class="col-xl-2 col-md-4">
                             <label class="form-label">{{ __('Period') }}</label>
-                            <select class="form-select" wire:model.live="periodPreset">
+                            <select class="form-select" wire:model.change="periodPreset">
                                 <option value="daily">{{ __('Daily') }}</option>
                                 <option value="weekly">{{ __('Weekly') }}</option>
                                 <option value="monthly">{{ __('Monthly') }}</option>
@@ -570,7 +596,7 @@ class extends Component
 
                         <div class="col-xl-2 col-md-4">
                             <label class="form-label">{{ __('Group By') }}</label>
-                            <select class="form-select" wire:model.live="groupBy">
+                            <select class="form-select" wire:model.change="groupBy">
                                 <option value="day">{{ __('Daily') }}</option>
                                 <option value="week">{{ __('Weekly') }}</option>
                                 <option value="month">{{ __('Monthly') }}</option>
@@ -579,7 +605,7 @@ class extends Component
 
                         <div class="col-xl-2 col-md-4">
                             <label class="form-label">{{ __('Tool') }}</label>
-                            <select class="form-select" wire:model.live="toolFilter">
+                            <select class="form-select" wire:model.change="toolFilter">
                                 @foreach($toolOptions as $key => $label)
                                     <option value="{{ $key }}">{{ __($label) }}</option>
                                 @endforeach
@@ -588,7 +614,7 @@ class extends Component
 
                         <div class="col-xl-2 col-md-4">
                             <label class="form-label">{{ __('Job Status') }}</label>
-                            <select class="form-select" wire:model.live="statusFilter">
+                            <select class="form-select" wire:model.change="statusFilter">
                                 <option value="all">{{ __('All') }}</option>
                                 <option value="done">{{ __('Done') }}</option>
                                 <option value="failed">{{ __('Failed') }}</option>
@@ -600,12 +626,12 @@ class extends Component
 
                         <div class="col-xl-2 col-md-4">
                             <label class="form-label">{{ __('From') }}</label>
-                            <input type="date" class="form-control" wire:model.live="dateFrom">
+                            <input type="date" class="form-control" wire:model.change="dateFrom">
                         </div>
 
                         <div class="col-xl-2 col-md-4">
                             <label class="form-label">{{ __('To') }}</label>
-                            <input type="date" class="form-control" wire:model.live="dateTo">
+                            <input type="date" class="form-control" wire:model.change="dateTo">
                         </div>
 
                         <div class="col-xl-8">
@@ -615,7 +641,7 @@ class extends Component
                                     type="text"
                                     class="form-control ps-5"
                                     placeholder="{{ __('Search job ID, provider job ID, tool, or status...') }}"
-                                    wire:model.live.debounce.350ms="search"
+                                    wire:model.live.debounce.500ms="search"
                                 >
                                 <i class="ri-search-line position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
                             </div>

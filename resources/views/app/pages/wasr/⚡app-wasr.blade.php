@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Tool;
 use App\Models\ToolAction;
 use App\Models\MlJob;
+use App\Support\AppToolCatalog;
 
 use App\Services\Providers\RunPodProvider;
 use App\Services\Billing\CreditService;
@@ -263,10 +264,7 @@ class extends Component
             return MlJob::query()->whereRaw('1=0')->paginate(5);
         }
 
-        $toolIds = Tool::query()
-            ->whereIn('code', [$this->toolCode, $this->fallbackToolCode])
-            ->pluck('id')
-            ->all();
+        $toolIds = app(AppToolCatalog::class)->toolIds([$this->toolCode, $this->fallbackToolCode]);
 
         $paginator = MlJob::query()
             ->where('customer_id', $customerId)
@@ -366,10 +364,7 @@ class extends Component
             return 0;
         }
 
-        $toolIds = Tool::query()
-            ->whereIn('code', [$this->toolCode, $this->fallbackToolCode])
-            ->pluck('id')
-            ->all();
+        $toolIds = app(AppToolCatalog::class)->toolIds([$this->toolCode, $this->fallbackToolCode]);
 
         return MlJob::query()
             ->where('customer_id', $customerId)
@@ -458,10 +453,7 @@ class extends Component
             return;
         }
 
-        $toolIds = Tool::query()
-            ->whereIn('code', [$this->toolCode, $this->fallbackToolCode])
-            ->pluck('id')
-            ->all();
+        $toolIds = app(AppToolCatalog::class)->toolIds([$this->toolCode, $this->fallbackToolCode]);
 
         $job = MlJob::query()
             ->where('customer_id', $customerId)
@@ -538,10 +530,7 @@ class extends Component
             return;
         }
 
-        $toolIds = Tool::query()
-            ->whereIn('code', [$this->toolCode, $this->fallbackToolCode])
-            ->pluck('id')
-            ->all();
+        $toolIds = app(AppToolCatalog::class)->toolIds([$this->toolCode, $this->fallbackToolCode]);
 
         $job = MlJob::query()
             ->where('customer_id', $customerId)
@@ -955,7 +944,7 @@ class extends Component
 
 <div id="wasr-page-root">
     @if($currentJobId && !$jobFinished)
-        <div wire:poll.5000ms="pollJob"></div>
+        <div wire:poll.visible.7000ms="pollJob"></div>
     @endif
 
     @php
@@ -1109,7 +1098,7 @@ class extends Component
                             <div class="row g-3 align-items-end mb-1">
                                 <div class="col-md-6">
                                     <label class="form-label">{{ __('Language') }}</label>
-                                    <select class="form-select" wire:model.live="language">
+                                    <select class="form-select" wire:model.change="language">
                                         @foreach($languageOptions as $code => $label)
                                             <option value="{{ $code }}">{{ __($label) }}</option>
                                         @endforeach
@@ -2124,11 +2113,6 @@ class extends Component
                         bindPreviewButtons();
                         cleanupOrphanPreviews();
 
-                        const idle = 'requestIdleCallback' in window
-                            ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
-                            : (cb) => setTimeout(cb, 500);
-
-                        idle(() => preloadAndRenderRecentAudio());
                     });
                 });
             });
@@ -2150,11 +2134,6 @@ class extends Component
             bindPreviewButtons();
             cleanupOrphanPreviews();
 
-            const idle = 'requestIdleCallback' in window
-                ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
-                : (cb) => setTimeout(cb, 500);
-
-            idle(() => preloadAndRenderRecentAudio());
         }, 0);
     }
 

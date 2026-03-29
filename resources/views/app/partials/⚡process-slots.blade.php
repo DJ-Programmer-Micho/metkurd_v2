@@ -18,13 +18,6 @@ new class extends Component {
     #[On('header:refresh')]
     #[On('customerPlanUpdated')]
     #[On('customerStorageUpdated')]
-    #[On('xtts-renders-refresh')]
-    #[On('clone-xtts-renders-refresh')]
-    #[On('wasr-renders-refresh')]
-    #[On('asr-renders-refresh')]
-    #[On('stem-renders-refresh')]
-    #[On('ocr-renders-refresh')]
-    #[On('youtube-downloads-refresh')]
     public function refreshSlots(): void
     {
         $this->hydrateBoard();
@@ -50,6 +43,7 @@ new class extends Component {
 
         $jobs = MlJob::query()
             ->with('tool:id,code')
+            ->select(['id', 'customer_id', 'tool_id', 'status', 'lock_expires_at', 'created_at', 'updated_at'])
             ->where('customer_id', (int) $customer->id)
             ->whereIn('status', ['queued', 'running', 'saving'])
             ->where(function ($query) {
@@ -170,9 +164,7 @@ new class extends Component {
 ?>
 <div class="d-flex align-items-center gap-2">
     @if($activeJobs > 0)
-        <div wire:poll.6000ms="pollJobs"></div>
-    @else
-        <div wire:poll.20000ms="pollJobs"></div>
+        <div wire:poll.visible.8000ms="pollJobs"></div>
     @endif
 
     <div class="mk-slot-summary" aria-label="{{ __('Active jobs') }}">
@@ -185,7 +177,7 @@ new class extends Component {
         @foreach($slotsData as $slot)
             @if($slot['isClickable'] && $slot['route'])
                 <a href="{{ $slot['route'] }}"
-                   wire:navigate.hover
+                   wire:navigate
                    wire:key="process-slot-{{ $loop->index }}-{{ $slot['cellClass'] }}"
                    title="{{ $slot['title'] }}"
                    aria-label="{{ $slot['title'] }}"

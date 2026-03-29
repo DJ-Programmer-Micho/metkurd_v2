@@ -8,6 +8,7 @@ use App\Services\Security\JobExecutionLockService;
 use App\Services\Youtube\ProcessYoutubeDownloadJob;
 use App\Services\Youtube\YoutubeJobSyncService;
 use App\Services\Youtube\YoutubePreviewService;
+use App\Support\AppToolCatalog;
 use Illuminate\Contracts\Session\Session as SessionContract;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -236,10 +237,7 @@ class extends Component
             return MlJob::query()->whereRaw('1=0')->paginate(6);
         }
 
-        $toolIds = Tool::query()
-            ->whereIn('code', [$this->audioToolCode, $this->videoToolCode])
-            ->pluck('id')
-            ->all();
+        $toolIds = app(AppToolCatalog::class)->toolIds([$this->audioToolCode, $this->videoToolCode]);
 
         $paginator = MlJob::query()
             ->where('customer_id', $customerId)
@@ -443,10 +441,7 @@ class extends Component
             return 0;
         }
 
-        $toolIds = Tool::query()
-            ->whereIn('code', [$this->audioToolCode, $this->videoToolCode])
-            ->pluck('id')
-            ->all();
+        $toolIds = app(AppToolCatalog::class)->toolIds([$this->audioToolCode, $this->videoToolCode]);
 
         return MlJob::query()
             ->where('customer_id', $customerId)
@@ -508,30 +503,16 @@ class extends Component
 
     protected function loadDownloadOptionMaps(): void
     {
-        $actions = ToolAction::query()
-            ->whereIn('tool_code', [$this->audioToolCode, $this->videoToolCode])
-            ->where('is_active', true)
-            ->orderBy('id')
-            ->get(['tool_code', 'action_code', 'name']);
-
+        $maps = app(AppToolCatalog::class)->actionOptionMaps([$this->audioToolCode, $this->videoToolCode]);
         $audio = [];
         $video = [];
 
-        foreach ($actions as $action) {
-            $toolCode = (string) $action->tool_code;
-            $actionCode = trim((string) $action->action_code);
+        foreach (($maps[$this->audioToolCode] ?? []) as $actionCode => $name) {
+            $audio[$actionCode] = $this->youtubeActionLabel($this->audioToolCode, (string) $actionCode, (string) $name);
+        }
 
-            if ($actionCode === '') {
-                continue;
-            }
-
-            $label = $this->youtubeActionLabel($toolCode, $actionCode, (string) $action->name);
-
-            if ($toolCode === $this->audioToolCode) {
-                $audio[$actionCode] = $label;
-            } elseif ($toolCode === $this->videoToolCode) {
-                $video[$actionCode] = $label;
-            }
+        foreach (($maps[$this->videoToolCode] ?? []) as $actionCode => $name) {
+            $video[$actionCode] = $this->youtubeActionLabel($this->videoToolCode, (string) $actionCode, (string) $name);
         }
 
         $this->audioFormatOptions = $this->sortYoutubeOptions(
@@ -780,10 +761,7 @@ class extends Component
             return;
         }
 
-        $toolIds = Tool::query()
-            ->whereIn('code', [$this->audioToolCode, $this->videoToolCode])
-            ->pluck('id')
-            ->all();
+        $toolIds = app(AppToolCatalog::class)->toolIds([$this->audioToolCode, $this->videoToolCode]);
 
         $job = MlJob::query()
             ->where('customer_id', $customerId)
@@ -885,7 +863,7 @@ class extends Component
             $this->previewBillableMinutes = isset($data['billable_minutes']) ? (int) $data['billable_minutes'] : null;
             $this->previewEntriesCount = isset($data['entries_count']) ? (int) $data['entries_count'] : null;
             $this->previewWebpageUrl = (string) ($data['webpage_url'] ?? trim($this->url));
-            $this->previewEntries = (array) ($data['entries'] ?? []);
+            $this->previewEntries = array_slice((array) ($data['entries'] ?? []), 0, 12);
 
             $this->syncCostPreview();
 
@@ -1167,7 +1145,7 @@ class extends Component
 
             if (isset($result['log_lines']) && is_array($result['log_lines'])) {
                 if ($result['log_lines'] !== [] || ! $terminal) {
-                    $this->currentLogLines = $result['log_lines'];
+                    $this->currentLogLines = array_slice((array) ($result['log_lines'] ?? []), -80);
                 }
             }
 
@@ -1310,10 +1288,7 @@ class extends Component
 
     public function reuseDownload(string $jobId): void
     {
-        $toolIds = Tool::query()
-            ->whereIn('code', [$this->audioToolCode, $this->videoToolCode])
-            ->pluck('id')
-            ->all();
+        $toolIds = app(AppToolCatalog::class)->toolIds([$this->audioToolCode, $this->videoToolCode]);
 
         $job = MlJob::query()
             ->where('id', $jobId)
@@ -1440,7 +1415,7 @@ class extends Component
 
 <div id="youtube-page-root">
     @if($currentJobId && !$jobFinished)
-        <div wire:poll.5000ms="pollJob"></div>
+        <div wire:poll.visible.7000ms="pollJob"></div>
     @endif
 
     @php
@@ -1781,7 +1756,7 @@ class extends Component
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label">{{ __('Download Mode') }}</label>
-                                    <select class="form-select" wire:model.live="downloadMode">
+                                    <select class="form-select" wire:model.change="downloadMode">
                                         <option value="audio">{{ __('Audio') }}</option>
                                         <option value="video">{{ __('Video') }}</option>
                                     </select>
@@ -1793,7 +1768,7 @@ class extends Component
                                         <select
                                             id="youtube-audio-format"
                                             class="form-select"
-                                            wire:model.live="audioFormat"
+                                            wire:model.change="audioFormat"
                                             wire:key="youtube-audio-format-select"
                                         >
                                             @foreach($audioFormatOptions as $value => $label)
@@ -1805,7 +1780,7 @@ class extends Component
                                         <select
                                             id="youtube-video-quality"
                                             class="form-select"
-                                            wire:model.live="videoQuality"
+                                            wire:model.change="videoQuality"
                                             wire:key="youtube-video-quality-select"
                                         >
                                             @foreach($videoQualityOptions as $value => $label)
@@ -1820,7 +1795,7 @@ class extends Component
                                         <input
                                             class="form-check-input"
                                             type="checkbox"
-                                            wire:model.live="includeThumbnail"
+                                            wire:model.change="includeThumbnail"
                                             id="youtube-include-thumbnail"
                                         >
                                         <label class="form-check-label" for="youtube-include-thumbnail">

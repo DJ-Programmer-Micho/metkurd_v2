@@ -24,13 +24,6 @@ class extends Component
     #[On('header:refresh')]
     #[On('customerPlanUpdated')]
     #[On('customerStorageUpdated')]
-    #[On('xtts-renders-refresh')]
-    #[On('clone-xtts-renders-refresh')]
-    #[On('wasr-renders-refresh')]
-    #[On('asr-renders-refresh')]
-    #[On('stem-renders-refresh')]
-    #[On('ocr-renders-refresh')]
-    #[On('youtube-downloads-refresh')]
     public function refreshDashboard(): void
     {
         $this->refreshTick++;
@@ -544,7 +537,7 @@ class extends Component
 
 <x-slot:title>{{ __('Dashboard') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div class="mk-home-dashboard" wire:poll.15000ms="refreshDashboard">
+<div class="mk-home-dashboard" wire:poll.visible.30000ms="refreshDashboard">
     <style>
         .mk-home-dashboard {
             --mk-ink: #0f172a;
@@ -785,13 +778,13 @@ class extends Component
                         </div>
 
                         <div class="d-flex flex-wrap gap-2">
-                            <a wire:navigate.hover href="{{ route('app.storage', ['locale' => app()->getLocale()]) }}" class="btn btn-light btn-label waves-effect waves-light">
+                            <a wire:navigate href="{{ route('app.storage', ['locale' => app()->getLocale()]) }}" class="btn btn-light btn-label waves-effect waves-light">
                                 <i class="ri-folder-line label-icon align-middle fs-16 me-2"></i>{{ __('My Storage') }}
                             </a>
-                            <a wire:navigate.hover href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-light btn-label waves-effect waves-light">
+                            <a wire:navigate href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-light btn-label waves-effect waves-light">
                                 <i class="ri-wallet-3-line label-icon align-middle fs-16 me-2"></i>{{ __('Billing') }}
                             </a>
-                            <a wire:navigate.hover href="{{ route('app.profile', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-light btn-label waves-effect waves-light">
+                            <a wire:navigate href="{{ route('app.profile', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-light btn-label waves-effect waves-light">
                                 <i class="ri-user-settings-line label-icon align-middle fs-16 me-2"></i>{{ __('Profile') }}
                             </a>
                         </div>
@@ -953,7 +946,7 @@ class extends Component
                                             <h5 class="mb-2">{{ $action['label'] }}</h5>
                                             <p class="text-muted mb-3">{{ $action['description'] }}</p>
 
-                                            <a wire:navigate.hover href="{{ $action['route'] }}" class="btn btn-sm btn-outline-dark">
+                                            <a wire:navigate href="{{ $action['route'] }}" class="btn btn-sm btn-outline-dark">
                                                 {{ $action['cta'] }}
                                             </a>
                                         </div>
@@ -964,7 +957,7 @@ class extends Component
                                     <div class="border rounded-4 p-4 text-center bg-light-subtle">
                                         <h6 class="mb-2">{{ __('No active tools on this plan') }}</h6>
                                         <p class="text-muted mb-3">{{ __('Your current plan or the global service status is hiding the available tool shortcuts.') }}</p>
-                                        <a wire:navigate.hover href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-sm btn-outline-dark">
+                                        <a wire:navigate href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-sm btn-outline-dark">
                                             {{ __('Open Billing') }}
                                         </a>
                                     </div>
@@ -1027,13 +1020,13 @@ class extends Component
                         </div>
 
                         <div class="d-flex flex-wrap gap-2 mt-4">
-                            <a wire:navigate.hover href="{{ route('app.profile', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-primary btn-sm">
+                            <a wire:navigate href="{{ route('app.profile', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-primary btn-sm">
                                 {{ __('Edit profile') }}
                             </a>
-                            <a wire:navigate.hover href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-dark btn-sm">
+                            <a wire:navigate href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-dark btn-sm">
                                 {{ __('Open billing') }}
                             </a>
-                            <a wire:navigate.hover href="{{ route('app.storage', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-info btn-sm">
+                            <a wire:navigate href="{{ route('app.storage', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-info btn-sm">
                                 {{ __('Review storage') }}
                             </a>
                         </div>
@@ -1098,11 +1091,11 @@ class extends Component
                                 <h6 class="mb-1">{{ __('No activity yet') }}</h6>
                                 <p class="text-muted mb-3">{{ __('Once the customer starts using the tools, activity will appear here.') }}</p>
                                 @if($this->canOpenTool('tts'))
-                                    <a wire:navigate.hover href="{{ route('app.xtts', ['locale' => app()->getLocale()]) }}" class="btn btn-primary btn-sm">
+                                    <a wire:navigate href="{{ route('app.xtts', ['locale' => app()->getLocale()]) }}" class="btn btn-primary btn-sm">
                                         {{ __('Start with XTTS') }}
                                     </a>
                                 @else
-                                    <a wire:navigate.hover href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-dark btn-sm">
+                                    <a wire:navigate href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-dark btn-sm">
                                         {{ __('Review Plan Access') }}
                                     </a>
                                 @endif
@@ -1155,7 +1148,7 @@ class extends Component
                                                 <div class="small text-muted mb-1">{{ __('Charged') }}</div>
                                                 <div class="fw-semibold">{{ $this->formatCredits((int) ($job->credits_charged ?? 0)) }}</div>
                                                 @if($this->canOpenTool($toolCode))
-                                                    <a wire:navigate.hover href="{{ $this->routeForTool($toolCode) }}" class="small text-decoration-underline">
+                                                    <a wire:navigate href="{{ $this->routeForTool($toolCode) }}" class="small text-decoration-underline">
                                                         {{ __('Open tool') }}
                                                     </a>
                                                 @endif
@@ -1174,8 +1167,8 @@ class extends Component
                                 <h6 class="mb-1">{{ __('No active jobs right now') }}</h6>
                                 <p class="text-muted mb-3">{{ __('Queued, running, and saving jobs will appear here automatically.') }}</p>
                                 <div class="d-flex justify-content-center gap-2 flex-wrap">
-                                    <a wire:navigate.hover href="{{ route('app.stem', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-success btn-sm">{{ __('Open STEM') }}</a>
-                                    <a wire:navigate.hover href="{{ route('app.youtube', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-dark btn-sm">{{ __('Open YouTube') }}</a>
+                                    <a wire:navigate href="{{ route('app.stem', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-success btn-sm">{{ __('Open STEM') }}</a>
+                                    <a wire:navigate href="{{ route('app.youtube', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-dark btn-sm">{{ __('Open YouTube') }}</a>
                                 </div>
                             </div>
                         @endif
@@ -1234,7 +1227,7 @@ class extends Component
                                     <td>{{ $this->formatCredits((int) ($job->credits_charged ?? 0)) }}</td>
                                     <td class="text-end">
                                         @if($this->canOpenTool($toolCode))
-                                            <a wire:navigate.hover href="{{ $this->routeForTool($toolCode) }}" class="btn btn-sm btn-outline-dark">
+                                            <a wire:navigate href="{{ $this->routeForTool($toolCode) }}" class="btn btn-sm btn-outline-dark">
                                                 {{ __('View tool') }}
                                             </a>
                                         @endif

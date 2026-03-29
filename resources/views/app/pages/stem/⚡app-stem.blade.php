@@ -21,6 +21,7 @@ use App\Services\Providers\RunPodProvider;
 use App\Services\Security\JobExecutionLockService;
 use App\Services\STEM\StemJobSyncService;
 use App\Services\Storage\CustomerOutputStorage;
+use App\Support\AppRenderPayloads;
 
 new
 #[Layout('app::layouts.app')]
@@ -62,7 +63,7 @@ class extends Component
     public string $search = '';
     public bool $showEliminateModal = false;
     public ?string $latestFinishedJobId = null;
-    public ?array $loadedRender = null;
+    public ?string $selectedRenderId = null;
     public int $rendersRefreshKey = 0;
     public int $walletBalance = 0;
     public int $creditsCost = 0;
@@ -126,10 +127,7 @@ class extends Component
 
         $paginator->setCollection(
             $paginator->getCollection()->values()->map(function (MlJob $job, int $index) {
-                return array_merge(
-                    $this->buildRenderPayload($job),
-                    ['is_latest' => $index === 0]
-                );
+                return array_merge(AppRenderPayloads::stemSummary($job), ['is_latest' => $index === 0]);
             })
         );
 
@@ -243,7 +241,7 @@ class extends Component
         $customerId = auth('app')->id();
         if (!$customerId) {
             $this->latestFinishedJobId = null;
-            $this->loadedRender = null;
+            $this->selectedRenderId = null;
 
             if ($dispatchBrowserEvent) {
                 $this->dispatch('stem-render-cleared');
@@ -255,7 +253,7 @@ class extends Component
         $latestJob = $this->latestFinishedStemJob();
         $this->latestFinishedJobId = $latestJob ? (string) $latestJob->id : null;
 
-        $selectedId = (string) ($this->loadedRender['id'] ?? '');
+        $selectedId = (string) ($this->selectedRenderId ?? '');
         $selectedJob = $selectedId !== ''
             ? $this->finishedStemJobById($selectedId)
             : null;
@@ -270,7 +268,7 @@ class extends Component
             return;
         }
 
-        $this->loadedRender = null;
+        $this->selectedRenderId = null;
 
         if ($dispatchBrowserEvent) {
             $this->dispatch('stem-render-cleared');
@@ -445,65 +443,28 @@ class extends Component
         return null;
     }
 
-    protected function availableTracks(int $mode): array
+    protected function setLoadedRenderFromJob(MlJob $job, bool $dispatchBrowserEvent = true): void
     {
-        return $mode === 2
-            ? ['original', 'vocals', 'instrumental']
-            : ['original', 'vocals', 'drums', 'bass', 'other'];
-    }
-
-    protected function buildRenderPayload(MlJob $job): array
-    {
-        $locale = app()->getLocale();
-        $mode = (int) (data_get($job->meta, 'separation_mode') ?: data_get($job->input, 'stems', 4));
-        $tracks = $this->availableTracks($mode);
-
-        $streams = [];
-        $downloads = [];
-
-        foreach ($tracks as $track) {
-            $streams[$track] = route('app.renders.stem.stream', [
-                'locale' => $locale,
-                'jobId' => (string) $job->id,
-                'track' => $track,
-            ]) . '?proxy=1';
-
-            $downloads[$track] = route('app.renders.stem.download', [
-                'locale' => $locale,
-                'jobId' => (string) $job->id,
-                'track' => $track,
-            ]);
-        }
-
-        $downloads['all'] = route('app.renders.stem.zip', [
-            'locale' => $locale,
-            'jobId' => (string) $job->id,
-        ]);
-
-        return [
-            'id' => (string) $job->id,
-            'mode' => $mode,
-            'tracks' => $tracks,
-            'stems' => $streams,
-            'downloads' => $downloads,
-            'meta' => (array) ($job->meta ?? []),
-            'input_name' => (string) data_get($job->input, 'audio_name', __('Untitled audio')),
-            'created_at' => optional($job->finished_at ?? $job->created_at)->format('Y-m-d H:i'),
-            'created_at_human' => optional($job->finished_at ?? $job->created_at)->diffForHumans(),
-        ];
-    }
-
-    protected function setLoadedRenderFromJob(MlJob $job, bool $dispatchBrowserEvent = true): array
-    {
-        $render = $this->buildRenderPayload($job);
-        $this->loadedRender = $render;
-        $this->latestFinishedJobId = (string) $job->id;
+        $jobId = (string) $job->id;
+        $this->selectedRenderId = $jobId;
 
         if ($dispatchBrowserEvent) {
-            $this->dispatch('stem-render-loaded', render: $render);
+            $this->dispatch('stem-render-selected', jobId: $jobId);
+        }
+    }
+
+    #[Computed]
+    public function selectedRenderSummary(): ?array
+    {
+        $jobId = (string) ($this->selectedRenderId ?: $this->latestFinishedJobId ?: '');
+
+        if ($jobId === '') {
+            return null;
         }
 
-        return $render;
+        $job = $this->finishedStemJobById($jobId);
+
+        return $job ? AppRenderPayloads::stemSummary($job) : null;
     }
 
     public function submit(
@@ -805,8 +766,8 @@ class extends Component
                 ->first();
 
             if ($fresh) {
-                $render = $this->setLoadedRenderFromJob($fresh);
-                $this->dispatch('stem-job-completed', render: $render);
+                $this->setLoadedRenderFromJob($fresh, false);
+                $this->dispatch('stem-job-completed', jobId: (string) $fresh->id);
             } else {
                 $this->dispatch('stem-job-completed');
             }
@@ -865,9 +826,9 @@ class extends Component
         try {
             $storage->deleteStemOutputs($job);
 
-            $deletedLoadedRender = (($this->loadedRender['id'] ?? null) === (string) $job->id);
+            $deletedLoadedRender = ($this->selectedRenderId === (string) $job->id);
             if ($deletedLoadedRender) {
-                $this->loadedRender = null;
+                $this->selectedRenderId = null;
             }
 
             $this->resetPage();
@@ -974,10 +935,11 @@ class extends Component
 
 <div id="stem-page-root">
     @if($currentJobId && !$jobFinished)
-        <div wire:poll.5000ms="pollJob"></div>
+        <div wire:poll.visible.7000ms="pollJob"></div>
     @endif
 
     @php
+        $selectedRenderSummary = $this->selectedRenderSummary();
         $stemColors = [
             'original' => '#95a5a6',
             'vocals' => '#e74c3c',
@@ -999,8 +961,8 @@ class extends Component
             };
         };
 
-        $latestTitle = $loadedRender['input_name'] ?? null;
-        $latestTitle = $latestTitle ?: ($loadedRender['id'] ?? '-');
+        $latestTitle = $selectedRenderSummary['input_name'] ?? null;
+        $latestTitle = $latestTitle ?: ($selectedRenderSummary['id'] ?? '-');
 
         $status = $currentStatus ?? 'queued';
         $statusLabel = match ($status) {
@@ -1196,14 +1158,14 @@ class extends Component
                                 </div>
 
                                 <div class="d-flex align-items-center gap-2">
-                                    @if($loadedRender && isset($loadedRender['downloads']['all']))
+                                    @if($selectedRenderSummary && isset($selectedRenderSummary['downloads']['all']))
                                         <small id="stem-current-render-label" class="text-muted mt-2 mt-md-0 mr-2">
-                                            {{ __('Render:') }} <b id="stem-current-render-id">#{{ $loadedRender['id'] }}</b>
+                                            {{ __('Render:') }} <b id="stem-current-render-id">#{{ $selectedRenderSummary['id'] }}</b>
                                         </small>
                                         <a
                                             id="stem-download-all"
-                                            href="{{ $loadedRender['downloads']['all'] ?? '#' }}"
-                                            class="btn btn-sm btn-primary {{ isset($loadedRender['downloads']['all']) ? '' : 'disabled' }}"
+                                            href="{{ $selectedRenderSummary['downloads']['all'] ?? '#' }}"
+                                            class="btn btn-sm btn-primary {{ isset($selectedRenderSummary['downloads']['all']) ? '' : 'disabled' }}"
                                             title="{{ __('Download All as ZIP') }}"
                                         >
                                             <i class="mdi mdi-download"></i> {{ __('Download ZIP') }}
@@ -1224,15 +1186,19 @@ class extends Component
                                 </div>
                             </div>
 
-                            <input type="hidden" id="stem-latest-ready" value="{{ $loadedRender ? 1 : 0 }}">
-                            <input type="hidden" id="stem-latest-render-id" value="{{ $loadedRender['id'] ?? '' }}">
-                            <script type="application/json" id="stem-initial-render-data">{!! json_encode($loadedRender, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!}</script>
+                            <input type="hidden" id="stem-latest-ready" value="{{ $selectedRenderSummary ? 1 : 0 }}">
+                            <input type="hidden" id="stem-selected-render-id" value="{{ $selectedRenderSummary['id'] ?? '' }}">
+                            <input
+                                type="hidden"
+                                id="stem-render-payload-url-template"
+                                value="{{ route('app.renders.stem.payload', ['locale' => app()->getLocale(), 'jobId' => '__JOB_ID__']) }}"
+                            >
 
-                            <div id="stem-empty-state" class="{{ $loadedRender ? 'd-none' : '' }}">
+                            <div id="stem-empty-state" class="{{ $selectedRenderSummary ? 'd-none' : '' }}">
                                 <div class="text-muted small text-center py-4">{{ __('No output selected yet.') }}</div>
                             </div>
 
-                            <div id="stem-tracks-wrapper" wire:ignore class="{{ $loadedRender ? '' : 'd-none' }}">
+                            <div id="stem-tracks-wrapper" wire:ignore class="{{ $selectedRenderSummary ? '' : 'd-none' }}">
                                 <hr class="mt-3">
 
                                 <div class="stem-player-container">
@@ -1415,7 +1381,7 @@ class extends Component
                                     type="text"
                                     class="form-control form-control-sm"
                                     placeholder="{{ __('Search...') }}"
-                                    wire:model.live.debounce.300ms="search"
+                                    wire:model.live.debounce.500ms="search"
                                 >
                             </div>
 
@@ -2407,6 +2373,7 @@ class extends Component
             loadingRenderId: null,
             readyRenderId: null,
             renderLoadPromise: null,
+            renderPayloadPromise: null,
             loadToken: 0,
             lastDriftCheck: 0,
         };
@@ -2467,16 +2434,18 @@ class extends Component
         }
     }
 
-    function readInitialRender() {
-        const node = document.getElementById('stem-initial-render-data');
-        if (!node) return null;
+    function getSelectedRenderIdFromDom() {
+        return String(document.getElementById('stem-selected-render-id')?.value || '');
+    }
 
-        try {
-            return JSON.parse(node.textContent || 'null');
-        } catch (e) {
-            console.warn('[STEM] Failed to parse initial render payload', e);
-            return null;
+    function buildStemPayloadUrl(jobId) {
+        const template = document.getElementById('stem-render-payload-url-template')?.value || '';
+
+        if (!template || !jobId) {
+            return '';
         }
+
+        return template.replace('__JOB_ID__', encodeURIComponent(String(jobId)));
     }
 
     function clamp(value, min, max) {
@@ -2496,7 +2465,7 @@ class extends Component
         const idEl = document.getElementById('stem-current-render-id');
         const downloadAll = document.getElementById('stem-download-all');
         const readyEl = document.getElementById('stem-latest-ready');
-        const hiddenIdEl = document.getElementById('stem-latest-render-id');
+        const hiddenIdEl = document.getElementById('stem-selected-render-id');
 
         if (titleEl) {
             titleEl.textContent = render?.input_name || 'No output selected';
@@ -3326,6 +3295,70 @@ class extends Component
         throw new Error('WaveSurfer loader is unavailable');
     }
 
+    async function loadStemRenderById(jobId, options = {}) {
+        const { allowCache = true, persist = true, force = false } = options;
+        const normalizedId = String(jobId || '');
+
+        if (!normalizedId) {
+            clearStemRenderUI();
+            return null;
+        }
+
+        const currentId = String(S.currentRender?.id || '');
+        const cached = allowCache ? loadRenderFromCache(normalizedId) : null;
+
+        if (cached && (force || currentId !== normalizedId)) {
+            await loadStemRender(cached, { persist: false });
+        }
+
+        if (!force && currentId === normalizedId && S.readyRenderId === normalizedId) {
+            return S.currentRender;
+        }
+
+        if (S.loadingRenderId === normalizedId && S.renderPayloadPromise) {
+            return S.renderPayloadPromise;
+        }
+
+        const url = buildStemPayloadUrl(normalizedId);
+        if (!url) {
+            return cached;
+        }
+
+        S.loadingRenderId = normalizedId;
+
+        const request = (async () => {
+            const response = await fetch(url, {
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to load STEM render (${response.status})`);
+            }
+
+            const render = await response.json();
+            await loadStemRender(render, { persist });
+
+            return render;
+        })();
+
+        S.renderPayloadPromise = request;
+
+        try {
+            return await request;
+        } finally {
+            if (S.loadingRenderId === normalizedId) {
+                S.loadingRenderId = null;
+            }
+
+            if (S.renderPayloadPromise === request) {
+                S.renderPayloadPromise = null;
+            }
+        }
+    }
+
     async function loadStemRender(render, options = {}) {
         if (!render || !render.id || !Array.isArray(render.tracks)) return;
 
@@ -3427,20 +3460,15 @@ class extends Component
 
     function syncRenderFromServerDom(options = {}) {
         const { allowCache = false } = options;
-        const serverRender = readInitialRender();
-        const serverId = String(serverRender?.id || '');
+        const serverId = getSelectedRenderIdFromDom();
         const currentId = String(S.currentRender?.id || '');
 
         if (serverId) {
-            if (currentId !== serverId && S.loadingRenderId !== serverId) {
-                loadStemRender(serverRender, { persist: false });
+            if (currentId !== serverId || S.readyRenderId !== serverId) {
+                loadStemRenderById(serverId, { allowCache, persist: true }).catch((error) => {
+                    console.warn('[STEM] Failed to sync render payload', error);
+                });
                 return;
-            }
-
-            if (currentId === serverId) {
-                S.currentRender = { ...S.currentRender, ...serverRender };
-            } else {
-                S.currentRender = serverRender;
             }
 
             updateLatestHeader(S.currentRender);
@@ -3452,7 +3480,9 @@ class extends Component
 
             const rowsMounted = document.querySelectorAll('#stem-tracks .stem-track-row').length === (S.currentRender?.tracks || []).length;
             if (!rowsMounted) {
-                loadStemRender(S.currentRender, { persist: false });
+                loadStemRenderById(serverId, { allowCache, persist: true, force: true }).catch((error) => {
+                    console.warn('[STEM] Failed to rebuild render rows', error);
+                });
                 return;
             }
 
@@ -3484,10 +3514,12 @@ class extends Component
         if (!window.Livewire || S.eventsBound) return;
         S.eventsBound = true;
 
-        Livewire.on('stem-render-loaded', (event) => {
-            const render = event?.render || null;
-            if (render) {
-                loadStemRender(render);
+        Livewire.on('stem-render-selected', (event) => {
+            const jobId = event?.jobId || null;
+            if (jobId) {
+                loadStemRenderById(jobId, { allowCache: true, persist: true }).catch((error) => {
+                    console.warn('[STEM] Failed to load selected render', error);
+                });
             }
         });
 
@@ -3513,29 +3545,17 @@ class extends Component
         Livewire.on('stem-job-completed', (event) => {
             spaClear();
 
-            const render = event?.render || null;
-            if (render) {
-                loadStemRender(render);
+            const jobId = event?.jobId || null;
+            if (jobId) {
+                loadStemRenderById(jobId, { allowCache: false, persist: true, force: true }).catch((error) => {
+                    console.warn('[STEM] Failed to load completed render', error);
+                });
             }
 
             requestAnimationFrame(() => {
                 highlightLatestRender();
             });
         });
-
-        if (!S.commitHooked && typeof Livewire.hook === 'function') {
-            S.commitHooked = true;
-
-            Livewire.hook('commit', ({ succeed }) => {
-                succeed(() => {
-                    requestAnimationFrame(() => {
-                        syncRenderFromServerDom();
-                        updateTrackButtonStates();
-                        updateMasterControls();
-                    });
-                });
-            });
-        }
     }
 
     function bootStemRenderPage() {

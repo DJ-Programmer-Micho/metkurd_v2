@@ -4,6 +4,7 @@ namespace App\Http\Controllers\App\Services;
 
 use App\Http\Controllers\Controller;
 use App\Models\MlJob;
+use App\Support\AppRenderPayloads;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -189,5 +190,12 @@ class OcrRenderController extends Controller
 
             abort(500, 'Input PDF stream failed.');
         }
+    }
+
+    public function payload(string $locale, string $jobId)
+    {
+        $job = $this->jobOrFail($jobId);
+
+        return response()->json(AppRenderPayloads::ocr($job, $locale));
     }
 }

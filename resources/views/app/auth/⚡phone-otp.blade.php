@@ -367,9 +367,9 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
 <div class="row"
     @if ($flag === 1)
-        wire:poll.1s="tick"
+        wire:poll.visible.1s="tick"
     @elseif ($flag === 0 && ($cooldownRemaining > 0 || $this->isLocked))
-        wire:poll.5s="tick"
+        wire:poll.visible.5s="tick"
     @endif>
     <div class="col-lg-12">
         <div class="card m-0" style="box-shadow: -12px -6px 45px 10px rgb(204 0 34 / 0.15);">

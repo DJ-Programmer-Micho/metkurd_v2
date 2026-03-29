@@ -9,6 +9,7 @@ use Livewire\WithPagination;
 use App\Models\CustomerFile;
 use App\Models\CustomerUsage;
 use App\Models\MlJob;
+use App\Support\StorageBrowser;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -155,17 +156,14 @@ class extends Component
         }
 
         try {
-            DB::transaction(function () use ($customer) {
+            $browser = app(StorageBrowser::class);
+
+            DB::transaction(function () use ($customer, $browser) {
                 $prefix = $this->pendingDeleteType === 'folder'
                     ? $this->pendingDeletePath
                     : $this->resolveDeletePrefixForFile($this->pendingDeletePath);
 
-                $targets = $this->allFiles()
-                    ->filter(function (array $file) use ($prefix) {
-                        return $file['relative_path'] === $prefix
-                            || Str::startsWith($file['relative_path'], $prefix . '/');
-                    })
-                    ->values();
+                $targets = $browser->deleteTargetsByPrefix($customer, $prefix);
 
                 if ($targets->isEmpty()) {
                     return;
@@ -264,60 +262,11 @@ class extends Component
     }
 
     #[Computed]
-    public function allFiles(): Collection
+    public function toolStats(): array
     {
         $customer = auth('app')->user();
 
-        $rows = CustomerFile::query()
-            ->where('customer_id', (int) $customer->id)
-            ->where('status', 'active')
-            ->orderByDesc('created_at')
-            ->get();
-
-        return $rows->map(function (CustomerFile $file) {
-            $relative = $this->extractRelativePath((string) $file->path);
-
-            return [
-                'id'            => (int) $file->id,
-                'customer_id'   => (int) $file->customer_id,
-                'tool_code'     => (string) ($file->tool_code ?? ''),
-                'disk'          => (string) ($file->disk ?? 's3'),
-                'path'          => (string) $file->path,
-                'relative_path' => $relative,
-                'size_bytes'    => (int) ($file->size_bytes ?? 0),
-                'mime'          => (string) ($file->mime ?? 'application/octet-stream'),
-                'purpose'       => (string) ($file->purpose ?? 'render'),
-                'meta'          => (array) ($file->meta ?? []),
-                'created_at'    => $file->created_at,
-                'updated_at'    => $file->updated_at,
-                'basename'      => basename($relative ?: $file->path),
-                'extension'     => strtolower(pathinfo($relative ?: $file->path, PATHINFO_EXTENSION)),
-            ];
-        })->filter(fn (array $file) => $file['relative_path'] !== '')->values();
-    }
-
-    #[Computed]
-    public function toolStats(): array
-    {
-        $stats = [];
-        $allFiles = $this->allFiles();
-
-        foreach (array_keys($this->toolRoots) as $tool) {
-            $files = $allFiles
-                ->filter(fn (array $file) => Str::startsWith($file['relative_path'], $tool . '/'));
-
-            $stats[$tool] = [
-                'folder_count' => $files
-                    ->map(fn (array $file) => $this->jobFolderForTool($tool, $file['relative_path']))
-                    ->filter()
-                    ->unique()
-                    ->count(),
-                'file_count'   => $files->count(),
-                'size'         => (int) $files->sum('size_bytes'),
-            ];
-        }
-
-        return $stats;
+        return app(StorageBrowser::class)->toolStats($customer, $this->toolRoots);
     }
 
     #[Computed]
@@ -355,100 +304,23 @@ class extends Component
     #[Computed]
     public function folderCards(): Collection
     {
-        if ($this->path === '') {
-            return collect(array_keys($this->toolRoots))
-                ->map(function (string $tool) {
-                    $stats = $this->toolStats()[$tool] ?? ['folder_count' => 0, 'file_count' => 0, 'size' => 0];
-                    $cfg = $this->toolRoots[$tool];
+        $customer = auth('app')->user();
 
-                    return [
-                        'name'        => $tool,
-                        'label'       => $cfg['label'],
-                        'path'        => $tool,
-                        'item_count'  => (int) $stats['folder_count'],
-                        'item_label'  => __('Folders'),
-                        'size_bytes'  => (int) $stats['size'],
-                        'icon'        => $cfg['icon'],
-                        'color'       => $cfg['color'],
-                    ];
-                })
-                ->filter(fn (array $item) => $item['item_count'] > 0)
-                ->values();
-        }
-
-        $prefix = $this->path . '/';
-        $search = Str::lower(trim($this->search));
-
-        $folders = [];
-
-        foreach ($this->allFiles() as $file) {
-            $relative = $file['relative_path'];
-
-            if (!Str::startsWith($relative, $prefix)) {
-                continue;
-            }
-
-            $rest = substr($relative, strlen($prefix));
-
-            if ($rest === false || $rest === '' || !str_contains($rest, '/')) {
-                continue;
-            }
-
-            $next = explode('/', $rest)[0];
-
-            if ($search !== '' && !Str::contains(Str::lower($next), $search)) {
-                continue;
-            }
-
-            $folderPath = trim($this->path . '/' . $next, '/');
-
-            if (!isset($folders[$folderPath])) {
-                $folders[$folderPath] = [
-                    'name'       => $next,
-                    'label'      => $next,
-                    'path'       => $folderPath,
-                    'item_count' => 0,
-                    'item_label' => __('Files'),
-                    'size_bytes' => 0,
-                    'icon'       => 'ri-folder-2-fill',
-                    'color'      => 'warning',
-                ];
-            }
-
-            $folders[$folderPath]['item_count']++;
-            $folders[$folderPath]['size_bytes'] += (int) $file['size_bytes'];
-        }
-
-        return collect($folders)->sortBy('name')->values();
+        return app(StorageBrowser::class)->folderCards(
+            $customer,
+            $this->toolRoots,
+            $this->path,
+            $this->search,
+            $this->toolStats()
+        );
     }
 
     #[Computed]
     public function currentFolderFiles(): Collection
     {
-        $prefix = $this->path === '' ? '' : $this->path . '/';
-        $search = Str::lower(trim($this->search));
+        $customer = auth('app')->user();
 
-        return $this->allFiles()
-            ->filter(function (array $file) use ($prefix, $search) {
-                $relative = $file['relative_path'];
-
-                if ($prefix !== '' && !Str::startsWith($relative, $prefix)) {
-                    return false;
-                }
-
-                $rest = $prefix === '' ? $relative : substr($relative, strlen($prefix));
-
-                if ($rest === false || $rest === '' || str_contains($rest, '/')) {
-                    return false;
-                }
-
-                if ($search !== '' && !Str::contains(Str::lower($file['basename']), $search)) {
-                    return false;
-                }
-
-                return true;
-            })
-            ->values();
+        return app(StorageBrowser::class)->currentFolderFiles($customer, $this->path, $this->search);
     }
 
     #[Computed]
@@ -460,18 +332,14 @@ class extends Component
     #[Computed]
     public function filesPaginator(): LengthAwarePaginator
     {
-        $items = $this->currentFolderFiles();
-        $currentPage = $this->getPage();
+        $customer = auth('app')->user();
 
-        return new LengthAwarePaginator(
-            items: $items->forPage($currentPage, $this->perPage)->values(),
-            total: $items->count(),
-            perPage: $this->perPage,
-            currentPage: $currentPage,
-            options: [
-                'path' => request()->url(),
-                'pageName' => 'page',
-            ]
+        return app(StorageBrowser::class)->filesPaginator(
+            $customer,
+            $this->path,
+            $this->search,
+            $this->getPage(),
+            $this->perPage
         );
     }
 
@@ -525,29 +393,9 @@ class extends Component
     #[Computed]
     public function overviewStats(): array
     {
-        $groups = [
-            'Documents' => ['count' => 0, 'size' => 0, 'icon' => 'ri-file-text-line', 'color' => 'secondary'],
-            'Audio'     => ['count' => 0, 'size' => 0, 'icon' => 'ri-volume-up-line', 'color' => 'success'],
-            'JSON'      => ['count' => 0, 'size' => 0, 'icon' => 'ri-code-s-slash-line', 'color' => 'info'],
-            'Others'    => ['count' => 0, 'size' => 0, 'icon' => 'ri-folder-line', 'color' => 'warning'],
-        ];
+        $customer = auth('app')->user();
 
-        foreach ($this->allFiles() as $file) {
-            if ($this->isAudio($file['mime'], $file['extension'])) {
-                $key = 'Audio';
-            } elseif (in_array($file['extension'], ['txt', 'doc', 'docx', 'pdf'], true) || Str::contains($file['mime'], 'text/')) {
-                $key = 'Documents';
-            } elseif ($file['extension'] === 'json' || Str::contains($file['mime'], 'json')) {
-                $key = 'JSON';
-            } else {
-                $key = 'Others';
-            }
-
-            $groups[$key]['count']++;
-            $groups[$key]['size'] += (int) $file['size_bytes'];
-        }
-
-        return $groups;
+        return app(StorageBrowser::class)->overviewStats($customer);
     }
 
     protected function sanitizePath(?string $path): string
@@ -591,15 +439,7 @@ class extends Component
     {
         $path = $this->sanitizePath($path);
 
-        if ($path === '') {
-            return true;
-        }
-
-        if ($this->allFiles()->contains(fn (array $file) => $file['relative_path'] === $path || Str::startsWith($file['relative_path'], $path . '/'))) {
-            return true;
-        }
-
-        return false;
+        return app(StorageBrowser::class)->pathExists(auth('app')->user(), $path);
     }
 
     protected function parentPath(string $path): string
@@ -610,39 +450,12 @@ class extends Component
         return implode('/', $parts);
     }
 
-    protected function extractRelativePath(string $absolutePath): string
-    {
-        $absolutePath = str_replace('\\', '/', trim($absolutePath));
-
-        if (preg_match('#^renders/[^/]+/(.+)$#', $absolutePath, $m)) {
-            return trim($m[1], '/');
-        }
-
-        return trim($absolutePath, '/');
-    }
-
-    protected function jobFolderForTool(string $tool, string $relativePath): ?string
-    {
-        $relativePath = $this->sanitizePath($relativePath);
-        $prefix = $tool . '/';
-
-        if (!Str::startsWith($relativePath, $prefix)) {
-            return null;
-        }
-
-        $rest = substr($relativePath, strlen($prefix));
-
-        if ($rest === false || $rest === '' || !str_contains($rest, '/')) {
-            return null;
-        }
-
-        return $tool . '/' . explode('/', $rest)[0];
-    }
-
     protected function findFileByRelativePath(string $relativePath): ?array
     {
-        return $this->allFiles()
-            ->first(fn (array $file) => $file['relative_path'] === $this->sanitizePath($relativePath));
+        return app(StorageBrowser::class)->findFileByRelativePath(
+            auth('app')->user(),
+            $this->sanitizePath($relativePath)
+        );
     }
 
     protected function resolveDeletePrefixForFile(string $relativePath): string
@@ -923,6 +736,11 @@ class extends Component
         $usage = $this->usage();
         $toolStats = $this->toolStats();
         $storageSegments = $this->storageSegments();
+        $folderCards = $this->folderCards();
+        $filesPaginator = $this->filesPaginator();
+        $pagedFiles = $filesPaginator->getCollection();
+        $selectedPreview = $this->selectedFileData();
+        $overviewStats = $this->overviewStats();
     @endphp
 
     <div class="storage-shell">
@@ -947,7 +765,7 @@ class extends Component
                                         type="text"
                                         class="form-control bg-light border-light ps-5"
                                         placeholder="{{ __('Search files or folders...') }}"
-                                        wire:model.live.debounce.300ms="search"
+                                        wire:model.live.debounce.500ms="search"
                                     >
                                     <i class="ri-search-2-line search-icon position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
                                 </div>
@@ -1080,13 +898,13 @@ class extends Component
                                     </div>
                                     <div class="col-auto">
                                         <div class="text-muted small">
-                                            {{ $this->folderCards()->count() }} {{ __('folder(s)') }}
+                                            {{ $folderCards->count() }} {{ __('folder(s)') }}
                                         </div>
                                     </div>
                                 </div>
                                 
                                 <div class="row g-3">
-                                    @forelse($this->folderCards() as $folder)
+                                    @forelse($folderCards as $folder)
                                         <div class="col-xxl-3 col-md-4 col-sm-6">
                                             <div class="card shadow-none folder-tile {{ $path === $folder['path'] ? 'active' : '' }}">
                                                 <div class="card-body">
@@ -1136,14 +954,14 @@ class extends Component
                                 </div>
                                 
                             </div>
-                            @if (count($this->pagedFiles()))
+                            @if (count($pagedFiles))
                             <!-- Files -->
                             <div>
                                 <div class="d-flex align-items-center justify-content-between mb-3">
                                     <h5 class="flex-grow-1 fs-16 mb-0">{{ __('Files') }}</h5>
                                     <div class="text-muted small">
-                                        {{ __('Showing') }} {{ $this->filesPaginator()->firstItem() ?? 0 }} - {{ $this->filesPaginator()->lastItem() ?? 0 }}
-                                        {{ __('of') }} {{ $this->filesPaginator()->total() }}
+                                        {{ __('Showing') }} {{ $filesPaginator->firstItem() ?? 0 }} - {{ $filesPaginator->lastItem() ?? 0 }}
+                                        {{ __('of') }} {{ $filesPaginator->total() }}
                                     </div>
                                 </div>
 
@@ -1159,7 +977,7 @@ class extends Component
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            @forelse($this->pagedFiles() as $file)
+                                            @forelse($pagedFiles as $file)
                                                 @php
                                                     $isAudio = $this->isAudio($file['mime'], $file['extension']);
                                                     $isPreviewable = $this->isPreviewable($file['mime'], $file['extension']);
@@ -1231,17 +1049,17 @@ class extends Component
                                     </table>
                                 </div>
 
-                                @if($this->filesPaginator()->hasPages())
+                                @if($filesPaginator->hasPages())
                                     <div class="align-items-center mt-3 row g-3 text-center text-sm-start">
                                         <div class="col-sm">
                                             <div class="text-muted">
-                                                {{ __('Showing') }} <span class="fw-semibold">{{ $this->filesPaginator()->firstItem() }}</span>
-                                                {{ __('to') }} <span class="fw-semibold">{{ $this->filesPaginator()->lastItem() }}</span>
-                                                {{ __('of') }} <span class="fw-semibold">{{ $this->filesPaginator()->total() }}</span> {{ __('results') }}
+                                                {{ __('Showing') }} <span class="fw-semibold">{{ $filesPaginator->firstItem() }}</span>
+                                                {{ __('to') }} <span class="fw-semibold">{{ $filesPaginator->lastItem() }}</span>
+                                                {{ __('of') }} <span class="fw-semibold">{{ $filesPaginator->total() }}</span> {{ __('results') }}
                                             </div>
                                         </div>
                                         <div class="col-sm-auto">
-                                            {{ $this->filesPaginator()->links() }}
+                                            {{ $filesPaginator->links() }}
                                         </div>
                                     </div>
                                 @endif
@@ -1253,8 +1071,8 @@ class extends Component
                     <!-- Overview / Preview -->
                     <div class="file-manager-detail-content p-3 py-0">
                         <div class="mx-n3 pt-3 px-3">
-                            @if($this->selectedFileData())
-                                @php $preview = $this->selectedFileData(); @endphp
+                            @if($selectedPreview)
+                                @php $preview = $selectedPreview; @endphp
                                 <div id="file-overview" class="h-100 sticky-pane">
                                     <div class="d-flex h-100 flex-column">
                                         <div class="d-flex align-items-center pb-3 border-bottom border-bottom-dashed mb-3 gap-2">
@@ -1385,7 +1203,7 @@ class extends Component
 
                                     <div class="mt-4">
                                         <ul class="list-unstyled vstack gap-4">
-                                            @foreach($this->overviewStats() as $label => $stat)
+                                            @foreach($overviewStats as $label => $stat)
                                                 <li>
                                                     <div class="d-flex align-items-center">
                                                         <div class="flex-shrink-0">

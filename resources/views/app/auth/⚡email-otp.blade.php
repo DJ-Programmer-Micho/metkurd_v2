@@ -264,7 +264,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
 <x-slot:title>{{ __('Verify Email') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div class="row" wire:poll.1s="tick">
+<div class="row" wire:poll.visible.1s="tick">
     <div class="col-lg-12">
         <div class="card overflow-hidden m-0" style="box-shadow: -12px -6px 45px 10px rgb(204 0 34 / 0.15);">
             <div class="row justify-content-center g-0">

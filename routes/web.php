@@ -196,6 +196,10 @@ Route::prefix('{locale}')
         ->middleware('app.tool.access:stem')
         ->name('app.renders.stem.zip');
 
+    Route::get('/app/renders/stem/{jobId}/payload', [StemRenderController::class, 'payload'])
+        ->middleware('app.tool.access:stem')
+        ->name('app.renders.stem.payload');
+
     Route::get('/app/renders/ocr/{jobId}/txt', [OcrRenderController::class, 'downloadText'])
         ->middleware('app.tool.access:ocr')
         ->name('app.renders.ocr.text');
@@ -215,6 +219,10 @@ Route::prefix('{locale}')
     Route::get('/app/renders/ocr/{jobId}/input', [OcrRenderController::class, 'inputDocument'])
         ->middleware('app.tool.access:ocr')
         ->name('app.renders.ocr.input');
+
+    Route::get('/app/renders/ocr/{jobId}/payload', [OcrRenderController::class, 'payload'])
+        ->middleware('app.tool.access:ocr')
+        ->name('app.renders.ocr.payload');
 
     Route::get('/app/renders/youtube/{jobId}/download', [YoutubeRenderController::class, 'download'])
         ->middleware('app.tool.access:any,youtube_audio,youtube_video')
