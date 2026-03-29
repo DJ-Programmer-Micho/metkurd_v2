@@ -1,5 +1,5 @@
 {{-- resources/views/app/partials/navbar-one.blade.php --}}
-<div class="app-menu navbar-menu">
+<div class="app-menu navbar-menu" id="app-navbar-menu">
     <!-- LOGO -->
     <div class="navbar-brand-box">
         <!-- Dark Logo-->

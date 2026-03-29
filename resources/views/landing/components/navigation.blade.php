@@ -128,9 +128,6 @@ new class extends Component
                                 href="{{ $this->localeUrl($languageCode) }}"
                                 title="{{ $languageLabel }}"
                                 aria-label="{{ $languageLabel }}"
-                                @if(str_starts_with(request()->route()?->getName() ?? '', 'landing.'))
-                                    wire:navigate.hover
-                                @endif
                             >
                                 {{ $languageCode }}
                             </a>

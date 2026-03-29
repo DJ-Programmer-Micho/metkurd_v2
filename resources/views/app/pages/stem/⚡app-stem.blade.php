@@ -978,8 +978,6 @@ class extends Component
     @endif
 
     @php
-        $loadedTracks = $loadedRender['tracks'] ?? [];
-
         $stemColors = [
             'original' => '#95a5a6',
             'vocals' => '#e74c3c',
@@ -1241,10 +1239,10 @@ class extends Component
                                     <div class="master-controls mb-3">
                                         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                                             <div class="d-flex align-items-center gap-2">
-                                                <button id="stem-master-play" type="button" class="btn btn-lg btn-success btn-master-play" {{ $loadedRender ? '' : 'disabled' }}>
+                                                <button id="stem-master-play" type="button" class="btn btn-lg btn-success btn-master-play" disabled>
                                                     <i class="mdi mdi-play"></i> {{ __('Play All') }}
                                                 </button>
-                                                <button id="stem-master-stop" type="button" class="btn btn-lg btn-outline-secondary btn-master-stop" {{ $loadedRender ? '' : 'disabled' }}>
+                                                <button id="stem-master-stop" type="button" class="btn btn-lg btn-outline-secondary btn-master-stop" disabled>
                                                     <i class="mdi mdi-stop"></i> {{ __('Stop') }}
                                                 </button>
                                             </div>
@@ -1254,49 +1252,7 @@ class extends Component
                                         </div>
                                     </div>
 
-                                    <div id="stem-tracks" class="d-flex flex-column gap-3">
-                                        @foreach($loadedTracks as $track)
-                                            @php
-                                                $color = $stemColors[$track] ?? '#0d6efd';
-                                                $isMutedByDefault = $track === 'original';
-                                            @endphp
-
-                                            <div class="stem-track glass-load-stem mb-3 stem-track-row" data-track="{{ $track }}" data-stem-key="render-{{ $track }}" style="--stem-color: {{ $color }};">
-                                                <div class="stem-track-header">
-                                                    <div class="stem-track-label">
-                                                        <span class="stem-badge">{{ $trackLabel($track) }}</span>
-                                                        <div class="small text-muted mt-1">
-                                                            {{ $track === 'original' ? __('Original uploaded audio - muted by default') : __('Separated output track') }}
-                                                        </div>
-                                                    </div>
-
-                                                    <div class="stem-track-controls d-flex gap-2 flex-wrap">
-                                                        <button type="button" class="btn btn-sm btn-stem-play track-play btn-outline-success" data-track="{{ $track }}">
-                                                            <i class="mdi mdi-play"></i> {{ __('Play') }}
-                                                        </button>
-
-                                                        <button type="button" class="btn btn-sm btn-stem-solo track-solo" data-track="{{ $track }}">
-                                                            <i class="mdi mdi-headphones"></i> S
-                                                        </button>
-
-                                                        <button type="button" class="btn btn-sm btn-stem-mute track-mute {{ $isMutedByDefault ? 'active btn-warning' : 'btn-outline-warning' }}" data-track="{{ $track }}">
-                                                            <i class="mdi mdi-volume-off"></i> {{ $isMutedByDefault ? __('Muted') : __('Mute') }}
-                                                        </button>
-
-                                                        <a
-                                                            href="{{ $loadedRender['downloads'][$track] ?? '#' }}"
-                                                            class="btn btn-sm btn-outline-primary {{ isset($loadedRender['downloads'][$track]) ? '' : 'disabled' }}"
-                                                            download
-                                                        >
-                                                            <i class="mdi mdi-download"></i>
-                                                        </a>
-                                                    </div>
-                                                </div>
-
-                                                <div id="wave-{{ $track }}" class="stem-wave tts-wave"></div>
-                                            </div>
-                                        @endforeach
-                                    </div>
+                                    <div id="stem-tracks" class="d-flex flex-column gap-3"></div>
                                 </div>
 
                                 <div class="small text-muted mt-3">
@@ -1550,7 +1506,7 @@ class extends Component
 </div>
 
 @push('styles')
-<link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet">
+<link href="{{ asset('app/libs/filepond/filepond.min.css') }}" rel="stylesheet" data-stem-asset="filepond-css">
 
 <style>
     :root{
@@ -1839,6 +1795,25 @@ class extends Component
         cursor: pointer;
     }
 
+    .stem-wave__placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .5rem;
+        padding: 0 1rem;
+        color: rgba(255,255,255,.65);
+        font-size: .85rem;
+        text-align: center;
+        background: linear-gradient(135deg, rgba(255,255,255,.035), rgba(255,255,255,.015));
+    }
+
+    .stem-wave__placeholder .mdi {
+        font-size: 1rem;
+        opacity: .85;
+    }
+
     .render-item,
     .stem-render-item{
         cursor: pointer;
@@ -1884,11 +1859,6 @@ class extends Component
 @endpush
 
 @push('scripts')
-<script src="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.min.js"></script>
-<script src="https://unpkg.com/filepond-plugin-file-validate-size/dist/filepond-plugin-file-validate-size.min.js"></script>
-<script src="https://unpkg.com/filepond@^4/dist/filepond.min.js"></script>
-<script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
-
 <script>
 (function () {
     'use strict';
@@ -1903,10 +1873,17 @@ class extends Component
             formWatchBoot: false,
             bootTimer: null,
             paramTimers: {},
+            assetPromises: {},
         };
     }
 
     const S = window.__STEM_POND__;
+    const STEM_FILEPOND_CSS = @js(asset('app/libs/filepond/filepond.min.css'));
+    const STEM_FILEPOND_JS = @js(asset('app/libs/filepond/filepond.min.js'));
+    const STEM_FILEPOND_SIZE_JS = @js(asset('app/libs/filepond-plugin-file-validate-size/filepond-plugin-file-validate-size.min.js'));
+    const STEM_WAVESURFER_JS = 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js';
+    const STEM_ACCEPT_ATTR = '.wav,.mp3,.m4a,.aac,.ogg,.webm,.flac,audio/*';
+    const STEM_MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
     const STEM_PARAM_I18N = {
         outputs: @js(__('outputs')),
         pricing4: @js(__('4-stem separation pricing')),
@@ -1916,6 +1893,7 @@ class extends Component
         or: @js(__('or')),
         browse: @js(__('Browse')),
         uploadFailed: @js(__('Upload failed')),
+        fileTooLarge: @js(__('Maximum file size is 100MB')),
     };
     const FORM_KEY = 'stem_form_state_v3';
     const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
@@ -1925,14 +1903,6 @@ class extends Component
         stemCodec: 'mp3',
         stemBitrate: '192k',
     };
-
-    if (!S.pluginsRegistered) {
-        FilePond.registerPlugin(
-            FilePondPluginFileValidateType,
-            FilePondPluginFileValidateSize
-        );
-        S.pluginsRegistered = true;
-    }
 
     function getStemComponent() {
         if (!window.Livewire) return null;
@@ -1949,6 +1919,80 @@ class extends Component
             return null;
         }
     }
+
+    function ensureStyle(href, key) {
+        if (document.querySelector(`link[data-stem-asset="${key}"]`)) {
+            return Promise.resolve();
+        }
+
+        if (S.assetPromises[key]) {
+            return S.assetPromises[key];
+        }
+
+        S.assetPromises[key] = new Promise((resolve, reject) => {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = href;
+            link.dataset.stemAsset = key;
+            link.onload = () => resolve();
+            link.onerror = () => {
+                delete S.assetPromises[key];
+                reject(new Error(`Failed to load ${key}`));
+            };
+            document.head.appendChild(link);
+        });
+
+        return S.assetPromises[key];
+    }
+
+    function ensureScript(src, key, isReady) {
+        if (typeof isReady === 'function' && isReady()) {
+            return Promise.resolve();
+        }
+
+        if (S.assetPromises[key]) {
+            return S.assetPromises[key];
+        }
+
+        S.assetPromises[key] = new Promise((resolve, reject) => {
+            const existing = document.querySelector(`script[data-stem-asset="${key}"]`);
+            if (existing) {
+                existing.addEventListener('load', () => resolve(), { once: true });
+                existing.addEventListener('error', () => reject(new Error(`Failed to load ${key}`)), { once: true });
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = src;
+            script.async = true;
+            script.dataset.stemAsset = key;
+            script.onload = () => resolve();
+            script.onerror = () => {
+                delete S.assetPromises[key];
+                reject(new Error(`Failed to load ${key}`));
+            };
+            document.head.appendChild(script);
+        });
+
+        return S.assetPromises[key];
+    }
+
+    async function ensureStemUploadAssets() {
+        await ensureStyle(STEM_FILEPOND_CSS, 'filepond-css');
+        await ensureScript(STEM_FILEPOND_JS, 'filepond-js', () => !!window.FilePond);
+        await ensureScript(STEM_FILEPOND_SIZE_JS, 'filepond-size-js', () => !!window.FilePondPluginFileValidateSize);
+
+        if (!S.pluginsRegistered && window.FilePond && window.FilePondPluginFileValidateSize) {
+            FilePond.registerPlugin(FilePondPluginFileValidateSize);
+            S.pluginsRegistered = true;
+        }
+    }
+
+    async function ensureStemRenderAssets() {
+        await ensureScript(STEM_WAVESURFER_JS, 'wavesurfer-js', () => !!window.WaveSurfer);
+    }
+
+    window.__ensureStemRenderAssets = ensureStemRenderAssets;
 
     function destroyPond() {
         if (S.bootTimer) {
@@ -2200,7 +2244,7 @@ class extends Component
         });
     }
 
-    function bootPond() {
+    async function bootPond() {
         const input = document.getElementById('stem-audio-pond');
         if (!input) return;
 
@@ -2209,25 +2253,27 @@ class extends Component
         const lw = getStemComponent();
         if (!lw) return;
 
+        input.setAttribute('accept', STEM_ACCEPT_ATTR);
+
+        try {
+            await ensureStemUploadAssets();
+        } catch (error) {
+            console.warn('[STEM] Failed to load FilePond assets', error);
+            return;
+        }
+
         S.pond = FilePond.create(input, {
             allowMultiple: false,
             allowReorder: false,
             allowReplace: true,
             credits: false,
-            acceptedFileTypes: [
-                'audio/wav',
-                'audio/x-wav',
-                'audio/mpeg',
-                'audio/mp3',
-                'audio/mp4',
-                'audio/x-m4a',
-                'audio/aac',
-                'audio/ogg',
-                'audio/webm',
-                'audio/flac',
-                'audio/x-flac'
-            ],
             maxFileSize: '100MB',
+            beforeAddFile: (item) => {
+                const file = item?.file || item;
+                return !!file && Number(file.size || 0) <= STEM_MAX_UPLOAD_BYTES;
+            },
+            labelMaxFileSizeExceeded: @js(__('File is too large')),
+            labelMaxFileSize: STEM_PARAM_I18N.fileTooLarge,
             labelIdle: `
                 <div class="py-3">
                     <div class="mb-1"><strong>${STEM_PARAM_I18N.dragDrop}</strong> ${STEM_PARAM_I18N.audioHere}</div>
@@ -2270,12 +2316,12 @@ class extends Component
             clearTimeout(S.bootTimer);
         }
 
-        S.bootTimer = setTimeout(() => {
+        S.bootTimer = setTimeout(async () => {
             S.bootTimer = null;
             formRestoreIfNeeded();
             bindParameterControls();
             watchAndPersistForm();
-            bootPond();
+            await bootPond();
         }, 0);
     }
 
@@ -2344,14 +2390,11 @@ class extends Component
 
     if (!window.__STEM_RENDER_PAGE__) {
         window.__STEM_RENDER_PAGE__ = {
-            medias: {},
             waves: {},
             trackState: {},
             currentRender: null,
-            audioContext: null,
             isPlaying: false,
-            isSyncSeeking: false,
-            isLoadingBuffers: false,
+            isLoadingTracks: false,
             auditionTrack: null,
             eventsBound: false,
             commitHooked: false,
@@ -2361,12 +2404,11 @@ class extends Component
             masterTime: 0,
             duration: 0,
             leadTrack: null,
-            transportStartedAt: 0,
-            transportOffset: 0,
-            assetGeneration: 0,
-            sourceGeneration: 0,
-            transportRequestId: 0,
             loadingRenderId: null,
+            readyRenderId: null,
+            renderLoadPromise: null,
+            loadToken: 0,
+            lastDriftCheck: 0,
         };
     }
 
@@ -2389,6 +2431,9 @@ class extends Component
         originalDescription: @js(__('Original uploaded audio - muted by default')),
         separatedTrack: @js(__('Separated output track')),
         seekAll: @js(__('Click to seek all stems together')),
+        clickPlayToLoad: @js(__('Click play to load the audio preview')),
+        loadingTrack: @js(__('Loading track...')),
+        previewUnavailable: @js(__('Preview unavailable')),
     };
     const RENDER_KEY = 'stem_render_cache_v2';
     const LAST_RENDER_KEY = 'stem_last_render_id_v1';
@@ -2494,91 +2539,63 @@ class extends Component
         durationEl.textContent = formatTime(duration);
     }
 
-    function ensureAudioContext() {
-        if (S.audioContext) {
-            return S.audioContext;
-        }
-
-        const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextCtor) {
-            return null;
-        }
-
-        S.audioContext = new AudioContextCtor();
-
-        return S.audioContext;
-    }
-
-    async function resumeAudioContext() {
-        const context = ensureAudioContext();
-        if (!context) return null;
-
-        if (context.state === 'suspended') {
-            try {
-                await context.resume();
-            } catch (_) {}
-        }
-
-        return context;
-    }
-
     function getLeadTrack() {
-        if (S.leadTrack && S.medias[S.leadTrack]) {
+        if (S.leadTrack && S.waves[S.leadTrack]) {
             return S.leadTrack;
         }
 
-        const firstTrack = Object.keys(S.medias)[0] || null;
-        if (!firstTrack) return null;
+        const firstTrack = Object.keys(S.waves).find((track) => track !== 'original')
+            || Object.keys(S.waves)[0]
+            || null;
 
         S.leadTrack = firstTrack;
 
         return firstTrack;
     }
 
+    function getLeadWave() {
+        const leadTrack = getLeadTrack();
+        return leadTrack ? (S.waves[leadTrack] || null) : null;
+    }
+
     function getTransportTime() {
-        if (!S.isPlaying || !S.audioContext) {
-            return clamp(S.masterTime, 0, S.duration || Math.max(S.masterTime, 0));
+        const leadWave = getLeadWave();
+        const maxDuration = Number(S.duration || leadWave?.getDuration?.() || 0);
+
+        if (!S.isPlaying || !leadWave) {
+            return clamp(S.masterTime, 0, maxDuration || Math.max(S.masterTime, 0));
         }
 
-        return clamp(
-            (S.audioContext.currentTime - S.transportStartedAt) + S.transportOffset,
-            0,
-            S.duration || 0
-        );
+        return clamp(Number(leadWave.getCurrentTime?.() || S.masterTime || 0), 0, maxDuration || Math.max(S.masterTime, 0));
     }
 
-    function syncWaveProgress(track, seconds = S.masterTime) {
-        const wave = S.waves[track];
-        if (!wave) return;
+    function syncWaveTimes(seconds = S.masterTime, force = false) {
+        const target = clamp(Number(seconds || 0), 0, S.duration || Math.max(Number(seconds || 0), 0));
 
-        const duration = Number(
-            S.medias[track]?.duration
-            || S.duration
-            || wave.getDuration?.()
-            || 0
-        );
+        Object.values(S.waves).forEach((wave) => {
+            if (!wave) return;
 
-        if (!(duration > 0)) return;
+            const current = Number(wave.getCurrentTime?.() || 0);
+            if (!force && Math.abs(current - target) < 0.08) {
+                return;
+            }
 
-        const ratio = clamp(seconds / duration, 0, 1);
-        if (Math.abs((wave.__stemRatio ?? -1) - ratio) < 0.004) return;
-
-        wave.__stemRatio = ratio;
-
-        try {
-            wave.seekTo(ratio);
-        } catch (_) {}
-    }
-
-    function syncAllWaveProgress(seconds = S.masterTime) {
-        Object.keys(S.waves).forEach((track) => {
-            syncWaveProgress(track, seconds);
+            try {
+                wave.setTime(target);
+            } catch (_) {
+                try {
+                    const duration = Number(wave.getDuration?.() || S.duration || 0);
+                    if (duration > 0) {
+                        wave.seekTo(clamp(target / duration, 0, 1));
+                    }
+                } catch (_) {}
+            }
         });
     }
 
     function updateMasterControls() {
-        const hasRender = !!S.currentRender && Object.keys(S.medias).length > 0;
-        const busy = S.isLoadingBuffers;
+        const hasRender = !!S.currentRender;
+        const busy = S.isLoadingTracks;
         const playBtn = document.getElementById('stem-master-play');
         const stopBtn = document.getElementById('stem-master-stop');
 
@@ -2602,47 +2619,6 @@ class extends Component
         }
     }
 
-    function stopSources() {
-        S.sourceGeneration += 1;
-
-        Object.values(S.medias).forEach((media) => {
-            if (media.source) {
-                try {
-                    media.source.onended = null;
-                    media.source.stop();
-                } catch (_) {}
-
-                try {
-                    media.source.disconnect();
-                } catch (_) {}
-
-                media.source = null;
-            }
-
-            if (media.gain) {
-                try {
-                    media.gain.disconnect();
-                } catch (_) {}
-
-                media.gain = null;
-            }
-        });
-    }
-
-    function finishTransport() {
-        S.transportRequestId += 1;
-        S.isPlaying = false;
-        S.masterTime = S.duration;
-        S.transportOffset = S.duration;
-
-        stopMasterTicker();
-        stopSources();
-        syncAllWaveProgress(S.masterTime);
-        updateMasterTime(S.masterTime, S.duration);
-        updateMasterControls();
-        updateTrackButtonStates();
-    }
-
     function stopMasterTicker() {
         if (S.masterTicker) {
             cancelAnimationFrame(S.masterTicker);
@@ -2650,10 +2626,34 @@ class extends Component
         }
     }
 
+    function resetPlaybackState({ clearAudition = false } = {}) {
+        stopMasterTicker();
+        S.isPlaying = false;
+        S.lastDriftCheck = 0;
+
+        if (clearAudition) {
+            S.auditionTrack = null;
+        }
+    }
+
+    function finishTransport({ targetTime = S.masterTime, clearAudition = false } = {}) {
+        resetPlaybackState({ clearAudition });
+
+        Object.values(S.waves).forEach((wave) => {
+            try { wave.pause(); } catch (_) {}
+        });
+
+        S.masterTime = clamp(Number(targetTime || 0), 0, S.duration || Math.max(Number(targetTime || 0), 0));
+        syncWaveTimes(S.masterTime, true);
+        updateMasterTime(S.masterTime, S.duration);
+        updateMasterControls();
+        updateTrackButtonStates();
+    }
+
     function startMasterTicker() {
         stopMasterTicker();
 
-        const tick = () => {
+        const tick = (now) => {
             if (!S.isPlaying) {
                 S.masterTicker = null;
                 return;
@@ -2661,10 +2661,14 @@ class extends Component
 
             S.masterTime = getTransportTime();
             updateMasterTime(S.masterTime, S.duration);
-            syncAllWaveProgress(S.masterTime);
+
+            if (!S.lastDriftCheck || (now - S.lastDriftCheck) > 220) {
+                syncWaveTimes(S.masterTime, false);
+                S.lastDriftCheck = now;
+            }
 
             if (S.duration > 0 && S.masterTime >= (S.duration - 0.03)) {
-                finishTransport();
+                finishTransport({ targetTime: S.duration });
                 return;
             }
 
@@ -2675,35 +2679,24 @@ class extends Component
     }
 
     function destroyPlayers() {
-        S.transportRequestId += 1;
-        stopMasterTicker();
-        stopSources();
+        resetPlaybackState({ clearAudition: true });
 
         Object.values(S.waves).forEach((wave) => {
+            try { wave.pause(); } catch (_) {}
             try { wave.destroy(); } catch (_) {}
         });
 
-        Object.values(S.medias).forEach((media) => {
-            if (media?.waveUrl) {
-                try { URL.revokeObjectURL(media.waveUrl); } catch (_) {}
-            }
-        });
-
-        S.medias = {};
         S.waves = {};
         S.trackState = {};
         S.currentRender = null;
-        S.isPlaying = false;
-        S.isSyncSeeking = false;
-        S.isLoadingBuffers = false;
-        S.auditionTrack = null;
+        S.isLoadingTracks = false;
         S.masterTime = 0;
         S.duration = 0;
         S.leadTrack = null;
-        S.transportStartedAt = 0;
-        S.transportOffset = 0;
-        S.assetGeneration += 1;
         S.loadingRenderId = null;
+        S.readyRenderId = null;
+        S.renderLoadPromise = null;
+        S.loadToken += 1;
 
         updateMasterControls();
         updateMasterTime(0, 0);
@@ -2741,6 +2734,19 @@ class extends Component
             : STEM_RENDER_I18N.separatedTrack;
     }
 
+    function wavePlaceholder(track, label = STEM_RENDER_I18N.clickPlayToLoad, loading = false) {
+        const icon = loading
+            ? '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>'
+            : '<i class="mdi mdi-waveform"></i>';
+
+        return `
+            <div class="stem-wave__placeholder" data-track="${track}">
+                ${icon}
+                <span>${label}</span>
+            </div>
+        `;
+    }
+
     function ensureTrackRows(render) {
         const tracksEl = document.getElementById('stem-tracks');
         if (!tracksEl) return false;
@@ -2772,7 +2778,9 @@ class extends Component
                             </a>
                         </div>
                     </div>
-                    <div id="wave-${track}" class="stem-wave tts-wave" title="${STEM_RENDER_I18N.seekAll}"></div>
+                    <div id="wave-${track}" class="stem-wave tts-wave" data-track="${track}" title="${STEM_RENDER_I18N.seekAll}">
+                        ${wavePlaceholder(track)}
+                    </div>
                 </div>
             `}).join('');
 
@@ -2913,49 +2921,28 @@ class extends Component
 
             S.trackState[track].volume = volume;
 
-            const context = S.audioContext;
-            const gain = S.medias[track]?.gain;
-            if (!context || !gain) return;
+            const wave = S.waves[track];
+            if (!wave || typeof wave.setVolume !== 'function') return;
 
             try {
-                gain.gain.cancelScheduledValues(context.currentTime);
-                gain.gain.setTargetAtTime(volume, context.currentTime, 0.015);
-            } catch (_) {
-                try {
-                    gain.gain.value = volume;
-                } catch (_) {}
-            }
+                wave.setVolume(volume);
+            } catch (_) {}
         });
     }
 
     function seekTransport(seconds) {
         const target = clamp(Number(seconds || 0), 0, S.duration || Math.max(Number(seconds || 0), 0));
         S.masterTime = target;
-        S.transportOffset = target;
         updateMasterTime(S.masterTime, S.duration);
-        syncAllWaveProgress(S.masterTime);
-
-        if (S.isPlaying) {
-            playTransport(S.auditionTrack);
+        if (Object.keys(S.waves).length > 0) {
+            syncWaveTimes(S.masterTime, true);
         }
     }
 
     function pauseTransport({ preserveTime = true } = {}) {
-        const pauseAt = preserveTime
-            ? getTransportTime()
-            : 0;
-
-        S.transportRequestId += 1;
-        S.isPlaying = false;
-        S.transportOffset = pauseAt;
-        stopMasterTicker();
-        stopSources();
-
-        S.masterTime = pauseAt;
-        syncAllWaveProgress(S.masterTime);
-        updateMasterTime(S.masterTime, S.duration);
-        updateMasterControls();
-        updateTrackButtonStates();
+        finishTransport({
+            targetTime: preserveTime ? getTransportTime() : 0,
+        });
     }
 
     function stopTransport() {
@@ -2963,137 +2950,119 @@ class extends Component
     }
 
     async function playTransport(auditionTrack = S.auditionTrack) {
-        if (!S.currentRender || S.isLoadingBuffers || Object.keys(S.medias).length === 0) return;
+        if (!S.currentRender) return;
 
-        const requestId = S.transportRequestId + 1;
-        S.transportRequestId = requestId;
-
-        const context = await resumeAudioContext();
-        if (!context || requestId !== S.transportRequestId) return;
+        const ready = await ensurePlaybackReady();
+        if (!ready) return;
 
         S.auditionTrack = auditionTrack || null;
         S.masterTime = clamp(S.masterTime, 0, S.duration || Math.max(S.masterTime, 0));
-        S.transportOffset = S.masterTime;
-
-        stopSources();
-        if (requestId !== S.transportRequestId) return;
-
-        const generation = S.sourceGeneration;
-        const offset = S.transportOffset;
-        const leadTrack = getLeadTrack();
-
-        Object.entries(S.medias).forEach(([track, media]) => {
-            if (!media?.buffer) return;
-
-            const source = context.createBufferSource();
-            const gain = context.createGain();
-
-            source.buffer = media.buffer;
-            source.connect(gain);
-            gain.connect(context.destination);
-
-            media.source = source;
-            media.gain = gain;
-
-            const volume = S.trackState[track]?.volume ?? 1;
-            gain.gain.value = volume;
-
-            source.onended = () => {
-                if (generation !== S.sourceGeneration || !S.isPlaying) return;
-                if (track !== leadTrack) return;
-                finishTransport();
-            };
-
-            try {
-                source.start(0, offset);
-            } catch (_) {}
-        });
-
-        S.transportStartedAt = context.currentTime;
-        S.isPlaying = true;
-
         applyStemMix();
+        syncWaveTimes(S.masterTime, true);
+
+        const leadTrack = getLeadTrack();
+        const playResults = await Promise.all(
+            Object.entries(S.waves).map(async ([track, wave]) => {
+                try {
+                    await Promise.resolve(wave.play());
+                    return { track, started: true };
+                } catch (_) {
+                    return { track, started: false };
+                }
+            })
+        );
+
+        const leadStarted = !leadTrack || playResults.some((result) => result.track === leadTrack && result.started);
+        if (!getLeadWave() || !leadStarted) {
+            Object.values(S.waves).forEach((wave) => {
+                try { wave.pause(); } catch (_) {}
+            });
+
+            updateMasterControls();
+            updateTrackButtonStates();
+            return;
+        }
+
+        S.isPlaying = true;
+        S.lastDriftCheck = 0;
         updateMasterTime(S.masterTime, S.duration);
-        syncAllWaveProgress(S.masterTime);
         updateMasterControls();
         updateTrackButtonStates();
         startMasterTicker();
     }
 
-    function guessMimeType(url, contentType = '') {
-        if (contentType) {
-            return contentType.split(';')[0];
-        }
-
-        const lowered = String(url || '').toLowerCase();
-        if (lowered.endsWith('.wav')) return 'audio/wav';
-        if (lowered.endsWith('.ogg')) return 'audio/ogg';
-        if (lowered.endsWith('.aac')) return 'audio/aac';
-        if (lowered.endsWith('.m4a') || lowered.endsWith('.mp4')) return 'audio/mp4';
-        return 'audio/mpeg';
-    }
-
-    async function createMedia(track, url) {
-        if (!url) return null;
-
-        const context = ensureAudioContext();
-        if (!context) return null;
-
-        const response = await fetch(url, { credentials: 'same-origin' });
-        if (!response.ok) {
-            throw new Error(`Failed to load ${track}`);
-        }
-
-        const mimeType = guessMimeType(url, response.headers.get('content-type') || '');
-        const arrayBuffer = await response.arrayBuffer();
-        const decoded = await context.decodeAudioData(arrayBuffer.slice(0));
-        const waveUrl = URL.createObjectURL(new Blob([arrayBuffer], { type: mimeType }));
-
-        return {
-            buffer: decoded,
-            duration: Number(decoded.duration || 0),
-            source: null,
-            gain: null,
-            waveUrl,
-        };
-    }
-
     function createWave(track, url) {
         const container = document.getElementById(`wave-${track}`);
-        if (!container || !url || !window.WaveSurfer) return null;
+        if (!container || !url || !window.WaveSurfer) return Promise.resolve(null);
+
+        container.innerHTML = wavePlaceholder(track, STEM_RENDER_I18N.loadingTrack, true);
 
         const color = STEM_COLORS[track] || '#4f46e5';
-        const options = {
-            container,
-            waveColor: color,
-            progressColor: color,
-            cursorColor: color,
-            height: 60,
-            normalize: true,
-            autoScroll: false,
-            interact: false,
-            barWidth: 2,
-            barGap: 2,
-            barRadius: 2,
-        };
 
-        try {
-            const wave = WaveSurfer.create({ ...options, url });
+        return new Promise((resolve) => {
+            let settled = false;
+            const resolveOnce = (value) => {
+                if (settled) return;
+                settled = true;
+                resolve(value);
+            };
 
-            wave.on('ready', () => {
-                const duration = Number(S.medias[track]?.duration || wave.getDuration?.() || 0);
-                if (duration > 0) {
-                    S.duration = Math.max(S.duration, duration);
+            try {
+                container.innerHTML = '';
+
+                const wave = WaveSurfer.create({
+                    container,
+                    url,
+                    waveColor: color,
+                    progressColor: color,
+                    cursorColor: '#ffffff',
+                    height: 60,
+                    normalize: false,
+                    autoScroll: false,
+                    interact: false,
+                    barWidth: 2,
+                    barGap: 2,
+                    barRadius: 2,
+                    cursorWidth: 2,
+                });
+
+                wave.on('ready', () => {
+                    const duration = Number(wave.getDuration?.() || 0);
+                    if (duration > 0) {
+                        S.duration = Math.max(S.duration, duration);
+                    }
+
                     updateMasterTime(S.masterTime, S.duration);
-                }
 
-                syncWaveProgress(track, S.masterTime);
-            });
+                    try {
+                        wave.setVolume(S.trackState[track]?.volume ?? 1);
+                    } catch (_) {}
 
-            return wave;
-        } catch (_) {
-            return null;
-        }
+                    try {
+                        wave.setTime(S.masterTime);
+                    } catch (_) {}
+
+                    resolveOnce(wave);
+                });
+
+                wave.on('error', () => {
+                    container.innerHTML = wavePlaceholder(track, STEM_RENDER_I18N.previewUnavailable);
+                    resolveOnce(null);
+                });
+
+                wave.on('finish', () => {
+                    if (!S.isPlaying) return;
+                    if (track !== getLeadTrack()) return;
+
+                    finishTransport({
+                        targetTime: S.duration || Number(wave.getDuration?.() || 0),
+                    });
+                });
+            } catch (_) {
+                container.innerHTML = wavePlaceholder(track, STEM_RENDER_I18N.previewUnavailable);
+                resolveOnce(null);
+            }
+        });
     }
 
     function bindWaveSeekHandlers() {
@@ -3101,12 +3070,17 @@ class extends Component
             if (waveEl.dataset.seekBound === '1') return;
             waveEl.dataset.seekBound = '1';
 
-            waveEl.addEventListener('click', (event) => {
+            waveEl.addEventListener('click', async (event) => {
                 const rect = waveEl.getBoundingClientRect();
                 if (rect.width <= 0) return;
 
                 const ratio = clamp((event.clientX - rect.left) / rect.width, 0, 1);
-                const duration = S.duration > 0 ? S.duration : 0;
+                if (String(S.readyRenderId || '') !== String(S.currentRender?.id || '')) {
+                    const ready = await ensurePlaybackReady();
+                    if (!ready) return;
+                }
+
+                const duration = Number(S.duration || getLeadWave()?.getDuration?.() || 0);
 
                 if (!(duration > 0)) return;
 
@@ -3119,15 +3093,15 @@ class extends Component
         document.querySelectorAll('.track-play').forEach((button) => {
             const track = button.dataset.track;
             const active = S.auditionTrack === track;
-            const ready = !!S.medias[track]?.buffer;
+            const hasTrack = !!S.currentRender && !!S.trackState[track];
 
             button.classList.toggle('active', active);
             button.classList.toggle('btn-success', active);
             button.classList.toggle('btn-outline-success', !active);
-            button.disabled = !ready || S.isLoadingBuffers;
+            button.disabled = !hasTrack || S.isLoadingTracks;
             button.setAttribute('aria-pressed', active ? 'true' : 'false');
 
-            if (!ready || S.isLoadingBuffers) {
+            if (S.isLoadingTracks) {
                 button.innerHTML = `<span class="spinner-border spinner-border-sm mr-1"></span> ${STEM_RENDER_I18N.loading}`;
                 return;
             }
@@ -3144,6 +3118,7 @@ class extends Component
             button.classList.toggle('active', active);
             button.classList.toggle('btn-primary', active);
             button.classList.toggle('btn-outline-primary', !active);
+            button.disabled = !S.trackState[track];
             button.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
 
@@ -3154,6 +3129,7 @@ class extends Component
             button.classList.toggle('active', muted);
             button.classList.toggle('btn-warning', muted);
             button.classList.toggle('btn-outline-warning', !muted);
+            button.disabled = !S.trackState[track];
             button.setAttribute('aria-pressed', muted ? 'true' : 'false');
             button.innerHTML = `<i class="mdi mdi-volume-off"></i> ${muted ? STEM_RENDER_I18N.muted : STEM_RENDER_I18N.mute}`;
         });
@@ -3163,14 +3139,13 @@ class extends Component
         document.querySelectorAll('.track-play').forEach((button) => {
             button.onclick = async () => {
                 const track = button.dataset.track;
-                if (!S.trackState[track] || S.isLoadingBuffers) return;
+                if (!S.trackState[track] || S.isLoadingTracks) return;
 
                 if (S.auditionTrack === track && S.isPlaying) {
                     pauseTransport({ preserveTime: true });
                     return;
                 }
 
-                S.auditionTrack = track;
                 await playTransport(track);
             };
         });
@@ -3223,89 +3198,205 @@ class extends Component
         updateTrackButtonStates();
     }
 
-    function loadStemRender(render, options = {}) {
-        if (!render || !render.id || !Array.isArray(render.tracks)) return;
-
-        const { persist = true } = options;
-        const assetGeneration = S.assetGeneration + 1;
-        destroyPlayers();
-        if (!ensureTrackRows(render)) return;
-
-        S.currentRender = render;
-        S.assetGeneration = assetGeneration;
-        S.loadingRenderId = String(render.id);
-        S.isLoadingBuffers = true;
-        S.trackState = defaultStateForTracks(render.tracks);
-        S.leadTrack = render.tracks.find((track) => track !== 'original') || render.tracks[0] || null;
-        S.auditionTrack = null;
-        S.masterTime = 0;
-        S.duration = 0;
-
-        if (persist) {
-            saveRenderCache(render);
+    async function ensurePlaybackReady() {
+        const render = S.currentRender;
+        if (!render || !render.id || !Array.isArray(render.tracks)) {
+            return false;
         }
 
-        setPlayerVisibility(true);
-        updateLatestHeader(render);
+        const renderId = String(render.id);
+        if (S.readyRenderId === renderId && Object.keys(S.waves).length > 0) {
+            return true;
+        }
+
+        if (S.renderLoadPromise && S.loadingRenderId === renderId) {
+            return S.renderLoadPromise;
+        }
+
+        try {
+            await ensureStemRenderAssetsReady();
+        } catch (error) {
+            console.warn('[STEM] Failed to load WaveSurfer assets', error);
+            return false;
+        }
+
+        const token = S.loadToken + 1;
+        S.loadToken = token;
+        S.isLoadingTracks = true;
+        S.loadingRenderId = renderId;
+        S.readyRenderId = null;
+        S.duration = 0;
+
+        Object.values(S.waves).forEach((wave) => {
+            try { wave.pause(); } catch (_) {}
+            try { wave.destroy(); } catch (_) {}
+        });
+        S.waves = {};
+
+        (render.tracks || []).forEach((track) => {
+            const container = document.getElementById(`wave-${track}`);
+            if (container) {
+                container.innerHTML = wavePlaceholder(track, STEM_RENDER_I18N.loadingTrack, true);
+            }
+        });
+
         updateMasterControls();
-        updateMasterTime(0, 0);
+        updateTrackButtonStates();
+        updateMasterTime(S.masterTime, S.duration);
 
-        requestAnimationFrame(() => {
-            bindTrackButtons();
-            updateTrackButtonStates();
+        const loadPromise = (async () => {
+            try {
+                const results = await Promise.all(
+                    (render.tracks || []).map(async (track) => {
+                        const url = render.stems?.[track] || null;
 
-            (async () => {
-                try {
-                    const loadedTracks = await Promise.all(
-                        (render.tracks || []).map(async (track) => {
-                            const url = render.stems?.[track] || null;
-                            if (!url) return null;
-
-                            const media = await createMedia(track, url);
-                            return { track, media };
-                        })
-                    );
-
-                    if (S.assetGeneration !== assetGeneration || String(S.currentRender?.id || '') !== String(render.id)) {
-                        loadedTracks.forEach((item) => {
-                            if (item?.media?.waveUrl) {
-                                try { URL.revokeObjectURL(item.media.waveUrl); } catch (_) {}
+                        if (!url) {
+                            const container = document.getElementById(`wave-${track}`);
+                            if (container) {
+                                container.innerHTML = wavePlaceholder(track, STEM_RENDER_I18N.previewUnavailable);
                             }
-                        });
-                        return;
-                    }
 
-                    loadedTracks.forEach((item) => {
-                        if (!item?.media) return;
+                            return { track, wave: null };
+                        }
 
-                        S.medias[item.track] = item.media;
-                        S.duration = Math.max(S.duration, Number(item.media.duration || 0));
-                    });
+                        return {
+                            track,
+                            wave: await createWave(track, url),
+                        };
+                    })
+                );
 
-                    Object.entries(S.medias).forEach(([track, media]) => {
-                        const wave = createWave(track, media.waveUrl);
-                        if (wave) {
-                            S.waves[track] = wave;
+                if (S.loadToken !== token || String(S.currentRender?.id || '') !== renderId) {
+                    results.forEach((result) => {
+                        if (result?.wave) {
+                            try { result.wave.destroy(); } catch (_) {}
                         }
                     });
 
-                    applyStemMix();
-                    bindTrackButtons();
-                    updateTrackButtonStates();
-                    syncAllWaveProgress(0);
-                    updateMasterTime(0, S.duration);
-                } catch (error) {
-                    console.warn('[STEM] Failed to prepare track assets', error);
-                } finally {
-                    if (S.assetGeneration === assetGeneration) {
-                        S.isLoadingBuffers = false;
-                        S.loadingRenderId = null;
-                        updateMasterControls();
-                        updateTrackButtonStates();
-                    }
+                    return false;
                 }
-            })();
-        });
+
+                const nextWaves = {};
+                results.forEach((result) => {
+                    if (result?.wave) {
+                        nextWaves[result.track] = result.wave;
+                    }
+                });
+
+                S.waves = nextWaves;
+                S.readyRenderId = Object.keys(nextWaves).length > 0 ? renderId : null;
+                S.duration = Object.values(nextWaves).reduce((carry, wave) => {
+                    return Math.max(carry, Number(wave.getDuration?.() || 0));
+                }, 0);
+
+                applyStemMix();
+                syncWaveTimes(S.masterTime, true);
+                updateMasterTime(S.masterTime, S.duration);
+
+                return Object.keys(nextWaves).length > 0;
+            } catch (error) {
+                console.warn('[STEM] Failed to prepare track previews', error);
+                return false;
+            } finally {
+                if (S.loadToken === token && String(S.currentRender?.id || '') === renderId) {
+                    S.isLoadingTracks = false;
+                    S.loadingRenderId = null;
+                    S.renderLoadPromise = null;
+                    updateMasterControls();
+                    updateTrackButtonStates();
+                }
+            }
+        })();
+
+        S.renderLoadPromise = loadPromise;
+
+        return loadPromise;
+    }
+
+    async function ensureStemRenderAssetsReady() {
+        if (typeof window.__ensureStemRenderAssets === 'function') {
+            await window.__ensureStemRenderAssets();
+            return;
+        }
+
+        if (window.WaveSurfer) {
+            return;
+        }
+
+        throw new Error('WaveSurfer loader is unavailable');
+    }
+
+    async function loadStemRender(render, options = {}) {
+        if (!render || !render.id || !Array.isArray(render.tracks)) return;
+
+        const { persist = true } = options;
+        const renderId = String(render.id);
+        const currentId = String(S.currentRender?.id || '');
+        const sameRender = currentId === renderId;
+        const tracksMounted = document.querySelectorAll('#stem-tracks .stem-track-row').length === (render.tracks || []).length;
+
+        if (!sameRender) {
+            destroyPlayers();
+        } else if (!tracksMounted) {
+            finishTransport({ targetTime: getTransportTime() });
+
+            Object.values(S.waves).forEach((wave) => {
+                try { wave.pause(); } catch (_) {}
+                try { wave.destroy(); } catch (_) {}
+            });
+
+            S.loadToken += 1;
+            S.waves = {};
+            S.isLoadingTracks = false;
+            S.loadingRenderId = null;
+            S.readyRenderId = null;
+            S.renderLoadPromise = null;
+        }
+
+        S.currentRender = sameRender && S.currentRender
+            ? { ...S.currentRender, ...render }
+            : render;
+        S.leadTrack = render.tracks.find((track) => track !== 'original') || render.tracks[0] || null;
+
+        if (!sameRender || Object.keys(S.trackState).length === 0) {
+            S.trackState = defaultStateForTracks(render.tracks);
+            S.auditionTrack = null;
+            S.masterTime = 0;
+            S.duration = 0;
+        } else {
+            const defaults = defaultStateForTracks(render.tracks);
+            const nextState = {};
+
+            (render.tracks || []).forEach((track) => {
+                nextState[track] = {
+                    ...(defaults[track] || {}),
+                    ...(S.trackState[track] || {}),
+                };
+            });
+
+            S.trackState = nextState;
+        }
+
+        if (persist) {
+            saveRenderCache(S.currentRender);
+        }
+
+        if (!tracksMounted || !sameRender) {
+            if (!ensureTrackRows(S.currentRender)) return;
+        }
+
+        setPlayerVisibility(true);
+        updateLatestHeader(S.currentRender);
+        applyStemMix();
+        bindTrackButtons();
+        bindWaveSeekHandlers();
+        updateMasterControls();
+        updateTrackButtonStates();
+        updateMasterTime(S.masterTime, S.duration);
+
+        if (S.readyRenderId === renderId && Object.keys(S.waves).length > 0) {
+            syncWaveTimes(S.masterTime, true);
+        }
     }
 
     function clearStemRenderUI() {
@@ -3354,10 +3445,15 @@ class extends Component
 
             updateLatestHeader(S.currentRender);
             setPlayerVisibility(true);
+            bindTrackButtons();
+            bindWaveSeekHandlers();
             updateMasterControls();
+            updateTrackButtonStates();
 
-            if (Object.keys(S.medias).length === 0 && S.loadingRenderId !== serverId) {
+            const rowsMounted = document.querySelectorAll('#stem-tracks .stem-track-row').length === (S.currentRender?.tracks || []).length;
+            if (!rowsMounted) {
                 loadStemRender(S.currentRender, { persist: false });
+                return;
             }
 
             return;
@@ -3434,8 +3530,6 @@ class extends Component
                 succeed(() => {
                     requestAnimationFrame(() => {
                         syncRenderFromServerDom();
-                        bindTrackButtons();
-                        bindWaveSeekHandlers();
                         updateTrackButtonStates();
                         updateMasterControls();
                     });

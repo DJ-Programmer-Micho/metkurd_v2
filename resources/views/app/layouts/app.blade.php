@@ -320,32 +320,32 @@
                 });
             }
 
-            function initThemeInteractions() {
-                // Sidebar hamburger
+            function syncSidebarTriggerState() {
                 const hamburger = document.getElementById('topnav-hamburger-icon');
-                if (hamburger && !hamburger.dataset.layoutBound) {
-                    hamburger.dataset.layoutBound = '1';
+                if (!hamburger) return;
 
-                    hamburger.addEventListener('click', function () {
-                        document.body.classList.toggle('sidebar-enable');
+                const isMobile = window.innerWidth <= 767;
+                const expanded = isMobile
+                    ? document.body.classList.contains('vertical-sidebar-enable')
+                    : document.documentElement.getAttribute('data-sidebar-size') !== 'sm';
 
-                        const size = document.documentElement.getAttribute('data-sidebar-size');
-                        document.documentElement.setAttribute(
-                            'data-sidebar-size',
-                            size === 'sm' ? 'lg' : 'sm'
-                        );
-                    });
+                hamburger.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            }
+
+            function resetMobileSidebarState() {
+                if (window.innerWidth > 767) {
+                    syncSidebarTriggerState();
+                    return;
                 }
 
-                // Vertical overlay
-                document.querySelectorAll('.vertical-overlay').forEach((overlay) => {
-                    if (overlay.dataset.layoutBound) return;
-                    overlay.dataset.layoutBound = '1';
+                document.body.classList.remove('sidebar-enable', 'vertical-sidebar-enable');
+                document.documentElement.setAttribute('data-sidebar-size', 'lg');
+                document.querySelector('.hamburger-icon')?.classList.remove('open');
+                syncSidebarTriggerState();
+            }
 
-                    overlay.addEventListener('click', function () {
-                        document.body.classList.remove('sidebar-enable');
-                    });
-                });
+            function initThemeInteractions() {
+                syncSidebarTriggerState();
 
                 // Fullscreen
                 document.querySelectorAll('[data-toggle="fullscreen"]').forEach((btn) => {
@@ -411,6 +411,21 @@
 
                 requestAnimationFrame(() => {
                     bootLayout(document);
+                    resetMobileSidebarState();
+                });
+            });
+
+            window.addEventListener('resize', function () {
+                syncSidebarTriggerState();
+            });
+
+            document.addEventListener('click', function (event) {
+                if (!event.target.closest('#topnav-hamburger-icon') && !event.target.closest('.vertical-overlay')) {
+                    return;
+                }
+
+                requestAnimationFrame(() => {
+                    syncSidebarTriggerState();
                 });
             });
         })();

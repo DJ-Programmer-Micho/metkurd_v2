@@ -92,23 +92,34 @@ class extends Component
         }
 
         $windowStart = now()->subDays(30);
+        $todayStart = now()->startOfDay();
+        $todayEnd = now()->copy()->endOfDay();
 
-        $jobsBase = MlJob::query()
-            ->where('customer_id', $customerId)
-            ->where('status', '!=', 'deleted');
-
-        $windowBase = MlJob::query()
+        $jobStats = MlJob::query()
             ->where('customer_id', $customerId)
             ->where('status', '!=', 'deleted')
-            ->where('created_at', '>=', $windowStart);
+            ->selectRaw("SUM(CASE WHEN status IN ('queued', 'running', 'saving') THEN 1 ELSE 0 END) as active_jobs")
+            ->selectRaw("SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) as queued_jobs")
+            ->selectRaw("SUM(CASE WHEN status IN ('running', 'saving') THEN 1 ELSE 0 END) as running_jobs")
+            ->selectRaw("SUM(CASE WHEN status = 'done' AND finished_at >= ? AND finished_at <= ? THEN 1 ELSE 0 END) as completed_today", [
+                $todayStart,
+                $todayEnd,
+            ])
+            ->selectRaw("SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as jobs_30", [$windowStart])
+            ->selectRaw("SUM(CASE WHEN created_at >= ? AND status = 'done' THEN 1 ELSE 0 END) as completed_30", [$windowStart])
+            ->selectRaw("SUM(CASE WHEN created_at >= ? AND status = 'failed' THEN 1 ELSE 0 END) as failed_30", [$windowStart])
+            ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN credits_charged ELSE 0 END), 0) as credits_spent_30', [$windowStart])
+            ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN storage_in_bytes ELSE 0 END), 0) as storage_in_30', [$windowStart])
+            ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN storage_out_bytes ELSE 0 END), 0) as storage_out_30', [$windowStart])
+            ->first();
 
-        $jobsThirty = (int) (clone $windowBase)->count();
-        $completedThirty = (int) (clone $windowBase)->where('status', 'done')->count();
-        $failedThirty = (int) (clone $windowBase)->where('status', 'failed')->count();
+        $jobsThirty = (int) ($jobStats?->jobs_30 ?? 0);
+        $completedThirty = (int) ($jobStats?->completed_30 ?? 0);
+        $failedThirty = (int) ($jobStats?->failed_30 ?? 0);
         $resolvedThirty = $completedThirty + $failedThirty;
         $quotaBytes = max(1, (int) (($customer?->storagePlan?->quota_mb ?? 512) * 1024 * 1024));
         $usedBytes = (int) ($usage?->storage_used_bytes ?? 0);
-        $activeJobs = (int) (clone $jobsBase)->active()->count();
+        $activeJobs = (int) ($jobStats?->active_jobs ?? 0);
 
         return [
             'credits_balance' => (int) ($wallet?->balance_credits ?? 0),
@@ -118,31 +129,48 @@ class extends Component
             'storage_quota_bytes' => $quotaBytes,
             'storage_pct' => min(100, (int) round(($usedBytes / $quotaBytes) * 100)),
             'active_jobs' => $activeJobs,
-            'queued_jobs' => (int) (clone $jobsBase)->where('status', 'queued')->count(),
-            'running_jobs' => (int) (clone $jobsBase)->whereIn('status', ['running', 'saving'])->count(),
-            'completed_today' => (int) (clone $jobsBase)
-                ->where('status', 'done')
-                ->whereDate('finished_at', now()->toDateString())
-                ->count(),
+            'queued_jobs' => (int) ($jobStats?->queued_jobs ?? 0),
+            'running_jobs' => (int) ($jobStats?->running_jobs ?? 0),
+            'completed_today' => (int) ($jobStats?->completed_today ?? 0),
             'jobs_30' => $jobsThirty,
             'completed_30' => $completedThirty,
             'failed_30' => $failedThirty,
             'success_pct' => $resolvedThirty > 0
                 ? (int) round(($completedThirty / $resolvedThirty) * 100)
                 : 0,
-            'credits_spent_30' => (int) (clone $windowBase)->sum('credits_charged'),
-            'storage_in_30' => (int) (clone $windowBase)->sum('storage_in_bytes'),
-            'storage_out_30' => (int) (clone $windowBase)->sum('storage_out_bytes'),
+            'credits_spent_30' => (int) ($jobStats?->credits_spent_30 ?? 0),
+            'storage_in_30' => (int) ($jobStats?->storage_in_30 ?? 0),
+            'storage_out_30' => (int) ($jobStats?->storage_out_30 ?? 0),
             'allowed_slots' => $allowedSlots,
             'available_slots' => max(0, $allowedSlots - $activeJobs),
         ];
     }
 
     #[Computed]
+    public function toolAccessMap(): array
+    {
+        $customer = $this->customer();
+
+        if (! $customer) {
+            return [];
+        }
+
+        $accessMap = [];
+
+        foreach (['tts', 'clone_tts', 'asr', 'stem', 'ocr', 'youtube_audio', 'youtube_video'] as $toolCode) {
+            $accessMap[$toolCode] = $customer->canAccessTool($toolCode);
+        }
+
+        $accessMap['youtube_download'] = (bool) ($accessMap['youtube_audio'] ?? false) || (bool) ($accessMap['youtube_video'] ?? false);
+
+        return $accessMap;
+    }
+
+    #[Computed]
     public function quickActions(): array
     {
         $locale = app()->getLocale();
-        $customer = $this->customer();
+        $accessMap = $this->toolAccessMap();
 
         $actions = [
             [
@@ -201,15 +229,15 @@ class extends Component
             ],
         ];
 
-        if (! $customer) {
+        if ($accessMap === []) {
             return [];
         }
 
-        return array_values(array_filter($actions, function (array $action) use ($customer): bool {
+        return array_values(array_filter($actions, function (array $action) use ($accessMap): bool {
             $toolCodes = $action['tool_codes'] ?? [$action['tool']];
 
             foreach ((array) $toolCodes as $toolCode) {
-                if ($customer->canAccessTool((string) $toolCode)) {
+                if (($accessMap[(string) $toolCode] ?? false) === true) {
                     return true;
                 }
             }
@@ -229,6 +257,16 @@ class extends Component
 
         return MlJob::query()
             ->with('tool:id,code,name')
+            ->select([
+                'id',
+                'customer_id',
+                'tool_id',
+                'status',
+                'credits_charged',
+                'started_at',
+                'created_at',
+                'job_kind',
+            ])
             ->where('customer_id', $customerId)
             ->where('status', '!=', 'deleted')
             ->whereIn('status', ['queued', 'running', 'saving'])
@@ -248,6 +286,15 @@ class extends Component
 
         return MlJob::query()
             ->with('tool:id,code,name')
+            ->select([
+                'id',
+                'customer_id',
+                'tool_id',
+                'status',
+                'credits_charged',
+                'created_at',
+                'job_kind',
+            ])
             ->where('customer_id', $customerId)
             ->where('status', '!=', 'deleted')
             ->latest('created_at')
@@ -434,16 +481,24 @@ class extends Component
 
     public function canOpenTool(?string $toolCode): bool
     {
+        $normalizedToolCode = $this->normalizeToolCode($toolCode);
+        $accessMap = $this->toolAccessMap();
+
+        if ($normalizedToolCode === '') {
+            return false;
+        }
+
+        if (array_key_exists($normalizedToolCode, $accessMap)) {
+            return (bool) $accessMap[$normalizedToolCode];
+        }
+
         $customer = $this->customer();
 
         if (! $customer) {
             return false;
         }
 
-        return match ($this->normalizeToolCode($toolCode)) {
-            'youtube_download' => $customer->canAccessAnyTool(['youtube_audio', 'youtube_video']),
-            default => $customer->canAccessTool($this->normalizeToolCode($toolCode)),
-        };
+        return $customer->canAccessTool($normalizedToolCode);
     }
 
     public function formatCredits(int|float|null $value): string
@@ -479,6 +534,9 @@ class extends Component
     $customer = $this->customer();
     $stats = $this->dashboardStats();
     $toolBreakdown = $this->toolBreakdown();
+    $quickActions = $this->quickActions();
+    $runningJobs = $this->runningJobs();
+    $recentJobs = $this->recentJobs();
     $toolTotal = max(1, (int) $toolBreakdown->sum('jobs'));
     $servicePlan = $customer?->servicePlan ?: $customer?->activeServiceSubscription?->servicePlan;
     $storagePlan = $customer?->storagePlan ?: $customer?->activeStorageSubscription?->storagePlan;
@@ -874,12 +932,12 @@ class extends Component
                                 <h5 class="card-title mb-1">{{ __('Quick Actions') }}</h5>
                                 <p class="text-muted mb-0">{{ __('Jump straight into the tools customers use the most.') }}</p>
                             </div>
-                            <span class="badge bg-primary-subtle text-primary">{{ __(':count tools', ['count' => count($this->quickActions())]) }}</span>
+                            <span class="badge bg-primary-subtle text-primary">{{ __(':count tools', ['count' => count($quickActions)]) }}</span>
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="row g-3">
-                            @forelse($this->quickActions() as $action)
+                            @forelse($quickActions as $action)
                                 <div class="col-md-6">
                                     <div class="card mk-quick-card h-100" style="--mk-tool-color: {{ $this->toolColor($action['tool']) }};">
                                         <div class="card-body">
@@ -1066,9 +1124,9 @@ class extends Component
                         </div>
                     </div>
                     <div class="card-body">
-                        @if($this->runningJobs()->isNotEmpty())
+                        @if($runningJobs->isNotEmpty())
                             <div class="d-flex flex-column">
-                                @foreach($this->runningJobs() as $job)
+                                @foreach($runningJobs as $job)
                                     @php
                                         $toolCode = (string) ($job->tool?->code ?? $job->job_kind ?? 'unknown');
                                     @endphp
@@ -1151,7 +1209,7 @@ class extends Component
                             </tr>
                         </thead>
                         <tbody>
-                            @forelse($this->recentJobs() as $job)
+                            @forelse($recentJobs as $job)
                                 @php
                                     $toolCode = (string) ($job->tool?->code ?? $job->job_kind ?? 'unknown');
                                 @endphp

@@ -35,7 +35,15 @@
                 </a>
             </div>
 
-            <button type="button" class="btn btn-sm px-3 fs-16 header-item vertical-menu-btn topnav-hamburger" id="topnav-hamburger-icon" wire:ignore>
+            <button
+                type="button"
+                class="btn btn-sm px-3 fs-16 header-item vertical-menu-btn topnav-hamburger"
+                id="topnav-hamburger-icon"
+                aria-label="{{ __('Toggle navigation menu') }}"
+                aria-controls="app-navbar-menu"
+                aria-expanded="false"
+                wire:ignore
+            >
                 <span class="hamburger-icon">
                     <span></span>
                     <span></span>
