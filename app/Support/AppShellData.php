@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Customer;
 use App\Models\MlJob;
+use Illuminate\Support\Facades\Cache;
 
 class AppShellData
 {
@@ -63,7 +64,11 @@ class AppShellData
                 'student' => 'bg-info',
                 default => 'bg-secondary',
             },
-            'access_map' => $this->buildAccessMap($customer),
+            'access_map' => Cache::remember(
+                "app-shell:{$customerId}:access-map",
+                now()->addSeconds(60),
+                fn () => $this->buildAccessMap($customer)
+            ),
             'credit_balance' => $creditBalance,
             'monthly_credits' => $monthlyCredits,
             'credits_pct' => $monthlyCredits > 0 ? min(100, (int) round(($creditBalance / $monthlyCredits) * 100)) : 0,
@@ -71,7 +76,11 @@ class AppShellData
             'storage_used_mb' => $usedMb,
             'storage_pct' => $quotaMb > 0 ? min(100, (int) round(($usedMb / $quotaMb) * 100)) : 0,
             'allowed_slots' => $allowedSlots,
-            'active_jobs' => $this->activeJobsCount($customerId),
+            'active_jobs' => Cache::remember(
+                "app-shell:{$customerId}:active-jobs",
+                now()->addSeconds(10),
+                fn () => $this->activeJobsCount($customerId)
+            ),
         ];
     }
 

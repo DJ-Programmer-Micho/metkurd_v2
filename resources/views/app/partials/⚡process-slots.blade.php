@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\MlJob;
+use App\Support\AppShellData;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
@@ -30,7 +31,8 @@ new class extends Component {
 
     protected function hydrateBoard(): void
     {
-        $customer = auth('app')->user();
+        $shell = app(AppShellData::class)->forCurrentCustomer();
+        $customer = $shell['customer'] ?? null;
 
         if (! $customer) {
             $this->allowedSlots = 2;
@@ -39,7 +41,14 @@ new class extends Component {
             return;
         }
 
-        $this->allowedSlots = $this->resolveAllowedSlots($customer);
+        $this->allowedSlots = max(1, (int) ($shell['allowed_slots'] ?? 2));
+        $accessMap = (array) ($shell['access_map'] ?? []);
+
+        if ((int) ($shell['active_jobs'] ?? 0) <= 0) {
+            $this->activeJobs = 0;
+            $this->slotsData = $this->buildEmptySlots($this->allowedSlots);
+            return;
+        }
 
         $jobs = MlJob::query()
             ->with('tool:id,code')
@@ -69,13 +78,13 @@ new class extends Component {
 
         $this->activeJobs = $jobs->count();
 
-        $items = $jobs->map(function ($job) use ($customer) {
+        $items = $jobs->map(function ($job) use ($accessMap) {
             $toolCode = (string) ($job->tool?->code ?? '');
             $normalizedToolCode = match ($toolCode) {
                 'wasr' => 'asr',
                 default => $toolCode,
             };
-            $isAccessible = $normalizedToolCode !== '' && $customer->canAccessTool($normalizedToolCode);
+            $isAccessible = $normalizedToolCode !== '' && (bool) ($accessMap[$normalizedToolCode] ?? false);
 
             $route = $isAccessible ? match ($toolCode) {
                 'tts' => route('app.xtts', ['locale' => app()->getLocale()]),
@@ -121,16 +130,6 @@ new class extends Component {
         }
 
         $this->slotsData = $slots;
-    }
-
-    protected function resolveAllowedSlots($customer): int
-    {
-        return match (strtolower((string) ($customer?->serviceCode() ?? 'free'))) {
-            'student' => 2,
-            'pro' => 3,
-            'premium' => 5,
-            default => 2,
-        };
     }
 
     protected function buildEmptySlots(int $allowed): array

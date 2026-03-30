@@ -134,7 +134,15 @@ class Customer extends Authenticatable
 
     public function serviceCode(): string
     {
-        return $this->servicePlan()->first()?->code ?? 'free';
+        if ($this->relationLoaded('servicePlan') && $this->getRelation('servicePlan')) {
+            return (string) ($this->getRelation('servicePlan')->code ?? 'free');
+        }
+
+        if ($this->relationLoaded('activeServiceSubscription') && $this->getRelation('activeServiceSubscription')) {
+            return (string) ($this->getRelation('activeServiceSubscription')->servicePlan?->code ?? 'free');
+        }
+
+        return (string) ($this->servicePlan()->value('code') ?? 'free');
     }
 
     // =========================================================

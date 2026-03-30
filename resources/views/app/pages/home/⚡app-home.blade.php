@@ -2,8 +2,9 @@
 
 use App\Models\Customer;
 use App\Models\MlJob;
+use App\Support\AppShellData;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -30,25 +31,15 @@ class extends Component
     }
 
     #[Computed]
+    public function shell(): array
+    {
+        return app(AppShellData::class)->forCurrentCustomer();
+    }
+
+    #[Computed]
     public function customer(): ?Customer
     {
-        $customerId = $this->customerId();
-
-        if ($customerId <= 0) {
-            return null;
-        }
-
-        return Customer::query()
-            ->with([
-                'profile',
-                'usage',
-                'wallet',
-                'servicePlan',
-                'storagePlan',
-                'activeServiceSubscription.servicePlan',
-                'activeStorageSubscription.storagePlan',
-            ])
-            ->find($customerId);
+        return $this->shell()['customer'] ?? null;
     }
 
     #[Computed]
@@ -61,58 +52,65 @@ class extends Component
         $allowedSlots = $this->allowedSlots();
 
         if ($customerId <= 0) {
-            return [
-                'credits_balance' => 0,
-                'subscription_balance' => 0,
-                'addon_balance' => 0,
-                'storage_used_bytes' => 0,
-                'storage_quota_bytes' => 1,
-                'storage_pct' => 0,
-                'active_jobs' => 0,
-                'queued_jobs' => 0,
-                'running_jobs' => 0,
-                'completed_today' => 0,
-                'jobs_30' => 0,
-                'completed_30' => 0,
-                'failed_30' => 0,
-                'success_pct' => 0,
-                'credits_spent_30' => 0,
-                'storage_in_30' => 0,
-                'storage_out_30' => 0,
-                'allowed_slots' => $allowedSlots,
-                'available_slots' => $allowedSlots,
-            ];
+            return $this->emptyDashboardStats($allowedSlots);
         }
 
-        $windowStart = now()->subDays(30);
-        $todayStart = now()->startOfDay();
-        $todayEnd = now()->copy()->endOfDay();
+        $cached = Cache::remember(
+            $this->dashboardCacheKey('stats'),
+            now()->addSeconds(20),
+            function () use ($customerId) {
+                $windowStart = now()->subDays(30);
+                $todayStart = now()->startOfDay();
+                $todayEnd = now()->copy()->endOfDay();
 
-        $jobStats = MlJob::query()
-            ->where('customer_id', $customerId)
-            ->where('status', '!=', 'deleted')
-            ->selectRaw("SUM(CASE WHEN status IN ('queued', 'running', 'saving') THEN 1 ELSE 0 END) as active_jobs")
-            ->selectRaw("SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) as queued_jobs")
-            ->selectRaw("SUM(CASE WHEN status IN ('running', 'saving') THEN 1 ELSE 0 END) as running_jobs")
-            ->selectRaw("SUM(CASE WHEN status = 'done' AND finished_at >= ? AND finished_at <= ? THEN 1 ELSE 0 END) as completed_today", [
-                $todayStart,
-                $todayEnd,
-            ])
-            ->selectRaw("SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as jobs_30", [$windowStart])
-            ->selectRaw("SUM(CASE WHEN created_at >= ? AND status = 'done' THEN 1 ELSE 0 END) as completed_30", [$windowStart])
-            ->selectRaw("SUM(CASE WHEN created_at >= ? AND status = 'failed' THEN 1 ELSE 0 END) as failed_30", [$windowStart])
-            ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN credits_charged ELSE 0 END), 0) as credits_spent_30', [$windowStart])
-            ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN storage_in_bytes ELSE 0 END), 0) as storage_in_30', [$windowStart])
-            ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN storage_out_bytes ELSE 0 END), 0) as storage_out_30', [$windowStart])
-            ->first();
+                $liveStats = MlJob::query()
+                    ->where('customer_id', $customerId)
+                    ->whereIn('status', $this->liveStatuses())
+                    ->selectRaw('COUNT(*) as active_jobs')
+                    ->selectRaw("SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) as queued_jobs")
+                    ->selectRaw("SUM(CASE WHEN status IN ('running', 'saving') THEN 1 ELSE 0 END) as running_jobs")
+                    ->first();
 
-        $jobsThirty = (int) ($jobStats?->jobs_30 ?? 0);
-        $completedThirty = (int) ($jobStats?->completed_30 ?? 0);
-        $failedThirty = (int) ($jobStats?->failed_30 ?? 0);
+                $completedToday = MlJob::query()
+                    ->where('customer_id', $customerId)
+                    ->where('status', 'done')
+                    ->whereBetween('finished_at', [$todayStart, $todayEnd])
+                    ->count();
+
+                $windowStats = MlJob::query()
+                    ->where('customer_id', $customerId)
+                    ->whereIn('status', $this->reportableStatuses())
+                    ->where('created_at', '>=', $windowStart)
+                    ->selectRaw('COUNT(*) as jobs_30')
+                    ->selectRaw("SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as completed_30")
+                    ->selectRaw("SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_30")
+                    ->selectRaw('COALESCE(SUM(credits_charged), 0) as credits_spent_30')
+                    ->selectRaw('COALESCE(SUM(storage_in_bytes), 0) as storage_in_30')
+                    ->selectRaw('COALESCE(SUM(storage_out_bytes), 0) as storage_out_30')
+                    ->first();
+
+                return [
+                    'active_jobs' => (int) ($liveStats?->active_jobs ?? 0),
+                    'queued_jobs' => (int) ($liveStats?->queued_jobs ?? 0),
+                    'running_jobs' => (int) ($liveStats?->running_jobs ?? 0),
+                    'completed_today' => (int) $completedToday,
+                    'jobs_30' => (int) ($windowStats?->jobs_30 ?? 0),
+                    'completed_30' => (int) ($windowStats?->completed_30 ?? 0),
+                    'failed_30' => (int) ($windowStats?->failed_30 ?? 0),
+                    'credits_spent_30' => (int) ($windowStats?->credits_spent_30 ?? 0),
+                    'storage_in_30' => (int) ($windowStats?->storage_in_30 ?? 0),
+                    'storage_out_30' => (int) ($windowStats?->storage_out_30 ?? 0),
+                ];
+            }
+        );
+
+        $jobsThirty = (int) ($cached['jobs_30'] ?? 0);
+        $completedThirty = (int) ($cached['completed_30'] ?? 0);
+        $failedThirty = (int) ($cached['failed_30'] ?? 0);
         $resolvedThirty = $completedThirty + $failedThirty;
         $quotaBytes = max(1, (int) (($customer?->storagePlan?->quota_mb ?? 512) * 1024 * 1024));
         $usedBytes = (int) ($usage?->storage_used_bytes ?? 0);
-        $activeJobs = (int) ($jobStats?->active_jobs ?? 0);
+        $activeJobs = (int) ($cached['active_jobs'] ?? 0);
 
         return [
             'credits_balance' => (int) ($wallet?->balance_credits ?? 0),
@@ -122,18 +120,18 @@ class extends Component
             'storage_quota_bytes' => $quotaBytes,
             'storage_pct' => min(100, (int) round(($usedBytes / $quotaBytes) * 100)),
             'active_jobs' => $activeJobs,
-            'queued_jobs' => (int) ($jobStats?->queued_jobs ?? 0),
-            'running_jobs' => (int) ($jobStats?->running_jobs ?? 0),
-            'completed_today' => (int) ($jobStats?->completed_today ?? 0),
+            'queued_jobs' => (int) ($cached['queued_jobs'] ?? 0),
+            'running_jobs' => (int) ($cached['running_jobs'] ?? 0),
+            'completed_today' => (int) ($cached['completed_today'] ?? 0),
             'jobs_30' => $jobsThirty,
             'completed_30' => $completedThirty,
             'failed_30' => $failedThirty,
             'success_pct' => $resolvedThirty > 0
                 ? (int) round(($completedThirty / $resolvedThirty) * 100)
                 : 0,
-            'credits_spent_30' => (int) ($jobStats?->credits_spent_30 ?? 0),
-            'storage_in_30' => (int) ($jobStats?->storage_in_30 ?? 0),
-            'storage_out_30' => (int) ($jobStats?->storage_out_30 ?? 0),
+            'credits_spent_30' => (int) ($cached['credits_spent_30'] ?? 0),
+            'storage_in_30' => (int) ($cached['storage_in_30'] ?? 0),
+            'storage_out_30' => (int) ($cached['storage_out_30'] ?? 0),
             'allowed_slots' => $allowedSlots,
             'available_slots' => max(0, $allowedSlots - $activeJobs),
         ];
@@ -142,21 +140,7 @@ class extends Component
     #[Computed]
     public function toolAccessMap(): array
     {
-        $customer = $this->customer();
-
-        if (! $customer) {
-            return [];
-        }
-
-        $accessMap = [];
-
-        foreach (['tts', 'clone_tts', 'asr', 'stem', 'ocr', 'youtube_audio', 'youtube_video'] as $toolCode) {
-            $accessMap[$toolCode] = $customer->canAccessTool($toolCode);
-        }
-
-        $accessMap['youtube_download'] = (bool) ($accessMap['youtube_audio'] ?? false) || (bool) ($accessMap['youtube_video'] ?? false);
-
-        return $accessMap;
+        return (array) ($this->shell()['access_map'] ?? []);
     }
 
     #[Computed]
@@ -261,8 +245,7 @@ class extends Component
                 'job_kind',
             ])
             ->where('customer_id', $customerId)
-            ->where('status', '!=', 'deleted')
-            ->whereIn('status', ['queued', 'running', 'saving'])
+            ->whereIn('status', $this->liveStatuses())
             ->orderBy('created_at')
             ->limit(max(5, $this->allowedSlots()))
             ->get();
@@ -289,7 +272,7 @@ class extends Component
                 'job_kind',
             ])
             ->where('customer_id', $customerId)
-            ->where('status', '!=', 'deleted')
+            ->whereIn('status', $this->reportableStatuses())
             ->latest('created_at')
             ->limit(6)
             ->get();
@@ -304,31 +287,46 @@ class extends Component
             return collect();
         }
 
-        $toolExpr = "COALESCE(tools.code, ml_jobs.job_kind, 'unknown')";
+        $rows = Cache::remember(
+            $this->dashboardCacheKey('tool-breakdown'),
+            now()->addSeconds(30),
+            function () use ($customerId) {
+                $toolExpr = "COALESCE(NULLIF(job_kind, ''), 'unknown')";
 
-        return DB::table('ml_jobs')
-            ->leftJoin('tools', 'tools.id', '=', 'ml_jobs.tool_id')
-            ->where('ml_jobs.customer_id', $customerId)
-            ->where('ml_jobs.status', '!=', 'deleted')
-            ->where('ml_jobs.created_at', '>=', now()->subDays(30))
-            ->selectRaw($toolExpr . ' as tool_code')
-            ->selectRaw('COUNT(*) as jobs')
-            ->selectRaw("SUM(CASE WHEN ml_jobs.status = 'done' THEN 1 ELSE 0 END) as completed_jobs")
-            ->selectRaw("SUM(CASE WHEN ml_jobs.status = 'failed' THEN 1 ELSE 0 END) as failed_jobs")
-            ->selectRaw('SUM(COALESCE(ml_jobs.credits_charged, 0)) as credits')
-            ->groupBy(DB::raw($toolExpr))
-            ->orderByDesc('jobs')
-            ->get()
-            ->map(function ($row) {
-                $toolCode = (string) ($row->tool_code ?? 'unknown');
+                return MlJob::query()
+                    ->where('customer_id', $customerId)
+                    ->whereIn('status', $this->reportableStatuses())
+                    ->where('created_at', '>=', now()->subDays(30))
+                    ->selectRaw($toolExpr . ' as tool_code')
+                    ->selectRaw('COUNT(*) as jobs')
+                    ->selectRaw("SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as completed_jobs")
+                    ->selectRaw("SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs")
+                    ->selectRaw('COALESCE(SUM(credits_charged), 0) as credits')
+                    ->groupByRaw($toolExpr)
+                    ->orderByDesc('jobs')
+                    ->get()
+                    ->map(fn ($row) => [
+                        'tool_code' => (string) ($row->tool_code ?? 'unknown'),
+                        'jobs' => (int) ($row->jobs ?? 0),
+                        'completed_jobs' => (int) ($row->completed_jobs ?? 0),
+                        'failed_jobs' => (int) ($row->failed_jobs ?? 0),
+                        'credits' => (int) ($row->credits ?? 0),
+                    ])
+                    ->all();
+            }
+        );
+
+        return collect($rows)
+            ->map(function (array $row) {
+                $toolCode = (string) ($row['tool_code'] ?? 'unknown');
 
                 return [
                     'code' => $toolCode,
                     'label' => $this->toolLabel($toolCode),
-                    'jobs' => (int) ($row->jobs ?? 0),
-                    'completed' => (int) ($row->completed_jobs ?? 0),
-                    'failed' => (int) ($row->failed_jobs ?? 0),
-                    'credits' => (int) ($row->credits ?? 0),
+                    'jobs' => (int) ($row['jobs'] ?? 0),
+                    'completed' => (int) ($row['completed_jobs'] ?? 0),
+                    'failed' => (int) ($row['failed_jobs'] ?? 0),
+                    'credits' => (int) ($row['credits'] ?? 0),
                     'color' => $this->toolColor($toolCode),
                 ];
             })
@@ -379,19 +377,7 @@ class extends Component
 
     public function allowedSlots(): int
     {
-        $customer = $this->customer();
-        $serviceCode = strtolower((string) (
-            $customer?->servicePlan?->code
-            ?? $customer?->activeServiceSubscription?->servicePlan?->code
-            ?? 'free'
-        ));
-
-        return match ($serviceCode) {
-            'student' => 2,
-            'pro' => 3,
-            'premium' => 5,
-            default => 2,
-        };
+        return max(1, (int) ($this->shell()['allowed_slots'] ?? 2));
     }
 
     public function toolLabel(?string $toolCode): string
@@ -481,17 +467,7 @@ class extends Component
             return false;
         }
 
-        if (array_key_exists($normalizedToolCode, $accessMap)) {
-            return (bool) $accessMap[$normalizedToolCode];
-        }
-
-        $customer = $this->customer();
-
-        if (! $customer) {
-            return false;
-        }
-
-        return $customer->canAccessTool($normalizedToolCode);
+        return (bool) ($accessMap[$normalizedToolCode] ?? false);
     }
 
     public function formatCredits(int|float|null $value): string
@@ -519,6 +495,46 @@ class extends Component
             'wasr' => 'asr',
             default => (string) $toolCode,
         };
+    }
+
+    protected function liveStatuses(): array
+    {
+        return ['queued', 'running', 'saving'];
+    }
+
+    protected function reportableStatuses(): array
+    {
+        return ['queued', 'running', 'saving', 'done', 'failed', 'delete_failed'];
+    }
+
+    protected function dashboardCacheKey(string $suffix): string
+    {
+        return 'app-home:' . $this->customerId() . ':' . $suffix;
+    }
+
+    protected function emptyDashboardStats(int $allowedSlots): array
+    {
+        return [
+            'credits_balance' => 0,
+            'subscription_balance' => 0,
+            'addon_balance' => 0,
+            'storage_used_bytes' => 0,
+            'storage_quota_bytes' => 1,
+            'storage_pct' => 0,
+            'active_jobs' => 0,
+            'queued_jobs' => 0,
+            'running_jobs' => 0,
+            'completed_today' => 0,
+            'jobs_30' => 0,
+            'completed_30' => 0,
+            'failed_30' => 0,
+            'success_pct' => 0,
+            'credits_spent_30' => 0,
+            'storage_in_30' => 0,
+            'storage_out_30' => 0,
+            'allowed_slots' => $allowedSlots,
+            'available_slots' => $allowedSlots,
+        ];
     }
 };
 ?>
