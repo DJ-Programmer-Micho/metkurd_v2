@@ -27,6 +27,11 @@ class extends Component
                     <p class="text-muted mb-0">{{ __('Create and tune one-time credit packs, pack sizes, pricing, and storefront ordering.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
+                    <select class="form-select" wire:model.live="displayCurrencyCode" style="min-width: 180px;">
+                        @foreach ($this->displayCurrencyOptions as $currencyCode => $currencyLabel)
+                            <option value="{{ $currencyCode }}">{{ $currencyLabel }}</option>
+                        @endforeach
+                    </select>
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
                     <button type="button" class="btn btn-primary" wire:click="openCreateProductModal">{{ __('New Credit Product') }}</button>
                 </div>
@@ -66,8 +71,8 @@ class extends Component
             <div class="card card-animate h-100">
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Revenue') }}</p>
-                    <h2 class="mb-1">{{ $this->formatMoney($this->topStats['revenue']) }}</h2>
-                    <p class="text-muted mb-0">{{ __('Lifetime revenue from credit product purchases.') }}</p>
+                    <h2 class="mb-1">{{ $this->formatCanonicalMoneyWithOptionalDisplay($this->topStats['revenue']) }}</h2>
+                    <p class="text-muted mb-0">{{ __('Lifetime revenue from credit product purchases, stored canonically in IQD.') }}</p>
                 </div>
             </div>
         </div>
@@ -160,8 +165,12 @@ class extends Component
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $this->formatMoney($product->price_usd) }}</span>
-                                        <span class="text-muted small">{{ __('one-time payment') }}</span>
+                                        <span class="fw-semibold">{{ $this->formatCanonicalPrimary($product->price_iqd_effective) }}</span>
+                                        @if($this->formatOptionalDisplayMoney($product->price_iqd_effective))
+                                            <span class="text-muted small">{{ $this->formatOptionalDisplayMoney($product->price_iqd_effective) }}</span>
+                                        @else
+                                            <span class="text-muted small">{{ __('one-time payment') }}</span>
+                                        @endif
                                     </div>
                                 </td>
                                 <td>
@@ -172,7 +181,7 @@ class extends Component
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $this->formatMoney($product->revenue) }}</span>
+                                        <span class="fw-semibold">{{ $this->formatCanonicalMoneyWithOptionalDisplay($product->revenue) }}</span>
                                         <span class="text-muted small">{{ __(':credits credits sold', ['credits' => $this->formatCredits($product->credits_sold)]) }}</span>
                                     </div>
                                 </td>
@@ -235,9 +244,9 @@ class extends Component
                                 @error('creditsAmount') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Price (USD)') }}</label>
-                                <input type="number" min="0" step="0.01" class="form-control @error('priceUsd') is-invalid @enderror" wire:model.defer="priceUsd">
-                                @error('priceUsd') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                <label class="form-label">{{ __('Price (IQD)') }}</label>
+                                <input type="number" min="0" step="250" class="form-control @error('priceIqd') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqd">
+                                @error('priceIqd') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">{{ __('Sort Order') }}</label>
@@ -248,6 +257,18 @@ class extends Component
                                 <div class="form-check mt-4">
                                     <input class="form-check-input" type="checkbox" id="addonIsActive" wire:model.defer="isActive">
                                     <label class="form-check-label" for="addonIsActive">{{ __('Active') }}</label>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="border rounded-3 p-3 bg-light-subtle">
+                                    <div class="fw-semibold mb-2">{{ __('Live currency preview from IQD base') }}</div>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @foreach ($this->pricePreviewRows($priceIqd) as $preview)
+                                            <span class="badge bg-body text-body border">
+                                                {{ $preview['code'] }}: {{ $preview['formatted'] }}
+                                            </span>
+                                        @endforeach
+                                    </div>
                                 </div>
                             </div>
                             <div class="col-12">

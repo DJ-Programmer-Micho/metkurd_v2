@@ -15,7 +15,7 @@ return new class extends Migration {
             $table->unsignedBigInteger('previous_service_plan_id')->nullable()->index();
 
             $table->string('status', 20)->default('active')->index(); // trialing, active, canceled, expired, paused, ended
-            $table->string('source', 40)->nullable()->index();         // manual, areeba, zaincash, fib, fake
+            $table->string('source', 40)->nullable()->index(); // manual, areeba, zaincash, fib, fake
             $table->string('provider_ref', 190)->nullable()->index();
 
             $table->timestamp('starts_at')->nullable();
@@ -28,6 +28,14 @@ return new class extends Migration {
             $table->date('next_renewal_on')->nullable()->index();
 
             $table->boolean('auto_renew')->default(true)->index();
+            $table->decimal('price_iqd_snapshot', 14, 0)->nullable();
+            $table->char('display_currency_code', 3)->nullable()->index();
+            $table->decimal('display_exchange_rate', 18, 8)->nullable();
+            $table->decimal('display_amount_raw', 18, 8)->nullable();
+            $table->decimal('display_amount_rounded', 18, 4)->nullable();
+            $table->decimal('display_rounding_step', 18, 4)->nullable();
+            $table->string('display_rounding_mode', 20)->nullable();
+            $table->char('display_country_code', 2)->nullable()->index();
             $table->json('meta')->nullable();
 
             $table->timestamps();

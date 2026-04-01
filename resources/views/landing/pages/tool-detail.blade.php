@@ -58,8 +58,8 @@ new #[Layout('landing::layouts.app')] class extends Component
                     <h1 class="display-hero mb-3">{{ data_get($toolPage, 'title') }}</h1>
                     <p class="lead-soft mb-4">{{ data_get($toolPage, 'lead') }}</p>
                     <div class="d-flex gap-3 flex-wrap">
-                        <a href="{{ route('app.signup') }}" class="btn btn-glow rounded-pill px-4" wire:navigate.hover>{{ LandingContent::text('common.get_started') }}</a>
-                        <a href="{{ route('landing.pricing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-soft rounded-pill px-4" wire:navigate.hover>{{ LandingContent::text('common.view_pricing') }}</a>
+                        <a href="{{ route('app.signup') }}" class="btn btn-glow rounded-pill px-4" wire:navigate>{{ LandingContent::text('common.get_started') }}</a>
+                        <a href="{{ route('landing.pricing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-soft rounded-pill px-4" wire:navigate>{{ LandingContent::text('common.view_pricing') }}</a>
                     </div>
                 </div>
 

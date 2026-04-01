@@ -41,7 +41,7 @@ new class extends Component
                                 class="btn {{ ($action['style'] ?? 'primary') === 'primary' ? 'btn-glow' : 'btn-outline-soft' }} btn-lg rounded-pill px-4"
                                 href="{{ $action['href'] ?? 'javascript:void(0)' }}"
                                 @if(($action['navigate'] ?? true) === true)
-                                    wire:navigate.hover
+                                    wire:navigate
                                 @endif
                             >
                                 @if(! empty($action['icon']))

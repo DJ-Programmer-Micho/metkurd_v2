@@ -86,11 +86,11 @@ new class extends Component
 
                     @if($showButton)
                         @if($buttonStyle === 'button')
-                            <a class="btn btn-outline-soft mt-3" href="{{ $tool['href'] }}" wire:navigate.hover>
+                            <a class="btn btn-outline-soft mt-3" href="{{ $tool['href'] }}" wire:navigate>
                                 {{ $buttonLabel ?: LandingContent::text('common.open_page') }}
                             </a>
                         @else
-                            <a class="footer-link fw-semibold mt-3 d-inline-flex align-items-center gap-2" href="{{ $tool['href'] }}" wire:navigate.hover>
+                            <a class="footer-link fw-semibold mt-3 d-inline-flex align-items-center gap-2" href="{{ $tool['href'] }}" wire:navigate>
                                 {{ $buttonLabel ?: LandingContent::text('common.learn_more') }}
                                 <i class="bi bi-arrow-right"></i>
                             </a>

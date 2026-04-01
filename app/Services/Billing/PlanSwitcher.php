@@ -23,9 +23,8 @@ class PlanSwitcher
             $plan = ServicePlan::where('is_active', true)->findOrFail($servicePlanId);
             $billingCycle = strtolower(trim((string) ($meta['billing_cycle'] ?? 'monthly')));
             $billingCycle = in_array($billingCycle, ['monthly', 'yearly'], true) ? $billingCycle : 'monthly';
-            $amountUsd = $billingCycle === 'yearly'
-                ? (float) ($plan->price_usd_yearly ?? 0)
-                : (float) ($plan->price_usd_monthly ?? 0);
+            $amountIqd = $plan->priceIqdForCycle($billingCycle);
+            $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd($amountIqd, $customer, $meta);
 
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
@@ -35,13 +34,27 @@ class PlanSwitcher
                 'credit_product_id' => null,
                 'status' => 'paid',
                 'credits_amount' => (int) $plan->monthly_credits,
-                'amount_usd' => $amountUsd,
-                'currency' => 'USD',
+                'amount_usd' => $currencySnapshot['usd_reference_amount'],
+                'currency' => 'IQD',
+                'base_currency_code' => 'IQD',
+                'base_amount_iqd' => $amountIqd,
+                'display_currency_code' => $currencySnapshot['display_currency_code'],
+                'display_exchange_rate' => $currencySnapshot['display_exchange_rate'],
+                'display_amount_raw' => $currencySnapshot['display_amount_raw'],
+                'display_amount_rounded' => $currencySnapshot['display_amount_rounded'],
+                'display_rounding_step' => $currencySnapshot['display_rounding_step'],
+                'display_rounding_mode' => $currencySnapshot['display_rounding_mode'],
+                'display_country_code' => $currencySnapshot['display_country_code'],
                 'provider' => 'fake',
                 'provider_ref' => 'FAKE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999),
                 'meta' => array_merge([
                     'purpose' => 'service_plan_switch',
                     'billing_cycle' => $billingCycle,
+                    'display_label' => $currencySnapshot['display_label'],
+                    'base_label' => $currencySnapshot['base_label'],
+                    'iqd_label' => $currencySnapshot['iqd_label'],
+                    'usd_reference_label' => $currencySnapshot['usd_reference_label'],
+                    'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                 ], $meta),
             ]);
 
@@ -69,10 +82,23 @@ class PlanSwitcher
                 'provider_ref' => $order->provider_ref,
                 'next_renewal_on' => now()->addMonth()->toDateString(),
                 'auto_renew' => false,
+                'price_iqd_snapshot' => $amountIqd,
+                'display_currency_code' => $currencySnapshot['display_currency_code'],
+                'display_exchange_rate' => $currencySnapshot['display_exchange_rate'],
+                'display_amount_raw' => $currencySnapshot['display_amount_raw'],
+                'display_amount_rounded' => $currencySnapshot['display_amount_rounded'],
+                'display_rounding_step' => $currencySnapshot['display_rounding_step'],
+                'display_rounding_mode' => $currencySnapshot['display_rounding_mode'],
+                'display_country_code' => $currencySnapshot['display_country_code'],
                 'meta' => [
                     'order_id' => $order->id,
                     'provider' => 'fake',
                     'billing_cycle' => $billingCycle,
+                    'display_label' => $currencySnapshot['display_label'],
+                    'base_label' => $currencySnapshot['base_label'],
+                    'iqd_label' => $currencySnapshot['iqd_label'],
+                    'usd_reference_label' => $currencySnapshot['usd_reference_label'],
+                    'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                 ],
             ]);
 
@@ -154,6 +180,8 @@ class PlanSwitcher
     {
         return DB::transaction(function () use ($customer, $storagePlanId, $meta) {
             $plan = StoragePlan::where('is_active', true)->findOrFail($storagePlanId);
+            $amountIqd = $plan->priceIqdAmount();
+            $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd($amountIqd, $customer, $meta);
 
             CreditOrder::create([
                 'customer_id' => $customer->id,
@@ -163,8 +191,17 @@ class PlanSwitcher
                 'credit_product_id' => null,
                 'status' => 'paid',
                 'credits_amount' => 0,
-                'amount_usd' => (float) ($plan->price_usd ?? 0),
-                'currency' => 'USD',
+                'amount_usd' => $currencySnapshot['usd_reference_amount'],
+                'currency' => 'IQD',
+                'base_currency_code' => 'IQD',
+                'base_amount_iqd' => $amountIqd,
+                'display_currency_code' => $currencySnapshot['display_currency_code'],
+                'display_exchange_rate' => $currencySnapshot['display_exchange_rate'],
+                'display_amount_raw' => $currencySnapshot['display_amount_raw'],
+                'display_amount_rounded' => $currencySnapshot['display_amount_rounded'],
+                'display_rounding_step' => $currencySnapshot['display_rounding_step'],
+                'display_rounding_mode' => $currencySnapshot['display_rounding_mode'],
+                'display_country_code' => $currencySnapshot['display_country_code'],
                 'provider' => 'fake',
                 'provider_ref' => 'FAKE-STORAGE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999),
                 'meta' => array_merge([
@@ -172,6 +209,11 @@ class PlanSwitcher
                     'storage_plan_id' => $plan->id,
                     'storage_plan_code' => $plan->code,
                     'storage_plan_name' => $plan->name,
+                    'display_label' => $currencySnapshot['display_label'],
+                    'base_label' => $currencySnapshot['base_label'],
+                    'iqd_label' => $currencySnapshot['iqd_label'],
+                    'usd_reference_label' => $currencySnapshot['usd_reference_label'],
+                    'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                 ], $meta),
             ]);
 
@@ -192,11 +234,24 @@ class PlanSwitcher
                 'customer_id' => $customer->id,
                 'storage_plan_id' => $plan->id,
                 'status' => 'active',
+                'price_iqd_snapshot' => $amountIqd,
+                'display_currency_code' => $currencySnapshot['display_currency_code'],
+                'display_exchange_rate' => $currencySnapshot['display_exchange_rate'],
+                'display_amount_raw' => $currencySnapshot['display_amount_raw'],
+                'display_amount_rounded' => $currencySnapshot['display_amount_rounded'],
+                'display_rounding_step' => $currencySnapshot['display_rounding_step'],
+                'display_rounding_mode' => $currencySnapshot['display_rounding_mode'],
+                'display_country_code' => $currencySnapshot['display_country_code'],
                 'starts_at' => now(),
                 'meta' => [
                     'over_quota' => $overQuota,
                     'used_bytes' => $usedBytes,
                     'quota_bytes' => $quotaBytes,
+                    'display_label' => $currencySnapshot['display_label'],
+                    'base_label' => $currencySnapshot['base_label'],
+                    'iqd_label' => $currencySnapshot['iqd_label'],
+                    'usd_reference_label' => $currencySnapshot['usd_reference_label'],
+                    'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                 ],
             ]);
         }, 3);

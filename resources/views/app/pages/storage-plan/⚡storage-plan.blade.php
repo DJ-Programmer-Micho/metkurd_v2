@@ -4,6 +4,7 @@
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use App\Models\StoragePlan;
+use App\Services\Billing\BillingCurrencyService;
 use App\Support\CustomerEmailNotifier;
 use App\Support\TelegramPaymentNotifier;
 use App\Services\Billing\PlanSwitcher;
@@ -15,6 +16,7 @@ class extends Component
     public array $plans = [];
     public ?int $currentPlanId = null;
     public ?int $selectedPlanId = null;
+    public string $displayCurrencyCode = 'IQD';
 
     public bool $showConfirm = false;
     public bool $processing = false;
@@ -27,19 +29,25 @@ class extends Component
 
     protected function loadData(): void
     {
-        $customer = auth('app')->user();
+        $customer = auth('app')->user()?->loadMissing('profile');
+        $currency = app(BillingCurrencyService::class);
+        $displayContext = $currency->resolveDisplayContext($customer);
+        $this->displayCurrencyCode = (string) ($displayContext['currency_code'] ?? 'IQD');
 
         $this->plans = StoragePlan::query()
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->get()
-            ->map(function ($p) {
+            ->map(function ($p) use ($currency, $customer) {
+                $priceIqd = $p->priceIqdAmount();
+
                 return [
                     'id' => (int) $p->id,
                     'code' => (string) $p->code,
                     'name' => (string) $p->name,
                     'quota_mb' => (int) ($p->quota_mb ?? 0),
-                    'price_usd' => (float) ($p->price_usd ?? 0),
+                    'price_iqd' => $priceIqd,
+                    'price_display' => $currency->priceDataForBaseAmountIqd($priceIqd, $customer),
                 ];
             })
             ->values()
@@ -86,6 +94,7 @@ class extends Component
 
         $this->processing = true;
         $this->message = '';
+        $selectedPriceDisplay = app(BillingCurrencyService::class)->priceDataForBaseAmountIqd((int) $selectedPlan['price_iqd'], $customer);
 
         try {
             app(PlanSwitcher::class)->switchStoragePlan($customer, (int) $this->selectedPlanId, [
@@ -107,7 +116,10 @@ class extends Component
                 [
                     'Plan Code' => strtoupper((string) $selectedPlan['code']),
                     'Storage Quota (MB)' => number_format((int) $selectedPlan['quota_mb']),
-                    'Amount (USD)' => '$' . number_format((float) $selectedPlan['price_usd'], 2),
+                    'Amount (IQD)' => $selectedPriceDisplay['iqd_label'],
+                    ...($selectedPriceDisplay['has_localized_estimate']
+                        ? ['Estimated Local Price' => $selectedPriceDisplay['display_label']]
+                        : []),
                     'Provider' => 'fake',
                 ],
                 'Storage plan page'
@@ -118,7 +130,7 @@ class extends Component
                 [
                     'plan_name' => (string) $selectedPlan['name'],
                     'quota_mb' => (int) $selectedPlan['quota_mb'],
-                    'amount_usd' => (float) $selectedPlan['price_usd'],
+                    'amount_label' => (string) $selectedPriceDisplay['iqd_label'],
                     'activated_on' => now()->format('F d, Y'),
                 ],
                 'Storage plan page'
@@ -192,6 +204,12 @@ class extends Component
                 @if($message)
                     <div class="alert alert-info mt-3 mb-0">{{ $message }}</div>
                 @endif
+
+                @if($displayCurrencyCode !== 'IQD')
+                    <div class="text-muted small mt-3">
+                        {{ __('Local display currency: :currency', ['currency' => $displayCurrencyCode]) }}
+                    </div>
+                @endif
             </div>
         </div>
     </div>
@@ -200,6 +218,7 @@ class extends Component
         @foreach($plans as $p)
             @php
                 $isCurrent = (int) $p['id'] === (int) $currentPlanId;
+                $showLocalPrice = (bool) data_get($p, 'price_display.has_localized_estimate', false);
             @endphp
 
             <div class="col-xxl-3 col-lg-6">
@@ -213,8 +232,11 @@ class extends Component
                             <div class="ms-auto text-end">
                                 <div class="fw-semibold">{{ number_format($p['quota_mb']) }} MB</div>
                                 <div class="text-muted fs-12">{{ __('quota') }}</div>
-                                <div class="fw-semibold mt-2">${{ number_format($p['price_usd'], 2) }}</div>
+                                <div class="fw-semibold mt-2">{{ data_get($p, 'price_display.iqd_label') }}</div>
                                 <div class="text-muted fs-12">{{ __('per change') }}</div>
+                                @if($showLocalPrice)
+                                    <div class="text-muted fs-12 mt-1">{{ data_get($p, 'price_display.estimated_label') }}</div>
+                                @endif
                             </div>
                         </div>
 
@@ -244,6 +266,7 @@ class extends Component
     @if($showConfirm)
         @php
             $selected = collect($plans)->firstWhere('id', $selectedPlanId);
+            $selectedDisplay = is_array($selected) ? ($selected['price_display'] ?? null) : null;
         @endphp
 
         <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
@@ -271,8 +294,14 @@ class extends Component
                             </p>
                             <p class="mb-2">
                                 {{ __('Price:') }}
-                                <b>${{ number_format($selected['price_usd'], 2) }}</b>
+                                <b>{{ data_get($selectedDisplay, 'iqd_label') }}</b>
                             </p>
+                            @if((bool) data_get($selectedDisplay, 'has_localized_estimate', false))
+                                <p class="mb-2">
+                                    {{ __('Estimated local display:') }}
+                                    <b>{{ data_get($selectedDisplay, 'display_label') }}</b>
+                                </p>
+                            @endif
                         @endif
 
                         <div class="small text-muted">

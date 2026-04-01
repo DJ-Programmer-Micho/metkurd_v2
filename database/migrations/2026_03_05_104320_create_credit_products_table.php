@@ -15,6 +15,7 @@ return new class extends Migration {
 
             $table->unsignedBigInteger('credits_amount');
             $table->decimal('price_usd', 10, 2);
+            $table->decimal('price_iqd', 14, 0)->nullable();
 
             $table->boolean('is_active')->default(true)->index();
             $table->unsignedSmallInteger('sort_order')->default(0);

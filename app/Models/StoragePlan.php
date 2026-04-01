@@ -12,11 +12,12 @@ class StoragePlan extends Model
 
     protected $table = 'storage_plans';
 
-    protected $fillable = ['code', 'name', 'quota_mb', 'price_usd', 'is_active', 'sort_order'];
+    protected $fillable = ['code', 'name', 'quota_mb', 'price_usd', 'price_iqd', 'is_active', 'sort_order'];
 
     protected $casts = [
         'quota_mb' => 'integer',
         'price_usd' => 'decimal:2',
+        'price_iqd' => 'decimal:0',
         'is_active' => 'boolean',
         'sort_order' => 'integer',
     ];
@@ -29,5 +30,20 @@ class StoragePlan extends Model
     public function activeSubscriptions(): HasMany
     {
         return $this->subscriptions()->where('status', 'active');
+    }
+
+    public function priceUsdAmount(): float
+    {
+        return (float) ($this->price_usd ?? 0);
+    }
+
+    public function priceIqdAmount(): int
+    {
+        if ($this->price_iqd !== null) {
+            return (int) round((float) $this->price_iqd);
+        }
+
+        return app(\App\Services\Billing\BillingCurrencyService::class)
+            ->legacyUsdAmountToIqd($this->priceUsdAmount());
     }
 }

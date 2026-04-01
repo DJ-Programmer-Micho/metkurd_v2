@@ -19,6 +19,7 @@ return new class extends Migration {
             $table->string('brand_name', 190)->nullable();
 
             $table->string('country', 2)->nullable()->index();
+            $table->char('display_currency_code', 3)->nullable()->index();
             $table->string('city', 120)->nullable()->index();
             $table->string('address', 190)->nullable();
             $table->string('zip_code', 20)->nullable();
@@ -28,7 +29,7 @@ return new class extends Migration {
 
             $table->timestamps();
 
-            $table->index(['country','city']);
+            $table->index(['country', 'city']);
         });
     }
 

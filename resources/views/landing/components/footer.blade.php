@@ -162,7 +162,7 @@ new class extends Component
                 <h6 class="fw-bold mb-3">{{ LandingContent::text('footer.platform_heading') }}</h6>
                 <div class="d-flex flex-column gap-2">
                     @foreach($platformLinks as $link)
-                        <a class="footer-link" href="{{ $link['href'] }}" wire:navigate.hover>{{ $link['label'] }}</a>
+                        <a class="footer-link" href="{{ $link['href'] }}" wire:navigate>{{ $link['label'] }}</a>
                     @endforeach
                 </div>
             </div>
@@ -171,7 +171,7 @@ new class extends Component
                 <h6 class="fw-bold mb-3">{{ LandingContent::text('footer.resources_heading') }}</h6>
                 <div class="d-flex flex-column gap-2">
                     @foreach($this->resourceLinks as $link)
-                        <a class="footer-link" href="{{ $link['href'] }}" wire:navigate.hover>{{ $link['label'] }}</a>
+                        <a class="footer-link" href="{{ $link['href'] }}" wire:navigate>{{ $link['label'] }}</a>
                     @endforeach
                 </div>
             </div>
@@ -180,7 +180,7 @@ new class extends Component
                 <h6 class="fw-bold mb-3">{{ LandingContent::text('footer.legal_heading') }}</h6>
                 <div class="d-flex flex-column gap-2">
                     @foreach($legalLinks as $link)
-                        <a class="footer-link" href="{{ $link['href'] }}" wire:navigate.hover>{{ $link['label'] }}</a>
+                        <a class="footer-link" href="{{ $link['href'] }}" wire:navigate>{{ $link['label'] }}</a>
                     @endforeach
                 </div>
             </div>

@@ -27,6 +27,11 @@ class extends Component
                     <p class="text-muted mb-0">{{ __('Manage subscription packs, credit allowances, monthly and yearly pricing, and activation state.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
+                    <select class="form-select" wire:model.live="displayCurrencyCode" style="min-width: 180px;">
+                        @foreach ($this->displayCurrencyOptions as $currencyCode => $currencyLabel)
+                            <option value="{{ $currencyCode }}">{{ $currencyLabel }}</option>
+                        @endforeach
+                    </select>
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
                     <button type="button" class="btn btn-primary" wire:click="openCreatePlanModal">{{ __('New Plan') }}</button>
                 </div>
@@ -66,8 +71,8 @@ class extends Component
             <div class="card card-animate h-100">
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Revenue') }}</p>
-                    <h2 class="mb-1">{{ $this->formatMoney($this->topStats['revenue']) }}</h2>
-                    <p class="text-muted mb-0">{{ __('Lifetime paid revenue generated from service plan orders.') }}</p>
+                    <h2 class="mb-1">{{ $this->formatCanonicalMoneyWithOptionalDisplay($this->topStats['revenue']) }}</h2>
+                    <p class="text-muted mb-0">{{ __('Lifetime paid revenue generated from service plan orders, stored canonically in IQD.') }}</p>
                 </div>
             </div>
         </div>
@@ -173,8 +178,16 @@ class extends Component
                                             <span class="fw-semibold text-success">{{ __('Free') }}</span>
                                             <span class="text-muted small">{{ __('No payment required') }}</span>
                                         @else
-                                            <span class="fw-semibold">{{ __(':amount / month', ['amount' => $this->formatMoney($plan->price_usd_monthly)]) }}</span>
-                                            <span class="text-muted small">{{ __(':amount / year', ['amount' => $this->formatMoney($plan->price_usd_yearly)]) }}</span>
+                                            <span class="fw-semibold">{{ __(':amount / month', ['amount' => $this->formatCanonicalPrimary($plan->price_iqd_monthly_effective)]) }}</span>
+                                            <span class="text-muted small">{{ __(':amount / year', ['amount' => $this->formatCanonicalPrimary($plan->price_iqd_yearly_effective)]) }}</span>
+                                            @if($this->formatOptionalDisplayMoney($plan->price_iqd_monthly_effective) || $this->formatOptionalDisplayMoney($plan->price_iqd_yearly_effective))
+                                                <span class="text-muted small">
+                                                    {{ __('~ :monthly / month | ~ :yearly / year', [
+                                                        'monthly' => $this->formatOptionalDisplayMoney($plan->price_iqd_monthly_effective) ?? $this->formatCanonicalPrimary($plan->price_iqd_monthly_effective),
+                                                        'yearly' => $this->formatOptionalDisplayMoney($plan->price_iqd_yearly_effective) ?? $this->formatCanonicalPrimary($plan->price_iqd_yearly_effective),
+                                                    ]) }}
+                                                </span>
+                                            @endif
                                         @endif
                                     </div>
                                 </td>
@@ -187,7 +200,7 @@ class extends Component
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $this->formatMoney($plan->revenue) }}</span>
+                                        <span class="fw-semibold">{{ $this->formatCanonicalMoneyWithOptionalDisplay($plan->revenue) }}</span>
                                         <span class="text-muted small">{{ __(':credits credits sold', ['credits' => $this->formatCredits($plan->credits_sold)]) }}</span>
                                     </div>
                                 </td>
@@ -259,14 +272,38 @@ class extends Component
                                 @error('monthlyCredits') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Monthly Price (USD)') }}</label>
-                                <input type="number" min="0" step="0.01" class="form-control @error('priceUsdMonthly') is-invalid @enderror" wire:model.defer="priceUsdMonthly">
-                                @error('priceUsdMonthly') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                <label class="form-label">{{ __('Monthly Price (IQD)') }}</label>
+                                <input type="number" min="0" step="250" class="form-control @error('priceIqdMonthly') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqdMonthly">
+                                @error('priceIqdMonthly') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Yearly Price (USD)') }}</label>
-                                <input type="number" min="0" step="0.01" class="form-control @error('priceUsdYearly') is-invalid @enderror" wire:model.defer="priceUsdYearly">
-                                @error('priceUsdYearly') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                <label class="form-label">{{ __('Yearly Price (IQD)') }}</label>
+                                <input type="number" min="0" step="250" class="form-control @error('priceIqdYearly') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqdYearly">
+                                @error('priceIqdYearly') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-6">
+                                <div class="border rounded-3 p-3 bg-light-subtle h-100">
+                                    <div class="fw-semibold mb-2">{{ __('Monthly preview from IQD base') }}</div>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @foreach ($this->pricePreviewRows($priceIqdMonthly) as $preview)
+                                            <span class="badge bg-body text-body border">
+                                                {{ $preview['code'] }}: {{ $preview['formatted'] }}
+                                            </span>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="border rounded-3 p-3 bg-light-subtle h-100">
+                                    <div class="fw-semibold mb-2">{{ __('Yearly preview from IQD base') }}</div>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @foreach ($this->pricePreviewRows($priceIqdYearly) as $preview)
+                                            <span class="badge bg-body text-body border">
+                                                {{ $preview['code'] }}: {{ $preview['formatted'] }}
+                                            </span>
+                                        @endforeach
+                                    </div>
+                                </div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">{{ __('Sort Order') }}</label>

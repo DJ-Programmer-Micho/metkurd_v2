@@ -37,9 +37,9 @@ new #[Layout('landing::layouts.app')] class extends Component
         </div>
     </section>
 
-    <section class="section pt-0">
+    {{-- <section class="section pt-0">
         <div class="container">
             <livewire:landing::components.feature-grid :items="$highlights" columns="col-md-6 col-xl-4" />
         </div>
-    </section>
+    </section> --}}
 </div>

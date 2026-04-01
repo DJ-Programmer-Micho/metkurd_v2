@@ -22,7 +22,16 @@ return new class extends Migration {
 
             $table->unsignedBigInteger('credits_amount')->default(0);
             $table->decimal('amount_usd', 12, 2)->nullable();
-            $table->char('currency', 3)->default('USD');
+            $table->char('currency', 3)->default('IQD');
+            $table->char('base_currency_code', 3)->default('IQD')->index();
+            $table->decimal('base_amount_iqd', 14, 0)->nullable();
+            $table->char('display_currency_code', 3)->nullable()->index();
+            $table->decimal('display_exchange_rate', 18, 8)->nullable();
+            $table->decimal('display_amount_raw', 18, 8)->nullable();
+            $table->decimal('display_amount_rounded', 18, 4)->nullable();
+            $table->decimal('display_rounding_step', 18, 4)->nullable();
+            $table->string('display_rounding_mode', 20)->nullable();
+            $table->char('display_country_code', 2)->nullable()->index();
 
             $table->string('provider', 60)->nullable()->index();
             $table->string('provider_ref', 190)->nullable()->index();

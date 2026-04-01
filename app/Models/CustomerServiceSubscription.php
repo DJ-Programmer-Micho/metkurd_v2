@@ -28,6 +28,14 @@ class CustomerServiceSubscription extends Model
         'cycle_ends_on',
         'next_renewal_on',
         'auto_renew',
+        'price_iqd_snapshot',
+        'display_currency_code',
+        'display_exchange_rate',
+        'display_amount_raw',
+        'display_amount_rounded',
+        'display_rounding_step',
+        'display_rounding_mode',
+        'display_country_code',
         'meta',
     ];
 
@@ -40,6 +48,11 @@ class CustomerServiceSubscription extends Model
         'cycle_ends_on' => 'date',
         'next_renewal_on' => 'date',
         'auto_renew' => 'boolean',
+        'price_iqd_snapshot' => 'decimal:0',
+        'display_exchange_rate' => 'decimal:8',
+        'display_amount_raw' => 'decimal:8',
+        'display_amount_rounded' => 'decimal:4',
+        'display_rounding_step' => 'decimal:4',
         'meta' => 'array',
     ];
 

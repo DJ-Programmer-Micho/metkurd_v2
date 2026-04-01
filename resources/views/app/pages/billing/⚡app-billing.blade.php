@@ -6,6 +6,7 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
+use App\Services\Billing\BillingCurrencyService;
 use App\Models\CreditOrder;
 use App\Models\CreditWallet;
 use App\Models\CustomerUsage;
@@ -49,6 +50,15 @@ class extends Component
     public int $billingPerPage = 10;
 
     public array $toolOptions = [];
+
+    protected function orderBaseAmountIqd(CreditOrder $order): int
+    {
+        if ($order->base_amount_iqd !== null) {
+            return (int) round((float) $order->base_amount_iqd);
+        }
+
+        return app(BillingCurrencyService::class)->legacyUsdAmountToIqd($order->amount_usd);
+    }
 
     public function mount(): void
     {
@@ -273,28 +283,28 @@ class extends Component
 
         $orders = CreditOrder::query()
             ->where('customer_id', $this->customerId())
-            ->whereBetween('created_at', [$this->rangeStart(), $this->rangeEnd()]);
-
-        $subscriptionPayments = (clone $orders)
-            ->where(function ($q) {
-                $q->where('order_type', 'subscription')
-                  ->orWhere('source_type', 'service_plan');
-            })
+            ->whereBetween('created_at', [$this->rangeStart(), $this->rangeEnd()])
             ->where('status', 'paid')
-            ->sum('amount_usd');
+            ->get([
+                'id',
+                'order_type',
+                'source_type',
+                'amount_usd',
+                'base_amount_iqd',
+            ]);
 
-        $storagePayments = (clone $orders)
-            ->where('source_type', 'storage_plan')
-            ->where('status', 'paid')
-            ->sum('amount_usd');
+        $subscriptionPayments = $orders
+            ->filter(fn (CreditOrder $order) => $order->order_type === 'subscription' || $order->source_type === 'service_plan')
+            ->sum(fn (CreditOrder $order) => $this->orderBaseAmountIqd($order));
 
-        $addonPayments = (clone $orders)
-            ->where(function ($q) {
-                $q->whereIn('order_type', ['addon', 'addon_purchase', 'credit'])
-                  ->orWhereIn('source_type', ['credit_product', 'addon']);
-            })
-            ->where('status', 'paid')
-            ->sum('amount_usd');
+        $storagePayments = $orders
+            ->filter(fn (CreditOrder $order) => $order->source_type === 'storage_plan')
+            ->sum(fn (CreditOrder $order) => $this->orderBaseAmountIqd($order));
+
+        $addonPayments = $orders
+            ->filter(fn (CreditOrder $order) => in_array($order->order_type, ['addon', 'addon_purchase', 'credit'], true)
+                || in_array($order->source_type, ['credit_product', 'addon'], true))
+            ->sum(fn (CreditOrder $order) => $this->orderBaseAmountIqd($order));
 
         return [
             'current_balance' => (int) ($wallet?->balance_credits ?? 0),
@@ -425,7 +435,9 @@ class extends Component
                     'tool' => null,
                     'description' => $order->meta['purpose'] ?? $order->source_type ?? $order->order_type,
                     'credits_delta' => (int) ($order->credits_amount ?? 0),
-                    'amount_usd' => (float) ($order->amount_usd ?? 0),
+                    'base_amount_iqd' => $this->orderBaseAmountIqd($order),
+                    'display_amount' => $order->display_amount_rounded !== null ? (float) $order->display_amount_rounded : null,
+                    'display_currency_code' => (string) ($order->display_currency_code ?? ''),
                     'status' => (string) ($order->status ?? 'paid'),
                     'bucket' => null,
                 ];
@@ -447,7 +459,9 @@ class extends Component
                     'tool' => $meta['tool'] ?? $meta['tool_code'] ?? $meta['job_kind'] ?? null,
                     'description' => $meta['purpose'] ?? $meta['plan_code'] ?? $meta['bucket_spent'] ?? $row->type,
                     'credits_delta' => (int) ($row->credits_delta ?? 0),
-                    'amount_usd' => null,
+                    'base_amount_iqd' => null,
+                    'display_amount' => null,
+                    'display_currency_code' => null,
                     'status' => $row->credits_delta >= 0 ? __('credit') : __('debit'),
                     'bucket' => $row->bucket ?? null,
                 ];
@@ -475,7 +489,26 @@ class extends Component
 
     public function money(float|int|null $value): string
     {
-        return '$' . number_format((float) $value, 2);
+        return app(BillingCurrencyService::class)->formatAmount((float) $value, 'IQD');
+    }
+
+    public function usdMoney(float|int|null $value): string
+    {
+        return app(BillingCurrencyService::class)->formatAmount((float) $value, 'USD');
+    }
+
+    public function moneyWithDisplay(int|float|null $baseIqdValue, float|int|string|null $displayAmount = null, ?string $displayCurrencyCode = null): string
+    {
+        $baseLabel = $this->money($baseIqdValue);
+        $displayCurrencyCode = strtoupper(trim((string) $displayCurrencyCode));
+
+        if ($displayAmount === null || $displayCurrencyCode === '' || $displayCurrencyCode === 'IQD') {
+            return $baseLabel;
+        }
+
+        $displayLabel = app(BillingCurrencyService::class)->formatAmount((float) $displayAmount, $displayCurrencyCode);
+
+        return $baseLabel . ' (' . $displayLabel . ')';
     }
 
     public function formatCredits(int|float|null $value): string
@@ -889,7 +922,7 @@ class extends Component
                                         <td>{{ $this->formatBytes((int) ($job->storage_in_bytes ?? 0)) }}</td>
                                         <td>{{ $this->formatBytes((int) ($job->storage_out_bytes ?? 0)) }}</td>
                                         <td>{{ $this->formatBytes((int) ($job->storage_in_bytes ?? 0) + (int) ($job->storage_out_bytes ?? 0)) }}</td>
-                                        <td>{{ $this->money((float) ($job->provider_cost_usd ?? 0)) }}</td>
+                                        <td>{{ $this->usdMoney((float) ($job->provider_cost_usd ?? 0)) }}</td>
                                     </tr>
                                 @empty
                                     <tr>
@@ -967,8 +1000,8 @@ class extends Component
                                             @endif
                                         </td>
                                         <td>
-                                            @if($row['amount_usd'] !== null)
-                                                {{ $this->money($row['amount_usd']) }}
+                                            @if($row['base_amount_iqd'] !== null)
+                                                {{ $this->moneyWithDisplay($row['base_amount_iqd'], $row['display_amount'] ?? null, $row['display_currency_code'] ?? null) }}
                                             @else
                                                 —
                                             @endif

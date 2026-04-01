@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
 
 class CustomerProfile extends Model
@@ -15,6 +16,7 @@ class CustomerProfile extends Model
         'job_title',
         'brand_name',
         'country',
+        'display_currency_code',
         'city',
         'address',
         'zip_code',
@@ -22,9 +24,14 @@ class CustomerProfile extends Model
         'avatar',
     ];
 
-    public function customer()
+    public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function displayCurrency(): BelongsTo
+    {
+        return $this->belongsTo(Currency::class, 'display_currency_code', 'code');
     }
 
     public function getAvatarUrlAttribute(): ?string

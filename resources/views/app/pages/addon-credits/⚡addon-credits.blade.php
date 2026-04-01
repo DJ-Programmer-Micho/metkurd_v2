@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 
 use App\Models\CreditProduct;
 use App\Models\CreditOrder;
+use App\Services\Billing\BillingCurrencyService;
 use App\Support\CustomerEmailNotifier;
 use App\Support\TelegramPaymentNotifier;
 use App\Services\Billing\CreditService;
@@ -18,6 +19,7 @@ class extends Component
 {
     public array $products = [];
     public ?int $selectedProductId = null;
+    public string $displayCurrencyCode = 'IQD';
 
     public bool $showConfirm = false;
     public bool $processing = false;
@@ -39,17 +41,25 @@ class extends Component
 
     protected function loadData(): void
     {
+        $customer = auth('app')->user()?->loadMissing('profile');
+        $currency = app(BillingCurrencyService::class);
+        $displayContext = $currency->resolveDisplayContext($customer);
+        $this->displayCurrencyCode = (string) ($displayContext['currency_code'] ?? 'IQD');
+
         $this->products = CreditProduct::query()
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->get()
-            ->map(function ($p) {
+            ->map(function ($p) use ($currency, $customer) {
+                $priceIqd = $p->priceIqdAmount();
+
                 return [
                     'id' => (int) $p->id,
                     'code' => (string) $p->code,
                     'name' => (string) $p->name,
                     'credits_amount' => (int) ($p->credits_amount ?? 0),
-                    'price_usd' => (float) ($p->price_usd ?? 0),
+                    'price_iqd' => $priceIqd,
+                    'price_display' => $currency->priceDataForBaseAmountIqd($priceIqd, $customer),
                 ];
             })
             ->values()
@@ -114,6 +124,11 @@ class extends Component
                 $product = CreditProduct::query()
                     ->where('is_active', true)
                     ->findOrFail($this->selectedProductId);
+                $baseAmountIqd = $product->priceIqdAmount();
+                $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd(
+                    $baseAmountIqd,
+                    $customer,
+                );
 
                 $order = CreditOrder::create([
                     'customer_id' => (int) $customer->id,
@@ -123,14 +138,28 @@ class extends Component
                     'credit_product_id' => (int) $product->id,
                     'status' => 'paid',
                     'credits_amount' => (int) $product->credits_amount,
-                    'amount_usd' => (float) $product->price_usd,
-                    'currency' => 'USD',
+                    'amount_usd' => $currencySnapshot['usd_reference_amount'],
+                    'currency' => 'IQD',
+                    'base_currency_code' => 'IQD',
+                    'base_amount_iqd' => $baseAmountIqd,
+                    'display_currency_code' => $currencySnapshot['display_currency_code'],
+                    'display_exchange_rate' => $currencySnapshot['display_exchange_rate'],
+                    'display_amount_raw' => $currencySnapshot['display_amount_raw'],
+                    'display_amount_rounded' => $currencySnapshot['display_amount_rounded'],
+                    'display_rounding_step' => $currencySnapshot['display_rounding_step'],
+                    'display_rounding_mode' => $currencySnapshot['display_rounding_mode'],
+                    'display_country_code' => $currencySnapshot['display_country_code'],
                     'provider' => 'fake',
                     'provider_ref' => 'FAKE-ADDON-' . now()->format('YmdHis') . '-' . random_int(1000, 9999),
                     'meta' => [
                         'ui' => 'addon-credits-page',
                         'product_code' => (string) $product->code,
                         'product_name' => (string) $product->name,
+                        'display_label' => $currencySnapshot['display_label'],
+                        'base_label' => $currencySnapshot['base_label'],
+                        'iqd_label' => $currencySnapshot['iqd_label'],
+                        'usd_reference_label' => $currencySnapshot['usd_reference_label'],
+                        'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                     ],
                 ]);
 
@@ -144,7 +173,7 @@ class extends Component
                         'product_id' => (int) $product->id,
                         'product_code' => (string) $product->code,
                         'product_name' => (string) $product->name,
-                        'amount_usd' => (float) $product->price_usd,
+                        'base_amount_iqd' => (int) $baseAmountIqd,
                         'ui' => 'addon-credits-page',
                     ]
                 );
@@ -161,6 +190,12 @@ class extends Component
             $this->message = __('Add-on credits purchased successfully and added to your add-on balance.');
 
             $freshCustomer = $customer->fresh(['profile']);
+            $orderDisplayLabel = $purchase['order']->hasLocalizedDisplayAmount()
+                ? app(BillingCurrencyService::class)->formatAmount(
+                    (float) $purchase['order']->display_amount_rounded,
+                    (string) $purchase['order']->display_currency_code
+                )
+                : null;
 
             TelegramPaymentNotifier::send(
                 $freshCustomer,
@@ -169,7 +204,11 @@ class extends Component
                 [
                     'Plan Code' => strtoupper((string) $purchase['product']->code),
                     'Credits' => number_format((int) $purchase['product']->credits_amount),
-                    'Amount (USD)' => '$' . number_format((float) $purchase['product']->price_usd, 2),
+                    'Amount (IQD)' => app(BillingCurrencyService::class)->formatAmount(
+                        (int) $purchase['product']->priceIqdAmount(),
+                        'IQD'
+                    ),
+                    ...($orderDisplayLabel !== null ? ['Estimated Local Price' => $orderDisplayLabel] : []),
                     'Order Type' => (string) $purchase['order']->order_type,
                     'Provider' => (string) $purchase['order']->provider,
                     'Reference' => (string) $purchase['order']->provider_ref,
@@ -182,7 +221,10 @@ class extends Component
                 [
                     'product_name' => (string) $purchase['product']->name,
                     'credits_amount' => (int) $purchase['product']->credits_amount,
-                    'amount_usd' => (float) $purchase['product']->price_usd,
+                    'amount_label' => app(BillingCurrencyService::class)->formatAmount(
+                        (int) $purchase['product']->priceIqdAmount(),
+                        'IQD'
+                    ),
                     'added_on' => $purchase['order']->created_at?->format('F d, Y') ?? now()->format('F d, Y'),
                     'status_label' => 'Completed',
                 ],
@@ -271,12 +313,21 @@ class extends Component
                 @if($message)
                     <div class="alert alert-{{ $messageType }} mt-3 mb-0">{{ $message }}</div>
                 @endif
+
+                @if($displayCurrencyCode !== 'IQD')
+                    <div class="text-muted small mt-3">
+                        {{ __('Local display currency: :currency', ['currency' => $displayCurrencyCode]) }}
+                    </div>
+                @endif
             </div>
         </div>
     </div>
 
     <div class="row justify-content-center">
         @forelse($products as $p)
+            @php
+                $showLocalPrice = (bool) data_get($p, 'price_display.has_localized_estimate', false);
+            @endphp
             <div class="col-lg-4 col-md-6">
                 <div class="card pricing-box">
                     <div class="card-body p-4 m-2">
@@ -289,7 +340,10 @@ class extends Component
 
                             <div class="ms-auto text-end">
                                 <div class="fw-semibold">{{ __(':count credits', ['count' => number_format($p['credits_amount'])]) }}</div>
-                                <div class="text-muted fs-12">${{ number_format($p['price_usd'], 2) }}</div>
+                                <div class="text-muted fs-12">{{ data_get($p, 'price_display.iqd_label') }}</div>
+                                @if($showLocalPrice)
+                                    <div class="text-muted fs-12 mt-1">{{ data_get($p, 'price_display.estimated_label') }}</div>
+                                @endif
                             </div>
                         </div>
 
@@ -347,6 +401,7 @@ class extends Component
     @if($showConfirm)
         @php
             $selected = collect($products)->firstWhere('id', $selectedProductId);
+            $selectedDisplay = is_array($selected) ? ($selected['price_display'] ?? null) : null;
         @endphp
 
         <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
@@ -376,8 +431,14 @@ class extends Component
                             </p>
                             <p class="mb-2">
                                 {{ __('Price:') }}
-                                <b>${{ number_format($selected['price_usd'], 2) }}</b>
+                                <b>{{ data_get($selectedDisplay, 'iqd_label') }}</b>
                             </p>
+                            @if((bool) data_get($selectedDisplay, 'has_localized_estimate', false))
+                                <p class="mb-2">
+                                    {{ __('Estimated local display:') }}
+                                    <b>{{ data_get($selectedDisplay, 'display_label') }}</b>
+                                </p>
+                            @endif
                         @endif
 
                         <div class="small text-muted">

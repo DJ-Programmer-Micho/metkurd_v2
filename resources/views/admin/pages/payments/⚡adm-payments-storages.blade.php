@@ -27,6 +27,11 @@ class extends Component
                     <p class="text-muted mb-0">{{ __('Configure storage pack sizes, pricing, storefront ordering, and live availability for customer storage upgrades.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
+                    <select class="form-select" wire:model.live="displayCurrencyCode" style="min-width: 180px;">
+                        @foreach ($this->displayCurrencyOptions as $currencyCode => $currencyLabel)
+                            <option value="{{ $currencyCode }}">{{ $currencyLabel }}</option>
+                        @endforeach
+                    </select>
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
                     <button type="button" class="btn btn-primary" wire:click="openCreateStorageModal">{{ __('New Storage Plan') }}</button>
                 </div>
@@ -57,8 +62,8 @@ class extends Component
             <div class="card card-animate h-100">
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Estimated Monthly Revenue') }}</p>
-                    <h2 class="mb-1">{{ $this->formatMoney($this->topStats['estimated_revenue']) }}</h2>
-                    <p class="text-muted mb-0">{{ __('Active subscribers multiplied by the configured storage plan price.') }}</p>
+                    <h2 class="mb-1">{{ $this->formatCanonicalMoneyWithOptionalDisplay($this->topStats['estimated_revenue']) }}</h2>
+                    <p class="text-muted mb-0">{{ __('Active subscribers multiplied by the configured storage plan price, stored canonically in IQD.') }}</p>
                 </div>
             </div>
         </div>
@@ -100,9 +105,9 @@ class extends Component
                                 <i class="ri-arrow-{{ $sortDirection === 'asc' ? 'up' : 'down' }}-line align-bottom ms-1"></i>
                             @endif
                         </button>
-                        <button type="button" class="btn btn-sm {{ $sortColumn === 'price_usd' ? 'btn-secondary' : 'btn-soft-secondary' }}" wire:click="sortByColumn('price_usd')">
+                        <button type="button" class="btn btn-sm {{ $sortColumn === 'price_iqd' ? 'btn-secondary' : 'btn-soft-secondary' }}" wire:click="sortByColumn('price_iqd')">
                             {{ __('Price') }}
-                            @if ($sortColumn === 'price_usd')
+                            @if ($sortColumn === 'price_iqd')
                                 <i class="ri-arrow-{{ $sortDirection === 'asc' ? 'up' : 'down' }}-line align-bottom ms-1"></i>
                             @endif
                         </button>
@@ -160,8 +165,12 @@ class extends Component
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $this->formatMoney($plan->price_usd) }}</span>
-                                        <span class="text-muted small">{{ __('per storage change') }}</span>
+                                        <span class="fw-semibold">{{ $this->formatCanonicalPrimary($plan->price_iqd_effective) }}</span>
+                                        @if($this->formatOptionalDisplayMoney($plan->price_iqd_effective))
+                                            <span class="text-muted small">{{ $this->formatOptionalDisplayMoney($plan->price_iqd_effective) }}</span>
+                                        @else
+                                            <span class="text-muted small">{{ __('per storage change') }}</span>
+                                        @endif
                                     </div>
                                 </td>
                                 <td>
@@ -173,7 +182,7 @@ class extends Component
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $this->formatMoney($plan->estimated_revenue) }}</span>
+                                        <span class="fw-semibold">{{ $this->formatCanonicalMoneyWithOptionalDisplay($plan->estimated_revenue) }}</span>
                                         <span class="text-muted small">{{ __('active price exposure') }}</span>
                                     </div>
                                 </td>
@@ -236,14 +245,26 @@ class extends Component
                                 @error('quotaMb') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Price (USD)') }}</label>
-                                <input type="number" min="0" step="0.01" class="form-control @error('priceUsd') is-invalid @enderror" wire:model.defer="priceUsd">
-                                @error('priceUsd') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                <label class="form-label">{{ __('Price (IQD)') }}</label>
+                                <input type="number" min="0" step="250" class="form-control @error('priceIqd') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqd">
+                                @error('priceIqd') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">{{ __('Sort Order') }}</label>
                                 <input type="number" min="0" class="form-control @error('sortOrder') is-invalid @enderror" wire:model.defer="sortOrder">
                                 @error('sortOrder') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-12">
+                                <div class="border rounded-3 p-3 bg-light-subtle">
+                                    <div class="fw-semibold mb-2">{{ __('Live currency preview from IQD base') }}</div>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @foreach ($this->pricePreviewRows($priceIqd) as $preview)
+                                            <span class="badge bg-body text-body border">
+                                                {{ $preview['code'] }}: {{ $preview['formatted'] }}
+                                            </span>
+                                        @endforeach
+                                    </div>
+                                </div>
                             </div>
                             <div class="col-12">
                                 <div class="form-check mt-2">

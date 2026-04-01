@@ -10,7 +10,7 @@ return new class extends Migration {
         Schema::create('service_plans', function (Blueprint $table) {
             $table->bigIncrements('id');
 
-            $table->string('code', 50)->unique();            // free, creator, pro, premium
+            $table->string('code', 50)->unique(); // free, creator, pro, premium
             $table->string('name', 120);
             $table->string('billing_interval', 20)->default('monthly')->index(); // monthly, yearly, lifetime
 
@@ -21,6 +21,8 @@ return new class extends Migration {
 
             $table->decimal('price_usd_monthly', 10, 2)->nullable();
             $table->decimal('price_usd_yearly', 10, 2)->nullable();
+            $table->decimal('price_iqd_monthly', 14, 0)->nullable();
+            $table->decimal('price_iqd_yearly', 14, 0)->nullable();
 
             $table->json('ui_features')->nullable();
             $table->json('meta')->nullable();

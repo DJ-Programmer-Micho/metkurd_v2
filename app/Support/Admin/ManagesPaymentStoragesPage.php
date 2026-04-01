@@ -31,7 +31,7 @@ trait ManagesPaymentStoragesPage
     public string $code = '';
     public string $name = '';
     public $quotaMb = '';
-    public $priceUsd = '';
+    public $priceIqd = '';
     public bool $isActive = true;
     public $sortOrder = 0;
 
@@ -59,7 +59,7 @@ trait ManagesPaymentStoragesPage
 
     public function sortByColumn(string $column): void
     {
-        $allowed = ['sort_order', 'name', 'quota_mb', 'price_usd', 'active_subscribers', 'estimated_revenue', 'historical_assignments'];
+        $allowed = ['sort_order', 'name', 'quota_mb', 'price_iqd', 'active_subscribers', 'estimated_revenue', 'historical_assignments'];
 
         if (!in_array($column, $allowed, true)) {
             return;
@@ -72,7 +72,7 @@ trait ManagesPaymentStoragesPage
         }
 
         $this->sortColumn = $column;
-        $this->sortDirection = in_array($column, ['quota_mb', 'price_usd', 'active_subscribers', 'estimated_revenue', 'historical_assignments'], true)
+        $this->sortDirection = in_array($column, ['quota_mb', 'price_iqd', 'active_subscribers', 'estimated_revenue', 'historical_assignments'], true)
             ? 'desc'
             : 'asc';
     }
@@ -83,7 +83,7 @@ trait ManagesPaymentStoragesPage
             'code' => 'required|string|max:40|alpha_dash|unique:storage_plans,code,' . ($this->editingStorageId ?? 'NULL') . ',id',
             'name' => 'required|string|max:80',
             'quotaMb' => 'required|integer|min:1',
-            'priceUsd' => 'required|numeric|min:0',
+            'priceIqd' => 'required|integer|min:0',
             'sortOrder' => 'nullable|integer|min:0|max:65535',
         ];
     }
@@ -115,6 +115,7 @@ trait ManagesPaymentStoragesPage
 
     protected function storageBaseQuery(): Builder
     {
+        $priceIqdSql = $this->effectiveCatalogAmountSql('storage_plans', 'price_iqd', 'price_usd');
         $activeSubscribers = CustomerStorageSubscription::query()
             ->where('status', 'active')
             ->groupBy('storage_plan_id')
@@ -131,10 +132,11 @@ trait ManagesPaymentStoragesPage
             ->leftJoinSub($activeSubscribers, 'storage_active_subscribers', fn ($join) => $join->on('storage_active_subscribers.storage_plan_id', '=', 'storage_plans.id'))
             ->leftJoinSub($historicalAssignments, 'storage_assignments', fn ($join) => $join->on('storage_assignments.storage_plan_id', '=', 'storage_plans.id'))
             ->select('storage_plans.*')
+            ->selectRaw("{$priceIqdSql} as price_iqd_effective")
             ->selectRaw('COALESCE(storage_active_subscribers.active_subscribers, 0) as active_subscribers')
             ->selectRaw('COALESCE(storage_assignments.historical_assignments, 0) as historical_assignments')
             ->selectRaw('storage_assignments.last_assigned_at as last_assigned_at')
-            ->selectRaw('COALESCE(storage_plans.price_usd, 0) * COALESCE(storage_active_subscribers.active_subscribers, 0) as estimated_revenue');
+            ->selectRaw("({$priceIqdSql}) * COALESCE(storage_active_subscribers.active_subscribers, 0) as estimated_revenue");
 
         $search = trim($this->search);
 
@@ -155,7 +157,7 @@ trait ManagesPaymentStoragesPage
         $column = match ($this->sortColumn) {
             'name' => 'storage_plans.name',
             'quota_mb' => 'storage_plans.quota_mb',
-            'price_usd' => 'storage_plans.price_usd',
+            'price_iqd' => 'price_iqd_effective',
             'active_subscribers' => 'active_subscribers',
             'estimated_revenue' => 'estimated_revenue',
             'historical_assignments' => 'historical_assignments',
@@ -187,7 +189,7 @@ trait ManagesPaymentStoragesPage
         $this->code = (string) $plan->code;
         $this->name = (string) $plan->name;
         $this->quotaMb = (int) ($plan->quota_mb ?? 0);
-        $this->priceUsd = (string) ((float) ($plan->price_usd ?? 0));
+        $this->priceIqd = (string) ((int) $plan->priceIqdAmount());
         $this->isActive = (bool) $plan->is_active;
         $this->sortOrder = (int) ($plan->sort_order ?? 0);
         $this->resetErrorBag();
@@ -199,18 +201,25 @@ trait ManagesPaymentStoragesPage
     public function saveStoragePlan(): void
     {
         $validated = $this->validate($this->storageFormRules());
+        $priceIqd = max(0, (int) $validated['priceIqd']);
 
         $plan = $this->editingStorageId
             ? StoragePlan::query()->findOrFail($this->editingStorageId)
             : new StoragePlan();
-        $plan->fill([
+        $payload = [
             'code' => $validated['code'],
             'name' => $validated['name'],
             'quota_mb' => (int) $validated['quotaMb'],
-            'price_usd' => (float) $validated['priceUsd'],
+            'price_usd' => $this->usdReferenceAmount($priceIqd),
             'is_active' => (bool) $this->isActive,
             'sort_order' => (int) ($validated['sortOrder'] ?? 0),
-        ]);
+        ];
+
+        if ($this->tableHasColumn('storage_plans', 'price_iqd')) {
+            $payload['price_iqd'] = $priceIqd;
+        }
+
+        $plan->fill($payload);
         $plan->save();
 
         $this->dispatch(
@@ -271,7 +280,7 @@ trait ManagesPaymentStoragesPage
         $this->code = '';
         $this->name = '';
         $this->quotaMb = '';
-        $this->priceUsd = '';
+        $this->priceIqd = '';
         $this->isActive = true;
         $this->sortOrder = 0;
         $this->resetErrorBag();

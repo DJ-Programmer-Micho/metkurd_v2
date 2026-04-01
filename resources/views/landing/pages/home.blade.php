@@ -44,10 +44,10 @@ new #[Layout('landing::layouts.app')] class extends Component
                     <p class="lead-soft mb-4 reveal">{{ $hero['lead'] }}</p>
 
                     <div class="d-flex flex-wrap gap-3 mb-4 reveal">
-                        <a href="{{ route('app.signup') }}" class="btn btn-glow btn-lg rounded-pill px-4" wire:navigate.hover>
+                        <a href="{{ route('app.signup') }}" class="btn btn-glow btn-lg rounded-pill px-4" wire:navigate>
                             {{ $hero['primary_cta'] }}
                         </a>
-                        <a href="{{ route('landing.pricing', ['locale' => $locale]) }}" class="btn btn-outline-soft btn-lg rounded-pill px-4" wire:navigate.hover>
+                        <a href="{{ route('landing.pricing', ['locale' => $locale]) }}" class="btn btn-outline-soft btn-lg rounded-pill px-4" wire:navigate>
                             {{ $hero['secondary_cta'] }}
                         </a>
                     </div>
@@ -305,7 +305,7 @@ new #[Layout('landing::layouts.app')] class extends Component
                 <h2 class="section-title">{{ $pricingHeading['title'] }}</h2>
             </div>
 
-            <livewire:landing::components.pricing-grid :codes="['free', 'pro', 'premium']" :show-toggle="false" />
+            <livewire:landing::components.pricing-grid :codes="['free', 'pro', 'premium']" :show-toggle="false" :show-ancillary-sections="false" />
         </div>
     </section>
 

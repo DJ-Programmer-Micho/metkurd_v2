@@ -291,27 +291,34 @@ class extends Component
             $this->dashboardCacheKey('tool-breakdown'),
             now()->addSeconds(30),
             function () use ($customerId) {
-                $toolExpr = "COALESCE(NULLIF(job_kind, ''), 'unknown')";
-
                 return MlJob::query()
                     ->where('customer_id', $customerId)
                     ->whereIn('status', $this->reportableStatuses())
                     ->where('created_at', '>=', now()->subDays(30))
-                    ->selectRaw($toolExpr . ' as tool_code')
+                    ->select('job_kind')
                     ->selectRaw('COUNT(*) as jobs')
                     ->selectRaw("SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as completed_jobs")
                     ->selectRaw("SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs")
                     ->selectRaw('COALESCE(SUM(credits_charged), 0) as credits')
-                    ->groupByRaw($toolExpr)
+                    ->groupBy('job_kind')
                     ->orderByDesc('jobs')
                     ->get()
-                    ->map(fn ($row) => [
-                        'tool_code' => (string) ($row->tool_code ?? 'unknown'),
-                        'jobs' => (int) ($row->jobs ?? 0),
-                        'completed_jobs' => (int) ($row->completed_jobs ?? 0),
-                        'failed_jobs' => (int) ($row->failed_jobs ?? 0),
-                        'credits' => (int) ($row->credits ?? 0),
-                    ])
+                    ->groupBy(function ($row) {
+                        $toolCode = trim((string) ($row->job_kind ?? ''));
+
+                        return $toolCode !== '' ? $toolCode : 'unknown';
+                    })
+                    ->map(function (Collection $groupedRows, string $toolCode) {
+                        return [
+                            'tool_code' => $toolCode,
+                            'jobs' => (int) $groupedRows->sum(fn ($row) => (int) ($row->jobs ?? 0)),
+                            'completed_jobs' => (int) $groupedRows->sum(fn ($row) => (int) ($row->completed_jobs ?? 0)),
+                            'failed_jobs' => (int) $groupedRows->sum(fn ($row) => (int) ($row->failed_jobs ?? 0)),
+                            'credits' => (int) $groupedRows->sum(fn ($row) => (int) ($row->credits ?? 0)),
+                        ];
+                    })
+                    ->sortByDesc('jobs')
+                    ->values()
                     ->all();
             }
         );

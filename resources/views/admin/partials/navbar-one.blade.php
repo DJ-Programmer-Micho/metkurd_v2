@@ -157,6 +157,12 @@
                         :label="__('Storage')"
                     />
 
+                    <livewire:partials.components.nav-feature-link
+                        route="admin.payments.currencies"
+                        icon="bx bxs-microphone-alt"
+                        :label="__('Currencies')"
+                    />
+
                 </livewire:partials.components.nav-multi-feature-link>
 
                 <livewire:partials.components.nav-multi-feature-link

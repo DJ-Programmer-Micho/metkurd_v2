@@ -31,7 +31,7 @@ trait ManagesPaymentAddonsPage
     public string $code = '';
     public string $name = '';
     public $creditsAmount = '';
-    public $priceUsd = '';
+    public $priceIqd = '';
     public bool $isActive = true;
     public $sortOrder = 0;
     public string $metaJson = '';
@@ -60,7 +60,7 @@ trait ManagesPaymentAddonsPage
 
     public function sortByColumn(string $column): void
     {
-        $allowed = ['sort_order', 'name', 'credits_amount', 'price_usd', 'paid_orders', 'revenue'];
+        $allowed = ['sort_order', 'name', 'credits_amount', 'price_iqd', 'paid_orders', 'revenue'];
 
         if (!in_array($column, $allowed, true)) {
             return;
@@ -73,7 +73,7 @@ trait ManagesPaymentAddonsPage
         }
 
         $this->sortColumn = $column;
-        $this->sortDirection = in_array($column, ['credits_amount', 'price_usd', 'paid_orders', 'revenue'], true)
+        $this->sortDirection = in_array($column, ['credits_amount', 'price_iqd', 'paid_orders', 'revenue'], true)
             ? 'desc'
             : 'asc';
     }
@@ -84,7 +84,7 @@ trait ManagesPaymentAddonsPage
             'code' => 'required|string|max:50|alpha_dash|unique:credit_products,code,' . ($this->editingProductId ?? 'NULL') . ',id',
             'name' => 'required|string|max:120',
             'creditsAmount' => 'required|integer|min:0',
-            'priceUsd' => 'required|numeric|min:0',
+            'priceIqd' => 'required|integer|min:0',
             'sortOrder' => 'nullable|integer|min:0|max:65535',
             'metaJson' => 'nullable|string',
         ];
@@ -93,11 +93,12 @@ trait ManagesPaymentAddonsPage
     #[Computed]
     public function topStats(): array
     {
+        $canonicalAmountSql = $this->canonicalAmountSql('credit_orders');
         $summary = CreditOrder::query()
             ->where('status', 'paid')
             ->whereNotNull('credit_product_id')
             ->selectRaw('COUNT(*) as orders')
-            ->selectRaw('COALESCE(SUM(amount_usd), 0) as revenue')
+            ->selectRaw("COALESCE(SUM({$canonicalAmountSql}), 0) as revenue")
             ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits')
             ->first();
 
@@ -112,19 +113,22 @@ trait ManagesPaymentAddonsPage
 
     protected function productsBaseQuery(): Builder
     {
+        $canonicalAmountSql = $this->canonicalAmountSql('credit_orders');
+        $priceIqdSql = $this->effectiveCatalogAmountSql('credit_products', 'price_iqd', 'price_usd');
         $orderStats = CreditOrder::query()
             ->where('status', 'paid')
             ->whereNotNull('credit_product_id')
             ->groupBy('credit_product_id')
             ->selectRaw('credit_product_id')
             ->selectRaw('COUNT(*) as paid_orders')
-            ->selectRaw('COALESCE(SUM(amount_usd), 0) as revenue')
+            ->selectRaw("COALESCE(SUM({$canonicalAmountSql}), 0) as revenue")
             ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits_sold')
             ->selectRaw('MAX(created_at) as last_order_at');
 
         $query = CreditProduct::query()
             ->leftJoinSub($orderStats, 'product_orders', fn ($join) => $join->on('product_orders.credit_product_id', '=', 'credit_products.id'))
             ->select('credit_products.*')
+            ->selectRaw("{$priceIqdSql} as price_iqd_effective")
             ->selectRaw('COALESCE(product_orders.paid_orders, 0) as paid_orders')
             ->selectRaw('COALESCE(product_orders.revenue, 0) as revenue')
             ->selectRaw('COALESCE(product_orders.credits_sold, 0) as credits_sold')
@@ -149,7 +153,7 @@ trait ManagesPaymentAddonsPage
         $column = match ($this->sortColumn) {
             'name' => 'credit_products.name',
             'credits_amount' => 'credit_products.credits_amount',
-            'price_usd' => 'credit_products.price_usd',
+            'price_iqd' => 'price_iqd_effective',
             'paid_orders' => 'paid_orders',
             'revenue' => 'revenue',
             default => 'credit_products.sort_order',
@@ -180,7 +184,7 @@ trait ManagesPaymentAddonsPage
         $this->code = (string) $product->code;
         $this->name = (string) $product->name;
         $this->creditsAmount = (int) ($product->credits_amount ?? 0);
-        $this->priceUsd = (string) ((float) ($product->price_usd ?? 0));
+        $this->priceIqd = (string) ((int) $product->priceIqdAmount());
         $this->isActive = (bool) $product->is_active;
         $this->sortOrder = (int) ($product->sort_order ?? 0);
         $this->metaJson = $this->encodeJsonTextarea($product->meta);
@@ -194,19 +198,26 @@ trait ManagesPaymentAddonsPage
     {
         $validated = $this->validate($this->productFormRules());
         $meta = $this->decodeJsonTextarea($validated['metaJson'] ?? '', 'metaJson');
+        $priceIqd = max(0, (int) $validated['priceIqd']);
 
         $product = $this->editingProductId
             ? CreditProduct::query()->findOrFail($this->editingProductId)
             : new CreditProduct();
-        $product->fill([
+        $payload = [
             'code' => $validated['code'],
             'name' => $validated['name'],
             'credits_amount' => (int) $validated['creditsAmount'],
-            'price_usd' => (float) $validated['priceUsd'],
+            'price_usd' => $this->usdReferenceAmount($priceIqd),
             'is_active' => (bool) $this->isActive,
             'sort_order' => (int) ($validated['sortOrder'] ?? 0),
             'meta' => $meta,
-        ]);
+        ];
+
+        if ($this->tableHasColumn('credit_products', 'price_iqd')) {
+            $payload['price_iqd'] = $priceIqd;
+        }
+
+        $product->fill($payload);
         $product->save();
 
         $this->dispatch(
@@ -267,7 +278,7 @@ trait ManagesPaymentAddonsPage
         $this->code = '';
         $this->name = '';
         $this->creditsAmount = '';
-        $this->priceUsd = '';
+        $this->priceIqd = '';
         $this->isActive = true;
         $this->sortOrder = 0;
         $this->metaJson = '';

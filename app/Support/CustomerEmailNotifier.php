@@ -36,7 +36,8 @@ class CustomerEmailNotifier
             array_merge(static::baseData($customer), [
                 'productName' => (string) ($payload['product_name'] ?? 'Add-on Credits'),
                 'creditsAmount' => number_format((int) ($payload['credits_amount'] ?? 0)),
-                'orderAmount' => '$' . number_format((float) ($payload['amount_usd'] ?? 0), 2),
+                'orderAmount' => (string) ($payload['amount_label']
+                    ?? ('$' . number_format((float) ($payload['amount_usd'] ?? 0), 2))),
                 'addedOn' => (string) ($payload['added_on'] ?? now()->format('F d, Y')),
                 'statusLabel' => (string) ($payload['status_label'] ?? 'Completed'),
             ]),
@@ -53,7 +54,8 @@ class CustomerEmailNotifier
             array_merge(static::baseData($customer), [
                 'planName' => (string) ($payload['plan_name'] ?? 'Storage Plan'),
                 'storageQuota' => static::formatStorageQuota((int) ($payload['quota_mb'] ?? 0)),
-                'amountLabel' => '$' . number_format((float) ($payload['amount_usd'] ?? 0), 2),
+                'amountLabel' => (string) ($payload['amount_label']
+                    ?? ('$' . number_format((float) ($payload['amount_usd'] ?? 0), 2))),
                 'activatedOn' => (string) ($payload['activated_on'] ?? now()->format('F d, Y')),
             ]),
             $logContext
@@ -68,7 +70,8 @@ class CustomerEmailNotifier
             'app.otp.payment-failed',
             array_merge(static::baseData($customer), [
                 'itemName' => (string) ($payload['item_name'] ?? 'Payment'),
-                'amountLabel' => '$' . number_format((float) ($payload['amount_usd'] ?? 0), 2),
+                'amountLabel' => (string) ($payload['amount_label']
+                    ?? ('$' . number_format((float) ($payload['amount_usd'] ?? 0), 2))),
                 'attemptedOn' => (string) ($payload['attempted_on'] ?? now()->format('F d, Y')),
                 'retryUrl' => (string) ($payload['retry_url'] ?? static::appRoute('app.billing')),
             ]),

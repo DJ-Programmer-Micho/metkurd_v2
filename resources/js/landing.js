@@ -185,8 +185,8 @@ if (!window[LANDING_BOOT_FLAG]) {
     if (window.Livewire && typeof window.Livewire.hook === 'function' && !window.__landingMorphHookBound) {
         window.__landingMorphHookBound = true;
 
-        window.Livewire.hook('morphed', () => {
-            requestAnimationFrame(() => bootLanding(document));
+        window.Livewire.hook('morphed', ({ el } = {}) => {
+            requestAnimationFrame(() => bootLanding(el instanceof HTMLElement ? el : document));
         });
     }
 }

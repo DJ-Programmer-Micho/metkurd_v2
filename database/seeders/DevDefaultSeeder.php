@@ -14,6 +14,7 @@ use App\Models\PricingRule;
 use App\Models\CreditProduct;
 use App\Models\Voice;
 use App\Models\PlanVoiceAccess;
+use App\Services\Billing\BillingCurrencyService;
 
 class DevDefaultSeeder extends Seeder
 {
@@ -32,6 +33,8 @@ class DevDefaultSeeder extends Seeder
 
     private function seedServicePlans(): array
     {
+        $currency = app(BillingCurrencyService::class);
+
         $rows = [
             [
                 'code' => 'free',
@@ -43,6 +46,8 @@ class DevDefaultSeeder extends Seeder
                 'sort_order' => 1,
                 'price_usd_monthly' => 0,
                 'price_usd_yearly' => 0,
+                'price_iqd_monthly' => $currency->legacyUsdAmountToIqd(0),
+                'price_iqd_yearly' => $currency->legacyUsdAmountToIqd(0),
                 'ui_features' => ['badge' => 'FREE'],
             ],
             [
@@ -55,6 +60,8 @@ class DevDefaultSeeder extends Seeder
                 'sort_order' => 2,
                 'price_usd_monthly' => 10,
                 'price_usd_yearly' => 96,
+                'price_iqd_monthly' => $currency->legacyUsdAmountToIqd(10),
+                'price_iqd_yearly' => $currency->legacyUsdAmountToIqd(96),
                 'ui_features' => ['badge' => 'STUDENT'],
             ],
             [
@@ -67,6 +74,8 @@ class DevDefaultSeeder extends Seeder
                 'sort_order' => 3,
                 'price_usd_monthly' => 20,
                 'price_usd_yearly' => 192,
+                'price_iqd_monthly' => $currency->legacyUsdAmountToIqd(20),
+                'price_iqd_yearly' => $currency->legacyUsdAmountToIqd(192),
                 'ui_features' => ['badge' => 'PRO', 'recommended' => true],
             ],
             [
@@ -79,6 +88,8 @@ class DevDefaultSeeder extends Seeder
                 'sort_order' => 4,
                 'price_usd_monthly' => 50,
                 'price_usd_yearly' => 480,
+                'price_iqd_monthly' => $currency->legacyUsdAmountToIqd(50),
+                'price_iqd_yearly' => $currency->legacyUsdAmountToIqd(480),
                 'ui_features' => ['badge' => 'PREMIUM'],
             ],
         ];
@@ -114,10 +125,12 @@ class DevDefaultSeeder extends Seeder
 
     private function seedCreditProducts(): void
     {
+        $currency = app(BillingCurrencyService::class);
+
         $rows = [
-            ['code' => 'addon_10000',  'name' => 'Add-on 10,000 Credits',  'credits_amount' => 10000,  'price_usd' => 5.00,  'is_active' => true, 'sort_order' => 1],
-            ['code' => 'addon_50000',  'name' => 'Add-on 50,000 Credits',  'credits_amount' => 50000,  'price_usd' => 20.00, 'is_active' => true, 'sort_order' => 2],
-            ['code' => 'addon_100000', 'name' => 'Add-on 100,000 Credits', 'credits_amount' => 100000, 'price_usd' => 35.00, 'is_active' => true, 'sort_order' => 3],
+            ['code' => 'addon_10000',  'name' => 'Add-on 10,000 Credits',  'credits_amount' => 10000,  'price_usd' => 5.00,  'price_iqd' => $currency->legacyUsdAmountToIqd(5.00),  'is_active' => true, 'sort_order' => 1],
+            ['code' => 'addon_50000',  'name' => 'Add-on 50,000 Credits',  'credits_amount' => 50000,  'price_usd' => 20.00, 'price_iqd' => $currency->legacyUsdAmountToIqd(20.00), 'is_active' => true, 'sort_order' => 2],
+            ['code' => 'addon_100000', 'name' => 'Add-on 100,000 Credits', 'credits_amount' => 100000, 'price_usd' => 35.00, 'price_iqd' => $currency->legacyUsdAmountToIqd(35.00), 'is_active' => true, 'sort_order' => 3],
         ];
 
         foreach ($rows as $row) {

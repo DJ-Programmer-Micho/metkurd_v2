@@ -36,8 +36,8 @@ trait ManagesPaymentPlansPage
     public string $name = '';
     public string $billingInterval = 'monthly';
     public $monthlyCredits = '';
-    public $priceUsdMonthly = '';
-    public $priceUsdYearly = '';
+    public $priceIqdMonthly = '';
+    public $priceIqdYearly = '';
     public bool $isFree = false;
     public bool $isActive = true;
     public $sortOrder = 0;
@@ -74,7 +74,7 @@ trait ManagesPaymentPlansPage
 
     public function sortByColumn(string $column): void
     {
-        $allowed = ['sort_order', 'name', 'monthly_credits', 'price_usd_monthly', 'active_subscribers', 'paid_orders', 'revenue'];
+        $allowed = ['sort_order', 'name', 'monthly_credits', 'price_iqd_monthly', 'active_subscribers', 'paid_orders', 'revenue'];
 
         if (!in_array($column, $allowed, true)) {
             return;
@@ -87,7 +87,7 @@ trait ManagesPaymentPlansPage
         }
 
         $this->sortColumn = $column;
-        $this->sortDirection = in_array($column, ['monthly_credits', 'price_usd_monthly', 'active_subscribers', 'paid_orders', 'revenue'], true)
+        $this->sortDirection = in_array($column, ['monthly_credits', 'price_iqd_monthly', 'active_subscribers', 'paid_orders', 'revenue'], true)
             ? 'desc'
             : 'asc';
     }
@@ -99,8 +99,8 @@ trait ManagesPaymentPlansPage
             'name' => 'required|string|max:120',
             'billingInterval' => 'required|string|in:monthly,yearly,lifetime',
             'monthlyCredits' => 'required|integer|min:0',
-            'priceUsdMonthly' => 'nullable|numeric|min:0',
-            'priceUsdYearly' => 'nullable|numeric|min:0',
+            'priceIqdMonthly' => 'nullable|integer|min:0',
+            'priceIqdYearly' => 'nullable|integer|min:0',
             'sortOrder' => 'nullable|integer|min:0|max:65535',
             'uiFeaturesJson' => 'nullable|string',
             'metaJson' => 'nullable|string',
@@ -110,6 +110,7 @@ trait ManagesPaymentPlansPage
     #[Computed]
     public function topStats(): array
     {
+        $canonicalAmountSql = $this->canonicalAmountSql('credit_orders');
         $activeSubscribers = (int) CustomerServiceSubscription::query()
             ->where('status', 'active')
             ->count();
@@ -118,7 +119,7 @@ trait ManagesPaymentPlansPage
             ->where('status', 'paid')
             ->whereNotNull('service_plan_id')
             ->selectRaw('COUNT(*) as orders')
-            ->selectRaw('COALESCE(SUM(amount_usd), 0) as revenue')
+            ->selectRaw("COALESCE(SUM({$canonicalAmountSql}), 0) as revenue")
             ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits')
             ->first();
 
@@ -135,6 +136,9 @@ trait ManagesPaymentPlansPage
 
     protected function plansBaseQuery(): Builder
     {
+        $canonicalAmountSql = $this->canonicalAmountSql('credit_orders');
+        $priceIqdMonthlySql = $this->effectiveCatalogAmountSql('service_plans', 'price_iqd_monthly', 'price_usd_monthly');
+        $priceIqdYearlySql = $this->effectiveCatalogAmountSql('service_plans', 'price_iqd_yearly', 'price_usd_yearly');
         $activeSubscribers = CustomerServiceSubscription::query()
             ->where('status', 'active')
             ->groupBy('service_plan_id')
@@ -147,7 +151,7 @@ trait ManagesPaymentPlansPage
             ->groupBy('service_plan_id')
             ->selectRaw('service_plan_id')
             ->selectRaw('COUNT(*) as paid_orders')
-            ->selectRaw('COALESCE(SUM(amount_usd), 0) as revenue')
+            ->selectRaw("COALESCE(SUM({$canonicalAmountSql}), 0) as revenue")
             ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits_sold')
             ->selectRaw('MAX(created_at) as last_order_at');
 
@@ -155,6 +159,8 @@ trait ManagesPaymentPlansPage
             ->leftJoinSub($activeSubscribers, 'plan_active_subscribers', fn ($join) => $join->on('plan_active_subscribers.service_plan_id', '=', 'service_plans.id'))
             ->leftJoinSub($planRevenue, 'plan_revenue', fn ($join) => $join->on('plan_revenue.service_plan_id', '=', 'service_plans.id'))
             ->select('service_plans.*')
+            ->selectRaw("{$priceIqdMonthlySql} as price_iqd_monthly_effective")
+            ->selectRaw("{$priceIqdYearlySql} as price_iqd_yearly_effective")
             ->selectRaw('COALESCE(plan_active_subscribers.active_subscribers, 0) as active_subscribers')
             ->selectRaw('COALESCE(plan_revenue.paid_orders, 0) as paid_orders')
             ->selectRaw('COALESCE(plan_revenue.revenue, 0) as revenue')
@@ -187,7 +193,7 @@ trait ManagesPaymentPlansPage
         $column = match ($this->sortColumn) {
             'name' => 'service_plans.name',
             'monthly_credits' => 'service_plans.monthly_credits',
-            'price_usd_monthly' => 'service_plans.price_usd_monthly',
+            'price_iqd_monthly' => 'price_iqd_monthly_effective',
             'active_subscribers' => 'active_subscribers',
             'paid_orders' => 'paid_orders',
             'revenue' => 'revenue',
@@ -220,8 +226,8 @@ trait ManagesPaymentPlansPage
         $this->name = (string) $plan->name;
         $this->billingInterval = (string) $plan->billing_interval;
         $this->monthlyCredits = (int) ($plan->monthly_credits ?? 0);
-        $this->priceUsdMonthly = (string) ((float) ($plan->price_usd_monthly ?? 0));
-        $this->priceUsdYearly = (string) ((float) ($plan->price_usd_yearly ?? 0));
+        $this->priceIqdMonthly = (string) ((int) $plan->priceIqdForCycle('monthly'));
+        $this->priceIqdYearly = (string) ((int) $plan->priceIqdForCycle('yearly'));
         $this->isFree = (bool) $plan->is_free;
         $this->isActive = (bool) $plan->is_active;
         $this->sortOrder = (int) ($plan->sort_order ?? 0);
@@ -238,25 +244,45 @@ trait ManagesPaymentPlansPage
         $validated = $this->validate($this->planFormRules());
         $uiFeatures = $this->decodeJsonTextarea($validated['uiFeaturesJson'] ?? '', 'uiFeaturesJson');
         $meta = $this->decodeJsonTextarea($validated['metaJson'] ?? '', 'metaJson');
+        $priceIqdMonthly = (int) (($validated['priceIqdMonthly'] !== '' && $validated['priceIqdMonthly'] !== null) ? $validated['priceIqdMonthly'] : 0);
+        $priceIqdYearly = (int) (($validated['priceIqdYearly'] !== '' && $validated['priceIqdYearly'] !== null) ? $validated['priceIqdYearly'] : 0);
 
         $plan = $this->editingPlanId
             ? ServicePlan::query()->findOrFail($this->editingPlanId)
             : new ServicePlan();
-        $plan->fill([
+        $payload = [
             'code' => $validated['code'],
             'name' => $validated['name'],
             'billing_interval' => $validated['billingInterval'],
             'monthly_credits' => (int) $validated['monthlyCredits'],
-            'price_usd_monthly' => (float) ($validated['priceUsdMonthly'] !== '' ? $validated['priceUsdMonthly'] : 0),
-            'price_usd_yearly' => (float) ($validated['priceUsdYearly'] !== '' ? $validated['priceUsdYearly'] : 0),
+            'price_usd_monthly' => $this->usdReferenceAmount($priceIqdMonthly),
+            'price_usd_yearly' => $this->usdReferenceAmount($priceIqdYearly),
             'is_free' => (bool) $this->isFree,
             'is_active' => (bool) $this->isActive,
             'sort_order' => (int) ($validated['sortOrder'] ?? 0),
             'ui_features' => $uiFeatures,
             'meta' => $meta,
-        ]);
+        ];
+
+        if ($this->tableHasColumn('service_plans', 'price_iqd_monthly')) {
+            $payload['price_iqd_monthly'] = $priceIqdMonthly;
+        }
+
+        if ($this->tableHasColumn('service_plans', 'price_iqd_yearly')) {
+            $payload['price_iqd_yearly'] = $priceIqdYearly;
+        }
+
+        $plan->fill($payload);
 
         if ($plan->is_free) {
+            if ($this->tableHasColumn('service_plans', 'price_iqd_monthly')) {
+                $plan->price_iqd_monthly = 0;
+            }
+
+            if ($this->tableHasColumn('service_plans', 'price_iqd_yearly')) {
+                $plan->price_iqd_yearly = 0;
+            }
+
             $plan->price_usd_monthly = 0;
             $plan->price_usd_yearly = 0;
         }
@@ -330,8 +356,8 @@ trait ManagesPaymentPlansPage
         $this->name = '';
         $this->billingInterval = 'monthly';
         $this->monthlyCredits = '';
-        $this->priceUsdMonthly = '';
-        $this->priceUsdYearly = '';
+        $this->priceIqdMonthly = '';
+        $this->priceIqdYearly = '';
         $this->isFree = false;
         $this->isActive = true;
         $this->sortOrder = 0;

@@ -76,7 +76,7 @@ new class extends Component
                 class="navbar-brand d-flex align-items-center gap-2 text-decoration-none"
                 href="{{ route('landing.home', ['locale' => $locale]) }}"
                 aria-label="{{ LandingContent::text('nav.home_label') }}"
-                wire:navigate.hover
+                wire:navigate
             >
                 <span class="brand-badge">
                     <img
@@ -112,7 +112,7 @@ new class extends Component
                             <a
                                 class="nav-link {{ request()->routeIs($link['pattern']) ? 'active' : '' }}"
                                 href="{{ route($link['route'], ['locale' => $locale]) }}"
-                                wire:navigate.hover
+                                wire:navigate
                             >
                                 {{ $link['label'] }}
                             </a>
@@ -139,12 +139,12 @@ new class extends Component
                     </button>
 
                     @if($secondaryAction)
-                        <a class="btn btn-link text-decoration-none nav-action-link d-none d-lg-inline-flex" href="{{ $secondaryAction['href'] }}" wire:navigate.hover>
+                        <a class="btn btn-link text-decoration-none nav-action-link d-none d-lg-inline-flex" href="{{ $secondaryAction['href'] }}" wire:navigate>
                             {{ $secondaryAction['label'] }}
                         </a>
                     @endif
 
-                    <a class="btn btn-glow rounded-pill px-4" href="{{ $primaryAction['href'] }}" wire:navigate.hover>
+                    <a class="btn btn-glow rounded-pill px-4" href="{{ $primaryAction['href'] }}" wire:navigate>
                         {{ $primaryAction['label'] }}
                     </a>
                 </div>

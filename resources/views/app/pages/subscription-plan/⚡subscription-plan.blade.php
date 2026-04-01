@@ -4,6 +4,7 @@
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use App\Models\ServicePlan;
+use App\Services\Billing\BillingCurrencyService;
 use App\Support\CustomerEmailNotifier;
 use App\Support\TelegramPaymentNotifier;
 use App\Services\Billing\PlanSwitcher;
@@ -17,6 +18,8 @@ class extends Component
     public ?int $selectedPlanId = null;
     public string $billingCycle = 'monthly';
     public string $selectedBillingCycle = 'monthly';
+    public string $displayCurrencyCode = 'IQD';
+    public string $displayCurrencySource = 'default';
 
     public bool $showConfirm = false;
     public bool $processing = false;
@@ -29,13 +32,20 @@ class extends Component
 
     protected function loadData(): void
     {
-        $customer = auth('app')->user();
+        $customer = auth('app')->user()?->loadMissing('profile');
+        $currency = app(BillingCurrencyService::class);
+        $displayContext = $currency->resolveDisplayContext($customer);
+        $this->displayCurrencyCode = (string) ($displayContext['currency_code'] ?? 'IQD');
+        $this->displayCurrencySource = (string) ($displayContext['source'] ?? 'default');
 
         $this->plans = ServicePlan::query()
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->get()
-            ->map(function ($p) {
+            ->map(function ($p) use ($currency, $customer) {
+                $monthlyDisplay = $currency->priceDataForBaseAmountIqd($p->priceIqdForCycle('monthly'), $customer);
+                $yearlyDisplay = $currency->priceDataForBaseAmountIqd($p->priceIqdForCycle('yearly'), $customer);
+
                 return [
                     'id' => (int) $p->id,
                     'code' => (string) $p->code,
@@ -43,8 +53,10 @@ class extends Component
                     'billing_interval' => (string) ($p->billing_interval ?? 'monthly'),
                     'monthly_credits' => (int) ($p->monthly_credits ?? 0),
                     'is_free' => (bool) ($p->is_free ?? false),
-                    'price_usd_monthly' => (float) ($p->price_usd_monthly ?? 0),
-                    'price_usd_yearly' => (float) ($p->price_usd_yearly ?? 0),
+                    'price_iqd_monthly' => $p->priceIqdForCycle('monthly'),
+                    'price_iqd_yearly' => $p->priceIqdForCycle('yearly'),
+                    'display_monthly' => $monthlyDisplay,
+                    'display_yearly' => $yearlyDisplay,
                     'ui_features' => is_array($p->ui_features) ? $p->ui_features : (array) ($p->ui_features ?? []),
                 ];
             })
@@ -96,6 +108,7 @@ class extends Component
         $billingCycle = $this->resolvePlanBillingCycle($selectedPlan, $this->selectedBillingCycle);
         $billingCycleLabel = $this->billingCycleLabel($billingCycle);
         $selectedPrice = $this->planPriceForCycle($selectedPlan, $billingCycle);
+        $selectedPriceDisplay = app(BillingCurrencyService::class)->priceDataForBaseAmountIqd($selectedPrice, $customer);
 
         $this->processing = true;
         $this->message = '';
@@ -122,7 +135,10 @@ class extends Component
                     'Billing Cycle' => $billingCycleLabel,
                     'Plan Code' => strtoupper((string) $selectedPlan['code']),
                     'Monthly Credits' => number_format((int) $selectedPlan['monthly_credits']),
-                    'Price (USD)' => '$' . number_format($selectedPrice, 2),
+                    'Price (IQD)' => $selectedPriceDisplay['iqd_label'],
+                    ...($selectedPriceDisplay['has_localized_estimate']
+                        ? ['Estimated Local Price' => $selectedPriceDisplay['display_label']]
+                        : []),
                     'Provider' => 'fake',
                 ],
                 'Subscription plan page'
@@ -134,6 +150,7 @@ class extends Component
                     'plan_name' => (string) $selectedPlan['name'],
                     'billing_cycle' => $billingCycleLabel,
                     'monthly_credits' => (int) $selectedPlan['monthly_credits'],
+                    'amount_label' => (string) $selectedPriceDisplay['iqd_label'],
                     'activated_on' => now()->format('F d, Y'),
                 ],
                 'Subscription plan page'
@@ -222,11 +239,11 @@ class extends Component
         };
     }
 
-    public function planPriceForCycle(array $plan, string $cycle): float
+    public function planPriceForCycle(array $plan, string $cycle): int
     {
         return match ($cycle) {
-            'yearly' => (float) ($plan['price_usd_yearly'] ?? 0),
-            default => (float) ($plan['price_usd_monthly'] ?? 0),
+            'yearly' => (int) ($plan['price_iqd_yearly'] ?? 0),
+            default => (int) ($plan['price_iqd_monthly'] ?? 0),
         };
     }
 };
@@ -274,6 +291,17 @@ class extends Component
                     <div class="alert alert-info mt-3 mb-0">{{ $message }}</div>
                 @endif
 
+                @if($displayCurrencyCode !== 'IQD')
+                    <div class="text-muted small mt-3">
+                        {{ __('Local display currency: :currency', ['currency' => $displayCurrencyCode]) }}
+                        <span class="ms-1">{{ __('resolved from :source', ['source' => str_replace('_', ' ', $displayCurrencySource)]) }}</span>
+                    </div>
+                @else
+                    <div class="text-muted small mt-3">
+                        {{ __('Pricing is shown in IQD as the canonical billing currency.') }}
+                    </div>
+                @endif
+
                 <div class="d-flex justify-content-center mt-4">
                     <div class="btn-group" role="group" aria-label="{{ __('Billing cycle') }}">
                         <button type="button"
@@ -302,8 +330,12 @@ class extends Component
                         $isCurrent = (int) $p['id'] === (int) $currentPlanId;
                         $planInterval = strtolower((string) ($p['billing_interval'] ?? 'monthly'));
                         $isLifetimePlan = $planInterval === 'lifetime';
-                        $monthlyPrice = number_format((float) ($p['price_usd_monthly'] ?? 0), 2);
-                        $yearlyPrice = number_format((float) ($p['price_usd_yearly'] ?? 0), 2);
+                        $monthlyPrice = (string) data_get($p, 'display_monthly.display_label', data_get($p, 'display_monthly.iqd_label', ''));
+                        $yearlyPrice = (string) data_get($p, 'display_yearly.display_label', data_get($p, 'display_yearly.iqd_label', ''));
+                        $monthlyBase = (string) data_get($p, 'display_monthly.iqd_label', '');
+                        $yearlyBase = (string) data_get($p, 'display_yearly.iqd_label', '');
+                        $showMonthlyBase = (bool) data_get($p, 'display_monthly.has_localized_estimate', false);
+                        $showYearlyBase = (bool) data_get($p, 'display_yearly.has_localized_estimate', false);
                     @endphp
 
                     <div class="col-lg-3 col-md-6">
@@ -343,12 +375,21 @@ class extends Component
 
                                         @if(!$p['is_free'])
                                             @if($isLifetimePlan)
-                                                <div class="mt-1 text-muted fs-12">${{ $monthlyPrice }}</div>
+                                                <div class="mt-1 text-muted fs-12">{{ $monthlyPrice }}</div>
+                                                @if($showMonthlyBase)
+                                                    <div class="mt-1 text-muted fs-12">{{ $monthlyBase }}</div>
+                                                @endif
                                             @else
                                                 <div class="mt-1 text-muted fs-12"
-                                                     x-text="'$' + (billingCycle === 'yearly' ? '{{ $yearlyPrice }}' : '{{ $monthlyPrice }}') + (billingCycle === 'yearly' ? '/yr' : '/mo')">
-                                                    ${{ $monthlyPrice }}/mo
+                                                     x-text="(billingCycle === 'yearly' ? '{{ $yearlyPrice }}' : '{{ $monthlyPrice }}') + (billingCycle === 'yearly' ? '/yr' : '/mo')">
+                                                    {{ $monthlyPrice }}/mo
                                                 </div>
+                                                @if($showMonthlyBase || $showYearlyBase)
+                                                    <div class="mt-1 text-muted fs-12"
+                                                         x-text="billingCycle === 'yearly' ? '{{ $yearlyBase }}' : '{{ $monthlyBase }}'">
+                                                        {{ $monthlyBase }}
+                                                    </div>
+                                                @endif
                                             @endif
                                         @endif
                                     </div>
@@ -397,6 +438,9 @@ class extends Component
                         : 'monthly';
                     $selectedBillingIntervalLabel = __($this->billingCycleLabel($selectedCycle));
                     $selectedPrice = is_array($selected) ? $this->planPriceForCycle($selected, $selectedCycle) : 0;
+                    $selectedDisplay = is_array($selected)
+                        ? ($selectedCycle === 'yearly' ? ($selected['display_yearly'] ?? null) : ($selected['display_monthly'] ?? null))
+                        : null;
                 @endphp
 
                 <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
@@ -426,10 +470,16 @@ class extends Component
                                         {{ __('New monthly subscription credits:') }}
                                         <b>{{ number_format($selected['monthly_credits']) }}</b>
                                     </p>
-                                    <p class="mb-2">
-                                        {{ __('Price:') }}
-                                        <b>${{ number_format($selectedPrice, 2) }}</b>
-                                    </p>
+                            <p class="mb-2">
+                                {{ __('Price:') }}
+                                <b>{{ data_get($selectedDisplay, 'display_label', data_get($selectedDisplay, 'iqd_label')) }}</b>
+                            </p>
+                            @if((bool) data_get($selectedDisplay, 'has_localized_estimate', false))
+                                <p class="mb-2">
+                                    {{ __('Canonical base:') }}
+                                    <b>{{ data_get($selectedDisplay, 'iqd_label') }}</b>
+                                </p>
+                            @endif
                                 @endif
 
                                 <div class="small text-muted">

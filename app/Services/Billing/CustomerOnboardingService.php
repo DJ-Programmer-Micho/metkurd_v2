@@ -29,6 +29,16 @@ class CustomerOnboardingService
                 ->where('code', 'free-512')
                 ->where('is_active', true)
                 ->firstOrFail();
+            $servicePlanAmountIqd = $servicePlan->priceIqdForCycle('monthly');
+            $storagePlanAmountIqd = $storagePlan->priceIqdAmount();
+            $servicePlanSnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd(
+                $servicePlanAmountIqd,
+                $customer,
+            );
+            $storagePlanSnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd(
+                $storagePlanAmountIqd,
+                $customer,
+            );
 
             CustomerUsage::firstOrCreate(
                 ['customer_id' => $customer->id],
@@ -52,7 +62,21 @@ class CustomerOnboardingService
                     'cycle_ends_on' => $registeredAt->copy()->endOfMonth()->toDateString(),
                     'previous_service_plan_id' => null,
                     'upgraded_at' => null,
-                    'meta' => null,
+                    'price_iqd_snapshot' => $servicePlanAmountIqd,
+                    'display_currency_code' => $servicePlanSnapshot['display_currency_code'],
+                    'display_exchange_rate' => $servicePlanSnapshot['display_exchange_rate'],
+                    'display_amount_raw' => $servicePlanSnapshot['display_amount_raw'],
+                    'display_amount_rounded' => $servicePlanSnapshot['display_amount_rounded'],
+                    'display_rounding_step' => $servicePlanSnapshot['display_rounding_step'],
+                    'display_rounding_mode' => $servicePlanSnapshot['display_rounding_mode'],
+                    'display_country_code' => $servicePlanSnapshot['display_country_code'],
+                    'meta' => [
+                        'display_label' => $servicePlanSnapshot['display_label'],
+                        'base_label' => $servicePlanSnapshot['base_label'],
+                        'iqd_label' => $servicePlanSnapshot['iqd_label'],
+                        'usd_reference_label' => $servicePlanSnapshot['usd_reference_label'],
+                        'currency_resolution_source' => $servicePlanSnapshot['currency_resolution_source'],
+                    ],
                 ]
             );
 
@@ -63,8 +87,22 @@ class CustomerOnboardingService
                 ],
                 [
                     'storage_plan_id' => $storagePlan->id,
+                    'price_iqd_snapshot' => $storagePlanAmountIqd,
+                    'display_currency_code' => $storagePlanSnapshot['display_currency_code'],
+                    'display_exchange_rate' => $storagePlanSnapshot['display_exchange_rate'],
+                    'display_amount_raw' => $storagePlanSnapshot['display_amount_raw'],
+                    'display_amount_rounded' => $storagePlanSnapshot['display_amount_rounded'],
+                    'display_rounding_step' => $storagePlanSnapshot['display_rounding_step'],
+                    'display_rounding_mode' => $storagePlanSnapshot['display_rounding_mode'],
+                    'display_country_code' => $storagePlanSnapshot['display_country_code'],
                     'starts_at' => $registeredAt,
-                    'meta' => null,
+                    'meta' => [
+                        'display_label' => $storagePlanSnapshot['display_label'],
+                        'base_label' => $storagePlanSnapshot['base_label'],
+                        'iqd_label' => $storagePlanSnapshot['iqd_label'],
+                        'usd_reference_label' => $storagePlanSnapshot['usd_reference_label'],
+                        'currency_resolution_source' => $storagePlanSnapshot['currency_resolution_source'],
+                    ],
                 ]
             );
 
