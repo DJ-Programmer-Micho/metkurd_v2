@@ -27,6 +27,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
     public function signUp()
     {
+        
         $this->validate([
             'first_name' => ['required', 'string', 'max:60'],
             'last_name'  => ['required', 'string', 'max:60'],
@@ -45,28 +46,44 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
         ]);
 
-        $customer = DB::transaction(function () {
-            $customer = Customer::create([
-                'username'     => trim($this->username),
-                'email'        => strtolower(trim($this->email)),
-                'password'     => Hash::make($this->password),
-                'status'       => 1,
-                'email_verify' => false,
-                'phone_verify' => false,
+        try {
+            $customer = DB::transaction(function () {
+                $customer = Customer::create([
+                    'username'     => trim($this->username),
+                    'email'        => strtolower(trim($this->email)),
+                    'password'     => Hash::make($this->password),
+                    'status'       => 1,
+                    'email_verify' => false,
+                    'phone_verify' => false,
+                ]);
+
+                CustomerProfile::updateOrCreate(
+                    ['customer_id' => $customer->id],
+                    [
+                        'first_name'   => trim($this->first_name),
+                        'last_name'    => trim($this->last_name),
+                        'job_title'    => $this->job_title !== '' ? trim($this->job_title) : null,
+                        'phone_number' => $this->normalizePhone($this->phone_number),
+                    ]
+                );
+
+                return $customer->fresh(['profile', 'wallet', 'usage']);
+            });
+        } catch (\Throwable $e) {
+            Log::error('Signup failed while provisioning customer defaults.', [
+                'email' => strtolower(trim($this->email)),
+                'username' => trim($this->username),
+                'error' => $e->getMessage(),
             ]);
 
-            CustomerProfile::updateOrCreate(
-                ['customer_id' => $customer->id],
-                [
-                    'first_name'   => trim($this->first_name),
-                    'last_name'    => trim($this->last_name),
-                    'job_title'    => $this->job_title !== '' ? trim($this->job_title) : null,
-                    'phone_number' => $this->normalizePhone($this->phone_number),
-                ]
+            $this->dispatch(
+                'alert',
+                type: 'error',
+                message: __('We could not create your account right now. Please try again later.')
             );
 
-            return $customer->fresh(['profile', 'wallet', 'usage']);
-        });
+            return null;
+        }
 
         $this->sendTelegramRegistrationNotification();
 
@@ -337,25 +354,25 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">{{ __('First name *') }}</label>
-                                        <input type="text" class="form-control @error('first_name') is-invalid @enderror" wire:model="first_name">
+                                        <input type="text" class="form-control @error('first_name') is-invalid @enderror" wire:model.defer="first_name">
                                         @error('first_name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
 
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">{{ __('Last name *') }}</label>
-                                        <input type="text" class="form-control @error('last_name') is-invalid @enderror" wire:model="last_name">
+                                        <input type="text" class="form-control @error('last_name') is-invalid @enderror" wire:model.defer="last_name">
                                         @error('last_name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
 
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">{{ __('Username *') }}</label>
-                                        <input type="text" class="form-control @error('username') is-invalid @enderror" wire:model="username">
+                                        <input type="text" class="form-control @error('username') is-invalid @enderror" wire:model.defer="username">
                                         @error('username') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
 
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">{{ __('Job title') }}</label>
-                                        <select class="form-select @error('job_title') is-invalid @enderror" wire:model="job_title">
+                                        <select class="form-select @error('job_title') is-invalid @enderror" wire:model.defer="job_title">
                                             <option value="">{{ __('Select...') }}</option>
                                             <option value="Student">{{ __('Student') }}</option>
                                             <option value="Teacher">{{ __('Teacher') }}</option>
@@ -368,7 +385,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                 <div class="mb-3">
                                     <label class="form-label">{{ __('Phone *') }}</label>
 
-                                    <input type="hidden" id="phone_number_hidden" wire:model="phone_number">
+                                    <input type="hidden" id="phone_number_hidden" wire:model.defer="phone_number">
 
                                     <div wire:ignore>
                                         <input
@@ -389,7 +406,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                 <div class="mb-3">
                                     <label class="form-label">{{ __('Email *') }}</label>
                                     <input type="email" class="form-control @error('email') is-invalid @enderror"
-                                           wire:model="email" placeholder="{{ __('youremail@example.com') }}">
+                                           wire:model.defer="email" placeholder="{{ __('youremail@example.com') }}">
                                     @error('email') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                 </div>
 
@@ -397,7 +414,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                     <label class="form-label">{{ __('Password *') }}</label>
                                     <div class="input-group">
                                         <input type="password" class="form-control @error('password') is-invalid @enderror"
-                                            id="password" wire:model="password" autocomplete="password">
+                                            id="password" wire:model.defer="password" autocomplete="password">
                                         <button class="btn btn-outline-secondary password-addon" type="button" aria-label="{{ __('Toggle password') }}">
                                             <i class="ri-eye-fill align-middle"></i>
                                         </button>
@@ -409,7 +426,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                     <label class="form-label">{{ __('Confirm Password *') }}</label>
                                     <div class="input-group">
                                         <input type="password" class="form-control"
-                                            id="password_confirmation" wire:model="password_confirmation" autocomplete="password_confirmation">
+                                            id="password_confirmation" wire:model.defer="password_confirmation" autocomplete="password_confirmation">
                                         <button class="btn btn-outline-secondary password-addon" type="button" aria-label="{{ __('Toggle confirm password') }}">
                                             <i class="ri-eye-fill align-middle"></i>
                                         </button>
@@ -507,7 +524,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         if (!rawValue) {
             hidden.value = '';
             hidden.dispatchEvent(new Event('input', { bubbles: true }));
-            hidden.dispatchEvent(new Event('change', { bubbles: true }));
             showPhoneClientError('');
             return false;
         }
@@ -519,7 +535,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             if (utilsReady && typeof iti.isValidNumber === 'function' && !iti.isValidNumber()) {
                 hidden.value = '';
                 hidden.dispatchEvent(new Event('input', { bubbles: true }));
-                hidden.dispatchEvent(new Event('change', { bubbles: true }));
                 showPhoneClientError('{{ __("Please enter a valid phone number.") }}');
                 return false;
             }
@@ -528,7 +543,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         if (fullNumber) {
             hidden.value = fullNumber;
             hidden.dispatchEvent(new Event('input', { bubbles: true }));
-            hidden.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         showPhoneClientError('');

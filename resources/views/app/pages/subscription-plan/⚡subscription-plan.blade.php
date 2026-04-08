@@ -3,23 +3,30 @@
 
 use Livewire\Component;
 use Livewire\Attributes\Layout;
+use App\Models\PaymentIntent;
 use App\Models\ServicePlan;
 use App\Services\Billing\BillingCurrencyService;
+use App\Services\Payments\CheckoutAuthorizationService;
+use App\Services\Payments\PaymentIntentLifecycleService;
+use App\Services\Payments\PaymentIntentService;
 use App\Support\CustomerEmailNotifier;
 use App\Support\TelegramPaymentNotifier;
-use App\Services\Billing\PlanSwitcher;
 
 new
 #[Layout('app::layouts.app')]
 class extends Component
 {
     public array $plans = [];
+    public array $paymentMethods = [];
     public ?int $currentPlanId = null;
     public ?int $selectedPlanId = null;
     public string $billingCycle = 'monthly';
     public string $selectedBillingCycle = 'monthly';
+    public string $selectedPaymentMethodCode = '';
     public string $displayCurrencyCode = 'IQD';
     public string $displayCurrencySource = 'default';
+    public ?int $activeCheckoutIntentId = null;
+    public array $checkoutAction = [];
 
     public bool $showConfirm = false;
     public bool $processing = false;
@@ -45,6 +52,7 @@ class extends Component
             ->map(function ($p) use ($currency, $customer) {
                 $monthlyDisplay = $currency->priceDataForBaseAmountIqd($p->priceIqdForCycle('monthly'), $customer);
                 $yearlyDisplay = $currency->priceDataForBaseAmountIqd($p->priceIqdForCycle('yearly'), $customer);
+                $ui = $p->localizedUiFeatures();
 
                 return [
                     'id' => (int) $p->id,
@@ -57,17 +65,28 @@ class extends Component
                     'price_iqd_yearly' => $p->priceIqdForCycle('yearly'),
                     'display_monthly' => $monthlyDisplay,
                     'display_yearly' => $yearlyDisplay,
-                    'ui_features' => is_array($p->ui_features) ? $p->ui_features : (array) ($p->ui_features ?? []),
+                    'ui_features' => $ui,
+                    'feature_list' => is_array($ui['features'] ?? null) ? array_values($ui['features']) : [],
                 ];
             })
             ->values()
             ->all();
 
         $this->currentPlanId = $customer->servicePlan()->first()?->id;
+        $this->paymentMethods = app(CheckoutAuthorizationService::class)->paymentMethodOptions('service_plan');
+
+        if ($this->selectedPaymentMethodCode === '' || ! collect($this->paymentMethods)->contains('code', $this->selectedPaymentMethodCode)) {
+            $this->selectedPaymentMethodCode = (string) (data_get($this->paymentMethods, '0.code') ?? '');
+        }
     }
 
     public function openConfirm(int $planId, string $billingCycle = 'monthly'): void
     {
+        if ($this->paymentMethods === []) {
+            $this->message = __('No checkout-ready payment method is available right now.');
+            return;
+        }
+
         $this->selectedPlanId = $planId;
         $this->billingCycle = $this->normalizeBillingCycle($billingCycle);
         $this->selectedBillingCycle = $this->billingCycle;
@@ -84,6 +103,8 @@ class extends Component
         $this->showConfirm = false;
         $this->selectedPlanId = null;
         $this->selectedBillingCycle = $this->normalizeBillingCycle($this->billingCycle);
+        $this->activeCheckoutIntentId = null;
+        $this->checkoutAction = [];
     }
 
     public function confirmChange(): void
@@ -114,55 +135,167 @@ class extends Component
         $this->message = '';
 
         try {
-            app(PlanSwitcher::class)->switchServicePlan($customer, (int) $this->selectedPlanId, [
+            $intent = app(PaymentIntentService::class)->startCheckout($customer, 'service_plan', (int) $this->selectedPlanId, [
                 'ui' => 'subscription-plan-page',
                 'billing_cycle' => $billingCycle,
+                'payment_method' => $this->selectedPaymentMethodCode,
+                'redirect_url' => url()->current(),
             ]);
 
-            $this->loadData();
+            if ($intent->requiresCustomerAction()) {
+                $this->activeCheckoutIntentId = (int) $intent->id;
+                $this->checkoutAction = $intent->checkoutAction();
+                $this->message = __('Payment created. Complete it in FIB, then return here and check the payment status.');
 
-            $this->showConfirm = false;
-            $this->selectedPlanId = null;
-            $this->message = 'Service plan updated successfully. Your subscription credits were reset for the new billing cycle, while add-on credits were kept.';
+                return;
+            }
 
-            $freshCustomer = $customer->fresh(['profile']);
-
-            TelegramPaymentNotifier::send(
-                $freshCustomer,
-                'Subscription Plan',
-                (string) $selectedPlan['name'],
-                [
-                    'Billing Cycle' => $billingCycleLabel,
-                    'Plan Code' => strtoupper((string) $selectedPlan['code']),
-                    'Monthly Credits' => number_format((int) $selectedPlan['monthly_credits']),
-                    'Price (IQD)' => $selectedPriceDisplay['iqd_label'],
-                    ...($selectedPriceDisplay['has_localized_estimate']
-                        ? ['Estimated Local Price' => $selectedPriceDisplay['display_label']]
-                        : []),
-                    'Provider' => 'fake',
-                ],
-                'Subscription plan page'
-            );
-
-            CustomerEmailNotifier::sendSubscriptionThankYou(
-                $freshCustomer,
-                [
-                    'plan_name' => (string) $selectedPlan['name'],
-                    'billing_cycle' => $billingCycleLabel,
-                    'monthly_credits' => (int) $selectedPlan['monthly_credits'],
-                    'amount_label' => (string) $selectedPriceDisplay['iqd_label'],
-                    'activated_on' => now()->format('F d, Y'),
-                ],
-                'Subscription plan page'
-            );
-
-            $this->dispatch('header:refresh');
-            $this->dispatch('customerPlanUpdated');
+            $this->completeSuccessfulPlanCheckout($customer, $intent, $selectedPlan, $billingCycleLabel, $selectedPriceDisplay);
         } catch (\Throwable $e) {
             $this->message = 'Failed: ' . $e->getMessage();
         } finally {
             $this->processing = false;
         }
+    }
+
+    public function refreshCheckoutStatus(): void
+    {
+        if (! $this->activeCheckoutIntentId) {
+            return;
+        }
+
+        $this->processing = true;
+
+        try {
+            $intent = app(PaymentIntentService::class)->syncCheckout($this->activeCheckoutIntentId, [
+                'ui' => 'subscription-plan-page-status',
+            ]);
+
+            if ((string) $intent->status === 'paid') {
+                $selectedPlan = collect($this->plans)->firstWhere('id', (int) $intent->purpose_id);
+
+                if (! is_array($selectedPlan)) {
+                    $plan = ServicePlan::query()->findOrFail((int) $intent->purpose_id);
+                    $ui = $plan->localizedUiFeatures();
+                    $selectedPlan = [
+                        'id' => (int) $plan->id,
+                        'code' => (string) $plan->code,
+                        'name' => (string) $plan->name,
+                        'monthly_credits' => (int) ($plan->monthly_credits ?? 0),
+                        'price_iqd_monthly' => $plan->priceIqdForCycle('monthly'),
+                        'price_iqd_yearly' => $plan->priceIqdForCycle('yearly'),
+                        'ui_features' => $ui,
+                    ];
+                }
+
+                $billingCycle = $this->resolvePlanBillingCycle($selectedPlan, (string) ($intent->billing_interval ?? 'monthly'));
+                $selectedPriceDisplay = app(BillingCurrencyService::class)->priceDataForBaseAmountIqd(
+                    $this->planPriceForCycle($selectedPlan, $billingCycle),
+                    auth('app')->user()
+                );
+
+                $this->completeSuccessfulPlanCheckout(
+                    auth('app')->user(),
+                    $intent,
+                    $selectedPlan,
+                    $this->billingCycleLabel($billingCycle),
+                    $selectedPriceDisplay,
+                );
+
+                return;
+            }
+
+            $this->checkoutAction = $intent->checkoutAction();
+            $this->message = match ((string) $intent->status) {
+                'failed' => __('Payment was declined by FIB.'),
+                'canceled' => __('Payment was canceled before completion.'),
+                'expired' => __('This FIB payment expired. Please start a new checkout.'),
+                default => __('Payment is still waiting to be completed.'),
+            };
+        } catch (\Throwable $e) {
+            $this->message = __('Failed to refresh payment status: :message', ['message' => $e->getMessage()]);
+        } finally {
+            $this->processing = false;
+        }
+    }
+
+    public function cancelPendingCheckout(): void
+    {
+        if (! $this->activeCheckoutIntentId) {
+            return;
+        }
+
+        $this->processing = true;
+
+        try {
+            $intent = app(PaymentIntentLifecycleService::class)->cancel($this->activeCheckoutIntentId, [
+                'reason' => 'Customer canceled pending checkout from subscription modal.',
+                'source' => 'subscription_plan_modal',
+            ]);
+
+            if ((string) $intent->status === 'canceled') {
+                $this->showConfirm = false;
+                $this->selectedPlanId = null;
+                $this->activeCheckoutIntentId = null;
+                $this->checkoutAction = [];
+                $this->message = __('Payment was canceled before completion.');
+
+                return;
+            }
+
+            $this->checkoutAction = $intent->checkoutAction();
+            $this->message = __('Payment could not be canceled automatically. Please refresh the status or wait for expiry.');
+        } catch (\Throwable $e) {
+            $this->message = __('Failed to cancel payment: :message', ['message' => $e->getMessage()]);
+        } finally {
+            $this->processing = false;
+        }
+    }
+
+    protected function completeSuccessfulPlanCheckout($customer, PaymentIntent $intent, array $selectedPlan, string $billingCycleLabel, array $selectedPriceDisplay): void
+    {
+        $this->loadData();
+
+        $this->showConfirm = false;
+        $this->selectedPlanId = null;
+        $this->activeCheckoutIntentId = null;
+        $this->checkoutAction = [];
+        $this->message = __('Service plan updated successfully. Your subscription credits were reset for the new billing cycle, while add-on credits were kept.');
+
+        $freshCustomer = $customer->fresh(['profile']);
+
+        TelegramPaymentNotifier::send(
+            $freshCustomer,
+            'Subscription Plan',
+            (string) $selectedPlan['name'],
+            [
+                'Billing Cycle' => $billingCycleLabel,
+                'Plan Code' => strtoupper((string) $selectedPlan['code']),
+                'Monthly Credits' => number_format((int) $selectedPlan['monthly_credits']),
+                'Price (IQD)' => $selectedPriceDisplay['iqd_label'],
+                ...($selectedPriceDisplay['has_localized_estimate']
+                    ? ['Estimated Local Price' => $selectedPriceDisplay['display_label']]
+                    : []),
+                'Provider' => strtoupper((string) $intent->provider),
+                'Reference' => (string) ($intent->merchant_transaction_id ?? $intent->provider_payment_id ?? $intent->uuid),
+            ],
+            'Subscription plan page'
+        );
+
+        CustomerEmailNotifier::sendSubscriptionThankYou(
+            $freshCustomer,
+            [
+                'plan_name' => (string) $selectedPlan['name'],
+                'billing_cycle' => $billingCycleLabel,
+                'monthly_credits' => (int) $selectedPlan['monthly_credits'],
+                'amount_label' => (string) $selectedPriceDisplay['iqd_label'],
+                'activated_on' => now()->format('F d, Y'),
+            ],
+            'Subscription plan page'
+        );
+
+        $this->dispatch('header:refresh');
+        $this->dispatch('customerPlanUpdated');
     }
 
     public function render()
@@ -398,7 +531,7 @@ class extends Component
                                 <hr class="my-4 text-muted">
 
                                 <ul class="list-unstyled text-muted vstack gap-2 mb-0">
-                                    @forelse($p['ui_features'] as $f)
+                                    @forelse($p['feature_list'] as $f)
                                         <li class="d-flex">
                                             <div class="flex-shrink-0 text-success me-1">
                                                 <i class="ri-checkbox-circle-fill fs-15 align-middle"></i>
@@ -420,7 +553,7 @@ class extends Component
                                                 x-on:click="$wire.openConfirm({{ $p['id'] }}, billingCycle)"
                                                 wire:loading.attr="disabled"
                                                 wire:target="openConfirm">
-                                            {{ __('Change Plan (Fake Pay)') }}
+                                            {{ __('Change Plan') }}
                                         </button>
                                     @endif
                                 </div>
@@ -452,9 +585,28 @@ class extends Component
                             </div>
 
                             <div class="modal-body">
-                                <div class="alert alert-warning mb-3">
-                                    {{ __('This is a fake payment for testing.') }}
-                                </div>
+                                @if ($checkoutAction === [] && $paymentMethods !== [])
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">{{ __('Payment Method') }}</label>
+                                        <div class="d-flex flex-column gap-2">
+                                            @foreach ($paymentMethods as $method)
+                                                <label class="border rounded-3 p-3 d-flex align-items-start gap-2">
+                                                    <input class="form-check-input mt-1" type="radio" wire:model.live="selectedPaymentMethodCode" value="{{ $method['code'] }}">
+                                                    <div class="flex-grow-1">
+                                                        <div class="fw-semibold">{{ $method['name'] }}</div>
+                                                        @if (!empty($method['description']))
+                                                            <div class="text-muted small">{{ $method['description'] }}</div>
+                                                        @endif
+                                                    </div>
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @elseif($checkoutAction === [])
+                                    <div class="alert alert-warning mb-3">
+                                        {{ __('No checkout-ready payment method is available right now.') }}
+                                    </div>
+                                @endif
 
                                 @if($selected)
                                     <p class="mb-2">
@@ -486,17 +638,89 @@ class extends Component
                                     {{ __('Your subscription credit bucket will be reset to the new plan credits for a fresh cycle.') }}
                                     {{ __('Your add-on credits will remain unchanged.') }}
                                 </div>
+
+                                @if($checkoutAction !== [])
+                                    @php
+                                        $checkoutLinks = (array) data_get($checkoutAction, 'links', []);
+                                        $validUntilLabel = data_get($checkoutAction, 'valid_until')
+                                            ? \Illuminate\Support\Carbon::parse((string) data_get($checkoutAction, 'valid_until'))->timezone(config('app.timezone'))->format('Y-m-d H:i')
+                                            : null;
+                                    @endphp
+
+                                    <div class="alert alert-warning mt-3 mb-0">
+                                        <div class="fw-semibold mb-2">{{ __('Complete the payment in First Iraqi Bank') }}</div>
+
+                                        @if(!empty($checkoutAction['readable_code']))
+                                            <div class="mb-2">
+                                                {{ __('Readable code:') }}
+                                                <b>{{ $checkoutAction['readable_code'] }}</b>
+                                            </div>
+                                        @endif
+
+                                        @if($validUntilLabel)
+                                            <div class="mb-2">
+                                                {{ __('Valid until:') }}
+                                                <b>{{ $validUntilLabel }}</b>
+                                            </div>
+                                        @endif
+
+                                        @if(!empty($checkoutAction['qr_code']))
+                                            <div class="text-center py-2">
+                                                <img src="{{ $checkoutAction['qr_code'] }}"
+                                                     alt="{{ __('FIB payment QR code') }}"
+                                                     class="img-fluid rounded border bg-white p-2"
+                                                     style="max-width: 220px;">
+                                            </div>
+                                        @endif
+
+                                        @if($checkoutLinks !== [])
+                                            <div class="d-flex flex-wrap gap-2 mt-2">
+                                                @foreach($checkoutLinks as $linkLabel => $linkUrl)
+                                                    @if(is_string($linkUrl) && $linkUrl !== '')
+                                                        <a href="{{ $linkUrl }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
+                                                            {{ __(ucfirst((string) $linkLabel) . ' App') }}
+                                                        </a>
+                                                    @endif
+                                                @endforeach
+                                            </div>
+                                        @endif
+
+                                        <div class="small mt-3">
+                                            {{ __('After you pay in FIB, click "Check Status" here to sync the payment if the callback has not arrived yet.') }}
+                                        </div>
+                                    </div>
+                                @endif
                             </div>
 
                             <div class="modal-footer">
-                                <button class="btn btn-light" wire:click="closeConfirm" @disabled($processing)>{{ __('Cancel') }}</button>
-                                <button class="btn btn-primary" wire:click="confirmChange" @disabled($processing)>
-                                    @if($processing)
-                                        {{ __('Processing...') }}
-                                    @else
-                                        {{ __('Confirm') }}
-                                    @endif
+                                <button class="btn btn-light" wire:click="closeConfirm" @disabled($processing)>
+                                    {{ $checkoutAction !== [] ? __('Close') : __('Cancel') }}
                                 </button>
+
+                                @if($checkoutAction !== [])
+                                    <button class="btn btn-outline-danger" wire:click="cancelPendingCheckout" @disabled($processing)>
+                                        @if($processing)
+                                            {{ __('Canceling...') }}
+                                        @else
+                                            {{ __('Cancel Payment') }}
+                                        @endif
+                                    </button>
+                                    <button class="btn btn-primary" wire:click="refreshCheckoutStatus" @disabled($processing)>
+                                        @if($processing)
+                                            {{ __('Checking...') }}
+                                        @else
+                                            {{ __('Check Status') }}
+                                        @endif
+                                    </button>
+                                @else
+                                    <button class="btn btn-primary" wire:click="confirmChange" @disabled($processing)>
+                                        @if($processing)
+                                            {{ __('Processing...') }}
+                                        @else
+                                            {{ __('Continue') }}
+                                        @endif
+                                    </button>
+                                @endif
                             </div>
                         </div>
                     </div>

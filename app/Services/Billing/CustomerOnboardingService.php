@@ -12,6 +12,7 @@ use App\Models\CustomerStorageSubscription;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class CustomerOnboardingService
 {
@@ -20,15 +21,8 @@ class CustomerOnboardingService
         DB::transaction(function () use ($customer) {
             $registeredAt = $customer->created_at?->copy() ?? now();
 
-            $servicePlan = ServicePlan::query()
-                ->where('code', 'free')
-                ->where('is_active', true)
-                ->firstOrFail();
-
-            $storagePlan = StoragePlan::query()
-                ->where('code', 'free-512')
-                ->where('is_active', true)
-                ->firstOrFail();
+            $servicePlan = $this->resolveDefaultServicePlan();
+            $storagePlan = $this->resolveDefaultStoragePlan();
             $servicePlanAmountIqd = $servicePlan->priceIqdForCycle('monthly');
             $storagePlanAmountIqd = $storagePlan->priceIqdAmount();
             $servicePlanSnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd(
@@ -176,5 +170,49 @@ class CustomerOnboardingService
                 'created_at' => $registeredAt,
             ]);
         });
+    }
+
+    protected function resolveDefaultServicePlan(): ServicePlan
+    {
+        $plan = ServicePlan::query()
+            ->where('is_active', true)
+            ->where(function ($query) {
+                $query
+                    ->where('code', 'free')
+                    ->orWhere('is_free', true);
+            })
+            ->orderByRaw("CASE WHEN code = 'free' THEN 0 ELSE 1 END")
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->first();
+
+        if ($plan instanceof ServicePlan) {
+            return $plan;
+        }
+
+        throw new RuntimeException('No active default service plan is configured. Expected an active free service plan.');
+    }
+
+    protected function resolveDefaultStoragePlan(): StoragePlan
+    {
+        $plan = StoragePlan::query()
+            ->where('is_active', true)
+            ->where(function ($query) {
+                $query
+                    ->where('code', 'free-512')
+                    ->orWhere('price_iqd', 0)
+                    ->orWhere('price_usd', 0);
+            })
+            ->orderByRaw("CASE WHEN code = 'free-512' THEN 0 ELSE 1 END")
+            ->orderBy('quota_mb')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->first();
+
+        if ($plan instanceof StoragePlan) {
+            return $plan;
+        }
+
+        throw new RuntimeException('No active default storage plan is configured. Expected an active free storage plan.');
     }
 }

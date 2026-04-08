@@ -74,6 +74,16 @@ class Customer extends Authenticatable
         return $this->hasMany(CreditOrder::class);
     }
 
+    public function paymentIntents(): HasMany
+    {
+        return $this->hasMany(PaymentIntent::class, 'customer_id');
+    }
+
+    public function paymentMethods(): HasMany
+    {
+        return $this->hasMany(CustomerPaymentMethod::class, 'customer_id');
+    }
+
     public function creditMonthlyGrants(): HasMany
     {
         return $this->hasMany(CreditMonthlyGrant::class);
@@ -143,6 +153,15 @@ class Customer extends Authenticatable
         }
 
         return (string) ($this->servicePlan()->value('code') ?? 'free');
+    }
+
+    public function hasPaidServicePlan(): bool
+    {
+        $plan = $this->relationLoaded('servicePlan')
+            ? $this->getRelation('servicePlan')
+            : $this->servicePlan()->first();
+
+        return $plan !== null && ! (bool) ($plan->is_free ?? false);
     }
 
     // =========================================================

@@ -9,6 +9,9 @@ use App\Http\Controllers\App\Services\StemRenderController;
 use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Controllers\App\Services\YoutubeRenderController;
+use App\Http\Controllers\Payments\AreebaWebhookController;
+use App\Http\Controllers\Payments\FibWebhookController;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
 
@@ -25,6 +28,15 @@ use Illuminate\Support\Facades\Route;
 // Route::get('/sitemap_ku.xml', fn () => response()->file(public_path('sitemap_ku.xml')));
 
 Route::post('/set-locale', [LocalizationMainMiddleware::class, 'setLocale'])->name('setLocale');
+
+Route::prefix('payments/webhooks')->group(function () {
+    Route::post('/fib', FibWebhookController::class)
+        ->withoutMiddleware(VerifyCsrfToken::class)
+        ->name('payments.webhooks.fib');
+    Route::post('/areeba', AreebaWebhookController::class)
+        ->withoutMiddleware(VerifyCsrfToken::class)
+        ->name('payments.webhooks.areeba');
+});
 
 require __DIR__.'/landing.php';
 
@@ -61,6 +73,7 @@ Route::prefix('{locale}/'.app('aurl'))
         Route::livewire('/packs/plans', 'admin::pages.payments.adm-payments-plans')->name('admin.payments.plans');
         Route::livewire('/packs/addons', 'admin::pages.payments.adm-payments-addons')->name('admin.payments.addons');
         Route::livewire('/packs/storage', 'admin::pages.payments.adm-payments-storages')->name('admin.payments.storage');
+        Route::livewire('/packs/methods', 'admin::pages.payments.adm-payments-methods')->name('admin.payments.methods');
         Route::livewire('/packs/currencies', 'admin::pages.payments.adm-payments-currencies')->name('admin.payments.currencies');
     });
 

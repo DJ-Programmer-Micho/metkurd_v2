@@ -8,6 +8,7 @@ use App\Models\MlJob;
 use App\Support\CustomerFolder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class CustomerOutputStorage
@@ -42,10 +43,40 @@ class CustomerOutputStorage
         $disk = 's3';
         $bytes = strlen($bin);
         $mime = $meta['mime'] ?? 'audio/wav';
+        $startedAt = microtime(true);
 
-        Storage::disk($disk)->put($path, $bin, [
-            'visibility' => 'private',
-            'ContentType' => $mime,
+        Log::info('CUSTOMER_OUTPUT_S3_SAVE_START', [
+            'disk' => $disk,
+            'path' => $path,
+            'bytes' => $bytes,
+            'mime' => $mime,
+            'bucket' => config('filesystems.disks.s3.bucket'),
+            'region' => config('filesystems.disks.s3.region'),
+            'endpoint' => config('filesystems.disks.s3.endpoint'),
+            'use_path_style_endpoint' => config('filesystems.disks.s3.use_path_style_endpoint'),
+            'config_cached' => app()->configurationIsCached(),
+        ]);
+
+        try {
+            Storage::disk($disk)->put($path, $bin, [
+                'visibility' => 'private',
+                'ContentType' => $mime,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('CUSTOMER_OUTPUT_S3_SAVE_FAIL', [
+                'disk' => $disk,
+                'path' => $path,
+                'elapsed_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'message' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+
+        Log::info('CUSTOMER_OUTPUT_S3_SAVE_DONE', [
+            'disk' => $disk,
+            'path' => $path,
+            'elapsed_ms' => (int) round((microtime(true) - $startedAt) * 1000),
         ]);
 
         $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);

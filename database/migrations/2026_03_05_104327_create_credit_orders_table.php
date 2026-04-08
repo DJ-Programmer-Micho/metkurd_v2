@@ -11,9 +11,11 @@ return new class extends Migration {
             $table->bigIncrements('id');
 
             $table->unsignedBigInteger('customer_id')->index();
+            $table->unsignedBigInteger('payment_intent_id')->nullable()->index();
 
             $table->string('order_type', 30)->index(); // subscription, addon, adjustment
             $table->string('status', 30)->default('pending')->index(); // pending, paid, failed, refunded, canceled
+            $table->string('status_reason', 190)->nullable();
 
             // source object
             $table->string('source_type', 60)->nullable()->index(); // service_plan, credit_product
@@ -25,6 +27,11 @@ return new class extends Migration {
             $table->char('currency', 3)->default('IQD');
             $table->char('base_currency_code', 3)->default('IQD')->index();
             $table->decimal('base_amount_iqd', 14, 0)->nullable();
+            $table->decimal('gross_amount_iqd', 14, 0)->nullable();
+            $table->decimal('surcharge_amount_iqd', 14, 0)->nullable();
+            $table->decimal('provider_fee_amount_iqd', 14, 0)->nullable();
+            $table->decimal('net_amount_iqd', 14, 0)->nullable();
+            $table->char('fee_currency_code', 3)->nullable();
             $table->char('display_currency_code', 3)->nullable()->index();
             $table->decimal('display_exchange_rate', 18, 8)->nullable();
             $table->decimal('display_amount_raw', 18, 8)->nullable();
@@ -34,13 +41,20 @@ return new class extends Migration {
             $table->char('display_country_code', 2)->nullable()->index();
 
             $table->string('provider', 60)->nullable()->index();
+            $table->string('payment_method', 40)->nullable()->index();
             $table->string('provider_ref', 190)->nullable()->index();
+            $table->string('merchant_transaction_id', 120)->nullable()->index();
+            $table->string('provider_transaction_id', 190)->nullable()->index();
             $table->timestamp('paid_at')->nullable()->index();
+            $table->timestamp('failed_at')->nullable()->index();
+            $table->timestamp('canceled_at')->nullable()->index();
+            $table->timestamp('refunded_at')->nullable()->index();
 
             $table->json('meta')->nullable();
             $table->timestamps();
 
             $table->foreign('customer_id')->references('id')->on('customers')->cascadeOnDelete();
+            $table->foreign('payment_intent_id')->references('id')->on('payment_intents')->nullOnDelete();
             $table->foreign('service_plan_id')->references('id')->on('service_plans')->nullOnDelete();
             $table->foreign('credit_product_id')->references('id')->on('credit_products')->nullOnDelete();
 

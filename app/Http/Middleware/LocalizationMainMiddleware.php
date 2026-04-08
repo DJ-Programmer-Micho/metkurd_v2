@@ -18,12 +18,19 @@ class LocalizationMainMiddleware
         }
 
         // 1) Resolve locale (route param > session > app.default)
-        $locale = $request->route('locale') ?? $request->session()->get('applocale', config('app.locale'));
+        $sessionLocale = $request->hasSession()
+            ? $request->session()->get('applocale', config('app.locale'))
+            : config('app.locale');
+
+        $locale = $request->route('locale') ?? $sessionLocale;
         if (! in_array($locale, $this->selectedLanguages, true)) {
             $locale = config('app.locale');
         }
         App::setLocale($locale);
-        $request->session()->put('applocale', $locale);
+
+        if ($request->hasSession()) {
+            $request->session()->put('applocale', $locale);
+        }
 
         // 2) Select area and add JSON paths
         $area = $this->detectArea($request);
@@ -42,12 +49,17 @@ class LocalizationMainMiddleware
     public function setLocale(Request $request)
     {
         $selected = $request->string('locale')->toString();
+        $sessionLocale = $request->hasSession()
+            ? $request->session()->get('applocale', config('app.locale'))
+            : config('app.locale');
 
         if (in_array($selected, $this->selectedLanguages, true)) {
-            $request->session()->put('applocale', $selected);
+            if ($request->hasSession()) {
+                $request->session()->put('applocale', $selected);
+            }
             App::setLocale($selected);
         } else {
-            $selected = $request->session()->get('applocale', config('app.locale'));
+            $selected = $sessionLocale;
         }
 
         $prev = $request->headers->get('referer') ?: url()->current();

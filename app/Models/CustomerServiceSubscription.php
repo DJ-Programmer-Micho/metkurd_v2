@@ -28,6 +28,8 @@ class CustomerServiceSubscription extends Model
         'cycle_ends_on',
         'next_renewal_on',
         'auto_renew',
+        'customer_payment_method_id',
+        'renewal_strategy',
         'price_iqd_snapshot',
         'display_currency_code',
         'display_exchange_rate',
@@ -48,6 +50,7 @@ class CustomerServiceSubscription extends Model
         'cycle_ends_on' => 'date',
         'next_renewal_on' => 'date',
         'auto_renew' => 'boolean',
+        'customer_payment_method_id' => 'integer',
         'price_iqd_snapshot' => 'decimal:0',
         'display_exchange_rate' => 'decimal:8',
         'display_amount_raw' => 'decimal:8',
@@ -69,6 +72,11 @@ class CustomerServiceSubscription extends Model
     public function previousServicePlan(): BelongsTo
     {
         return $this->belongsTo(ServicePlan::class, 'previous_service_plan_id');
+    }
+
+    public function customerPaymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(CustomerPaymentMethod::class, 'customer_payment_method_id');
     }
 
     public function monthlyGrants(): HasMany

@@ -1,7 +1,7 @@
 <?php
 
-test('returns a successful response', function () {
+test('root redirects guests to the localized landing home page', function () {
     $response = $this->get('/');
 
-    $response->assertOk();
+    $response->assertRedirect(route('landing.home', ['locale' => config('app.locale')]));
 });

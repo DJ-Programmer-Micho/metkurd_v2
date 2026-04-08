@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\ServicePlan;
 use Illuminate\Support\Carbon;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\User as SocialiteUser;
@@ -66,4 +67,21 @@ it('assigns the free plan when socialite creates a customer on first login', fun
     expect($customer->activeServiceSubscription->servicePlan->code)->toBe('free');
     expect($customer->activeServiceSubscription->starts_at?->toDateTimeString())
         ->toBe($customer->created_at?->toDateTimeString());
+});
+
+it('fails cleanly when no active free service plan is configured', function () {
+    ServicePlan::query()->where('code', 'free')->delete();
+
+    expect(fn () => Customer::create([
+        'username' => 'broken_user',
+        'email' => 'broken@example.com',
+        'password' => 'Secret123!',
+        'status' => 1,
+        'email_verify' => false,
+        'phone_verify' => false,
+    ]))->toThrow(RuntimeException::class, 'No active default service plan is configured.');
+
+    expect(
+        Customer::query()->where('email', 'broken@example.com')->exists()
+    )->toBeFalse();
 });

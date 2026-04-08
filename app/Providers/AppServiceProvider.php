@@ -2,14 +2,21 @@
 
 namespace App\Providers;
 
+use App\Contracts\Payments\AreebaGatewayInterface;
+use App\Contracts\Payments\FibGatewayInterface;
+use App\Http\Middleware\LocalizationMainMiddleware;
 use App\Models\Customer;
 use App\Observers\CustomerObserver;
+use App\Services\Payments\Areeba\AreebaHttpGateway;
+use App\Services\Payments\Fib\FibHttpGateway;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Livewire\Blaze\Blaze;
+use Livewire\Livewire;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -19,7 +26,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(FibGatewayInterface::class, FibHttpGateway::class);
+        $this->app->singleton(AreebaGatewayInterface::class, AreebaHttpGateway::class);
     }
 
     /**
@@ -34,6 +42,7 @@ class AppServiceProvider extends ServiceProvider
         //     );
 
         $this->configureDefaults();
+        $this->configureLivewireRoutes();
         Customer::observe(CustomerObserver::class);
 
         $this->app->singleton('cloudfront', function () {
@@ -97,6 +106,30 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton('aurl', function () {
             return  "adm";
         });
+    }
+
+    /**
+     * Register stable absolute Livewire endpoints.
+     *
+     * The default hashed endpoints can resolve poorly behind localized /
+     * prefixed routing setups, which leads to 404s on component updates.
+     */
+    protected function configureLivewireRoutes(): void
+    {
+        Livewire::setUpdateRoute(function ($handle) {
+            return Route::post('/livewire/update', $handle)
+                ->middleware(['web', LocalizationMainMiddleware::class])
+                ->name('custom');
+        });
+
+        Livewire::setScriptRoute(function ($handle) {
+            return Route::get('/livewire/livewire.js', $handle)
+                ->name('custom');
+        });
+
+        Livewire::addPersistentMiddleware([
+            LocalizationMainMiddleware::class,
+        ]);
     }
 
     /**

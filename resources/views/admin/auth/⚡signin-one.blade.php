@@ -106,9 +106,9 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
                             <h5 class="text-primary">{{ __('Welcome Back Emp!') }}</h5>
                             <p class="text-muted">{{ __('Sign in to continue to :brand.', ['brand' => 'MET KURD']) }}</p>
                         </div>
-                                {{-- @php
-                                    print(Hash::make('123456789'))
-                                @endphp --}}
+                                @php
+                                    print(Hash::make('321321321'))
+                                @endphp
                         <div class="mt-4">
                             <form wire:submit.prevent="signIn">
                                 <div class="mb-3">

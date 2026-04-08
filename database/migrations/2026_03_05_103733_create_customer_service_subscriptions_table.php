@@ -28,6 +28,8 @@ return new class extends Migration {
             $table->date('next_renewal_on')->nullable()->index();
 
             $table->boolean('auto_renew')->default(true)->index();
+            $table->unsignedBigInteger('customer_payment_method_id')->nullable()->index();
+            $table->string('renewal_strategy', 30)->default('manual_renewal')->index();
             $table->decimal('price_iqd_snapshot', 14, 0)->nullable();
             $table->char('display_currency_code', 3)->nullable()->index();
             $table->decimal('display_exchange_rate', 18, 8)->nullable();
@@ -43,6 +45,10 @@ return new class extends Migration {
             $table->foreign('customer_id')->references('id')->on('customers')->cascadeOnDelete();
             $table->foreign('service_plan_id')->references('id')->on('service_plans')->restrictOnDelete();
             $table->foreign('previous_service_plan_id')->references('id')->on('service_plans')->nullOnDelete();
+            $table->foreign('customer_payment_method_id', 'cssvc_pm_method_fk')
+                ->references('id')
+                ->on('customer_payment_methods')
+                ->nullOnDelete();
 
             $table->index(['customer_id', 'status', 'cycle_ends_on'], 'css_customer_status_cycle_idx');
         });

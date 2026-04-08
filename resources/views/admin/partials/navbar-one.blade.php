@@ -163,6 +163,12 @@
                         :label="__('Currencies')"
                     />
 
+                    <livewire:partials.components.nav-feature-link
+                        route="admin.payments.methods"
+                        icon="bx bxs-microphone-alt"
+                        :label="__('Methods')"
+                    />
+
                 </livewire:partials.components.nav-multi-feature-link>
 
                 <livewire:partials.components.nav-multi-feature-link
@@ -173,27 +179,21 @@
                     >
 
                     <livewire:partials.components.nav-feature-link
-                        :route="'app.wasr'"
+                        :route="'admin.payments.methods'"
                         icon="bx bxs-microphone-alt"
-                        :label="__('Ranking')"
-                        feature="asr.active"
-                        badge="PRO"
+                        :label="__('Manage Methods')"
                     />
 
                     <livewire:partials.components.nav-feature-link
-                        route="app.home"
+                        route="admin.payments.currencies"
                         icon="bx bxs-microphone-alt"
-                        :label="__('Usage')"
-                        feature="asr2.active"
-                        badge="PRO"
+                        :label="__('Currencies')"
                     />
 
                     <livewire:partials.components.nav-feature-link
-                        route="app.home"
+                        route="admin.payments.plans"
                         icon="bx bxs-microphone-alt"
-                        :label="__('Register')"
-                        feature="asr2.active"
-                        badge="PRO"
+                        :label="__('Catalog')"
                     />
                 </livewire:partials.components.nav-multi-feature-link>
             </ul>

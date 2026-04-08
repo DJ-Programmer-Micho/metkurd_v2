@@ -10,6 +10,8 @@ class CustomerStorageSubscription extends Model
         'customer_id',
         'storage_plan_id',
         'status',
+        'source',
+        'provider_ref',
         'price_iqd_snapshot',
         'display_currency_code',
         'display_exchange_rate',
@@ -20,6 +22,13 @@ class CustomerStorageSubscription extends Model
         'display_country_code',
         'starts_at',
         'ends_at',
+        'canceled_at',
+        'cycle_started_on',
+        'cycle_ends_on',
+        'next_renewal_on',
+        'auto_renew',
+        'customer_payment_method_id',
+        'renewal_strategy',
         'meta',
     ];
 
@@ -31,6 +40,12 @@ class CustomerStorageSubscription extends Model
         'display_rounding_step' => 'decimal:4',
         'starts_at' => 'datetime',
         'ends_at' => 'datetime',
+        'canceled_at' => 'datetime',
+        'cycle_started_on' => 'date',
+        'cycle_ends_on' => 'date',
+        'next_renewal_on' => 'date',
+        'auto_renew' => 'boolean',
+        'customer_payment_method_id' => 'integer',
         'meta' => 'array',
     ];
 
@@ -42,5 +57,10 @@ class CustomerStorageSubscription extends Model
     public function storagePlan()
     {
         return $this->belongsTo(StoragePlan::class, 'storage_plan_id');
+    }
+
+    public function customerPaymentMethod()
+    {
+        return $this->belongsTo(CustomerPaymentMethod::class, 'customer_payment_method_id');
     }
 }
