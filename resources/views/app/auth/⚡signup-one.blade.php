@@ -1,5 +1,6 @@
 {{-- resources/views/app/auth/⚡signup-one.blade.php --}}
 <?php
+use App\Rules\ValidTurnstile;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Illuminate\Support\Facades\Auth;
@@ -7,8 +8,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use App\Models\Customer;
 use App\Models\CustomerProfile;
 use App\Notifications\Landing\TelegramNewRegister;
@@ -24,27 +27,37 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     public string $email = '';
     public string $password = '';
     public string $password_confirmation = '';
+    public string $cfTurnstileResponse = '';
 
     public function signUp()
     {
-        
-        $this->validate([
-            'first_name' => ['required', 'string', 'max:60'],
-            'last_name'  => ['required', 'string', 'max:60'],
-            'username'   => ['required', 'string', 'max:50', 'alpha_dash', 'unique:customers,username'],
-            'job_title'  => ['nullable', 'string', 'max:60'],
+        $this->resetErrorBag('form');
+        $this->ensureNotRateLimited();
 
-            'phone_number' => [
-                'required',
-                'string',
-                'max:30',
-                'regex:/^\+\d{10,15}$/',
-                Rule::unique('customer_profiles', 'phone_number'),
-            ],
+        try {
+            $this->validate([
+                'first_name' => ['required', 'string', 'max:60'],
+                'last_name' => ['required', 'string', 'max:60'],
+                'username' => ['required', 'string', 'max:50', 'alpha_dash', 'unique:customers,username'],
+                'job_title' => ['nullable', 'string', 'max:60'],
+                'phone_number' => [
+                    'required',
+                    'string',
+                    'max:30',
+                    'regex:/^\+\d{10,15}$/',
+                    Rule::unique('customer_profiles', 'phone_number'),
+                ],
+                'email' => ['required', 'email', 'max:255', 'unique:customers,email'],
+                'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+                'cfTurnstileResponse' => ['bail', 'required', 'string', new ValidTurnstile()],
+            ], [
+                'cfTurnstileResponse.required' => __('Please complete the human verification challenge.'),
+            ]);
+        } catch (ValidationException $e) {
+            $this->resetTurnstileChallenge();
 
-            'email'    => ['required', 'email', 'max:255', 'unique:customers,email'],
-            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
-        ]);
+            throw $e;
+        }
 
         try {
             $customer = DB::transaction(function () {
@@ -76,11 +89,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                 'error' => $e->getMessage(),
             ]);
 
-            $this->dispatch(
-                'alert',
-                type: 'error',
-                message: __('We could not create your account right now. Please try again later.')
-            );
+            $this->addError('form', __('We could not create your account right now. Please try again later.'));
+            $this->resetTurnstileChallenge();
 
             return null;
         }
@@ -89,6 +99,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
         Auth::guard('app')->login($customer);
         request()->session()->regenerate();
+        $this->resetTurnstileChallenge();
 
         $this->dispatch('alert', type: 'success', message: __('Account created! Please verify your email.'));
 
@@ -160,6 +171,41 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
             return null;
         }
+    }
+
+    public function updatedCfTurnstileResponse(): void
+    {
+        $this->resetValidation('cfTurnstileResponse');
+        $this->resetErrorBag('form');
+    }
+
+    protected function ensureNotRateLimited(): void
+    {
+        $key = $this->rateLimitKey();
+
+        if (RateLimiter::tooManyAttempts($key, 6)) {
+            $seconds = RateLimiter::availableIn($key);
+            $this->resetTurnstileChallenge();
+
+            throw ValidationException::withMessages([
+                'form' => __('Too many account creation attempts were made from your network. Please wait :seconds seconds and try again.', [
+                    'seconds' => $seconds,
+                ]),
+            ]);
+        }
+
+        RateLimiter::hit($key, 600);
+    }
+
+    protected function rateLimitKey(): string
+    {
+        return 'app_signup:' . sha1((string) request()->ip());
+    }
+
+    protected function resetTurnstileChallenge(): void
+    {
+        $this->cfTurnstileResponse = '';
+        $this->dispatch('turnstile-reset');
     }
 };
 ?>
@@ -350,6 +396,9 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
                         <div class="mt-4">
                             <form wire:submit.prevent="signUp">
+                                @error('form')
+                                    <div class="alert alert-danger">{{ $message }}</div>
+                                @enderror
 
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
@@ -441,6 +490,10 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                     <p id="pass-special" class="invalid fs-12 mb-2">{{ __('At least one special character') }}</p>
                                     <p id="pass-length"  class="invalid fs-12 mb-2">{{ __('At least 8 characters') }}</p>
                                     <p id="pass-match"   class="invalid fs-12 mb-0">{{ __('Passwords match') }}</p>
+                                </div>
+
+                                <div class="mb-3">
+                                    <x-turnstile-widget model="cfTurnstileResponse" theme="dark" />
                                 </div>
 
                                 <div class="mt-4">

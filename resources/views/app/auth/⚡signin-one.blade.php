@@ -1,6 +1,7 @@
 {{-- resources/views/app/auth/⚡signin-one.blade.php --}}
 <?php
 
+use App\Rules\ValidTurnstile;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Illuminate\Support\Facades\Auth;
@@ -11,6 +12,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 {
     public string $login = '';
     public string $password = '';
+    public string $cfTurnstileResponse = '';
     public bool $remember = false;
 
     public function mount()
@@ -20,17 +22,29 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
     public function signIn()
     {
-        $this->validate([
-            'login'    => ['required', 'string', 'max:255'],
-            'password' => ['required', 'string', 'max:255'],
-            'remember' => ['boolean'],
-        ]);
+        $this->resetErrorBag('form');
 
-        $key = 'app_login:' . request()->ip() . ':' . strtolower($this->login);
+        try {
+            $this->validate([
+                'login' => ['required', 'string', 'max:255'],
+                'password' => ['required', 'string', 'max:255'],
+                'cfTurnstileResponse' => ['bail', 'required', 'string', new ValidTurnstile()],
+                'remember' => ['boolean'],
+            ], [
+                'cfTurnstileResponse.required' => __('Please complete the human verification challenge.'),
+            ]);
+        } catch (ValidationException $e) {
+            $this->resetTurnstileChallenge();
 
-        if (RateLimiter::tooManyAttempts($key, 8)) {
+            throw $e;
+        }
+
+        $key = $this->signInRateLimitKey();
+
+        if (RateLimiter::tooManyAttempts($key, 5)) {
             $seconds = RateLimiter::availableIn($key);
-            $this->dispatch('alert', type: 'error', message: __('Too many attempts. Try again in :seconds seconds.', ['seconds' => $seconds]));
+            $this->addError('form', __('Too many sign in attempts. Please wait :seconds seconds and try again.', ['seconds' => $seconds]));
+            $this->resetTurnstileChallenge();
             return;
         }
 
@@ -42,11 +56,13 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             Auth::guard('app')->attempt($credentialsUser, $this->remember);
 
         if (! $ok) {
-            RateLimiter::hit($key, 60);
+            RateLimiter::hit($key, 120);
+            $this->resetTurnstileChallenge();
             throw ValidationException::withMessages(['login' => __('Invalid credentials.')]);
         }
 
         RateLimiter::clear($key);
+        $this->resetTurnstileChallenge();
         request()->session()->regenerate();
 
         $user = Auth::guard('app')->user();
@@ -65,6 +81,23 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
         $this->dispatch('alert', type: 'success', message: __('Welcome back!'));
         return redirect()->to(route('app.home',['locale' => app()->getLocale()]));
+    }
+
+    public function updatedCfTurnstileResponse(): void
+    {
+        $this->resetValidation('cfTurnstileResponse');
+        $this->resetErrorBag('form');
+    }
+
+    protected function signInRateLimitKey(): string
+    {
+        return 'app_login:' . sha1((string) request()->ip() . '|' . strtolower(trim($this->login)));
+    }
+
+    protected function resetTurnstileChallenge(): void
+    {
+        $this->cfTurnstileResponse = '';
+        $this->dispatch('turnstile-reset');
     }
 };
 
@@ -124,6 +157,10 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
                         <div class="mt-4">
                             <form wire:submit.prevent="signIn">
+                                @error('form')
+                                    <div class="alert alert-danger">{{ $message }}</div>
+                                @enderror
+
                                 <div class="mb-3">
                                     <label for="login" class="form-label">{{ __('Email or Username') }}</label>
                                     <input type="text" class="form-control @error('login') is-invalid @enderror"
@@ -151,6 +188,10 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="remember" wire:model="remember">
                                     <label class="form-check-label" for="remember">{{ __('Remember me') }}</label>
+                                </div>
+
+                                <div class="mt-3">
+                                    <x-turnstile-widget model="cfTurnstileResponse" theme="dark" />
                                 </div>
 
                                 <div class="mt-4">

@@ -1,9 +1,12 @@
 <?php
 
+use App\Rules\ValidTurnstile;
 use App\Support\LandingContent;
 use App\Notifications\Landing\TelegramContactUs;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Stevebauman\Location\Facades\Location;
@@ -14,6 +17,7 @@ new #[Layout('landing::layouts.app')] class extends Component
     public string $email = '';
     public string $subject = '';
     public string $body = '';
+    public string $cfTurnstileResponse = '';
     public bool $submitted = false;
 
     protected function rules(): array
@@ -23,6 +27,7 @@ new #[Layout('landing::layouts.app')] class extends Component
             'email' => ['required', 'email', 'max:190'],
             'subject' => ['required', 'string', 'min:3', 'max:180'],
             'body' => ['required', 'string', 'min:10', 'max:4000'],
+            'cfTurnstileResponse' => ['bail', 'required', 'string', new ValidTurnstile()],
         ];
     }
 
@@ -34,6 +39,7 @@ new #[Layout('landing::layouts.app')] class extends Component
             'email.email' => __('Please enter a valid email address.'),
             'subject.required' => __('Please enter a subject.'),
             'body.required' => __('Please enter your message.'),
+            'cfTurnstileResponse.required' => __('Please complete the human verification challenge.'),
         ];
     }
 
@@ -49,12 +55,26 @@ new #[Layout('landing::layouts.app')] class extends Component
         $this->validateOnly($property);
     }
 
+    public function updatedCfTurnstileResponse(): void
+    {
+        $this->resetValidation('cfTurnstileResponse');
+        $this->resetErrorBag('form');
+    }
+
     public function submitMessage(): void
     {
         $this->submitted = false;
         $this->resetErrorBag();
         $this->normalizeFields();
-        $this->validate();
+        $this->ensureNotRateLimited();
+
+        try {
+            $this->validate();
+        } catch (ValidationException $e) {
+            $this->resetTurnstileChallenge();
+
+            throw $e;
+        }
 
         $teleId = trim((string) env('TELEGRAM_GROUP_CON'));
         $guestIdentifier = request()->ip();
@@ -64,6 +84,7 @@ new #[Layout('landing::layouts.app')] class extends Component
         if ($teleId === '') {
             Log::warning('Contact page telegram chat id is missing.');
             $this->addError('form', __('Message did not send successfully. Please try again later.'));
+            $this->resetTurnstileChallenge();
             return;
         }
 
@@ -85,8 +106,9 @@ new #[Layout('landing::layouts.app')] class extends Component
             );
 
             $this->submitted = true;
-            $this->reset(['name', 'email', 'subject', 'body']);
+            $this->reset(['name', 'email', 'subject', 'body', 'cfTurnstileResponse']);
             $this->resetValidation();
+            $this->resetTurnstileChallenge();
         } catch (\Throwable $e) {
             Log::error('Contact page telegram notification failed.', [
                 'error' => $e->getMessage(),
@@ -96,6 +118,7 @@ new #[Layout('landing::layouts.app')] class extends Component
             ]);
 
             $this->addError('form', __('Message did not send successfully. Please try again.'));
+            $this->resetTurnstileChallenge();
         }
     }
 
@@ -125,6 +148,35 @@ new #[Layout('landing::layouts.app')] class extends Component
 
             return null;
         }
+    }
+
+    protected function ensureNotRateLimited(): void
+    {
+        $key = $this->rateLimitKey();
+
+        if (RateLimiter::tooManyAttempts($key, 5)) {
+            $seconds = RateLimiter::availableIn($key);
+            $this->resetTurnstileChallenge();
+
+            throw ValidationException::withMessages([
+                'form' => __('Too many messages were sent from your network. Please wait :seconds seconds and try again.', [
+                    'seconds' => $seconds,
+                ]),
+            ]);
+        }
+
+        RateLimiter::hit($key, 600);
+    }
+
+    protected function rateLimitKey(): string
+    {
+        return 'landing-contact:' . sha1((string) request()->ip());
+    }
+
+    protected function resetTurnstileChallenge(): void
+    {
+        $this->cfTurnstileResponse = '';
+        $this->dispatch('turnstile-reset');
     }
 };
 ?>
@@ -230,6 +282,10 @@ new #[Layout('landing::layouts.app')] class extends Component
                                     @error('body')
                                         <div class="text-danger small mt-2">{{ $message }}</div>
                                     @enderror
+                                </div>
+
+                                <div class="col-12">
+                                    <x-turnstile-widget model="cfTurnstileResponse" theme="dark" />
                                 </div>
 
                                 <div class="col-12 d-grid">

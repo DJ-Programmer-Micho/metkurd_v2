@@ -82,6 +82,10 @@ return [
         'client_secret' => env('GITHUB_CLIENT_SECRET'),
         'redirect' => env('GITHUB_REDIRECT_URI'),
     ],
+    'turnstile' => [
+        'site_key' => env('TURNSTILE_SITE_KEY'),
+        'secret_key' => env('TURNSTILE_SECRET_KEY'),
+    ],
     'telegram-bot-api' => [
         'token' => env('TELEGRAM_BOT_TOKEN', '7860562413:AAF7NeKkAZBS433KxwfZ1DtekirBllvPLxY')
     ],
