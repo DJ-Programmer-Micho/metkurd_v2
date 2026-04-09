@@ -1,8 +1,6 @@
 <?php
 
-use App\Models\Tool;
 use App\Support\LandingContent;
-use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -18,34 +16,14 @@ new class extends Component
     #[Computed]
     public function tools(): array
     {
-        $catalog = collect(LandingContent::section('tool_catalog'));
-        $supportedCodes = $catalog->keys()->all();
+        $tools = collect(LandingContent::section('tool_catalog'))
+            ->map(function (array $tool, string $code) {
+                $slug = $tool['slug'] ?? $code;
 
-        $activeTools = Cache::remember('landing.active-marketing-tools', now()->addMinutes(15), function () use ($supportedCodes) {
-            return Tool::query()
-                ->where('is_active', true)
-                ->whereIn('code', $supportedCodes)
-                ->orderBy('sort_order')
-                ->get(['code', 'name', 'sort_order'])
-                ->map(fn (Tool $tool) => [
-                    'code' => $tool->code,
-                    'name' => $tool->name,
-                    'sort_order' => $tool->sort_order,
-                ])
-                ->all();
-        });
-
-        $tools = collect($activeTools)
-            ->map(function (array $tool) use ($catalog) {
-                $copy = (array) ($catalog->get($tool['code']) ?? []);
-
-                if ($copy === []) {
-                    return null;
-                }
-
-                $slug = $copy['slug'] ?? $tool['code'];
-
-                return array_merge($tool, $copy, [
+                return array_merge([
+                    'code' => $code,
+                    'name' => $tool['title'] ?? strtoupper($code),
+                ], $tool, [
                     'href' => route('landing.tools.show', [
                         'locale' => app()->getLocale(),
                         'slug' => $slug,

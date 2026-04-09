@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Route;
 // Route::get('/sitemap_en.xml', fn () => response()->file(public_path('sitemap_en.xml')));
 // Route::get('/sitemap_ar.xml', fn () => response()->file(public_path('sitemap_ar.xml')));
 // Route::get('/sitemap_ku.xml', fn () => response()->file(public_path('sitemap_ku.xml')));
-
+Route::get("sitemap.xml" , function () { return \Illuminate\Support\Facades\Redirect::to('sitemap.xml'); });
 Route::post('/set-locale', [LocalizationMainMiddleware::class, 'setLocale'])->name('setLocale');
 
 Route::prefix('payments/webhooks')->group(function () {

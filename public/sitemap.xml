@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset
+      xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+            http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+<!-- created with Free Online Sitemap Generator www.xml-sitemaps.com -->
+
+
+<url>
+  <loc>https://metkurd.ai/en</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>1.00</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/app/signin</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.90</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/app/register</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.90</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/tools</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/pricing</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/contact</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/tools/tts</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/tools/ctts</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/tools/asr</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/tools/stem</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/tools/ocr</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/terms</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/privacy</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.80</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/tools</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/tools</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/pricing</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/pricing</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/contact</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/contact</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/tools/TTS</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/tools/CTTS</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/tools/OCR</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/terms</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/privacy</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/tools/TTS</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/tools/CTTS</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/tools/OCR</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/terms</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/privacy</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/forgot-password</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/tools/tts</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/tools/tts</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/tools/ctts</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/tools/ctts</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/tools/asr</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/tools/asr</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/tools/stem</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/tools/stem</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ar/tools/ocr</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/ku/tools/ocr</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.64</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/tools/TTS</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.51</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/tools/CTTS</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.51</priority>
+</url>
+<url>
+  <loc>https://metkurd.ai/en/tools/OCR</loc>
+  <lastmod>2026-04-09T08:56:06+00:00</lastmod>
+  <priority>0.51</priority>
+</url>
+
+
+</urlset>

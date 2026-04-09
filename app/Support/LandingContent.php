@@ -9,10 +9,15 @@ class LandingContent
     protected const CONTENT = [
         'site' => [
             'name' => 'METKURD AI',
-            'tagline' => 'Kurdish-first AI for speech, text, and research',
-            'author' => 'METKURD',
-            'meta_description' => 'Premium Kurdish AI workflows for text-to-speech, voice cloning, OCR, transcription, and stem separation.',
-            'meta_keywords' => 'Kurdish AI, Sorani, CKB, text to speech, voice cloning, OCR, ASR, stem separation, METKURD',
+            'tagline' => 'The Future of Kurdish AI',
+            'author' => 'Michel Shabo, michel@metiraq.com',
+            'meta_description' => 'METKURD AI is a Kurdish-first AI platform for speech-to-text, text-to-speech, ASR, OCR, Kurdish translation, voice technology, and music stem separation for research, media, and production workflows.',
+            'meta_keywords' => 'METKURD, METKURD AI, The Future of Kurdish AI, Kurdish AI, Sorani AI, speech to text, STT, text to speech, TTS, ASR, OCR, Kurdish OCR, Kurdish translation, transcription, voice AI, music stem separation, stem separator, Kurdish media AI',
+            'subject' => 'Kurdish-first AI platform for speech, text, OCR, translation, and media tools',
+            'type' => 'website',
+            'robots' => 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1',
+            'theme_color' => '#07111f',
+            'default_image_alt' => 'METKURD AI | The Future of Kurdish AI',
         ],
         'locales' => [
             'en' => 'English',

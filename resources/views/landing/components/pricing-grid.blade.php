@@ -252,7 +252,7 @@ new class extends Component
                                 {{ LandingContent::text('pricing_page.monthly_note') }}
                             </p>
 
-                            @if($showBaseNote)
+                            {{-- @if($showBaseNote)
                                 <p
                                     class="text-muted-soft small mb-0"
                                     data-monthly="{{ __('Base billing: :amount', ['amount' => $monthlyBase]) }}"
@@ -260,7 +260,7 @@ new class extends Component
                                 >
                                     {{ __('Base billing: :amount', ['amount' => $monthlyBase]) }}
                                 </p>
-                            @endif
+                            @endif --}}
                         </div>
                     </div>
 

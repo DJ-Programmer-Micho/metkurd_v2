@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\Tool;
 use App\Support\LandingContent;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
@@ -24,11 +23,7 @@ new #[Layout('landing::layouts.app')] class extends Component
         };
 
         abort_if($toolCode === '', 404);
-
-        abort_unless(
-            Tool::query()->where('code', $toolCode)->where('is_active', true)->exists(),
-            404
-        );
+        abort_if(LandingContent::section("tool_catalog.{$toolCode}") === [], 404);
 
         $this->toolCode = $toolCode;
     }

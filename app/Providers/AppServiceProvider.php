@@ -50,38 +50,38 @@ class AppServiceProvider extends ServiceProvider
         });
         
         $this->app->singleton('logo_57', function () {
-            return  "/app/logo/logo_icon.png";
+            return  "/app/logo/logo_icon_xml/57.png";
         });
         $this->app->singleton('logo_72', function () {
-            return  "/app/logo/logo_icon.png";
+            return  "/app/logo/logo_icon_xml/72.png";
         });
         $this->app->singleton('logo_114', function () {
-            return  "/app/logo/logo_icon.png";
+            return  "/app/logo/logo_icon_xml/114.png";
         });
         $this->app->singleton('logo_144', function () {
-            return  "/app/logo/logo_icon.png";
+            return  "/app/logo/logo_icon_xml/144.png";
         });
         $this->app->singleton('logo_1024', function () {
-            return  "/app/logo/logo_icon.png";
+            return  "/app/logo/logo_icon_xml/1024.png";
         });
         $this->app->singleton('logo_1024_tran', function () {
             return  "/app/logo/black_logo.png";
         });
 
         $this->app->singleton('logo_57_dark', function () {
-            return  "/app/logo/logo_icon.png";
+            return  "/app/logo/logo_icon_xml/57.png";
         });
         $this->app->singleton('logo_72_dark', function () {
-            return  "/app/logo/logo_icon.png";
+            return  "/app/logo/logo_icon_xml/72.png";
         });
         $this->app->singleton('logo_114_dark', function () {
-            return  "/app/logo/logo_icon.png";
+            return  "/app/logo/logo_icon_xml/114.png";
         });
         $this->app->singleton('logo_144_dark', function () {
-            return  "/app/logo/logo_icon.png";
+            return  "/app/logo/logo_icon_xml/144.png";
         });
         $this->app->singleton('logo_1024_dark', function () {
-            return  "/app/logo/logo_icon.png";
+            return  "/app/logo/logo_icon_xml/1024.png";
         });
         $this->app->singleton('logo_1024_tran_black', function () {
             return  "/app/logo/white_logo.png";

@@ -1,8 +1,6 @@
 <?php
 
-use App\Models\Tool;
 use App\Support\LandingContent;
-use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -14,32 +12,14 @@ new class extends Component
     #[Computed]
     public function resourceLinks(): array
     {
-        $catalog = collect(LandingContent::section('tool_catalog'));
-        $supportedCodes = $catalog->keys()->all();
-
-        $activeCodes = Cache::remember('landing.footer-resource-codes', now()->addMinutes(15), function () use ($supportedCodes) {
-            return Tool::query()
-                ->where('is_active', true)
-                ->whereIn('code', $supportedCodes)
-                ->orderBy('sort_order')
-                ->limit(3)
-                ->pluck('code')
-                ->all();
-        });
-
-        return collect($activeCodes)
-            ->map(function (string $code) use ($catalog) {
-                $copy = (array) ($catalog->get($code) ?? []);
-
-                if ($copy === []) {
-                    return null;
-                }
-
+        return collect(LandingContent::section('tool_catalog'))
+            ->take(3)
+            ->map(function (array $tool, string $code) {
                 return [
-                    'label' => $copy['title'] ?? strtoupper($code),
+                    'label' => $tool['title'] ?? strtoupper($code),
                     'href' => route('landing.tools.show', [
                         'locale' => app()->getLocale(),
-                        'slug' => $copy['slug'] ?? $code,
+                        'slug' => $tool['slug'] ?? $code,
                     ]),
                 ];
             })
