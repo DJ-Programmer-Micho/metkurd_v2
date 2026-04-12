@@ -20,7 +20,7 @@ use Livewire\Livewire;
 
 class AppServiceProvider extends ServiceProvider
 {
-    public $aws_clountfront_domain = 'https://d1h4q8vrlfl3k9.cloudfront.net/';
+    public $hetzner_S3_domain = 'https://fsn1.your-objectstorage.com/metkurd-v1/';
     /**
      * Register any application services.
      */
@@ -46,7 +46,7 @@ class AppServiceProvider extends ServiceProvider
         Customer::observe(CustomerObserver::class);
 
         $this->app->singleton('cloudfront', function () {
-            return $this->aws_clountfront_domain;
+            return $this->hetzner_S3_domain;
         });
         
         $this->app->singleton('logo_57', function () {
@@ -88,16 +88,16 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton('userImg', function () {
-            return $this->aws_clountfront_domain.'users/user.png';
+            return $this->hetzner_S3_domain.'web-setting/users/user.png';
         });
         $this->app->singleton('whatsapp-logo', function () {
-            return $this->aws_clountfront_domain.'web-setting/social-icons/whats.png';
+            return $this->hetzner_S3_domain.'web-setting/social-icons/whats.png';
         });
         $this->app->singleton('telegram-logo', function () {
-            return $this->aws_clountfront_domain.'web-setting/social-icons/tele.png';
+            return $this->hetzner_S3_domain.'web-setting/social-icons/tele.png';
         });
         $this->app->singleton('sms-logo', function () {
-            return $this->aws_clountfront_domain.'web-setting/social-icons/sms.png';
+            return $this->hetzner_S3_domain.'web-setting/social-icons/sms.png';
         });
         $this->app->singleton('glocales', function () {
             return config('app.locales'); 

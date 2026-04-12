@@ -3,25 +3,20 @@
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Url;
 use Livewire\Component;
-use Livewire\WithPagination;
 
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 use App\Models\Tool;
 use App\Models\ToolAction;
 use App\Models\MlJob;
 use App\Models\Voice;
-use App\Models\CustomerUsage;
 use App\Support\AppToolCatalog;
 
 use App\Services\Providers\RunPodProvider;
 use App\Services\Billing\CreditService;
-use App\Services\Storage\CustomerOutputStorage;
 
 use App\Services\XTTS\XttsJobSyncService;
 use App\Services\Security\JobExecutionLockService;
@@ -29,16 +24,9 @@ new
 #[Layout('app::layouts.app')]
 class extends Component
 {
-    use WithPagination;
-
-    protected $paginationTheme = 'bootstrap';
-
     protected string $toolCode = 'tts';
     protected string $actionCode = 'standard';
     protected string $fullActionCode = 'tts.standard';
-
-    #[Url(as: 'page', except: 1)]
-    public int $page = 1;
 
     // =========================================================
     // UI State
@@ -59,6 +47,8 @@ class extends Component
 
     public string $speaker_id = 'liza';
     public string $language = 'ar';
+    public array $availableSpeakers = [];
+    public array $speakerPickerPayload = [];
 
     public bool $split = true;
     public int $max_words = 25;
@@ -165,10 +155,8 @@ class extends Component
     // Internal
     // =========================================================
     public int $completedNoAudioTicks = 0;
-    public int $rendersRefreshKey = 0;
 
     #[On('header:refresh')]
-    #[On('customerPlanUpdated')]
     #[On('customerStorageUpdated')]
     #[On('xtts-renders-refresh')]
     public function refreshUi(): void
@@ -176,17 +164,31 @@ class extends Component
         $this->syncWallet();
         $this->syncCostPreview();
         $this->hydrateCurrentJobFromDb();
-        $this->rendersRefreshKey++;
     }
 
-    public function mount(): void
+    #[On('customerPlanUpdated')]
+    public function refreshPlanUi(): void
     {
-        $this->syncWallet();
+        $this->hydrateSpeakerCatalog();
 
         if (!array_key_exists($this->speaker_id, $this->availableSpeakers)) {
             $this->speaker_id = array_key_first($this->availableSpeakers) ?? '';
         }
 
+        $this->syncSpeakerPickerSelection();
+        $this->refreshUi();
+    }
+
+    public function mount(): void
+    {
+        $this->syncWallet();
+        $this->hydrateSpeakerCatalog();
+
+        if (!array_key_exists($this->speaker_id, $this->availableSpeakers)) {
+            $this->speaker_id = array_key_first($this->availableSpeakers) ?? '';
+        }
+
+        $this->syncSpeakerPickerSelection();
         $this->applyPreset($this->selectedPreset);
         $this->syncCostPreview();
         $this->dismissedJobStatusFor = session('xtts.dismissed_job_status_for');
@@ -201,6 +203,7 @@ class extends Component
     public function updatedSpeakerId(): void
     {
         $this->syncCostPreview();
+        $this->syncSpeakerPickerSelection();
     }
 
     public function updatedLanguage(): void
@@ -226,30 +229,242 @@ class extends Component
         return is_array($parts) ? count($parts) : 0;
     }
 
-    #[Computed]
-    public function availableSpeakers(): array
+    protected function hydrateSpeakerCatalog(): void
+    {
+        $this->availableSpeakers = $this->resolveAvailableSpeakers();
+        $this->speakerPickerPayload = $this->buildSpeakerPickerData();
+    }
+
+    protected function resolveAvailableSpeakers(): array
     {
         $customer = auth('app')->user();
         if (!$customer) {
             return [];
         }
 
-        $customer->loadMissing([
-            'servicePlan',
-            'activeServiceSubscription.servicePlan',
-        ]);
+        $planId = method_exists($customer, 'currentServicePlanId')
+            ? (int) ($customer->currentServicePlanId() ?? 0)
+            : 0;
 
-        $planId =
-            $customer->service_plan_id
-            ?: $customer->servicePlan?->id
-            ?: $customer->activeServiceSubscription?->service_plan_id
-            ?: $customer->activeServiceSubscription?->servicePlan?->id;
+        if ($planId <= 0) {
+            $planId = (int) ($customer->service_plan_id ?? 0);
+        }
 
         if (!$planId) {
             return [];
         }
 
         return app(AppToolCatalog::class)->voiceOptionsForPlan((int) $planId);
+    }
+
+    protected function buildSpeakerPickerData(): array
+    {
+        return [
+            'selected' => (string) $this->speaker_id,
+            'groups' => $this->buildSpeakerPickerGroups(),
+            'group_order' => [
+                ['key' => 'female', 'label' => __('Female')],
+                ['key' => 'male', 'label' => __('Male')],
+            ],
+            'messages' => [
+                'noSpeakerSelected' => __('No speaker selected'),
+                'previewUnavailable' => __('Preview unavailable.'),
+                'previewPlay' => __('Play preview for :speaker'),
+                'previewPause' => __('Pause preview for :speaker'),
+                'previewResume' => __('Resume preview for :speaker'),
+                'previewRetry' => __('Retry preview for :speaker'),
+                'previewPlayShort' => __('Play preview'),
+                'previewPauseShort' => __('Pause preview'),
+                'previewResumeShort' => __('Resume preview'),
+                'previewRetryShort' => __('Retry preview'),
+                'previewLoadingShort' => __('Loading...'),
+                'previewLoadingHint' => __('Loading preview...'),
+                'previewReadyHint' => __('Tap to preview.'),
+                'previewPausedHint' => __('Preview paused.'),
+                'previewPlayingHint' => __('Preview playing.'),
+                'previewRetryHint' => __('Preview could not be loaded.'),
+                'previewUnavailableShort' => __('No preview'),
+            ],
+        ];
+    }
+
+    protected function buildSpeakerPickerGroups(): array
+    {
+        $available = $this->availableSpeakers;
+
+        if ($available === []) {
+            return [
+                'female' => [],
+                'male' => [],
+            ];
+        }
+
+        $codes = array_values(array_map('strval', array_keys($available)));
+        $cacheKeyCodes = $codes;
+        sort($cacheKeyCodes);
+
+        /** @var array<string, array{name: string, meta: array}> $voiceMeta */
+        $voiceMeta = cache()->remember(
+            'xtts-speaker-picker:' . md5(implode('|', $cacheKeyCodes)),
+            now()->addMinutes(15),
+            function () use ($codes): array {
+                return Voice::query()
+                    ->whereIn('code', $codes)
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->get(['code', 'name', 'meta'])
+                    ->mapWithKeys(fn (Voice $voice) => [
+                        (string) $voice->code => [
+                            'name' => (string) $voice->name,
+                            'meta' => (array) ($voice->meta ?? []),
+                        ],
+                    ])
+                    ->all();
+            }
+        );
+
+        $groups = [
+            'female' => [],
+            'male' => [],
+        ];
+
+        $locale = $this->speakerMediaLocale();
+
+        foreach ($available as $code => $label) {
+            $code = (string) $code;
+            $voice = (array) ($voiceMeta[$code] ?? []);
+            $voiceName = trim((string) ($voice['name'] ?? $label ?? $code));
+            $meta = (array) ($voice['meta'] ?? []);
+            $displayName = $this->speakerDisplayName($code, $voiceName);
+            $group = $this->speakerGroupKey($code, $voiceName, $meta, $groups);
+
+            $groups[$group][] = [
+                'code' => $code,
+                'display_name' => $displayName,
+                'subtitle' => $this->speakerSubtitle($displayName, $meta),
+                'gender' => $group,
+                'gender_label' => $group === 'male' ? __('Male') : __('Female'),
+                'avatar_url' => $this->speakerAvatarRoute($code, $locale),
+                'avatar_initials' => $this->speakerAvatarInitials($displayName),
+                'has_preview' => true,
+                'preview_url' => $this->speakerPreviewRoute($code, $locale),
+            ];
+        }
+        return $groups;
+    }
+
+    protected function syncSpeakerPickerSelection(): void
+    {
+        if ($this->speakerPickerPayload === []) {
+            return;
+        }
+
+        $this->speakerPickerPayload['selected'] = (string) $this->speaker_id;
+    }
+
+    protected function speakerGroupKey(string $code, string $voiceName, array $meta, array $currentGroups = []): string
+    {
+        $gender = Str::of((string) data_get($meta, 'gender'))
+            ->lower()
+            ->trim()
+            ->value();
+
+        if (in_array($gender, ['female', 'male'], true)) {
+            return $gender;
+        }
+
+        $haystack = Str::of($code . ' ' . $voiceName)
+            ->lower()
+            ->replace(['-', '_'], ' ')
+            ->value();
+
+        if (str_contains($haystack, 'female') || str_contains($haystack, 'woman')) {
+            return 'female';
+        }
+
+        if (str_contains($haystack, 'male') || str_contains($haystack, 'man')) {
+            return 'male';
+        }
+
+        return count($currentGroups['female'] ?? []) <= count($currentGroups['male'] ?? []) ? 'female' : 'male';
+    }
+
+    protected function speakerDisplayName(string $code, string $voiceName): string
+    {
+        $raw = trim($voiceName);
+
+        if ($raw === '' || strcasecmp($raw, $code) === 0) {
+            return __('Voice');
+        }
+
+        $clean = Str::of($voiceName)
+            ->replaceMatches('/[^\p{L}\p{N}\s\-_]+/u', ' ')
+            ->squish()
+            ->value();
+
+        return $clean !== '' ? $clean : __('Voice');
+    }
+
+    protected function speakerSubtitle(string $displayName, array $meta): ?string
+    {
+        foreach (['subtitle', 'style', 'accent', 'tone', 'description'] as $key) {
+            $value = trim((string) data_get($meta, $key, ''));
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        $voiceStyle = trim((string) data_get($meta, 'engine', ''));
+
+        if ($voiceStyle !== '' && strcasecmp($voiceStyle, 'xtts') !== 0) {
+            return Str::headline($voiceStyle);
+        }
+
+        return null;
+    }
+
+    protected function speakerMediaLocale(): string
+    {
+        return (string) (request()->route('locale') ?: app()->getLocale());
+    }
+
+    protected function speakerPreviewRoute(string $code, ?string $locale = null): string
+    {
+        return route('app.xtts.speaker.preview', [
+            'locale' => $locale ?: $this->speakerMediaLocale(),
+            'voiceCode' => $code,
+            'proxy' => 1,
+        ]);
+    }
+
+    protected function speakerAvatarRoute(string $code, ?string $locale = null): string
+    {
+        return route('app.xtts.speaker.avatar', [
+            'locale' => $locale ?: $this->speakerMediaLocale(),
+            'voiceCode' => $code,
+        ]);
+    }
+
+    protected function speakerAvatarInitials(string $displayName): string
+    {
+        $displayName = trim($displayName);
+
+        if ($displayName === '') {
+            return 'V';
+        }
+
+        $parts = collect(preg_split('/\s+/u', $displayName, -1, PREG_SPLIT_NO_EMPTY))
+            ->filter()
+            ->values();
+
+        if ($parts->count() >= 2) {
+            return mb_strtoupper(
+                mb_substr((string) $parts[0], 0, 1) . mb_substr((string) $parts[1], 0, 1)
+            );
+        }
+
+        return mb_strtoupper(mb_substr((string) $parts->first(), 0, 2) ?: 'V');
     }
 
     #[Computed]
@@ -307,72 +522,6 @@ class extends Component
         }
 
         return null;
-    }
-
-    #[Computed]
-    public function renders()
-    {
-        $this->rendersRefreshKey;
-
-        $customerId = auth('app')->id();
-        $locale = app()->getLocale();
-
-        $toolId = app(AppToolCatalog::class)->toolId($this->toolCode);
-
-        $paginator = MlJob::query()
-            ->where('customer_id', $customerId)
-            ->when($toolId, fn ($q) => $q->where('tool_id', $toolId))
-            ->where('status', 'done')
-            ->orderByDesc('finished_at')
-            ->paginate(3);
-
-        $paginator->setCollection(
-            $paginator->getCollection()->values()->map(function ($j, $index) use ($locale) {
-                $jobId = (string) $j->id;
-                $path = (string) data_get($j->output, 'path', '');
-                $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-                $mime = $ext === 'mp3' ? 'audio/mpeg' : 'audio/wav';
-
-                $fullText = trim((string) data_get($j->input, 'text', ''));
-                $snippet = mb_strlen($fullText) > 240
-                    ? mb_substr($fullText, 0, 160) . '...'
-                    : $fullText;
-
-                return [
-                    'id' => $jobId,
-                    'speaker' => data_get($j->input, 'speaker_id', '-'),
-                    'model' => 'MK-TTS)',
-                    'created_at' => optional($j->finished_at ?? $j->created_at)->format('Y-m-d H:i'),
-                    'full_url' => route('app.renders.xtts.stream', [
-                        'locale' => $locale,
-                        'jobId' => $jobId,
-                    ]) . '?proxy=1',
-                    'mime' => $mime,
-                    'bytes' => (int) data_get($j->output, 'bytes', 0),
-                    'download_url' => route('app.renders.xtts.download', [
-                        'locale' => $locale,
-                        'jobId' => $jobId,
-                    ]),
-                    'text' => $fullText,
-                    'text_snippet' => $snippet,
-                    'words' => $this->wordsCount($fullText),
-                    'is_latest' => $index === 0,
-                ];
-            })
-        );
-
-        return $paginator;
-    }
-
-    protected function wordsCount(string $text): int
-    {
-        $text = trim(preg_replace('/\s+/u', ' ', (string) $text));
-        if ($text === '') {
-            return 0;
-        }
-
-        $parts = preg_split('/\s+/u', $text, -1, PREG_SPLIT_NO_EMPTY);
-        return is_array($parts) ? count($parts) : 0;
     }
 
     protected function syncWallet(): void
@@ -736,36 +885,6 @@ class extends Component
         }
     }
 
-    public function deleteRender(string $jobId, XttsJobSyncService $sync): void
-    {
-        $customerId = auth('app')->id();
-        $toolId = app(AppToolCatalog::class)->toolId($this->toolCode);
-
-        $job = MlJob::query()
-            ->with('tool')
-            ->where('id', $jobId)
-            ->where('customer_id', $customerId)
-            ->when($toolId, fn ($q) => $q->where('tool_id', $toolId))
-            ->where('status', 'done')
-            ->first();
-
-        if (!$job) {
-            $this->dispatch('alert', type: 'error', message: __('Render not found.'));
-            return;
-        }
-
-        try {
-            $sync->deleteFinishedRender($job);
-            $this->resetPage();
-            $this->rendersRefreshKey++;
-            $this->dispatch('customerStorageUpdated');
-            $this->dispatch('xtts-renders-refresh');
-            $this->dispatch('alert', type: 'success', message: __('Deleted.'));
-        } catch (\Throwable $e) {
-            $this->dispatch('alert', type: 'error', message: __('Delete failed: :message', ['message' => $e->getMessage()]));
-        }
-    }
-
     public function clearText(): void
     {
         $this->text = '';
@@ -784,6 +903,7 @@ class extends Component
         $this->selectedPreset = 'balanced';
         $this->applyPreset($this->selectedPreset);
 
+        $this->syncSpeakerPickerSelection();
         $this->syncCostPreview();
 
         $this->dispatch('xtts-form-state-clear');
@@ -1073,19 +1193,164 @@ class extends Component
 
                             <hr>
 
-                            <div class="row g-3 align-items-end">
-                                <div class="col-md-4">
-                                    <label class="form-label">{{ __('Speaker') }}</label>
-                                    <select class="form-select" wire:model.change="speaker_id">
-                                        @forelse($this->availableSpeakers as $k => $v)
-                                            <option value="{{ $k }}">{{ $v }}</option>
-                                        @empty
-                                            <option value="">{{ __('No voices available') }}</option>
-                                        @endforelse
-                                    </select>
+                            @php($speakerPicker = $speakerPickerPayload)
+
+                            <div class="row g-3 align-items-start">
+                                <div class="col-12">
+                                    <div
+                                        class="xtts-speaker-picker"
+                                        x-data="xttsSpeakerPicker(@js($speakerPicker))"
+                                        x-init="init()"
+                                        x-on:xtts-speaker-preview-state.window="syncPreviewState($event.detail)"
+                                    >
+                                        <select
+                                            class="d-none"
+                                            x-ref="speakerSelect"
+                                            wire:model.change="speaker_id"
+                                            x-on:change="syncSelectedFromNative($event.target.value)"
+                                            aria-hidden="true"
+                                            tabindex="-1"
+                                        >
+                                            @foreach($this->availableSpeakers as $speakerCode => $speakerLabel)
+                                                <option value="{{ $speakerCode }}">{{ $speakerLabel }}</option>
+                                            @endforeach
+                                        </select>
+
+                                        <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-3">
+                                            <div>
+                                                <label class="form-label mb-1">{{ __('Speaker') }}</label>
+                                                <div class="text-muted small">{{ __('Choose a voice and preview it before generating.') }}</div>
+                                            </div>
+
+                                            <div class="small text-muted">
+                                                <span class="xtts-speaker-selection-pill" x-text="selectedLabel() || messages.noSpeakerSelected"></span>
+                                            </div>
+                                        </div>
+                                        <div class="row g-3" role="radiogroup" aria-label="{{ __('Speaker voice picker') }}">
+                                            <template x-for="group in groupOrder" :key="group.key">
+                                                <div class="col-12 col-xl-6">
+                                                    <div class="xtts-speaker-group h-100">
+                                                        <div class="xtts-speaker-group-head d-flex align-items-center justify-content-between gap-2">
+                                                            <div class="fw-semibold" x-text="group.label"></div>
+                                                            <span class="xtts-speaker-count" x-text="speakerCount(group.key)"></span>
+                                                        </div>
+
+                                                        <div class="xtts-speaker-group-body">
+                                                            <template x-if="speakerCount(group.key)">
+                                                                <div class="d-flex flex-column gap-3">
+                                                                    <template x-for="speaker in groupSpeakers(group.key)" :key="speaker.code">
+                                                                        <div
+                                                                            class="xtts-speaker-card"
+                                                                            :class="{ 'is-selected': isSelected(speaker.code) }"
+                                                                            role="radio"
+                                                                            tabindex="0"
+                                                                            :aria-checked="isSelected(speaker.code) ? 'true' : 'false'"
+                                                                            x-on:click="selectSpeaker(speaker.code)"
+                                                                            x-on:keydown.enter.prevent="selectSpeaker(speaker.code)"
+                                                                            x-on:keydown.space.prevent="selectSpeaker(speaker.code)"
+                                                                        >
+                                                                            <div class="d-flex align-items-start gap-2">
+                                                                                <div class="xtts-speaker-avatar">
+                                                                                    <img
+                                                                                        x-cloak
+                                                                                        x-show="showAvatar(speaker)"
+                                                                                        :src="speaker.avatar_url || ''"
+                                                                                        :alt="speaker.display_name"
+                                                                                        class="xtts-speaker-avatar-image"
+                                                                                        loading="lazy"
+                                                                                        x-on:error="markAvatarError(speaker.code, $event.target)"
+                                                                                    >
+
+                                                                                    <span
+                                                                                        x-cloak
+                                                                                        x-show="!showAvatar(speaker)"
+                                                                                        class="xtts-speaker-avatar-fallback"
+                                                                                        x-text="speaker.avatar_initials"
+                                                                                    ></span>
+                                                                                </div>
+
+                                                                                <div class="flex-grow-1 min-w-0">
+                                                                                    <div class="d-flex align-items-start justify-content-between gap-2">
+                                                                                        <div class="min-w-0">
+                                                                                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                                                                                <div class="fw-semibold text-light text-break" x-text="speaker.display_name"></div>
+                                                                                                <span class="xtts-speaker-badge" x-text="speaker.gender_label"></span>
+                                                                                            </div>
+
+                                                                                            <template x-if="speaker.subtitle">
+                                                                                                <div class="text-muted small mt-1 xtts-speaker-subtitle" x-text="speaker.subtitle"></div>
+                                                                                            </template>
+                                                                                        </div>
+
+                                                                                        <div class="xtts-speaker-check" x-show="isSelected(speaker.code)" aria-hidden="true">
+                                                                                            <i class="fa fa-check-circle"></i>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mt-2">
+                                                                                        <div class="d-flex align-items-center gap-2 flex-wrap min-w-0">
+                                                                                            <template x-if="isSelected(speaker.code)">
+                                                                                                <span class="xtts-speaker-state xtts-speaker-state--selected">{{ __('Selected') }}</span>
+                                                                                            </template>
+
+                                                                                            <template x-if="isPlaying(speaker.code)">
+                                                                                                <span class="xtts-speaker-state xtts-speaker-state--live">{{ __('Previewing') }}</span>
+                                                                                            </template>
+
+                                                                                            <template x-if="isPaused(speaker.code)">
+                                                                                                <span class="xtts-speaker-state">{{ __('Paused') }}</span>
+                                                                                            </template>
+
+                                                                                            <span class="xtts-speaker-preview-meta" aria-live="polite" x-text="previewStatusText(speaker.code)"></span>
+                                                                                        </div>
+
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            class="xtts-speaker-preview-button xtts-speaker-preview-button--compact"
+                                                                                            :class="{ 'is-loading': isLoading(speaker.code), 'is-playing': isPlaying(speaker.code), 'is-paused': isPaused(speaker.code), 'is-error': Boolean(previewError(speaker.code)) }"
+                                                                                            x-on:click.stop="togglePreview(speaker.code)"
+                                                                                            :aria-label="previewLabel(speaker.code)"
+                                                                                            :title="previewLabel(speaker.code)"
+                                                                                            :aria-pressed="isPlaying(speaker.code) ? 'true' : 'false'"
+                                                                                            :aria-busy="isLoading(speaker.code) ? 'true' : 'false'"
+                                                                                            :disabled="!hasPreview(speaker.code)"
+                                                                                        >
+                                                                                            <span class="xtts-speaker-preview-icon" aria-hidden="true">
+                                                                                                <i class="fa" :class="previewButtonIcon(speaker.code)"></i>
+                                                                                            </span>
+
+                                                                                            <span class="xtts-speaker-preview-text" x-text="previewButtonText(speaker.code)"></span>
+                                                                                        </button>
+                                                                                    </div>
+
+                                                                                    <template x-if="previewError(speaker.code)">
+                                                                                        <div class="small text-warning mt-1" x-text="previewError(speaker.code)"></div>
+                                                                                    </template>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </template>
+                                                                </div>
+                                                            </template>
+
+                                                            <template x-if="!speakerCount(group.key)">
+                                                                <div class="xtts-speaker-empty">
+                                                                    {{ __('No voices available in this group yet.') }}
+                                                                </div>
+                                                            </template>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+
+                                        <div class="text-muted small mt-3">
+                                            {{ __('Only one speaker preview plays at a time.') }}
+                                        </div>
+                                    </div>
 
                                     @error('speaker_id')
-                                        <div class="text-danger small mt-1">{{ $message }}</div>
+                                        <div class="text-danger small mt-2">{{ $message }}</div>
                                     @enderror
                                 </div>
 
@@ -1101,7 +1366,7 @@ class extends Component
                                     @enderror
                                 </div> --}}
 
-                                <div class="col-md-3">
+                                <div class="col-md-4">
                                     <label class="form-label">{{ __('Preset') }}</label>
                                     <select class="form-select" wire:model.change="selectedPreset">
                                         @foreach($presets as $k => $v)
@@ -1110,7 +1375,7 @@ class extends Component
                                     </select>
                                 </div>
 
-                                <div class="col-md-2">
+                                <div class="col-md-4">
                                     <label class="form-label">{{ __('Max Words') }}</label>
                                     <input type="number" class="form-control" wire:model.change="max_words" min="5" max="80">
                                     @error('max_words')
@@ -1118,7 +1383,7 @@ class extends Component
                                     @enderror
                                 </div>
 
-                                <div class="col-md-2">
+                                <div class="col-md-4">
                                     <label class="form-label">{{ __('Fade (ms)') }}</label>
                                     <input type="number" class="form-control" wire:model.change="fade_ms" min="0" max="1000">
                                     @error('fade_ms')
@@ -1233,103 +1498,7 @@ class extends Component
             </div>
         </div>
 
-        <div class="col-lg-5">
-            <div class="turbo-border mb-3">
-                <div class="turbo-inner">
-                    <div class="card mb-0">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <strong>{{ __('Recent Renders') }}</strong>
-                            <button class="btn btn-sm btn-outline-secondary" wire:click="$refresh" type="button">
-                                {{ __('Refresh') }}
-                            </button>
-                        </div>
-
-                        <div class="card-body">
-                            @if($this->renders->count() === 0)
-                                <div class="text-muted">{{ __('No renders yet.') }}</div>
-                            @else
-                                @foreach($this->renders as $r)
-                                    <div
-                                        class="border rounded p-2 mb-2 render-card"
-                                        wire:key="xtts-render-{{ $r['id'] }}"
-                                        id="render-card-{{ $r['id'] }}"
-                                    >
-                                        <div class="d-flex justify-content-between gap-2">
-                                            <div>
-                                                <div class="small text-muted">
-                                                    {{ __(':created | :model | :speaker', ['created' => $r['created_at'], 'model' => $r['model'], 'speaker' => $r['speaker']]) }}
-                                                </div>
-                                                <div class="small text-muted">
-                                                    {{ __('Words: :words | Bytes: :bytes', ['words' => $r['words'], 'bytes' => number_format($r['bytes'])]) }}
-                                                </div>
-                                            </div>
-
-                                            <div class="text-end">
-                                                <button class="btn btn-sm btn-outline-danger"
-                                                        wire:click="deleteRender('{{ $r['id'] }}')"
-                                                        wire:loading.attr="disabled"
-                                                        wire:target="deleteRender('{{ $r['id'] }}')"
-                                                        type="button">
-                                                    {{ __('Delete') }}
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div class="mt-2 small">{{ $r['text_snippet'] }}</div>
-
-                                        {{--
-                                            wire:ignore on the entire audio block so Livewire re-renders
-                                            (including those triggered during generation polling) do NOT
-                                            destroy active WaveSurfer instances or interrupt playback.
-                                        --}}
-                                        <div class="mt-2" wire:ignore>
-                                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-                                                <span class="small text-muted" id="xtts-time-{{ $r['id'] }}">--:-- / --:--</span>
-
-                                                <div class="btn-group btn-group-sm">
-                                                    <button type="button"
-                                                            class="btn btn-outline-primary btn-xtts-preview"
-                                                            data-job="{{ $r['id'] }}"
-                                                            data-url="{{ $r['full_url'] }}"
-                                                            data-latest="{{ $r['is_latest'] ? '1' : '0' }}"
-                                                            data-preload-rank="{{ $loop->index }}">
-                                                        <i class="fa fa-play me-1"></i> {{ __('Play/Pause') }}
-                                                    </button>
-
-                                                    <button type="button"
-                                                            class="btn btn-outline-secondary btn-xtts-stop"
-                                                            data-job="{{ $r['id'] }}">
-                                                        <i class="fa fa-stop me-1"></i> {{ __('Stop') }}
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            <div id="xtts-wrap-{{ $r['id'] }}" class="mt-1">
-                                                <div id="xtts-ph-{{ $r['id'] }}" class="border rounded bg-dark" style="height:90px; opacity:.25;"></div>
-                                                <div id="xtts-wave-{{ $r['id'] }}" class="border rounded" style="height:90px; display:none;"></div>
-                                            </div>
-
-                                            <div class="mt-2">
-                                                <a class="btn btn-sm btn-outline-primary"
-                                                   href="{{ $r['download_url'] }}"
-                                                   target="_blank"
-                                                   rel="noopener">
-                                                    {{ __('Download') }}
-                                                </a>
-                                            </div>
-                                        </div>
-                                    </div>
-                                @endforeach
-
-                                <div class="mt-3">
-                                    {{ $this->renders->links() }}
-                                </div>
-                            @endif
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <livewire:partials.xtts-renders-panel />
     </div>
         @if($showEliminateModal)
         <div class="modal fade show" style="display:block;" tabindex="-1" aria-modal="true" role="dialog">
@@ -1367,6 +1536,287 @@ class extends Component
     @endif
 </div>
 
+@push('styles')
+<style>
+    .xtts-speaker-picker [x-cloak] {
+        display: none !important;
+    }
+
+    .xtts-speaker-picker {
+        padding: 1rem;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 1.1rem;
+        background: linear-gradient(180deg, rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.5));
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(8px);
+    }
+
+    .xtts-speaker-selection-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.45rem 0.8rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(2, 6, 23, 0.62);
+        color: rgba(226, 232, 240, 0.96);
+        font-weight: 500;
+    }
+
+    .xtts-speaker-group {
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        border-radius: 1rem;
+        background: rgba(2, 6, 23, 0.38);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        overflow: hidden;
+    }
+
+    .xtts-speaker-group-head {
+        padding: 0.9rem 1rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .xtts-speaker-count {
+        display: inline-flex;
+        min-width: 2rem;
+        justify-content: center;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        background: rgba(59, 130, 246, 0.14);
+        color: rgba(191, 219, 254, 0.96);
+        font-size: 0.78rem;
+        font-weight: 600;
+    }
+
+    .xtts-speaker-group-body {
+        max-height: 22rem;
+        overflow-y: auto;
+        padding: 0.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+    }
+
+    .xtts-speaker-card {
+        position: relative;
+        padding: 0.78rem 0.82rem;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 0.9rem;
+        background: rgba(15, 23, 42, 0.76);
+        cursor: pointer;
+        transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+
+    .xtts-speaker-card:hover {
+        transform: translateY(-1px);
+        border-color: rgba(96, 165, 250, 0.42);
+        background: rgba(17, 24, 39, 0.92);
+    }
+
+    .xtts-speaker-card:focus-visible {
+        outline: none;
+        border-color: rgba(96, 165, 250, 0.58);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+    }
+
+    .xtts-speaker-card.is-selected {
+        border-color: rgba(96, 165, 250, 0.82);
+        background: linear-gradient(180deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.92));
+        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18), 0 10px 22px rgba(2, 6, 23, 0.24);
+    }
+
+    .xtts-speaker-avatar {
+        width: 2.65rem;
+        height: 2.65rem;
+        flex: 0 0 2.65rem;
+        border-radius: 1.85rem;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: linear-gradient(180deg, rgba(51, 65, 85, 0.88), rgba(15, 23, 42, 0.96));
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .xtts-speaker-avatar-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .xtts-speaker-avatar-fallback {
+        width: 100%;
+        height: 100%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(226, 232, 240, 0.92);
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    .xtts-speaker-badge,
+    .xtts-speaker-state {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.2rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(226, 232, 240, 0.9);
+        font-size: 0.7rem;
+        line-height: 1.1;
+    }
+
+    .xtts-speaker-subtitle {
+        line-height: 1.25;
+    }
+
+    .xtts-speaker-badge {
+        background: rgba(59, 130, 246, 0.12);
+        color: rgba(191, 219, 254, 0.96);
+    }
+
+    .xtts-speaker-state--selected {
+        border-color: rgba(59, 130, 246, 0.24);
+        background: rgba(59, 130, 246, 0.15);
+        color: rgba(191, 219, 254, 0.98);
+    }
+
+    .xtts-speaker-state--live {
+        border-color: rgba(34, 197, 94, 0.22);
+        background: rgba(34, 197, 94, 0.14);
+        color: rgba(187, 247, 208, 0.98);
+    }
+
+    .xtts-speaker-preview-meta {
+        color: rgba(203, 213, 225, 0.76);
+        font-size: 0.76rem;
+        line-height: 1.2;
+    }
+
+    .xtts-speaker-preview-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        min-height: 2.35rem;
+        padding: 0.52rem 0.8rem;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 0.8rem;
+        background: rgba(2, 6, 23, 0.62);
+        color: #f8fafc;
+        font-weight: 600;
+        font-size: 0.82rem;
+        transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    }
+
+    .xtts-speaker-preview-button--compact {
+        width: auto;
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .xtts-speaker-preview-button:hover:not(:disabled) {
+        transform: translateY(-1px);
+        border-color: rgba(96, 165, 250, 0.44);
+        color: #ffffff;
+    }
+
+    .xtts-speaker-preview-button:focus-visible {
+        outline: none;
+        border-color: rgba(96, 165, 250, 0.58);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+    }
+
+    .xtts-speaker-preview-button.is-playing {
+        background: var(--bs-primary, #0d6efd);
+        border-color: var(--bs-primary, #0d6efd);
+        color: #ffffff;
+    }
+
+    .xtts-speaker-preview-button.is-loading {
+        border-color: rgba(148, 163, 184, 0.3);
+        background: rgba(30, 41, 59, 0.88);
+    }
+
+    .xtts-speaker-preview-button.is-paused {
+        border-color: rgba(96, 165, 250, 0.36);
+        background: rgba(30, 41, 59, 0.7);
+    }
+
+    .xtts-speaker-preview-button.is-error:not(:disabled) {
+        border-color: rgba(245, 158, 11, 0.3);
+        color: rgba(253, 224, 71, 0.96);
+    }
+
+    .xtts-speaker-preview-button:disabled {
+        opacity: 0.52;
+        cursor: not-allowed;
+    }
+
+    .xtts-speaker-preview-icon {
+        width: 1rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        flex: 0 0 1rem;
+    }
+
+    .xtts-speaker-preview-text {
+        display: inline-block;
+        line-height: 1.15;
+    }
+
+    .xtts-speaker-check {
+        color: rgba(96, 165, 250, 0.96);
+        font-size: 1.05rem;
+        line-height: 1;
+        flex: 0 0 auto;
+    }
+
+    .xtts-speaker-empty {
+        padding: 0.9rem;
+        border: 1px dashed rgba(148, 163, 184, 0.18);
+        border-radius: 0.9rem;
+        color: rgba(148, 163, 184, 0.92);
+        background: rgba(15, 23, 42, 0.42);
+        font-size: 0.92rem;
+        text-align: center;
+    }
+
+    @media (max-width: 767.98px) {
+        .xtts-speaker-picker {
+            padding: 0.85rem;
+        }
+
+        .xtts-speaker-group-body {
+            max-height: 18rem;
+        }
+
+        .xtts-speaker-card {
+            padding: 0.74rem 0.78rem;
+        }
+
+        .xtts-speaker-avatar {
+            width: 2.45rem;
+            height: 2.45rem;
+            flex-basis: 2.45rem;
+        }
+
+        .xtts-speaker-preview-button--compact {
+            width: 100%;
+        }
+    }
+</style>
+@endpush
+
 @push('scripts')
 <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
 <script>
@@ -1384,6 +1834,9 @@ class extends Component
     S.eventsBound   = S.eventsBound   || false;
     S.commitHooked  = S.commitHooked  || false;
     S.formWatchBoot = S.formWatchBoot || false;
+    S.speakerPlayer = S.speakerPlayer || { audio: null, code: null, status: 'idle', urls: [], index: 0 };
+    S.speakerErrors = S.speakerErrors || new Map();
+    S.speakerPreviewToken = S.speakerPreviewToken || 0;
 
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Cache config Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     const CACHE_NAME    = 'xtts-audio-v4';
@@ -1443,6 +1896,534 @@ class extends Component
     }
 
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Audio Cache Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    function setSpeakerPlayerState(state = {}) {
+        S.speakerPlayer = {
+            audio: null,
+            code: null,
+            status: 'idle',
+            urls: [],
+            index: 0,
+            ...(S.speakerPlayer || {}),
+            ...state,
+        };
+
+        return S.speakerPlayer;
+    }
+
+    function speakerPreviewSnapshot() {
+        const player = S.speakerPlayer || {};
+
+        return {
+            code: player.status === 'playing' ? (player.code || null) : null,
+            pausedCode: player.status === 'paused' ? (player.code || null) : null,
+            loadingCode: player.status === 'loading' ? (player.code || null) : null,
+            errors: Object.fromEntries(S.speakerErrors.entries()),
+        };
+    }
+
+    function dispatchSpeakerPreviewState(extra = {}) {
+        window.dispatchEvent(new CustomEvent('xtts-speaker-preview-state', {
+            detail: {
+                ...speakerPreviewSnapshot(),
+                ...extra,
+            },
+        }));
+    }
+
+    function detachSpeakerAudioEvents(audio) {
+        if (!audio) {
+            return;
+        }
+
+        audio.onended = null;
+        audio.onerror = null;
+        audio.onpause = null;
+        audio.onplaying = null;
+    }
+
+    function stopSpeakerPreview({ resetTime = true, notify = true } = {}) {
+        S.speakerPreviewToken += 1;
+
+        const player = S.speakerPlayer;
+        const audio = player?.audio || null;
+
+        if (audio) {
+            detachSpeakerAudioEvents(audio);
+
+            try {
+                audio.pause();
+
+                if (resetTime) {
+                    audio.currentTime = 0;
+                }
+            } catch (_) {}
+        }
+
+        setSpeakerPlayerState({
+            audio: null,
+            code: null,
+            status: 'idle',
+            urls: [],
+            index: 0,
+        });
+
+        if (notify) {
+            dispatchSpeakerPreviewState();
+        }
+    }
+
+    function finalizeSpeakerPreviewError(voiceCode, message) {
+        if (voiceCode) {
+            S.speakerErrors.set(voiceCode, message);
+        }
+
+        setSpeakerPlayerState({
+            audio: null,
+            code: null,
+            status: 'idle',
+            urls: [],
+            index: 0,
+        });
+
+        dispatchSpeakerPreviewState();
+    }
+
+    function playSpeakerAudio(audio, voiceCode, fallback, { token = null, pausedStateOnError = false } = {}) {
+        if (!audio || !voiceCode) {
+            return;
+        }
+
+        const requestToken = token ?? (++S.speakerPreviewToken);
+
+        S.speakerErrors.delete(voiceCode);
+        setSpeakerPlayerState({
+            audio,
+            code: voiceCode,
+            status: 'loading',
+        });
+        dispatchSpeakerPreviewState();
+
+        const playAttempt = audio.play();
+
+        if (playAttempt && typeof playAttempt.then === 'function') {
+            playAttempt
+                .then(() => {
+                    if (requestToken !== S.speakerPreviewToken || S.speakerPlayer?.audio !== audio) {
+                        return;
+                    }
+
+                    S.speakerErrors.delete(voiceCode);
+                    setSpeakerPlayerState({
+                        audio,
+                        code: voiceCode,
+                        status: 'playing',
+                    });
+                    dispatchSpeakerPreviewState();
+                })
+                .catch(() => {
+                    if (requestToken !== S.speakerPreviewToken || S.speakerPlayer?.audio !== audio) {
+                        return;
+                    }
+
+                    if (typeof fallback === 'function') {
+                        fallback(requestToken);
+                        return;
+                    }
+
+                    S.speakerErrors.set(voiceCode, 'Preview unavailable for this voice.');
+                    setSpeakerPlayerState({
+                        audio,
+                        code: voiceCode,
+                        status: pausedStateOnError ? 'paused' : 'idle',
+                    });
+                    dispatchSpeakerPreviewState();
+                });
+
+            return;
+        }
+
+        S.speakerErrors.delete(voiceCode);
+        setSpeakerPlayerState({
+            audio,
+            code: voiceCode,
+            status: 'playing',
+        });
+        dispatchSpeakerPreviewState();
+    }
+
+    function attemptSpeakerPreview(code, url, token = null) {
+        const voiceCode = String(code || '');
+        const requestToken = token ?? (++S.speakerPreviewToken);
+        const sourceUrl = String(url || '');
+
+        if (!voiceCode || !sourceUrl) {
+            if (requestToken !== S.speakerPreviewToken) {
+                return;
+            }
+
+            finalizeSpeakerPreviewError(voiceCode, 'Preview unavailable for this voice.');
+            return;
+        }
+
+        const audio = new Audio(sourceUrl);
+        audio.preload = 'auto';
+
+        audio.onended = () => {
+            if (requestToken !== S.speakerPreviewToken || S.speakerPlayer?.audio !== audio) {
+                return;
+            }
+
+            stopSpeakerPreview();
+        };
+
+        audio.onerror = () => {
+            if (requestToken !== S.speakerPreviewToken || S.speakerPlayer?.audio !== audio) {
+                return;
+            }
+
+            detachSpeakerAudioEvents(audio);
+
+            try { audio.pause(); } catch (_) {}
+            finalizeSpeakerPreviewError(voiceCode, 'Preview unavailable for this voice.');
+        };
+
+        audio.onpause = () => {
+            if (requestToken !== S.speakerPreviewToken || S.speakerPlayer?.audio !== audio) {
+                return;
+            }
+
+            setSpeakerPlayerState({
+                audio,
+                code: voiceCode,
+                status: audio.currentTime > 0 ? 'paused' : 'idle',
+                urls: [sourceUrl],
+                index: 0,
+            });
+            dispatchSpeakerPreviewState();
+        };
+
+        audio.onplaying = () => {
+            if (requestToken !== S.speakerPreviewToken || S.speakerPlayer?.audio !== audio) {
+                return;
+            }
+
+            S.speakerErrors.delete(voiceCode);
+            setSpeakerPlayerState({
+                audio,
+                code: voiceCode,
+                status: 'playing',
+                urls: [sourceUrl],
+                index: 0,
+            });
+            dispatchSpeakerPreviewState();
+        };
+
+        setSpeakerPlayerState({
+            audio,
+            code: voiceCode,
+            status: 'loading',
+            urls: [sourceUrl],
+            index: 0,
+        });
+
+        playSpeakerAudio(audio, voiceCode, null, { token: requestToken });
+    }
+
+    window.xttsToggleSpeakerPreview = function (code, url) {
+        const voiceCode = String(code || '');
+        const sourceUrl = String(url || '');
+        const player = S.speakerPlayer || {};
+        const currentCode = String(player.code || '');
+        const currentAudio = player.audio || null;
+        const currentStatus = String(player.status || 'idle');
+
+        if (!voiceCode || !sourceUrl) {
+            finalizeSpeakerPreviewError(voiceCode, 'Preview unavailable for this voice.');
+            return;
+        }
+
+        if (voiceCode === currentCode && currentAudio) {
+            if (currentStatus === 'loading') {
+                stopSpeakerPreview();
+                return;
+            }
+
+            if (currentStatus === 'playing') {
+                try {
+                    currentAudio.pause();
+                } catch (_) {
+                    stopSpeakerPreview();
+                }
+
+                return;
+            }
+
+            if (currentStatus === 'paused') {
+                playSpeakerAudio(currentAudio, voiceCode, null, {
+                    token: S.speakerPreviewToken,
+                    pausedStateOnError: true,
+                });
+                return;
+            }
+        }
+
+        stopSpeakerPreview({ notify: false });
+        S.speakerErrors.delete(voiceCode);
+        attemptSpeakerPreview(voiceCode, sourceUrl);
+    };
+
+    window.xttsSpeakerPreviewSnapshot = speakerPreviewSnapshot;
+    window.xttsSpeakerPicker = function (config = {}) {
+        return {
+            selected: String(config.selected || ''),
+            speakers: config.groups || { female: [], male: [] },
+            groupOrder: Array.isArray(config.group_order) ? config.group_order : [],
+            messages: config.messages || {},
+            speakerIndex: Object.create(null),
+            avatarErrors: Object.create(null),
+            previewState: speakerPreviewSnapshot(),
+
+            init() {
+                this.previewState = window.xttsSpeakerPreviewSnapshot();
+                this.buildSpeakerIndex();
+                this.selected = String(this.selected || this.$refs.speakerSelect?.value || '');
+                this.syncNativeSelect(this.selected, false);
+            },
+
+            buildSpeakerIndex() {
+                const index = Object.create(null);
+
+                ['female', 'male'].forEach((groupKey) => {
+                    (this.speakers[groupKey] || []).forEach((speaker) => {
+                        index[String(speaker.code)] = speaker;
+                    });
+                });
+
+                this.speakerIndex = index;
+            },
+
+            groupSpeakers(groupKey) {
+                return this.speakers[groupKey] || [];
+            },
+
+            speakerCount(groupKey) {
+                return this.groupSpeakers(groupKey).length;
+            },
+
+            speakerFor(code) {
+                return this.speakerIndex[String(code || '')] || null;
+            },
+
+            syncNativeSelect(code, shouldDispatch = true) {
+                const value = String(code || '');
+                const select = this.$refs.speakerSelect;
+
+                if (!select) {
+                    return;
+                }
+
+                select.value = value;
+
+                if (shouldDispatch) {
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            },
+
+            syncSelectedFromNative(value) {
+                this.selected = String(value || '');
+            },
+
+            selectSpeaker(code) {
+                const nextCode = String(code || '');
+
+                if (!nextCode || nextCode === String(this.selected || '')) {
+                    return;
+                }
+
+                this.selected = nextCode;
+                this.syncNativeSelect(nextCode);
+            },
+
+            selectedLabel() {
+                return this.speakerFor(this.selected)?.display_name || '';
+            },
+
+            isSelected(code) {
+                return String(this.selected || '') === String(code || '');
+            },
+
+            isPlaying(code) {
+                return String(this.previewState.code || '') === String(code || '');
+            },
+
+            isPaused(code) {
+                return String(this.previewState.pausedCode || '') === String(code || '');
+            },
+
+            isLoading(code) {
+                return String(this.previewState.loadingCode || '') === String(code || '');
+            },
+
+            hasPreview(code) {
+                return Boolean(this.speakerFor(code)?.has_preview);
+            },
+
+            previewUrl(code) {
+                return String(this.speakerFor(code)?.preview_url || '');
+            },
+
+            previewSpeakerName(code) {
+                return this.speakerFor(code)?.display_name || 'speaker';
+            },
+
+            showAvatar(speaker) {
+                return Boolean(speaker?.avatar_url) && !this.avatarErrors[String(speaker.code || '')];
+            },
+
+            markAvatarError(code, element = null) {
+                const voiceCode = String(code || '');
+                this.avatarErrors = {
+                    ...this.avatarErrors,
+                    [voiceCode]: true,
+                };
+
+                if (element) {
+                    element.removeAttribute('src');
+                }
+            },
+
+            setPreviewError(code, message) {
+                const voiceCode = String(code || '');
+                const errors = {
+                    ...(this.previewState.errors || {}),
+                };
+
+                if (message) {
+                    errors[voiceCode] = message;
+                } else {
+                    delete errors[voiceCode];
+                }
+
+                this.previewState = {
+                    ...this.previewState,
+                    errors,
+                };
+            },
+
+            togglePreview(code) {
+                const voiceCode = String(code || '');
+                const url = this.previewUrl(voiceCode);
+
+                if (!this.hasPreview(voiceCode)) {
+                    this.setPreviewError(
+                        voiceCode,
+                        this.messages.previewUnavailable || 'Preview unavailable for this voice.'
+                    );
+                    return;
+                }
+
+                this.setPreviewError(voiceCode, '');
+                window.xttsToggleSpeakerPreview(voiceCode, url);
+            },
+
+            syncPreviewState(detail) {
+                this.previewState = detail || window.xttsSpeakerPreviewSnapshot();
+            },
+
+            previewError(code) {
+                const errors = this.previewState?.errors || {};
+                return errors[String(code || '')] || '';
+            },
+
+            previewButtonIcon(code) {
+                if (!this.hasPreview(code)) {
+                    return 'ri-volume-mute-fill';
+                }
+
+                if (this.isLoading(code)) {
+                    return 'ri-edit-circle-line';
+                }
+
+                if (this.isPlaying(code)) {
+                    return 'ri-pause-line';
+                }
+
+                return 'ri-play-line';
+            },
+
+            previewButtonText(code) {
+                if (!this.hasPreview(code)) {
+                    return this.messages.previewUnavailableShort || 'No preview';
+                }
+
+                if (this.isLoading(code)) {
+                    return this.messages.previewLoadingShort || 'Loading...';
+                }
+
+                if (this.isPlaying(code)) {
+                    return this.messages.previewPauseShort || 'Pause preview';
+                }
+
+                if (this.isPaused(code)) {
+                    return this.messages.previewResumeShort || 'Resume preview';
+                }
+
+                if (this.previewError(code)) {
+                    return this.messages.previewRetryShort || 'Retry preview';
+                }
+
+                return this.messages.previewPlayShort || 'Play preview';
+            },
+
+            previewStatusText(code) {
+                if (!this.hasPreview(code)) {
+                    return this.messages.previewUnavailable || 'Preview unavailable for this voice.';
+                }
+
+                if (this.isLoading(code)) {
+                    return this.messages.previewLoadingHint || 'Loading preview audio...';
+                }
+
+                if (this.isPlaying(code)) {
+                    return this.messages.previewPlayingHint || 'Preview is playing now.';
+                }
+
+                if (this.isPaused(code)) {
+                    return this.messages.previewPausedHint || 'Preview paused. Tap again to resume.';
+                }
+
+                if (this.previewError(code)) {
+                    return this.messages.previewRetryHint || 'Preview could not be loaded. Tap again to retry.';
+                }
+
+                return this.messages.previewReadyHint || 'Tap play to hear a short sample.';
+            },
+
+            previewLabel(code) {
+                const name = this.previewSpeakerName(code);
+                let template = this.messages.previewPlay || 'Play preview for :speaker';
+
+                if (!this.hasPreview(code)) {
+                    return this.messages.previewUnavailable || 'Preview unavailable for this voice.';
+                }
+
+                if (this.isLoading(code)) {
+                    return this.messages.previewLoadingHint || 'Loading preview audio...';
+                }
+
+                if (this.isPlaying(code)) {
+                    template = this.messages.previewPause || 'Pause preview for :speaker';
+                } else if (this.isPaused(code)) {
+                    template = this.messages.previewResume || 'Resume preview for :speaker';
+                } else if (this.previewError(code)) {
+                    template = this.messages.previewRetry || 'Retry preview for :speaker';
+                }
+
+                return template.replace(':speaker', name);
+            },
+        };
+    };
+
     async function openCache() {
         return caches.open(CACHE_NAME);
     }
@@ -1908,6 +2889,7 @@ class extends Component
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Cleanup on navigation Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function teardownXttsPage() {
         formSave();
+        stopSpeakerPreview({ notify: false });
 
         S.previewWS.forEach((ws, jobId) => {
             if (ws.isPlaying && ws.isPlaying()) return;
@@ -1931,6 +2913,7 @@ class extends Component
 
     window.addEventListener('beforeunload', () => {
         formSave();
+        stopSpeakerPreview({ notify: false });
 
         S.previewWS.forEach(ws => {
             try { ws.destroy(); } catch (_) {}

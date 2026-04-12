@@ -23,19 +23,31 @@
                 [
                     'route' => 'app.xtts',
                     'icon' => 'ri-volume-up-line',
-                    'label' => __('Text to Speech'),
+                    'label' => __('TTS Apollo'),
+                    'enabled' => (bool) ($accessMap['tts'] ?? false),
+                ],
+                [
+                    'route' => 'app.xtts',
+                    'icon' => 'ri-volume-up-line',
+                    'label' => __('TTS Delta'),
                     'enabled' => (bool) ($accessMap['tts'] ?? false),
                 ],
                 [
                     'route' => 'app.clone-xtts',
                     'icon' => 'bx bx-user-voice',
-                    'label' => __('Clone Speech'),
+                    'label' => __('CTTS Vector'),
                     'enabled' => (bool) ($accessMap['clone_tts'] ?? false),
                 ],
                 [
                     'route' => 'app.wasr',
                     'icon' => 'ri-file-text-line',
-                    'label' => __('Speech to Text'),
+                    'label' => __('STT NEO'),
+                    'enabled' => (bool) ($accessMap['asr'] ?? false),
+                ],
+                [
+                    'route' => 'app.wasr',
+                    'icon' => 'ri-file-text-line',
+                    'label' => __('STT LEO'),
                     'enabled' => (bool) ($accessMap['asr'] ?? false),
                 ],
             ],
@@ -59,6 +71,17 @@
                     'icon' => 'bx bx-aperture',
                     'label' => __('Optical Character Recognition'),
                     'enabled' => (bool) ($accessMap['ocr'] ?? false),
+                ],
+            ],
+        ],
+        [
+            'title' => __('Transcription Tools'),
+            'items' => [
+                [
+                    'route' => 'app.youtube',
+                    'icon' => 'ri-trademark-line',
+                    'label' => __('MET Translation'),
+                    'enabled' => (bool) ($accessMap['youtube_download'] ?? false),
                 ],
             ],
         ],

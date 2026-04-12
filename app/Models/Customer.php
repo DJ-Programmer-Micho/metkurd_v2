@@ -18,6 +18,24 @@ class Customer extends Authenticatable
 
     protected array $toolActionCodesByToolCache = [];
 
+    protected array $toolActionCache = [];
+
+    protected array $customerEntitlementCache = [];
+
+    protected array $planEntitlementCache = [];
+
+    protected array $customerPricingRulesCache = [];
+
+    protected array $pricingRulesCache = [];
+
+    protected bool $resolvedServicePlanLoaded = false;
+
+    protected mixed $resolvedServicePlan = null;
+
+    protected bool $resolvedStoragePlanLoaded = false;
+
+    protected mixed $resolvedStoragePlan = null;
+
     protected $fillable = [
         'username',
         'email',
@@ -144,24 +162,68 @@ class Customer extends Authenticatable
 
     public function serviceCode(): string
     {
-        if ($this->relationLoaded('servicePlan') && $this->getRelation('servicePlan')) {
-            return (string) ($this->getRelation('servicePlan')->code ?? 'free');
-        }
-
-        if ($this->relationLoaded('activeServiceSubscription') && $this->getRelation('activeServiceSubscription')) {
-            return (string) ($this->getRelation('activeServiceSubscription')->servicePlan?->code ?? 'free');
-        }
-
-        return (string) ($this->servicePlan()->value('code') ?? 'free');
+        return (string) ($this->currentServicePlan()?->code ?? 'free');
     }
 
     public function hasPaidServicePlan(): bool
     {
-        $plan = $this->relationLoaded('servicePlan')
-            ? $this->getRelation('servicePlan')
-            : $this->servicePlan()->first();
+        $plan = $this->currentServicePlan();
 
         return $plan !== null && ! (bool) ($plan->is_free ?? false);
+    }
+
+    public function currentServicePlan(): ?ServicePlan
+    {
+        if ($this->resolvedServicePlanLoaded) {
+            return $this->resolvedServicePlan;
+        }
+
+        $plan = null;
+
+        if ($this->relationLoaded('servicePlan')) {
+            $plan = $this->getRelation('servicePlan');
+        }
+
+        if (!$plan && $this->relationLoaded('activeServiceSubscription')) {
+            $subscription = $this->getRelation('activeServiceSubscription');
+
+            if ($subscription) {
+                $subscription->loadMissing('servicePlan');
+                $plan = $subscription->servicePlan;
+            }
+        }
+
+        $planId = (int) ($this->getAttribute('service_plan_id') ?? 0);
+
+        if (!$plan && $planId > 0) {
+            $plan = ServicePlan::query()
+                ->select(['id', 'code', 'name', 'monthly_credits', 'is_free'])
+                ->find($planId);
+        }
+
+        if (!$plan) {
+            $this->loadMissing(['activeServiceSubscription.servicePlan']);
+            $plan = $this->activeServiceSubscription?->servicePlan;
+        }
+
+        if ($plan) {
+            $this->setRelation('servicePlan', $plan);
+        }
+
+        $this->resolvedServicePlanLoaded = true;
+
+        return $this->resolvedServicePlan = $plan ?: null;
+    }
+
+    public function currentServicePlanId(): ?int
+    {
+        $planId = (int) ($this->getAttribute('service_plan_id') ?? 0);
+
+        if ($planId > 0) {
+            return $planId;
+        }
+
+        return (int) ($this->currentServicePlan()?->id ?: 0) ?: null;
     }
 
     // =========================================================
@@ -194,12 +256,55 @@ class Customer extends Authenticatable
 
     public function storageQuotaMb(int $default = 512): int
     {
-        return (int) ($this->storagePlan()->first()?->quota_mb ?? $default);
+        return (int) ($this->currentStoragePlan()?->quota_mb ?? $default);
     }
 
     public function storageUsedBytes(): int
     {
         return (int) ($this->usage()->first()?->storage_used_bytes ?? 0);
+    }
+
+    public function currentStoragePlan(): ?StoragePlan
+    {
+        if ($this->resolvedStoragePlanLoaded) {
+            return $this->resolvedStoragePlan;
+        }
+
+        $plan = null;
+
+        if ($this->relationLoaded('storagePlan')) {
+            $plan = $this->getRelation('storagePlan');
+        }
+
+        if (!$plan && $this->relationLoaded('activeStorageSubscription')) {
+            $subscription = $this->getRelation('activeStorageSubscription');
+
+            if ($subscription) {
+                $subscription->loadMissing('storagePlan');
+                $plan = $subscription->storagePlan;
+            }
+        }
+
+        $planId = (int) ($this->getAttribute('storage_plan_id') ?? 0);
+
+        if (!$plan && $planId > 0) {
+            $plan = StoragePlan::query()
+                ->select(['id', 'code', 'name', 'quota_mb'])
+                ->find($planId);
+        }
+
+        if (!$plan) {
+            $this->loadMissing(['activeStorageSubscription.storagePlan']);
+            $plan = $this->activeStorageSubscription?->storagePlan;
+        }
+
+        if ($plan) {
+            $this->setRelation('storagePlan', $plan);
+        }
+
+        $this->resolvedStoragePlanLoaded = true;
+
+        return $this->resolvedStoragePlan = $plan ?: null;
     }
 
     // =========================================================
@@ -218,45 +323,25 @@ class Customer extends Authenticatable
             return $this->toolActionAllowanceCache[$toolActionFullCode];
         }
 
-        $action = ToolAction::query()
-            ->with('tool')
-            ->where('full_code', $toolActionFullCode)
-            ->where('is_active', true)
-            ->first();
+        $action = $this->resolveToolAction($toolActionFullCode);
 
-        if (! $action || ! ($action->tool?->is_active ?? false)) {
+        if (! $action) {
             return $this->toolActionAllowanceCache[$toolActionFullCode] = false;
         }
 
-        $now = now();
-
-        $override = CustomerEntitlement::query()
-            ->where('customer_id', $this->id)
-            ->where('tool_action_id', $action->id)
-            ->where(function ($q) use ($now) {
-                $q->whereNull('starts_at')->orWhere('starts_at', '<=', $now);
-            })
-            ->where(function ($q) use ($now) {
-                $q->whereNull('ends_at')->orWhere('ends_at', '>=', $now);
-            })
-            ->first();
+        $override = $this->resolveCustomerEntitlement((int) $action->id);
 
         if ($override && $override->allowed !== null) {
             return $this->toolActionAllowanceCache[$toolActionFullCode] = (bool) $override->allowed;
         }
 
-        $plan = $this->relationLoaded('servicePlan')
-            ? $this->getRelation('servicePlan')
-            : $this->servicePlan()->first();
+        $planId = $this->currentServicePlanId();
 
-        if (! $plan) {
+        if (! $planId) {
             return $this->toolActionAllowanceCache[$toolActionFullCode] = false;
         }
 
-        $ent = PlanEntitlement::query()
-            ->where('service_plan_id', $plan->id)
-            ->where('tool_action_id', $action->id)
-            ->first();
+        $ent = $this->resolvePlanEntitlement($planId, (int) $action->id);
 
         return $this->toolActionAllowanceCache[$toolActionFullCode] = ($ent ? (bool) $ent->allowed : false);
     }
@@ -335,26 +420,14 @@ class Customer extends Authenticatable
 
     public function priceCreditsFor(string $toolActionFullCode, array $context = []): int
     {
-        $action = ToolAction::where('full_code', $toolActionFullCode)->first();
+        $action = $this->resolveToolAction($toolActionFullCode);
+
         if (!$action) {
             return 0;
         }
 
-        $now = now();
-
         // 1) customer overrides first
-        $customerRules = CustomerPricingRule::query()
-            ->where('customer_id', $this->id)
-            ->where('tool_action_id', $action->id)
-            ->where('is_active', true)
-            ->where(function ($q) use ($now) {
-                $q->whereNull('starts_at')->orWhere('starts_at', '<=', $now);
-            })
-            ->where(function ($q) use ($now) {
-                $q->whereNull('ends_at')->orWhere('ends_at', '>=', $now);
-            })
-            ->orderBy('priority', 'asc')
-            ->get();
+        $customerRules = $this->resolveCustomerPricingRules((int) $action->id);
 
         foreach ($customerRules as $rule) {
             if ($this->ruleMatches($rule->conditions, $context)) {
@@ -371,11 +444,7 @@ class Customer extends Authenticatable
         }
 
         // 2) default pricing rules
-        $rules = PricingRule::query()
-            ->where('tool_action_id', $action->id)
-            ->where('is_active', true)
-            ->orderBy('priority', 'asc')
-            ->get();
+        $rules = $this->resolvePricingRules((int) $action->id);
 
         foreach ($rules as $rule) {
             if ($this->ruleMatches($rule->conditions, $context)) {
@@ -491,6 +560,95 @@ class Customer extends Authenticatable
             ->filter()
             ->values()
             ->all();
+    }
+
+    protected function resolveToolAction(string $toolActionFullCode): ?ToolAction
+    {
+        $toolActionFullCode = strtolower(trim($toolActionFullCode));
+
+        if ($toolActionFullCode === '') {
+            return null;
+        }
+
+        if (array_key_exists($toolActionFullCode, $this->toolActionCache)) {
+            return $this->toolActionCache[$toolActionFullCode];
+        }
+
+        return $this->toolActionCache[$toolActionFullCode] = ToolAction::query()
+            ->select(['id', 'tool_code', 'action_code', 'full_code', 'name', 'default_metric_code', 'is_active'])
+            ->where('full_code', $toolActionFullCode)
+            ->where('is_active', true)
+            ->whereHas('tool', fn ($query) => $query->where('is_active', true))
+            ->first();
+    }
+
+    protected function resolveCustomerEntitlement(int $toolActionId): ?CustomerEntitlement
+    {
+        if (array_key_exists($toolActionId, $this->customerEntitlementCache)) {
+            return $this->customerEntitlementCache[$toolActionId];
+        }
+
+        $now = now();
+
+        return $this->customerEntitlementCache[$toolActionId] = CustomerEntitlement::query()
+            ->where('customer_id', $this->id)
+            ->where('tool_action_id', $toolActionId)
+            ->where(function ($q) use ($now) {
+                $q->whereNull('starts_at')->orWhere('starts_at', '<=', $now);
+            })
+            ->where(function ($q) use ($now) {
+                $q->whereNull('ends_at')->orWhere('ends_at', '>=', $now);
+            })
+            ->first();
+    }
+
+    protected function resolvePlanEntitlement(int $planId, int $toolActionId): ?PlanEntitlement
+    {
+        $cacheKey = $planId . ':' . $toolActionId;
+
+        if (array_key_exists($cacheKey, $this->planEntitlementCache)) {
+            return $this->planEntitlementCache[$cacheKey];
+        }
+
+        return $this->planEntitlementCache[$cacheKey] = PlanEntitlement::query()
+            ->where('service_plan_id', $planId)
+            ->where('tool_action_id', $toolActionId)
+            ->first();
+    }
+
+    protected function resolveCustomerPricingRules(int $toolActionId)
+    {
+        if (array_key_exists($toolActionId, $this->customerPricingRulesCache)) {
+            return $this->customerPricingRulesCache[$toolActionId];
+        }
+
+        $now = now();
+
+        return $this->customerPricingRulesCache[$toolActionId] = CustomerPricingRule::query()
+            ->where('customer_id', $this->id)
+            ->where('tool_action_id', $toolActionId)
+            ->where('is_active', true)
+            ->where(function ($q) use ($now) {
+                $q->whereNull('starts_at')->orWhere('starts_at', '<=', $now);
+            })
+            ->where(function ($q) use ($now) {
+                $q->whereNull('ends_at')->orWhere('ends_at', '>=', $now);
+            })
+            ->orderBy('priority', 'asc')
+            ->get();
+    }
+
+    protected function resolvePricingRules(int $toolActionId)
+    {
+        if (array_key_exists($toolActionId, $this->pricingRulesCache)) {
+            return $this->pricingRulesCache[$toolActionId];
+        }
+
+        return $this->pricingRulesCache[$toolActionId] = PricingRule::query()
+            ->where('tool_action_id', $toolActionId)
+            ->where('is_active', true)
+            ->orderBy('priority', 'asc')
+            ->get();
     }
 
     protected function normalizeCodeList(array|string|null $codes): array

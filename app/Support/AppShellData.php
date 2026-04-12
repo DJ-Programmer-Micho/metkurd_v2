@@ -3,7 +3,10 @@
 namespace App\Support;
 
 use App\Models\Customer;
+use App\Models\CustomerEntitlement;
 use App\Models\MlJob;
+use App\Models\PlanEntitlement;
+use App\Models\ToolAction;
 use Illuminate\Support\Facades\Cache;
 
 class AppShellData
@@ -34,14 +37,15 @@ class AppShellData
             'profile',
             'usage',
             'wallet',
-            'servicePlan',
-            'storagePlan',
-            'activeServiceSubscription.servicePlan',
-            'activeStorageSubscription.storagePlan',
         ]);
 
-        $servicePlan = $customer->servicePlan ?: $customer->activeServiceSubscription?->servicePlan;
-        $storagePlan = $customer->storagePlan ?: $customer->activeStorageSubscription?->storagePlan;
+        $servicePlan = method_exists($customer, 'currentServicePlan')
+            ? $customer->currentServicePlan()
+            : ($customer->servicePlan ?: $customer->activeServiceSubscription?->servicePlan);
+
+        $storagePlan = method_exists($customer, 'currentStoragePlan')
+            ? $customer->currentStoragePlan()
+            : ($customer->storagePlan ?: $customer->activeStorageSubscription?->storagePlan);
         $wallet = $customer->wallet;
         $usage = $customer->usage;
 
@@ -112,10 +116,66 @@ class AppShellData
      */
     protected function buildAccessMap(Customer $customer): array
     {
-        $map = [];
+        $toolCodes = ['tts', 'clone_tts', 'asr', 'stem', 'ocr', 'youtube_audio', 'youtube_video'];
+        $map = array_fill_keys($toolCodes, false);
 
-        foreach (['tts', 'clone_tts', 'asr', 'stem', 'ocr', 'youtube_audio', 'youtube_video'] as $toolCode) {
-            $map[$toolCode] = $customer->canAccessTool($toolCode);
+        $actions = ToolAction::query()
+            ->select(['id', 'tool_code'])
+            ->whereIn('tool_code', $toolCodes)
+            ->where('is_active', true)
+            ->whereHas('tool', fn ($query) => $query->where('is_active', true))
+            ->orderBy('id')
+            ->get();
+
+        if ($actions->isEmpty()) {
+            $map['youtube_download'] = false;
+            return $map;
+        }
+
+        $actionIds = $actions->pluck('id')->all();
+        $now = now();
+
+        $overrides = CustomerEntitlement::query()
+            ->select(['tool_action_id', 'allowed'])
+            ->where('customer_id', (int) $customer->id)
+            ->whereIn('tool_action_id', $actionIds)
+            ->where(function ($query) use ($now) {
+                $query->whereNull('starts_at')->orWhere('starts_at', '<=', $now);
+            })
+            ->where(function ($query) use ($now) {
+                $query->whereNull('ends_at')->orWhere('ends_at', '>=', $now);
+            })
+            ->get()
+            ->keyBy('tool_action_id');
+
+        $planId = method_exists($customer, 'currentServicePlanId')
+            ? (int) ($customer->currentServicePlanId() ?? 0)
+            : 0;
+
+        $planEntitlements = $planId > 0
+            ? PlanEntitlement::query()
+                ->select(['tool_action_id', 'allowed'])
+                ->where('service_plan_id', $planId)
+                ->whereIn('tool_action_id', $actionIds)
+                ->get()
+                ->keyBy('tool_action_id')
+            : collect();
+
+        foreach ($actions as $action) {
+            $override = $overrides->get($action->id);
+            $toolCode = strtolower(trim((string) $action->tool_code));
+
+            if ($toolCode === '' || !array_key_exists($toolCode, $map)) {
+                continue;
+            }
+
+            $allowed = $override && $override->allowed !== null
+                ? (bool) $override->allowed
+                : (bool) data_get($planEntitlements->get($action->id), 'allowed', false);
+
+            if ($allowed) {
+                $map[$toolCode] = true;
+            }
         }
 
         $map['youtube_download'] = (bool) ($map['youtube_audio'] ?? false) || (bool) ($map['youtube_video'] ?? false);

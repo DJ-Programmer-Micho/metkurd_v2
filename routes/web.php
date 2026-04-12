@@ -8,6 +8,7 @@ use App\Http\Controllers\App\Services\OcrRenderController;
 use App\Http\Controllers\App\Services\StemRenderController;
 use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XttsRenderController;
+use App\Http\Controllers\App\Services\XttsSpeakerAssetController;
 use App\Http\Controllers\App\Services\YoutubeRenderController;
 use App\Http\Controllers\Payments\AreebaWebhookController;
 use App\Http\Controllers\Payments\FibWebhookController;
@@ -177,6 +178,14 @@ Route::prefix('{locale}')
     Route::get('/app/renders/xtts/{jobId}/download', [XttsRenderController::class, 'download'])
         ->middleware('app.tool.access:tts')
         ->name('app.renders.xtts.download');
+
+    Route::get('/app/xtts/speakers/{voiceCode}/preview', [XttsSpeakerAssetController::class, 'preview'])
+        ->middleware('app.tool.access:tts')
+        ->name('app.xtts.speaker.preview');
+
+    Route::get('/app/xtts/speakers/{voiceCode}/avatar', [XttsSpeakerAssetController::class, 'avatar'])
+        ->middleware('app.tool.access:tts')
+        ->name('app.xtts.speaker.avatar');
 
     Route::get('/app/renders/clone-xtts/{jobId}/stream', [CloneXttsRenderController::class, 'Stream'])
         ->middleware('app.tool.access:clone_tts')

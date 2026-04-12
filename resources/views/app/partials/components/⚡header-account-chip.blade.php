@@ -32,11 +32,15 @@ new class extends Component
         $this->customer?->loadMissing([
             'usage',
             'wallet',
-            'servicePlan',
-            'storagePlan',
-            'activeServiceSubscription.servicePlan',
-            'activeStorageSubscription.storagePlan',
         ]);
+
+        if ($this->customer && method_exists($this->customer, 'currentServicePlan')) {
+            $this->customer->currentServicePlan();
+        }
+
+        if ($this->customer && method_exists($this->customer, 'currentStoragePlan')) {
+            $this->customer->currentStoragePlan();
+        }
     }
 
     #[Computed]

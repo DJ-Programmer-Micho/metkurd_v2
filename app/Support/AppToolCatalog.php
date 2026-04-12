@@ -9,6 +9,21 @@ use Illuminate\Support\Facades\Cache;
 
 class AppToolCatalog
 {
+    /**
+     * @var array<string, int|null>
+     */
+    protected static array $toolIds = [];
+
+    /**
+     * @var array<string, array<string, array<string, string>>>
+     */
+    protected static array $actionMaps = [];
+
+    /**
+     * @var array<int, array<string, string>>
+     */
+    protected static array $voiceOptions = [];
+
     public function toolId(string $code): ?int
     {
         $code = strtolower(trim($code));
@@ -17,7 +32,11 @@ class AppToolCatalog
             return null;
         }
 
-        return Cache::remember(
+        if (array_key_exists($code, self::$toolIds)) {
+            return self::$toolIds[$code];
+        }
+
+        return self::$toolIds[$code] = Cache::remember(
             'tool-id:' . $code,
             now()->addMinutes(15),
             fn () => Tool::query()->where('code', $code)->value('id')
@@ -62,6 +81,10 @@ class AppToolCatalog
 
         $cacheKey = 'tool-action-options:' . implode(',', $toolCodes);
 
+        if (array_key_exists($cacheKey, self::$actionMaps)) {
+            return self::$actionMaps[$cacheKey];
+        }
+
         /** @var array<string, array<string, string>> $maps */
         $maps = Cache::remember($cacheKey, now()->addMinutes(15), function () use ($toolCodes) {
             $actions = ToolAction::query()
@@ -90,7 +113,7 @@ class AppToolCatalog
             return $maps;
         });
 
-        return $maps;
+        return self::$actionMaps[$cacheKey] = $maps;
     }
 
     /**
@@ -100,6 +123,10 @@ class AppToolCatalog
     {
         if ($planId <= 0) {
             return [];
+        }
+
+        if (array_key_exists($planId, self::$voiceOptions)) {
+            return self::$voiceOptions[$planId];
         }
 
         /** @var array<string, string> $voices */
@@ -117,6 +144,6 @@ class AppToolCatalog
                 ->toArray()
         );
 
-        return $voices;
+        return self::$voiceOptions[$planId] = $voices;
     }
 }
