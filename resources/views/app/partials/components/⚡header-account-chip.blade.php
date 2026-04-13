@@ -19,6 +19,7 @@ new class extends Component
     #[On('customerPlanUpdated')]
     #[On('customerStorageUpdated')]
     #[On('xtts-renders-refresh')]
+    #[On('f5tts-renders-refresh')]
     public function refreshHeader(): void
     {
         $this->loadData();

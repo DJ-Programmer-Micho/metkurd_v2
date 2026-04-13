@@ -27,10 +27,10 @@
                     'enabled' => (bool) ($accessMap['tts'] ?? false),
                 ],
                 [
-                    'route' => 'app.xtts',
+                    'route' => 'app.f5tts',
                     'icon' => 'ri-volume-up-line',
-                    'label' => __('TTS Delta'),
-                    'enabled' => (bool) ($accessMap['tts'] ?? false),
+                    'label' => __('F5TTS Delta'),
+                    'enabled' => (bool) ($accessMap['ftts'] ?? false),
                 ],
                 [
                     'route' => 'app.clone-xtts',
@@ -41,14 +41,14 @@
                 [
                     'route' => 'app.wasr',
                     'icon' => 'ri-file-text-line',
-                    'label' => __('STT NEO'),
+                    'label' => __('WASR NEO'),
                     'enabled' => (bool) ($accessMap['asr'] ?? false),
                 ],
                 [
-                    'route' => 'app.wasr',
+                    'route' => 'app.qasr',
                     'icon' => 'ri-file-text-line',
-                    'label' => __('STT LEO'),
-                    'enabled' => (bool) ($accessMap['asr'] ?? false),
+                    'label' => __('QASR LEO'),
+                    'enabled' => (bool) ($accessMap['qasr'] ?? false),
                 ],
             ],
         ],

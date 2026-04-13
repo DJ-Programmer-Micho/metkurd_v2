@@ -16,7 +16,7 @@ new #[Layout('landing::layouts.app')] class extends Component
         $toolCode = match ($normalized) {
             'tts' => 'tts',
             'ctts', 'clone-tts', 'clone-xtts' => 'clone_tts',
-            'asr', 'wasr' => 'asr',
+            'asr', 'wasr', 'qasr' => 'asr',
             'ocr' => 'ocr',
             'stem' => 'stem',
             default => '',

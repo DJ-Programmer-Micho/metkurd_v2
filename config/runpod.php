@@ -7,7 +7,9 @@ return [
     // fallback endpoints (if tool.meta not set)
     'endpoints' => [
         'xtts' => env('RUNPOD_ENDPOINT_ID_XTTS'),
+        'ftts' => env('RUNPOD_ENDPOINT_ID_FTTS'),
         'wasr' => env('RUNPOD_ENDPOINT_ID_WASR'),
+        'qasr' => env('RUNPOD_ENDPOINT_ID_QASR'),
         'stem' => env('RUNPOD_ENDPOINT_ID_STEM'),
         'kocr' => env('RUNPOD_ENDPOINT_ID_KOCR'),
     ],

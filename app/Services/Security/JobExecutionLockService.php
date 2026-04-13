@@ -89,9 +89,10 @@ class JobExecutionLockService
         string $inputHash,
         Session $session,
         ?string $agent = null,
-        ?string $ip = null
+        ?string $ip = null,
+        string $jobKind = 'wasr'
     ): array {
-        return DB::transaction(function () use ($customerId, $jobId, $inputHash, $session, $agent, $ip) {
+        return DB::transaction(function () use ($customerId, $jobId, $inputHash, $session, $agent, $ip, $jobKind) {
             $now = now();
             $expiresAt = $now->copy()->addMinutes(60);
 
@@ -100,7 +101,7 @@ class JobExecutionLockService
 
             MlJob::query()
                 ->where('customer_id', $customerId)
-                ->whereIn('job_kind', ['asr', 'wasr'])
+                ->whereIn('job_kind', ['asr', 'wasr', 'qasr'])
                 ->whereIn('status', ['queued', 'running', 'saving'])
                 ->whereNotNull('lock_expires_at')
                 ->where('lock_expires_at', '<', $now)
@@ -117,7 +118,7 @@ class JobExecutionLockService
 
             MlJob::query()
                 ->where('customer_id', $customerId)
-                ->whereIn('job_kind', ['asr', 'wasr'])
+                ->whereIn('job_kind', ['asr', 'wasr', 'qasr'])
                 ->whereIn('status', ['queued', 'running', 'saving'])
                 ->whereNull('lock_expires_at')
                 ->where('id', '!=', $jobId)
@@ -130,7 +131,7 @@ class JobExecutionLockService
 
             $sameFileConflict = MlJob::query()
                 ->where('customer_id', $customerId)
-                ->whereIn('job_kind', ['asr', 'wasr'])
+                ->whereIn('job_kind', ['asr', 'wasr', 'qasr'])
                 ->whereIn('status', ['queued', 'running', 'saving'])
                 ->where('id', '!=', $jobId)
                 ->whereNotNull('lock_expires_at')
@@ -148,7 +149,7 @@ class JobExecutionLockService
 
             $activeCount = MlJob::query()
                 ->where('customer_id', $customerId)
-                ->whereIn('job_kind', ['asr', 'wasr'])
+                ->whereIn('job_kind', ['asr', 'wasr', 'qasr'])
                 ->whereIn('status', ['queued', 'running', 'saving'])
                 ->whereNotNull('lock_expires_at')
                 ->where('lock_expires_at', '>', $now)
@@ -167,7 +168,7 @@ class JobExecutionLockService
                 ->where('id', $jobId)
                 ->where('customer_id', $customerId)
                 ->update([
-                    'job_kind' => 'wasr',
+                    'job_kind' => $jobKind,
                     'execution_scope' => 'customer',
                     'locked_by_session_id' => $sessionId,
                     'locked_by_fingerprint' => $fingerprint,

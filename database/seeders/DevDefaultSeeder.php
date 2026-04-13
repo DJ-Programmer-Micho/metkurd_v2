@@ -394,12 +394,14 @@ class DevDefaultSeeder extends Seeder
     {
         $toolRows = [
             ['code' => 'tts',            'name' => 'Text To Speech',        'sort_order' => 1],
-            ['code' => 'clone_tts',      'name' => 'Clone Text To Speech',  'sort_order' => 2],
-            ['code' => 'asr',            'name' => 'Automatic Speech Recognition', 'sort_order' => 3],
-            ['code' => 'stem',           'name' => 'Stem Separation',       'sort_order' => 4],
-            ['code' => 'ocr',            'name' => 'OCR',                   'sort_order' => 5],
-            ['code' => 'youtube_audio',  'name' => 'YouTube Audio Downloader', 'sort_order' => 6],
-            ['code' => 'youtube_video',  'name' => 'YouTube Video Downloader', 'sort_order' => 7],
+            ['code' => 'ftts',           'name' => 'F5 Text To Speech',     'sort_order' => 2],
+            ['code' => 'clone_tts',      'name' => 'Clone Text To Speech',  'sort_order' => 3],
+            ['code' => 'asr',            'name' => 'Automatic Speech Recognition', 'sort_order' => 4],
+            ['code' => 'qasr',           'name' => 'Qwen Automatic Speech Recognition', 'sort_order' => 5],
+            ['code' => 'stem',           'name' => 'Stem Separation',       'sort_order' => 6],
+            ['code' => 'ocr',            'name' => 'OCR',                   'sort_order' => 7],
+            ['code' => 'youtube_audio',  'name' => 'YouTube Audio Downloader', 'sort_order' => 8],
+            ['code' => 'youtube_video',  'name' => 'YouTube Video Downloader', 'sort_order' => 9],
         ];
 
         $tools = [];
@@ -418,10 +420,12 @@ class DevDefaultSeeder extends Seeder
 
         $actionRows = [
             ['tool_code' => 'tts',           'action_code' => 'standard', 'name' => 'TTS Standard',         'metric' => 'character'],
+            ['tool_code' => 'ftts',          'action_code' => 'standard', 'name' => 'F5 TTS Standard',      'metric' => 'character'],
 
             ['tool_code' => 'clone_tts',     'action_code' => 'standard', 'name' => 'Clone TTS Standard',   'metric' => 'character'],
 
             ['tool_code' => 'asr',           'action_code' => 'standard', 'name' => 'ASR Standard',         'metric' => 'minute'],
+            ['tool_code' => 'qasr',          'action_code' => 'standard', 'name' => 'QASR Standard',        'metric' => 'minute'],
 
             ['tool_code' => 'stem',          'action_code' => 'sep2',     'name' => 'Stem Separation 2',    'metric' => 'stem_output'],
             ['tool_code' => 'stem',          'action_code' => 'sep4',     'name' => 'Stem Separation 4',    'metric' => 'stem_output'],
@@ -490,6 +494,14 @@ class DevDefaultSeeder extends Seeder
                 'rounding_step' => 1,
                 'minimum_credits' => 1,
             ],
+            'ftts.standard' => [
+                'metric_code' => 'character',
+                'unit_size' => 1,
+                'credits_per_unit' => 1.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 1,
+            ],
             'clone_tts.standard' => [
                 'metric_code' => 'character',
                 'unit_size' => 1,
@@ -499,6 +511,14 @@ class DevDefaultSeeder extends Seeder
                 'minimum_credits' => 1,
             ],
             'asr.standard' => [
+                'metric_code' => 'minute',
+                'unit_size' => 1,
+                'credits_per_unit' => 1000.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 1000,
+            ],
+            'qasr.standard' => [
                 'metric_code' => 'minute',
                 'unit_size' => 1,
                 'credits_per_unit' => 1000.0,

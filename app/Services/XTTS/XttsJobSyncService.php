@@ -22,7 +22,12 @@ class XttsJobSyncService
             return $this->payload($job);
         }
 
-        $endpointId = (string) (data_get($tool->meta, 'runpod_endpoint_id') ?: config('runpod.endpoints.xtts'));
+        $toolCode = strtolower(trim((string) $tool->code));
+        $endpointId = (string) (
+            data_get($tool->meta, 'runpod_endpoint_id')
+            ?: $this->fallbackEndpointForTool($toolCode)
+        );
+
         if ($endpointId === '') {
             return $this->failJob($job, 'Missing RunPod endpoint id.');
         }
@@ -57,7 +62,7 @@ class XttsJobSyncService
             default                             => 'running',
         };
 
-        if ((string) $tool->code === 'clone_tts') {
+        if ($toolCode === 'clone_tts') {
             $this->locks->refreshLock((string) $job->id);
         }
 
@@ -66,8 +71,12 @@ class XttsJobSyncService
             return $this->failJob($job, $err);
         }
 
+        if ($rawStatus === 'COMPLETED' && $toolCode === 'ftts' && $wavB64 === '') {
+            return $this->failJob($job, 'F5TTS completed without output.wav_b64.');
+        }
+
         if ($wavB64 !== '') {
-            return $this->finalizeSuccess($job, $tool, $wavB64);
+            return $this->finalizeSuccess($job, $tool, $wavB64, $out);
         }
 
         MlJob::query()->where('id', $job->id)->update([
@@ -80,9 +89,9 @@ class XttsJobSyncService
         return $this->payload($job, $progress);
     }
 
-    protected function finalizeSuccess(MlJob $job, Tool $tool, string $wavB64): array
+    protected function finalizeSuccess(MlJob $job, Tool $tool, string $wavB64, array $providerOutput = []): array
     {
-        return DB::transaction(function () use ($job, $tool, $wavB64) {
+        return DB::transaction(function () use ($job, $tool, $wavB64, $providerOutput) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
             if (!$fresh) {
@@ -93,7 +102,7 @@ class XttsJobSyncService
                 return $this->payload($fresh, 100);
             }
 
-            $subFolder = (string) $tool->code === 'clone_tts' ? 'clone-tts' : 'tts';
+            $subFolder = $this->outputFolderForTool((string) $tool->code);
             $fileKey = $this->storage->renderBaseDir($fresh, $subFolder).'/out.wav';
 
             $saved = $this->storage->saveWavB64ToS3((int) $fresh->customer_id, $fileKey, $wavB64, [
@@ -104,12 +113,22 @@ class XttsJobSyncService
             ]);
 
             $fresh->status = 'done';
-            $fresh->output = [
+            $output = [
                 'disk' => $saved['disk'],
                 'path' => $saved['path'],
                 'bytes' => $saved['bytes'],
                 'mime' => $saved['mime'],
             ];
+
+            if ((string) $tool->code === 'ftts') {
+                $output['audio_file'] = (string) data_get($providerOutput, 'audio_file', '');
+                $output['audio_path'] = (string) data_get($providerOutput, 'audio_path', '');
+                $output['normalized_text'] = (string) data_get($providerOutput, 'normalized_text', '');
+                $output['sample_rate'] = (int) data_get($providerOutput, 'sample_rate', 0);
+                $output['info'] = data_get($providerOutput, 'info');
+            }
+
+            $fresh->output = $output;
             $fresh->storage_out_bytes = (int) $saved['bytes'];
             $fresh->finished_at = now();
             $fresh->error = null;
@@ -212,5 +231,22 @@ class XttsJobSyncService
             'failed' => $status === 'failed',
             'message' => (string) data_get($job->error, 'message', ''),
         ];
+    }
+
+    protected function fallbackEndpointForTool(string $toolCode): string
+    {
+        return match ($toolCode) {
+            'ftts' => (string) (config('runpod.endpoints.ftts') ?: env('RUNPOD_ENDPOINT_ID_FTTS')),
+            default => (string) (config('runpod.endpoints.xtts') ?: env('RUNPOD_ENDPOINT_ID_XTTS')),
+        };
+    }
+
+    protected function outputFolderForTool(string $toolCode): string
+    {
+        return match (strtolower(trim($toolCode))) {
+            'clone_tts' => 'clone-tts',
+            'ftts' => 'ftts',
+            default => 'tts',
+        };
     }
 }

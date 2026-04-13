@@ -160,6 +160,15 @@ class extends Component
                 'cta' => __('Open XTTS'),
             ],
             [
+                'tool' => 'ftts',
+                'label' => __('F5 Text to Speech'),
+                'description' => __('Generate speech with the F5TTS voice engine.'),
+                'route' => route('app.f5tts', ['locale' => $locale]),
+                'icon' => 'ri-volume-up-line',
+                'entitlement' => 'ftts.standard',
+                'cta' => __('Open F5TTS'),
+            ],
+            [
                 'tool' => 'clone_tts',
                 'label' => __('Voice Clone'),
                 'description' => __('Generate speech with a cloned voice profile.'),
@@ -169,13 +178,22 @@ class extends Component
                 'cta' => __('Open Clone XTTS'),
             ],
             [
-                'tool' => 'asr',
-                'label' => __('Speech to Text'),
+                'tool' => 'wasr',
+                'label' => __('WASR Speech to Text'),
                 'description' => __('Transcribe audio and export clean text.'),
                 'route' => route('app.wasr', ['locale' => $locale]),
                 'icon' => 'ri-file-text-line',
                 'entitlement' => 'asr.standard',
                 'cta' => __('Open WASR'),
+            ],
+            [
+                'tool' => 'qasr',
+                'label' => __('QASR Speech to Text'),
+                'description' => __('Transcribe audio with the Qwen ASR engine and export clean text.'),
+                'route' => route('app.qasr', ['locale' => $locale]),
+                'icon' => 'ri-file-text-line',
+                'entitlement' => 'qasr.standard',
+                'cta' => __('Open QASR'),
             ],
             [
                 'tool' => 'stem',
@@ -391,8 +409,10 @@ class extends Component
     {
         return match ($this->normalizeToolCode($toolCode)) {
             'tts' => __('Text to Speech'),
+            'ftts' => __('F5 Text to Speech'),
             'clone_tts' => __('Voice Clone'),
             'asr' => __('Speech to Text'),
+            'qasr' => __('QASR Speech to Text'),
             'stem' => __('Stem Separation'),
             'ocr' => __('Optical Character Recognition'),
             'youtube_audio' => __('YouTube Audio'),
@@ -406,8 +426,9 @@ class extends Component
     {
         return match ($this->normalizeToolCode($toolCode)) {
             'tts' => 'primary',
+            'ftts' => 'info',
             'clone_tts' => 'info',
-            'asr' => 'warning',
+            'asr', 'qasr' => 'warning',
             'stem' => 'success',
             'ocr' => 'white',
             'youtube_audio', 'youtube_video', 'youtube_download' => 'danger',
@@ -419,8 +440,9 @@ class extends Component
     {
         return match ($this->normalizeToolCode($toolCode)) {
             'tts' => '#85a7ec',
+            'ftts' => '#73cfeb',
             'clone_tts' => '#73cfeb',
-            'asr' => '#edc975',
+            'asr', 'qasr' => '#edc975',
             'stem' => '#42d189',
             'ocr' => '#e0e9fa',
             'youtube_audio' => '#f17e7e',
@@ -456,8 +478,10 @@ class extends Component
 
         return match ($normalizedToolCode) {
             'tts' => route('app.xtts', ['locale' => $locale]),
+            'ftts' => route('app.f5tts', ['locale' => $locale]),
             'clone_tts' => route('app.clone-xtts', ['locale' => $locale]),
             'asr' => route('app.wasr', ['locale' => $locale]),
+            'qasr' => route('app.qasr', ['locale' => $locale]),
             'stem' => route('app.stem', ['locale' => $locale]),
             'ocr' => route('app.ocr', ['locale' => $locale]),
             'youtube_audio', 'youtube_video', 'youtube_download' => route('app.youtube', ['locale' => $locale]),
@@ -1117,6 +1141,10 @@ class extends Component
                                     <a wire:navigate href="{{ route('app.xtts', ['locale' => app()->getLocale()]) }}" class="btn btn-primary btn-sm">
                                         {{ __('Start with XTTS') }}
                                     </a>
+                                @elseif($this->canOpenTool('ftts'))
+                                    <a wire:navigate href="{{ route('app.f5tts', ['locale' => app()->getLocale()]) }}" class="btn btn-info btn-sm">
+                                        {{ __('Start with F5TTS') }}
+                                    </a>
                                 @else
                                     <a wire:navigate href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-dark btn-sm">
                                         {{ __('Review Plan Access') }}
@@ -1205,7 +1233,7 @@ class extends Component
                 <div class="d-flex justify-content-between align-items-center gap-3">
                     <div>
                         <h5 class="card-title mb-1">{{ __('Recent Jobs') }}</h5>
-                        <p class="text-muted mb-0">{{ __('The latest customer jobs across XTTS, ASR, STEM, OCR, and YouTube.') }}</p>
+                        <p class="text-muted mb-0">{{ __('The latest customer jobs across XTTS, F5TTS, ASR, STEM, OCR, and YouTube.') }}</p>
                     </div>
                     <span class="badge bg-secondary-subtle text-secondary">{{ __('Auto-updating') }}</span>
                 </div>

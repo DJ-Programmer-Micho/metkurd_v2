@@ -11,9 +11,13 @@ use Illuminate\Support\Facades\Storage;
 
 class XttsRenderController extends Controller
 {
+    protected string $toolCode = 'tts';
+
+    protected string $streamFailureLog = 'XTTS_STREAM_FAIL';
+
     protected function jobOrFail(string $jobId): MlJob
     {
-        $toolId = Tool::query()->where('code', 'tts')->value('id');
+        $toolId = Tool::query()->where('code', $this->toolCode)->value('id');
 
         $job = MlJob::query()
             ->with([
@@ -71,7 +75,7 @@ class XttsRenderController extends Controller
                 'Accept-Ranges' => 'bytes',
             ]);
         } catch (\Throwable $e) {
-            Log::error('XTTS_STREAM_FAIL', ['job_id' => $jobId, 'message' => $e->getMessage()]);
+            Log::error($this->streamFailureLog, ['job_id' => $jobId, 'message' => $e->getMessage()]);
             abort(500, 'Audio stream failed.');
         }
     }

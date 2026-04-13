@@ -14,14 +14,22 @@ new class extends Component
 
     protected $paginationTheme = 'bootstrap';
 
-    protected string $toolCode = 'tts';
+    public string $toolCode = 'tts';
+    public string $eventPrefix = 'xtts';
+    public string $streamRoute = 'app.renders.xtts.stream';
+    public string $downloadRoute = 'app.renders.xtts.download';
+    public string $domPrefix = 'xtts';
+    public string $pageName = 'xttsRendersPage';
+    public string $panelTitle = 'Recent Renders';
+    public string $modelLabel = 'MK-TTS';
 
     public int $refreshKey = 0;
 
     #[On('xtts-renders-refresh')]
+    #[On('f5tts-renders-refresh')]
     public function refreshPanel(): void
     {
-        $this->resetPage(pageName: 'xttsRendersPage');
+        $this->resetPage(pageName: $this->pageName);
         $this->refreshKey++;
     }
 
@@ -32,7 +40,7 @@ new class extends Component
         $locale = app()->getLocale();
 
         if (!$customerId) {
-            return MlJob::query()->whereRaw('1=0')->paginate(3, pageName: 'xttsRendersPage');
+            return MlJob::query()->whereRaw('1=0')->paginate(3, pageName: $this->pageName);
         }
 
         $toolId = app(AppToolCatalog::class)->toolId($this->toolCode);
@@ -42,7 +50,7 @@ new class extends Component
             ->when($toolId, fn ($q) => $q->where('tool_id', $toolId))
             ->where('status', 'done')
             ->orderByDesc('finished_at')
-            ->paginate(3, pageName: 'xttsRendersPage');
+            ->paginate(3, pageName: $this->pageName);
 
         $paginator->setCollection(
             $paginator->getCollection()->values()->map(function ($job, $index) use ($locale) {
@@ -51,23 +59,29 @@ new class extends Component
                 $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
                 $mime = $ext === 'mp3' ? 'audio/mpeg' : 'audio/wav';
 
-                $fullText = trim((string) data_get($job->input, 'text', ''));
+                $fullText = trim((string) (
+                    data_get($job->input, 'text')
+                    ?: data_get($job->input, 'gen_text', '')
+                ));
                 $snippet = mb_strlen($fullText) > 240
                     ? mb_substr($fullText, 0, 160) . '...'
                     : $fullText;
 
                 return [
                     'id' => $jobId,
-                    'speaker' => data_get($job->input, 'speaker_id', '-'),
-                    'model' => 'MK-TTS)',
+                    'speaker' => (string) (
+                        data_get($job->input, 'speaker_id')
+                        ?: data_get($job->input, 'speaker_key', '-')
+                    ),
+                    'model' => $this->modelLabel,
                     'created_at' => optional($job->finished_at ?? $job->created_at)->format('Y-m-d H:i'),
-                    'full_url' => route('app.renders.xtts.stream', [
+                    'full_url' => route($this->streamRoute, [
                         'locale' => $locale,
                         'jobId' => $jobId,
                     ]) . '?proxy=1',
                     'mime' => $mime,
                     'bytes' => (int) data_get($job->output, 'bytes', 0),
-                    'download_url' => route('app.renders.xtts.download', [
+                    'download_url' => route($this->downloadRoute, [
                         'locale' => $locale,
                         'jobId' => $jobId,
                     ]),
@@ -101,10 +115,10 @@ new class extends Component
 
         try {
             $sync->deleteFinishedRender($job);
-            $this->resetPage(pageName: 'xttsRendersPage');
+            $this->resetPage(pageName: $this->pageName);
             $this->refreshKey++;
             $this->dispatch('customerStorageUpdated');
-            $this->dispatch('xtts-renders-refresh');
+            $this->dispatch($this->refreshEventName());
             $this->dispatch('alert', type: 'success', message: __('Deleted.'));
         } catch (\Throwable $e) {
             $this->dispatch('alert', type: 'error', message: __('Delete failed: :message', ['message' => $e->getMessage()]));
@@ -124,6 +138,13 @@ new class extends Component
         return is_array($parts) ? count($parts) : 0;
     }
 
+    protected function refreshEventName(): string
+    {
+        $prefix = strtolower(trim($this->eventPrefix));
+
+        return ($prefix !== '' ? $prefix : 'xtts') . '-renders-refresh';
+    }
+
     public function render()
     {
         return view('app.partials.⚡xtts-renders-panel');
@@ -131,12 +152,12 @@ new class extends Component
 };
 ?>
 
-<div class="col-lg-5" wire:key="xtts-renders-panel-{{ $refreshKey }}">
+<div class="col-lg-5" wire:key="{{ $domPrefix }}-renders-panel-{{ $refreshKey }}">
     <div class="turbo-border mb-3">
         <div class="turbo-inner">
             <div class="card mb-0">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <strong>{{ __('Recent Renders') }}</strong>
+                    <strong>{{ __($panelTitle) }}</strong>
                     <button class="btn btn-sm btn-outline-secondary" wire:click="$refresh" type="button">
                         {{ __('Refresh') }}
                     </button>
@@ -149,8 +170,8 @@ new class extends Component
                         @foreach($this->renders as $r)
                             <div
                                 class="border rounded p-2 mb-2 render-card"
-                                wire:key="xtts-render-{{ $r['id'] }}"
-                                id="render-card-{{ $r['id'] }}"
+                                wire:key="{{ $domPrefix }}-render-{{ $r['id'] }}"
+                                id="{{ $domPrefix }}-render-card-{{ $r['id'] }}"
                             >
                                 <div class="d-flex justify-content-between gap-2">
                                     <div>
@@ -177,11 +198,11 @@ new class extends Component
 
                                 <div class="mt-2" wire:ignore>
                                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-                                        <span class="small text-muted" id="xtts-time-{{ $r['id'] }}">--:-- / --:--</span>
+                                        <span class="small text-muted" id="{{ $domPrefix }}-time-{{ $r['id'] }}">--:-- / --:--</span>
 
                                         <div class="btn-group btn-group-sm">
                                             <button type="button"
-                                                    class="btn btn-outline-primary btn-xtts-preview"
+                                                    class="btn btn-outline-primary btn-{{ $domPrefix }}-preview"
                                                     data-job="{{ $r['id'] }}"
                                                     data-url="{{ $r['full_url'] }}"
                                                     data-latest="{{ $r['is_latest'] ? '1' : '0' }}"
@@ -190,16 +211,16 @@ new class extends Component
                                             </button>
 
                                             <button type="button"
-                                                    class="btn btn-outline-secondary btn-xtts-stop"
+                                                    class="btn btn-outline-secondary btn-{{ $domPrefix }}-stop"
                                                     data-job="{{ $r['id'] }}">
                                                 <i class="fa fa-stop me-1"></i> {{ __('Stop') }}
                                             </button>
                                         </div>
                                     </div>
 
-                                    <div id="xtts-wrap-{{ $r['id'] }}" class="mt-1">
-                                        <div id="xtts-ph-{{ $r['id'] }}" class="border rounded bg-dark" style="height:90px; opacity:.25;"></div>
-                                        <div id="xtts-wave-{{ $r['id'] }}" class="border rounded" style="height:90px; display:none;"></div>
+                                    <div id="{{ $domPrefix }}-wrap-{{ $r['id'] }}" class="mt-1">
+                                        <div id="{{ $domPrefix }}-ph-{{ $r['id'] }}" class="border rounded bg-dark" style="height:90px; opacity:.25;"></div>
+                                        <div id="{{ $domPrefix }}-wave-{{ $r['id'] }}" class="border rounded" style="height:90px; display:none;"></div>
                                     </div>
 
                                     <div class="mt-2">

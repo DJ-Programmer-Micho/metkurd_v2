@@ -65,9 +65,11 @@ class extends Component
         $this->toolOptions = [
             'all'       => __('All Tools'),
             'tts'       => __('Text to Speech'),
+            'ftts'      => __('F5 Text to Speech'),
             'clone_tts' => __('Clone Speech'),
             'stem'      => __('Stem Separation'),
             'wasr'      => __('Speech to Text'),
+            'qasr'      => __('QASR Speech to Text'),
             'ocr'       => __('Optical Character Recognition'),
         ];
 
@@ -544,9 +546,11 @@ class extends Component
     {
         return match ((string) $tool) {
             'tts' => 'primary',
+            'ftts' => 'info',
             'clone_tts' => 'info',
             'stem' => 'success',
             'wasr' => 'warning',
+            'qasr' => 'warning',
             'ocr' => 'danger',
             default => 'secondary',
         };

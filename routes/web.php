@@ -4,7 +4,10 @@ use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
 use App\Http\Controllers\App\Services\CloneXttsRenderController;
+use App\Http\Controllers\App\Services\F5ttsRenderController;
+use App\Http\Controllers\App\Services\F5ttsSpeakerAssetController;
 use App\Http\Controllers\App\Services\OcrRenderController;
+use App\Http\Controllers\App\Services\QasrRenderController;
 use App\Http\Controllers\App\Services\StemRenderController;
 use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XttsRenderController;
@@ -141,12 +144,18 @@ Route::prefix('{locale}')
         Route::livewire('/app/xtts', 'app::pages.xtts.app-xtts')
             ->middleware('app.tool.access:tts.standard')
             ->name('app.xtts');
+        Route::livewire('/app/f5tts', 'app::pages.f5tts.app-f5tts')
+            ->middleware('app.tool.access:ftts.standard')
+            ->name('app.f5tts');
         Route::livewire('/app/clone-xtts', 'app::pages.clone-xtts.app-clone-xtts')
             ->middleware('app.tool.access:clone_tts.standard')
             ->name('app.clone-xtts');
         Route::livewire('/app/wasr', 'app::pages.wasr.app-wasr')
             ->middleware('app.tool.access:asr.standard')
             ->name('app.wasr');
+        Route::livewire('/app/qasr', 'app::pages.qasr.app-qasr')
+            ->middleware('app.tool.access:qasr.standard')
+            ->name('app.qasr');
         Route::livewire('/app/stem', 'app::pages.stem.app-stem')
             ->middleware('app.tool.access:stem')
             ->name('app.stem');
@@ -179,6 +188,14 @@ Route::prefix('{locale}')
         ->middleware('app.tool.access:tts')
         ->name('app.renders.xtts.download');
 
+    Route::get('/app/renders/f5tts/{jobId}/stream', [F5ttsRenderController::class, 'stream'])
+        ->middleware('app.tool.access:ftts')
+        ->name('app.renders.f5tts.stream');
+
+    Route::get('/app/renders/f5tts/{jobId}/download', [F5ttsRenderController::class, 'download'])
+        ->middleware('app.tool.access:ftts')
+        ->name('app.renders.f5tts.download');
+
     Route::get('/app/xtts/speakers/{voiceCode}/preview', [XttsSpeakerAssetController::class, 'preview'])
         ->middleware('app.tool.access:tts')
         ->name('app.xtts.speaker.preview');
@@ -186,6 +203,14 @@ Route::prefix('{locale}')
     Route::get('/app/xtts/speakers/{voiceCode}/avatar', [XttsSpeakerAssetController::class, 'avatar'])
         ->middleware('app.tool.access:tts')
         ->name('app.xtts.speaker.avatar');
+
+    Route::get('/app/f5tts/speakers/{voiceCode}/preview', [F5ttsSpeakerAssetController::class, 'preview'])
+        ->middleware('app.tool.access:ftts')
+        ->name('app.f5tts.speaker.preview');
+
+    Route::get('/app/f5tts/speakers/{voiceCode}/avatar', [F5ttsSpeakerAssetController::class, 'avatar'])
+        ->middleware('app.tool.access:ftts')
+        ->name('app.f5tts.speaker.avatar');
 
     Route::get('/app/renders/clone-xtts/{jobId}/stream', [CloneXttsRenderController::class, 'Stream'])
         ->middleware('app.tool.access:clone_tts')
@@ -206,6 +231,18 @@ Route::prefix('{locale}')
     Route::get('/app/renders/wasr/{jobId}/input-audio', [WasrRenderController::class, 'inputAudio'])
         ->middleware('app.tool.access:asr')
         ->name('app.renders.wasr.input-audio');
+
+    Route::get('/app/renders/qasr/{jobId}/txt', [QasrRenderController::class, 'downloadTxt'])
+        ->middleware('app.tool.access:qasr.standard')
+        ->name('app.renders.qasr.txt');
+
+    Route::get('/app/renders/qasr/{jobId}/json', [QasrRenderController::class, 'downloadJson'])
+        ->middleware('app.tool.access:qasr.standard')
+        ->name('app.renders.qasr.json');
+
+    Route::get('/app/renders/qasr/{jobId}/input-audio', [QasrRenderController::class, 'inputAudio'])
+        ->middleware('app.tool.access:qasr.standard')
+        ->name('app.renders.qasr.input-audio');
 
     Route::get('/app/renders/stem/{jobId}/stream/{track}', [StemRenderController::class, 'stream'])
         ->middleware('app.tool.access:stem')

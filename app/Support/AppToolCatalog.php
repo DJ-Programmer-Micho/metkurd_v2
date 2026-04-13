@@ -20,7 +20,7 @@ class AppToolCatalog
     protected static array $actionMaps = [];
 
     /**
-     * @var array<int, array<string, string>>
+     * @var array<string, array<string, string>>
      */
     protected static array $voiceOptions = [];
 
@@ -121,29 +121,48 @@ class AppToolCatalog
      */
     public function voiceOptionsForPlan(int $planId): array
     {
+        return $this->voiceOptionsForPlanAndEngine($planId);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function voiceOptionsForPlanAndEngine(int $planId, ?string $engine = null): array
+    {
         if ($planId <= 0) {
             return [];
         }
 
-        if (array_key_exists($planId, self::$voiceOptions)) {
-            return self::$voiceOptions[$planId];
+        $normalizedEngine = strtolower(trim((string) $engine));
+        $cacheKey = $planId . '|' . ($normalizedEngine !== '' ? $normalizedEngine : '*');
+
+        if (array_key_exists($cacheKey, self::$voiceOptions)) {
+            return self::$voiceOptions[$cacheKey];
         }
 
         /** @var array<string, string> $voices */
         $voices = Cache::remember(
-            'plan-voice-options:' . $planId,
+            'plan-voice-options:' . $cacheKey,
             now()->addMinutes(15),
-            fn () => Voice::query()
-                ->select('voices.code', 'voices.name')
-                ->join('plan_voice_access as pva', 'pva.voice_id', '=', 'voices.id')
-                ->where('voices.is_active', true)
-                ->where('pva.is_active', true)
-                ->where('pva.service_plan_id', $planId)
-                ->orderBy('voices.sort_order')
-                ->pluck('voices.name', 'voices.code')
-                ->toArray()
+            function () use ($normalizedEngine, $planId): array {
+                $query = Voice::query()
+                    ->select('voices.code', 'voices.name')
+                    ->join('plan_voice_access as pva', 'pva.voice_id', '=', 'voices.id')
+                    ->where('voices.is_active', true)
+                    ->where('pva.is_active', true)
+                    ->where('pva.service_plan_id', $planId);
+
+                if ($normalizedEngine !== '') {
+                    $query->where('voices.meta->engine', $normalizedEngine);
+                }
+
+                return $query
+                    ->orderBy('voices.sort_order')
+                    ->pluck('voices.name', 'voices.code')
+                    ->toArray();
+            }
         );
 
-        return self::$voiceOptions[$planId] = $voices;
+        return self::$voiceOptions[$cacheKey] = $voices;
     }
 }

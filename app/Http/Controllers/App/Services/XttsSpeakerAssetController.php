@@ -5,12 +5,17 @@ namespace App\Http\Controllers\App\Services;
 use App\Http\Controllers\Controller;
 use App\Models\Voice;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class XttsSpeakerAssetController extends Controller
 {
+    protected string $previewFolder = 'xtts';
+
+    protected string $voiceAssetCachePrefix = 'xtts-speaker-asset:';
+
+    protected string $defaultAvatarPath = 'metkurd_audio_data/speaker-avatar.png';
+
     public function preview(Request $request, string $locale, string $voiceCode)
     {
         $voice = $this->voiceAssetData($voiceCode);
@@ -38,15 +43,14 @@ class XttsSpeakerAssetController extends Controller
     public function avatar(Request $request, string $locale, string $voiceCode)
     {
         $voice = $this->voiceAssetData($voiceCode);
-        $target = $this->avatarTarget($voice) ?: 'metkurd_audio_data/speaker-avatar.png';
+        $target = $this->avatarTarget($voice) ?: $this->defaultAvatarPath;
 
         if ($this->isExternalUrl($target)) {
             return redirect()->away($target);
         }
 
         if (!Storage::disk('s3')->exists($target)) {
-            // Log::warning('Speaker avatar not found on disk', ['target' => $target, 'voice_code' => $voiceCode]);
-            $target = 'metkurd_audio_data/speaker-avatar.png';
+            $target = $this->defaultAvatarPath;
         }
 
         abort_unless(Storage::disk('s3')->exists($target), 404, 'Avatar not available.');
@@ -64,7 +68,7 @@ class XttsSpeakerAssetController extends Controller
         abort_unless(auth('app')->check(), 404);
 
         return cache()->remember(
-            'xtts-speaker-asset:' . $voiceCode,
+            $this->voiceAssetCachePrefix . $voiceCode,
             now()->addMinutes(15),
             function () use ($voiceCode): array {
                 return Voice::query()
@@ -136,11 +140,11 @@ class XttsSpeakerAssetController extends Controller
             return $path;
         }
 
-        if (Str::startsWith($path, 'xtts/')) {
+        if (Str::startsWith($path, $this->previewFolder . '/')) {
             return 'metkurd_audio_data/' . $path;
         }
 
-        return 'metkurd_audio_data/xtts/' . $path;
+        return 'metkurd_audio_data/' . $this->previewFolder . '/' . $path;
     }
 
     protected function avatarTarget(array $voice): ?string
@@ -151,10 +155,8 @@ class XttsSpeakerAssetController extends Controller
             ->ltrim('/')
             ->value();
 
-        // Log::info('Determining avatar target for voice', ['voice_code' => $voice['code'] ?? null, 'avatar_meta' => $avatar]);    
         if ($avatar === '') {
-            // Log::info('No avatar specified for voice', ['voice_code' => $voice['code'] ?? null]);
-            return 'metkurd_audio_data/speaker-avatar.png';
+            return $this->defaultAvatarPath;
         }
 
         if ($this->isExternalUrl($avatar) || Str::startsWith($avatar, 'metkurd_audio_data/')) {

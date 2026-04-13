@@ -45,9 +45,11 @@ class extends Component
     {
         $this->toolRoots = [
             'tts'       => ['label' => __('Text to Speech'), 'icon' => 'ri-volume-up-line', 'color' => 'primary'],
+            'ftts'      => ['label' => __('F5 Text to Speech'), 'icon' => 'ri-speak-line', 'color' => 'info'],
             'clone-tts' => ['label' => __('Clone Speech'), 'icon' => 'ri-mic-line', 'color' => 'info'],
             'stem'      => ['label' => __('Stem Separation'), 'icon' => 'ri-equalizer-line', 'color' => 'success'],
             'wasr'      => ['label' => __('Speech to Text'), 'icon' => 'ri-file-text-line', 'color' => 'warning'],
+            'qasr'      => ['label' => __('QASR Speech to Text'), 'icon' => 'ri-file-text-line', 'color' => 'warning'],
             'ocr'       => ['label' => __('Optical Character Recognition'), 'icon' => 'ri-scan-2-line', 'color' => 'danger'],
         ];
 

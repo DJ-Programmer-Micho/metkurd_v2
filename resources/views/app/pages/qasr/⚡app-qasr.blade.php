@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -20,7 +20,7 @@ use App\Support\AppToolCatalog;
 use App\Services\Providers\RunPodProvider;
 use App\Services\Billing\CreditService;
 use App\Services\Storage\CustomerOutputStorage;
-use App\Services\ASR\AsrJobSyncService;
+use App\Services\ASR\QasrJobSyncService;
 use App\Services\Security\JobExecutionLockService;
 use App\Services\Media\AudioProbeService;
 
@@ -33,10 +33,9 @@ class extends Component
 
     protected $paginationTheme = 'bootstrap';
 
-    protected string $toolCode = 'wasr';
-    protected string $fallbackToolCode = 'asr';
+    protected string $toolCode = 'qasr';
     protected string $actionCode = 'standard';
-    protected string $fullActionCode = 'asr.standard';
+    protected string $fullActionCode = 'qasr.standard';
 
     #[Url(as: 'page', except: 1)]
     public int $page = 1;
@@ -57,12 +56,7 @@ class extends Component
     // =========================================================
     // Inputs
     // =========================================================
-    public string $language = 'ckb';
-
-    public int $chunkLengthS = 30;
-    public int $strideLeftS = 5;
-    public int $strideRightS = 5;
-    public int $beamSize = 5;
+    public string $modelVariant = 'fine_tuned';
 
     public $audioFile = null;
     public ?string $audioFileName = null;
@@ -91,10 +85,8 @@ class extends Component
     // =========================================================
     public int $transcriptionsRefreshKey = 0;
 
-    public array $languageOptions = [
-        'ckb' => 'Sorani Kurdish',
-        'ar'  => 'Arabic',
-        'en'  => 'English',
+    public array $modelVariantOptions = [
+        'fine_tuned' => 'Fine Tuned',
     ];
 
     // =========================================================
@@ -104,7 +96,7 @@ class extends Component
     {
         $this->syncWallet();
         $this->syncCostPreview();
-        $this->dismissedJobStatusFor = session('wasr.dismissed_job_status_for');
+        $this->dismissedJobStatusFor = session('qasr.dismissed_job_status_for');
         $this->hydrateCurrentJobFromDb();
         $this->hydrateLatestFinishedResult();
     }
@@ -112,8 +104,8 @@ class extends Component
     #[On('header:refresh')]
     #[On('customerPlanUpdated')]
     #[On('customerStorageUpdated')]
-    #[On('wasr-transcriptions-refresh')]
-    #[On('wasr-renders-refresh')]
+    #[On('qasr-transcriptions-refresh')]
+    #[On('qasr-renders-refresh')]
     #[On('asr-renders-refresh')]
     public function refreshUi(): void
     {
@@ -127,7 +119,7 @@ class extends Component
     // =========================================================
     // Watchers
     // =========================================================
-    public function updatedLanguage(): void
+    public function updatedModelVariant(): void
     {
         $this->syncCostPreview();
     }
@@ -171,51 +163,12 @@ class extends Component
         $this->audioHash = null;
         $this->creditsCost = 0;
 
-        $this->dispatch('wasr-audio-file-cleared');
+        $this->dispatch('qasr-audio-file-cleared');
     }
 
     // =========================================================
     // Computed
     // =========================================================
-    #[Computed]
-    public function sliders(): array
-    {
-        return [
-            [
-                'key'   => 'beamSize',
-                'label' => __('Beam Size'),
-                'min'   => 1,
-                'max'   => 20,
-                'step'  => 1,
-                'val'   => $this->beamSize,
-            ],
-            [
-                'key'   => 'chunkLengthS',
-                'label' => __('Chunk Length (s)'),
-                'min'   => 5,
-                'max'   => 120,
-                'step'  => 5,
-                'val'   => $this->chunkLengthS,
-            ],
-            [
-                'key'   => 'strideLeftS',
-                'label' => __('Stride Left (s)'),
-                'min'   => 0,
-                'max'   => 30,
-                'step'  => 1,
-                'val'   => $this->strideLeftS,
-            ],
-            [
-                'key'   => 'strideRightS',
-                'label' => __('Stride Right (s)'),
-                'min'   => 0,
-                'max'   => 30,
-                'step'  => 1,
-                'val'   => $this->strideRightS,
-            ],
-        ];
-    }
-
     #[Computed]
     public function canTranscribe(): bool
     {
@@ -264,11 +217,9 @@ class extends Component
             return MlJob::query()->whereRaw('1=0')->paginate(5);
         }
 
-        $toolIds = app(AppToolCatalog::class)->toolIds([$this->toolCode, $this->fallbackToolCode]);
-
         $paginator = MlJob::query()
             ->where('customer_id', $customerId)
-            ->when(!empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
+            ->when(app(AppToolCatalog::class)->toolId($this->toolCode), fn ($q, $toolId) => $q->where('tool_id', $toolId))
             ->whereIn('status', ['done', 'delete_failed', 'deleted'])
             ->orderByDesc('finished_at')
             ->paginate(5);
@@ -285,7 +236,7 @@ class extends Component
             return [
                 'id'              => $jobId,
                 'audio_name'      => data_get($j->input, 'audio_name', __('Uploaded Audio')),
-                'language'        => data_get($j->input, 'lang', 'ckb'),
+                'model_variant'   => data_get($j->input, 'model_variant', 'fine_tuned'),
                 'created_at'      => optional($j->finished_at ?? $j->created_at)->format('Y-m-d H:i'),
                 'text'            => $text,
                 'snippet'         => $snippet,
@@ -293,11 +244,11 @@ class extends Component
                 'char_count'      => (int) data_get($j->output, 'char_count', mb_strlen($text)),
                 'duration_mins'   => (float) data_get($j->input, 'audio_duration_min', 0),
                 'credits_charged' => (int) ($j->credits_charged ?? 0),
-                'download_url'    => route('app.renders.wasr.txt', [
+                'download_url'    => route('app.renders.qasr.txt', [
                     'locale' => $locale,
                     'jobId'  => $jobId,
                 ]),
-                'audio_url'       => route('app.renders.wasr.input-audio', [
+                'audio_url'       => route('app.renders.qasr.input-audio', [
                     'locale' => $locale,
                     'jobId'  => $jobId,
                 ]) . '?proxy=1',
@@ -336,7 +287,7 @@ class extends Component
             $this->creditsCost = (int) $c->priceCreditsFor($this->fullActionCode, [
                 'minutes'     => $this->audioBillableMin,
                 'metric_code' => 'minute',
-                'language'    => $this->language,
+                'model_variant' => $this->modelVariant,
             ]);
             return;
         }
@@ -380,11 +331,7 @@ class extends Component
     {
         return [
             'audioFile'     => 'required|file|mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac,audio/x-flac|max:102400',
-            'language'      => 'required|string|in:ckb,ar,en',
-            'chunkLengthS'  => 'required|integer|min:5|max:120',
-            'strideLeftS'   => 'required|integer|min:0|max:30',
-            'strideRightS'  => 'required|integer|min:0|max:30',
-            'beamSize'      => 'required|integer|min:1|max:20',
+            'modelVariant'  => 'required|string|in:fine_tuned',
         ];
     }
 
@@ -401,8 +348,7 @@ class extends Component
     protected function findToolAndAction(): array
     {
         $tool = Tool::query()
-            ->whereIn('code', [$this->toolCode, $this->fallbackToolCode])
-            ->orderByRaw("FIELD(code, 'wasr', 'asr')")
+            ->where('code', $this->toolCode)
             ->first();
 
         $action = ToolAction::query()
@@ -410,7 +356,7 @@ class extends Component
             ->first();
 
         if (!$tool || !$action) {
-            throw new \RuntimeException("Tool or ToolAction missing ({$this->toolCode}/{$this->fallbackToolCode} / {$this->fullActionCode}).");
+            throw new \RuntimeException("Tool or ToolAction missing ({$this->toolCode} / {$this->fullActionCode}).");
         }
 
         return [$tool, $action];
@@ -433,7 +379,7 @@ class extends Component
     {
         if ($this->currentJobId) {
             $this->dismissedJobStatusFor = $this->currentJobId;
-            session(['wasr.dismissed_job_status_for' => $this->currentJobId]);
+            session(['qasr.dismissed_job_status_for' => $this->currentJobId]);
         }
 
         $this->showJobStatus = false;
@@ -451,11 +397,9 @@ class extends Component
             return;
         }
 
-        $toolIds = app(AppToolCatalog::class)->toolIds([$this->toolCode, $this->fallbackToolCode]);
-
         $job = MlJob::query()
             ->where('customer_id', $customerId)
-            ->when(!empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
+            ->when(app(AppToolCatalog::class)->toolId($this->toolCode), fn ($q, $toolId) => $q->where('tool_id', $toolId))
             ->where(function ($q) {
                 $q->where(function ($q1) {
                     $q1->whereIn('status', ['queued', 'running', 'saving'])
@@ -528,11 +472,9 @@ class extends Component
             return;
         }
 
-        $toolIds = app(AppToolCatalog::class)->toolIds([$this->toolCode, $this->fallbackToolCode]);
-
         $job = MlJob::query()
             ->where('customer_id', $customerId)
-            ->when(!empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
+            ->when(app(AppToolCatalog::class)->toolId($this->toolCode), fn ($q, $toolId) => $q->where('tool_id', $toolId))
             ->where('status', 'done')
             ->orderByDesc('finished_at')
             ->first();
@@ -549,7 +491,7 @@ class extends Component
     // =========================================================
     // Actions
     // =========================================================
-    public function postWasr(
+    public function postQasr(
         RunPodProvider $runpod,
         CreditService $credits,
         CustomerOutputStorage $storage,
@@ -574,7 +516,7 @@ class extends Component
         [$tool, $action] = $this->findToolAndAction();
 
         if (method_exists($customer, 'isAllowed') && !$customer->isAllowed($action->full_code)) {
-            $this->dispatch('alert', type: 'error', message: __('Your plan does not allow WASR.'));
+            $this->dispatch('alert', type: 'error', message: __('Your plan does not allow QASR.'));
             return;
         }
 
@@ -590,7 +532,7 @@ class extends Component
                 'tool_action'  => $action->full_code,
                 'minutes'      => $this->audioBillableMin,
                 'seconds'      => $this->audioDurationSec,
-                'language'     => $this->language,
+                'model_variant' => $this->modelVariant,
             ]);
         } catch (\Throwable $e) {
             $this->syncWallet();
@@ -606,7 +548,7 @@ class extends Component
             $folder = $this->currentFolderForCustomer($customerFresh);
 
             $audioExt = strtolower((string) ($this->audioExt ?: $this->audioFile?->getClientOriginalExtension() ?: 'wav'));
-            $audioKey = "renders/{$folder}/wasr/{$jobId}/input.{$audioExt}";
+            $audioKey = "renders/{$folder}/qasr/{$jobId}/audio.wav";
 
             DB::transaction(function () use ($jobId, $tool, $action, $customer) {
                 MlJob::create([
@@ -614,18 +556,14 @@ class extends Component
                     'customer_id'      => (int) $customer->id,
                     'tool_id'          => (int) $tool->id,
                     'tool_action_id'   => (int) $action->id,
-                    'job_kind'         => 'wasr',
+                    'job_kind'         => 'qasr',
                     'status'           => 'queued',
                     'provider'         => 'runpod',
                     'provider_job_id'  => null,
                     'input_hash'       => $this->audioHash,
                     'credits_charged'  => (int) $this->creditsCost,
                     'input'            => [
-                        'lang'               => $this->language,
-                        'chunk_length_s'     => $this->chunkLengthS,
-                        'stride_left_s'      => $this->strideLeftS,
-                        'stride_right_s'     => $this->strideRightS,
-                        'beam_size'          => $this->beamSize,
+                        'model_variant'      => $this->modelVariant,
                         'audio_name'         => $this->audioFileName,
                         'audio_mime'         => $this->audioFileMime,
                         'audio_bytes'        => $this->audioFileBytes,
@@ -648,7 +586,7 @@ class extends Component
                 $audioKey,
                 [
                     'job_id'        => $jobId,
-                    'tool'          => 'wasr',
+                    'tool'          => 'qasr',
                     'purpose'       => 'input_audio',
                     'role'          => 'source_audio',
                     'checksum'      => $this->audioHash,
@@ -676,7 +614,8 @@ class extends Component
                 (string) $this->audioHash,
                 request()->session(),
                 request()->userAgent(),
-                request()->ip()
+                request()->ip(),
+                'qasr'
             );
 
             if (!($lock['ok'] ?? false)) {
@@ -685,24 +624,19 @@ class extends Component
 
             $endpointId = (string) (
                 data_get($tool->meta, 'runpod_endpoint_id')
-                ?: config('runpod.endpoints.wasr')
-                ?: env('RUNPOD_ENDPOINT_ID_WASR')
+                ?: config('runpod.endpoints.qasr')
+                ?: env('RUNPOD_ENDPOINT_ID_QASR')
             );
 
             if ($endpointId === '') {
-                throw new \RuntimeException(__('RUNPOD_ENDPOINT_ID_WASR is missing.'));
+                throw new \RuntimeException(__('RUNPOD_ENDPOINT_ID_QASR is missing.'));
             }
 
             $timeout = (int) (data_get($tool->meta, 'runpod_timeout') ?: config('runpod.timeout', 60));
 
             $resp = $runpod->run($endpointId, [
-                'audio_url'       => $audioUrl,
-                'audio_ext'       => $audioExt,
-                'lang'            => $this->language,
-                'chunk_length_s'  => (int) $this->chunkLengthS,
-                'stride_left_s'   => (int) $this->strideLeftS,
-                'stride_right_s'  => (int) $this->strideRightS,
-                'beam_size'       => (int) $this->beamSize,
+                'audio_url'      => $audioUrl,
+                'model_variant'  => $this->modelVariant,
             ], $timeout);
 
             $providerJobId = (string) data_get($resp, 'id', '');
@@ -726,13 +660,13 @@ class extends Component
             $this->dispatch('header:refresh');
             $this->dispatch('customerPlanUpdated');
             $this->dispatch('customerStorageUpdated');
-            $this->dispatch('wasr-transcriptions-refresh');
-            $this->dispatch('wasr-renders-refresh');
-            $this->dispatch('alert', type: 'info', message: __('WASR job started.'));
+            $this->dispatch('qasr-transcriptions-refresh');
+            $this->dispatch('qasr-renders-refresh');
+            $this->dispatch('alert', type: 'info', message: __('QASR job started.'));
 
             $this->syncWallet();
         } catch (\Throwable $e) {
-            Log::warning('WASR_START_FAIL', [
+            Log::warning('QASR_START_FAIL', [
                 'job_id' => $jobId,
                 'error'  => $e->getMessage(),
             ]);
@@ -746,7 +680,7 @@ class extends Component
                     );
                 }
             } catch (\Throwable $cleanup) {
-                Log::warning('WASR_START_CLEANUP_FAIL', [
+                Log::warning('QASR_START_CLEANUP_FAIL', [
                     'job_id' => $jobId,
                     'error'  => $cleanup->getMessage(),
                 ]);
@@ -767,7 +701,7 @@ class extends Component
         }
     }
 
-    public function pollJob(AsrJobSyncService $sync): void
+    public function pollJob(QasrJobSyncService $sync): void
     {
         if (!$this->currentJobId) {
             return;
@@ -798,8 +732,8 @@ class extends Component
 
                 $this->dispatch('customerPlanUpdated');
                 $this->dispatch('customerStorageUpdated');
-                $this->dispatch('wasr-transcriptions-refresh');
-                $this->dispatch('wasr-renders-refresh');
+                $this->dispatch('qasr-transcriptions-refresh');
+                $this->dispatch('qasr-renders-refresh');
                 $this->dispatch('header:refresh');
                 $this->dispatch('alert', type: 'success', message: __('Transcription completed.'));
             }
@@ -813,7 +747,7 @@ class extends Component
                 $this->dispatch('alert', type: 'error', message: $msg);
             }
         } catch (\Throwable $e) {
-            Log::warning('WASR_POLL_FAIL', [
+            Log::warning('QASR_POLL_FAIL', [
                 'job_id' => $this->currentJobId,
                 'error'  => $e->getMessage(),
             ]);
@@ -827,7 +761,7 @@ class extends Component
             return;
         }
 
-        $this->dispatch('wasr-copy-text', text: $this->transcriptionText);
+        $this->dispatch('qasr-copy-text', text: $this->transcriptionText);
         $this->dispatch('alert', type: 'success', message: __('Transcription copied.'));
     }
 
@@ -874,7 +808,7 @@ class extends Component
                     $storage->deleteFromS3AndUncount((int) $customerId, $audioPath, $audioBytes);
                 }
             } catch (\Throwable $e) {
-                Log::warning('WASR_ELIMINATE_AUDIO_DELETE_FAIL', [
+                Log::warning('QASR_ELIMINATE_AUDIO_DELETE_FAIL', [
                     'job_id' => (string) $job->id,
                     'path'   => $audioPath,
                     'error'  => $e->getMessage(),
@@ -892,12 +826,12 @@ class extends Component
         $this->currentProgress = 0;
 
         $this->dispatch('header:refresh');
-        $this->dispatch('wasr-transcriptions-refresh');
-        $this->dispatch('wasr-renders-refresh');
-        $this->dispatch('alert', type: 'warning', message: __('Current WASR job eliminated. Credits were not refunded.'));
+        $this->dispatch('qasr-transcriptions-refresh');
+        $this->dispatch('qasr-renders-refresh');
+        $this->dispatch('alert', type: 'warning', message: __('Current QASR job eliminated. Credits were not refunded.'));
     }
 
-    public function deleteTranscription(string $jobId, AsrJobSyncService $sync): void
+    public function deleteTranscription(string $jobId, QasrJobSyncService $sync): void
     {
         $job = MlJob::query()
             ->where('id', $jobId)
@@ -913,8 +847,8 @@ class extends Component
 
         $this->dispatch('customerStorageUpdated');
         $this->dispatch('header:refresh');
-        $this->dispatch('wasr-transcriptions-refresh');
-        $this->dispatch('wasr-renders-refresh');
+        $this->dispatch('qasr-transcriptions-refresh');
+        $this->dispatch('qasr-renders-refresh');
         $this->dispatch('alert', type: 'success', message: __('Transcription deleted.'));
     }
 
@@ -922,25 +856,21 @@ class extends Component
     {
         $this->removeAudioFile();
 
-        $this->language = 'ckb';
-        $this->chunkLengthS = 30;
-        $this->strideLeftS = 5;
-        $this->strideRightS = 5;
-        $this->beamSize = 5;
+        $this->modelVariant = 'fine_tuned';
 
-        $this->dispatch('wasr-form-reset');
+        $this->dispatch('qasr-form-reset');
     }
 
     public function render()
     {
-        return view('app.pages.wasr.⚡app-wasr');
+        return view('app.pages.qasr.⚡app-qasr');
     }
 };
 ?>
 
-<x-slot:title>{{ __('Speech to Text') }} | {{ __('MET KURD') }}</x-slot:title>
+<x-slot:title>{{ __('QASR') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div id="wasr-page-root">
+<div id="qasr-page-root">
     @if($currentJobId && !$jobFinished)
         <div wire:poll.visible.7000ms="pollJob"></div>
     @endif
@@ -1008,8 +938,8 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                             <div>
-                                <strong>{{ __('WASR (WELL AUTOMATIC-SPEECH-RECOGNITION)') }}</strong>
-                                <div class="text-muted small">{{ __('Upload your audio and generate a full transcription') }}</div>
+                                <strong>{{ __('QASR (QWEN AUTOMATIC-SPEECH-RECOGNITION)') }}</strong>
+                                <div class="text-muted small">{{ __('Upload your audio and generate a full transcription with the Qwen ASR engine') }}</div>
                             </div>
 
                             <div class="d-flex gap-2 flex-wrap text-end small">
@@ -1046,7 +976,7 @@ class extends Component
                                 <div wire:ignore>
                                     <input
                                         type="file"
-                                        id="wasr-audio-pond"
+                                        id="qasr-audio-pond"
                                         accept=".wav,.mp3,.m4a,.aac,.ogg,.flac,.webm,audio/*"
                                     >
                                 </div>
@@ -1095,87 +1025,38 @@ class extends Component
 
                             <div class="row g-3 align-items-end mb-1">
                                 <div class="col-md-6">
-                                    <label class="form-label">{{ __('Language') }}</label>
-                                    <select class="form-select" wire:model.change="language">
-                                        @foreach($languageOptions as $code => $label)
+                                    <label class="form-label">{{ __('Model Variant') }}</label>
+                                    <select class="form-select" wire:model.change="modelVariant">
+                                        @foreach($modelVariantOptions as $code => $label)
                                             <option value="{{ $code }}">{{ __($label) }}</option>
                                         @endforeach
                                     </select>
-                                    @error('language')
+                                    @error('modelVariant')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
                                     @enderror
                                 </div>
                             </div>
 
-                            <div class="row g-3 mt-1">
-                                @foreach($this->sliders as $s)
-                                    <div
-                                        class="col-md-6"
-                                        wire:key="wasr-slider-{{ $s['key'] }}"
-                                        x-data="{
-                                            key: '{{ $s['key'] }}',
-                                            val: @js($s['val']),
-                                            min: {{ $s['min'] }},
-                                            max: {{ $s['max'] }},
-                                            step: {{ $s['step'] }},
-                                            debounceTimer: null,
-                                            updateLivewire(v) {
-                                                clearTimeout(this.debounceTimer);
-                                                this.debounceTimer = setTimeout(() => {
-                                                    $wire.set(this.key, this.step < 1 ? parseFloat(v) : parseInt(v));
-                                                }, 180);
-                                            },
-                                            get displayVal() {
-                                                return parseFloat(this.val).toFixed(this.step < 1 ? 2 : 0);
-                                            }
-                                        }"
-                                    >
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <label class="form-label mb-1">{{ $s['label'] }}</label>
-                                            <span class="badge text-bg-light tts-badge" x-text="displayVal"></span>
-                                        </div>
-
-                                        <div class="d-flex justify-content-between small text-muted" style="margin-top:-2px;">
-                                            <span>{{ $s['min'] }}</span>
-                                            <span>{{ $s['max'] }}</span>
-                                        </div>
-
-                                        <div class="position-relative">
-                                            <input
-                                                type="range"
-                                                class="form-range tts-range"
-                                                :min="min"
-                                                :max="max"
-                                                :step="step"
-                                                x-model="val"
-                                                @input="updateLivewire($event.target.value)"
-                                            />
-                                        </div>
-
-                                        @error($s['key'])
-                                            <div class="text-danger small">{{ $message }}</div>
-                                        @enderror
-                                    </div>
-                                @endforeach
-                            </div>
-
                             @if($audioDurationMin && $creditsCost > 0)
-                                <div class="wasr-cost-preview rounded-3 p-3 mt-3 small">
-                                                | {{ __('Duration: :minutes min', ['minutes' => number_format((float) $audioDurationMin, 2)]) }}
+                                <div class="qasr-cost-preview rounded-3 p-3 mt-3 small">
+                                    {{ __('This Qwen ASR request will transcribe about :minutes billable minute(s) using the :variant model.', [
+                                        'minutes' => number_format((float) $audioDurationMin, 2),
+                                        'variant' => __($modelVariantOptions[$modelVariant] ?? $modelVariant),
+                                    ]) }}
                                 </div>
                             @endif
 
                             <div class="d-flex gap-2 mt-4 flex-wrap">
                                 <button
                                     class="btn {{ $this->canTranscribe ? 'btn-primary' : 'btn-danger' }}"
-                                    wire:click="postWasr"
+                                    wire:click="postQasr"
                                     wire:loading.attr="disabled"
-                                    wire:target="postWasr,audioFile"
+                                    wire:target="postQasr,audioFile"
                                     @disabled(!$this->canTranscribe)
                                     type="button"
-                                    id="btn-wasr-transcribe"
+                                    id="btn-qasr-transcribe"
                                 >
-                                    <span wire:loading.remove wire:target="postWasr,audioFile">
+                                    <span wire:loading.remove wire:target="postQasr,audioFile">
                                         {{ $this->canTranscribe ? __('Transcribe') : ($this->transcribeBlockedReason ?? __('Transcribe')) }}
                                     </span>
 
@@ -1184,7 +1065,7 @@ class extends Component
                                         {{ __('Uploading audio...') }}
                                     </span>
 
-                                    <span wire:loading wire:target="postWasr">
+                                    <span wire:loading wire:target="postQasr">
                                         <span class="spinner-border spinner-border-sm me-1"></span>
                                         {{ __('Starting...') }}
                                     </span>
@@ -1240,10 +1121,10 @@ class extends Component
 
                         <div class="card-body">
                             @if($transcriptionText !== '')
-                                <div class="wasr-latest-panel mb-4">
+                                <div class="qasr-latest-panel mb-4">
                                     <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
                                         <div>
-                                            <div class="wasr-section-caption">{{ __('Latest Result') }}</div>
+                                            <div class="qasr-section-caption">{{ __('Latest Result') }}</div>
                                             <div class="fw-semibold">{{ __('Ready to copy or export') }}</div>
                                         </div>
 
@@ -1255,7 +1136,7 @@ class extends Component
 
                                                 <a
                                                     class="btn btn-sm btn-outline-success"
-                                                    href="{{ route('app.renders.wasr.txt', ['locale' => app()->getLocale(), 'jobId' => $latestFinishedJobId]) }}"
+                                                    href="{{ route('app.renders.qasr.txt', ['locale' => app()->getLocale(), 'jobId' => $latestFinishedJobId]) }}"
                                                 >
                                                     {{ __('Download TXT') }}
                                                 </a>
@@ -1263,7 +1144,7 @@ class extends Component
                                         @endif
                                     </div>
 
-                                    <div class="wasr-output-text rounded-3 p-3 text-right">
+                                    <div class="qasr-output-text rounded-3 p-3 text-right">
                                         {{ $transcriptionText }}
                                     </div>
                                 </div>
@@ -1271,7 +1152,7 @@ class extends Component
 
                             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                                 <div>
-                                    <div class="wasr-section-caption">{{ __('History') }}</div>
+                                    <div class="qasr-section-caption">{{ __('History') }}</div>
                                     <div class="small text-muted">
                                         {{ $this->transcriptions->count() }}
                                         {{ $this->transcriptions->count() === 1 ? 'transcription' : 'transcriptions' }}
@@ -1281,16 +1162,16 @@ class extends Component
                             </div>
 
                             @if($this->transcriptions->count() === 0)
-                                <div class="wasr-empty-state text-center">
+                                <div class="qasr-empty-state text-center">
                                     <div class="fw-semibold mb-1">{{ __('No transcriptions yet') }}</div>
                                     <div class="small text-muted">{{ __('Upload an audio file and your transcription history will appear here.') }}</div>
                                 </div>
                             @else
                                 @foreach($this->transcriptions as $r)
                                     <div
-                                        class="render-card wasr-transcript-item {{ $r['is_latest'] ? 'wasr-transcript-item--latest' : '' }} mb-1 p-1 rounded-3 border"
-                                        wire:key="wasr-render-{{ $r['id'] }}"
-                                        id="wasr-render-card-{{ $r['id'] }}"
+                                        class="render-card qasr-transcript-item {{ $r['is_latest'] ? 'qasr-transcript-item--latest' : '' }} mb-1 p-1 rounded-3 border"
+                                        wire:key="qasr-render-{{ $r['id'] }}"
+                                        id="qasr-render-card-{{ $r['id'] }}"
                                     >
                                         <div class="d-flex justify-content-between align-items-start gap-3 p-1 border">
                                             <div class="min-w-0 flex-grow-1">
@@ -1301,12 +1182,12 @@ class extends Component
                                                         <span class="badge text-bg-primary">{{ __('Latest') }}</span>
                                                     @endif
 
-                                                    <span class="badge wasr-badge-credits">
-                                                        {{ strtoupper($r['language']) }}
+                                                    <span class="badge qasr-badge-credits">
+                                                        {{ strtoupper(str_replace('_', ' ', $r['model_variant'])) }}
                                                     </span>
                                                 </div>
 
-                                                <div class="wasr-transcript-meta small text-muted mt-2">
+                                                <div class="qasr-transcript-meta small text-muted mt-2">
                                                     {{ $r['created_at'] }}
                                                     @if($r['duration_mins'] > 0)
                                                         | {{ __('Duration: :minutes min', ['minutes' => number_format((float) $r['duration_mins'], 2)]) }}
@@ -1319,13 +1200,13 @@ class extends Component
                                                     @endif
                                                 </div>
                                                     @if(!empty($r['audio_url']))
-                                                        <div class="wasr-audio-panel mt-3" wire:ignore>
+                                                        <div class="qasr-audio-panel mt-3" wire:ignore>
                                                             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-                                                                <span class="small text-muted" id="wasr-time-{{ $r['id'] }}">--:-- / --:--</span>
+                                                                <span class="small text-muted" id="qasr-time-{{ $r['id'] }}">--:-- / --:--</span>
 
                                                                 <div class="btn-group btn-group-sm">
                                                                     <button type="button"
-                                                                            class="btn btn-outline-primary btn-wasr-preview"
+                                                                            class="btn btn-outline-primary btn-qasr-preview"
                                                                             data-job="{{ $r['id'] }}"
                                                                             data-url="{{ $r['audio_url'] }}"
                                                                             data-latest="{{ $r['is_latest'] ? '1' : '0' }}"
@@ -1334,16 +1215,16 @@ class extends Component
                                                                     </button>
 
                                                                     <button type="button"
-                                                                            class="btn btn-outline-secondary btn-wasr-stop"
+                                                                            class="btn btn-outline-secondary btn-qasr-stop"
                                                                             data-job="{{ $r['id'] }}">
                                                                         <i class="fa fa-stop me-1"></i> {{ __('Stop') }}
                                                                     </button>
                                                                 </div>
                                                             </div>
 
-                                                            <div id="wasr-wrap-{{ $r['id'] }}" class="mt-1">
-                                                                <div id="wasr-ph-{{ $r['id'] }}" class="border rounded bg-dark" style="height:90px; opacity:.25;"></div>
-                                                                <div id="wasr-wave-{{ $r['id'] }}" class="border rounded" style="height:90px; display:none;"></div>
+                                                            <div id="qasr-wrap-{{ $r['id'] }}" class="mt-1">
+                                                                <div id="qasr-ph-{{ $r['id'] }}" class="border rounded bg-dark" style="height:90px; opacity:.25;"></div>
+                                                                <div id="qasr-wave-{{ $r['id'] }}" class="border rounded" style="height:90px; display:none;"></div>
                                                             </div>
 
                                                             <a class="btn btn-sm btn-outline-success" href="{{ $r['download_url'] }}">
@@ -1360,9 +1241,9 @@ class extends Component
                                                             </button>
                                                         </div>
                                                     @endif
-                                                <div class="wasr-snippet-wrap mt-3">
-                                                    <div class="wasr-section-caption mb-2">{{ __('Transcript Preview') }}</div>
-                                                    <div class="wasr-snippet small">
+                                                <div class="qasr-snippet-wrap mt-3">
+                                                    <div class="qasr-section-caption mb-2">{{ __('Transcript Preview') }}</div>
+                                                    <div class="qasr-snippet small">
                                                         {{ $r['snippet'] }}
                                                     </div>
                                                 </div>
@@ -1424,12 +1305,12 @@ class extends Component
 <link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet">
 
 <style>
-    .wasr-cost-preview{
+    .qasr-cost-preview{
         background: rgba(var(--bs-warning-rgb), .08);
         border: 1px solid rgba(var(--bs-warning-rgb), .22);
     }
 
-    .wasr-section-caption{
+    .qasr-section-caption{
         font-size: .72rem;
         font-weight: 700;
         letter-spacing: .08em;
@@ -1437,14 +1318,14 @@ class extends Component
         color: var(--bs-secondary-color);
     }
 
-    .wasr-latest-panel{
+    .qasr-latest-panel{
         padding: 1rem;
         border-radius: 1rem;
         background: linear-gradient(180deg, rgba(var(--bs-primary-rgb), .08), rgba(var(--bs-info-rgb), .04));
         border: 1px solid rgba(var(--bs-primary-rgb), .16);
     }
 
-    .wasr-output-text{
+    .qasr-output-text{
         background: rgba(var(--bs-body-color-rgb), .03);
         border: 1px solid rgba(var(--bs-body-color-rgb), .08);
         font-size: .95rem;
@@ -1458,14 +1339,14 @@ class extends Component
         unicode-bidi: plaintext;
     }
 
-    .wasr-empty-state{
+    .qasr-empty-state{
         padding: 1.25rem;
         border-radius: 1rem;
         border: 1px dashed rgba(var(--bs-body-color-rgb), .18);
         background: rgba(var(--bs-body-color-rgb), .02);
     }
 
-    .wasr-transcript-item{
+    .qasr-transcript-item{
         border-radius: 1rem;
         border: 1px solid rgba(var(--bs-body-color-rgb), .09) !important;
         background: linear-gradient(180deg, rgba(var(--bs-body-bg-rgb), .96), rgba(var(--bs-primary-rgb), .03));
@@ -1473,37 +1354,37 @@ class extends Component
         transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
     }
 
-    .wasr-transcript-item:hover{
+    .qasr-transcript-item:hover{
         transform: translateY(-2px);
         background: linear-gradient(180deg, rgba(var(--bs-body-bg-rgb), .98), rgba(var(--bs-primary-rgb), .05));
         border-color: rgba(var(--bs-primary-rgb), .22) !important;
         box-shadow: 0 14px 30px rgba(0, 0, 0, .07);
     }
 
-    .wasr-transcript-item--latest{
+    .qasr-transcript-item--latest{
         border-color: rgba(var(--bs-primary-rgb), .28) !important;
         box-shadow: inset 3px 0 0 var(--bs-primary), 0 14px 30px rgba(13, 110, 253, .08);
     }
 
-    .wasr-transcript-meta{
+    .qasr-transcript-meta{
         line-height: 1.75;
     }
 
-    .wasr-audio-panel{
+    .qasr-audio-panel{
         padding: .9rem;
         border-radius: 1rem;
         background: rgba(var(--bs-body-color-rgb), .025);
         border: 1px solid rgba(var(--bs-body-color-rgb), .08);
     }
 
-    .wasr-snippet-wrap{
+    .qasr-snippet-wrap{
         padding: 1rem;
         border-radius: 1rem;
         background: rgba(var(--bs-primary-rgb), .04);
         border: 1px solid rgba(var(--bs-primary-rgb), .12);
     }
 
-    .wasr-snippet{
+    .qasr-snippet{
         line-height: 1.7;
         /* white-space: pre-line; */
         font-family: 'Montserrat';
@@ -1512,15 +1393,15 @@ class extends Component
         unicode-bidi: plaintext;
     }
 
-    .wasr-actions{
+    .qasr-actions{
         min-width: 140px;
     }
 
-    .wasr-actions .btn{
+    .qasr-actions .btn{
         width: 100%;
     }
 
-    .wasr-badge-credits{
+    .qasr-badge-credits{
         background: rgba(var(--bs-warning-rgb), .18);
         color: var(--bs-warning-text-emphasis);
         border: 1px solid rgba(var(--bs-warning-rgb), .24);
@@ -1543,8 +1424,8 @@ class extends Component
 (function () {
     'use strict';
 
-    if (!window.__WASR_POND__) {
-        window.__WASR_POND__ = {
+    if (!window.__QASR_POND__) {
+        window.__QASR_POND__ = {
             pond: null,
             listenersBound: false,
             livewireBound: false,
@@ -1555,8 +1436,8 @@ class extends Component
         };
     }
 
-    const S = window.__WASR_POND__;
-    const FORM_KEY = 'wasr_form_state_v2';
+    const S = window.__QASR_POND__;
+    const FORM_KEY = 'qasr_form_state_v2';
     const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
 
     if (!S.pluginsRegistered) {
@@ -1567,10 +1448,10 @@ class extends Component
         S.pluginsRegistered = true;
     }
 
-    function getWasrComponent() {
+    function getQasrComponent() {
         if (!window.Livewire) return null;
 
-        const root = document.getElementById('wasr-page-root');
+        const root = document.getElementById('qasr-page-root');
         if (!root) return null;
 
         const wireId = root.getAttribute('wire:id');
@@ -1602,15 +1483,11 @@ class extends Component
 
     function formSave() {
         try {
-            const lw = getWasrComponent();
+            const lw = getQasrComponent();
             if (!lw || typeof lw.get !== 'function') return;
 
             localStorage.setItem(FORM_KEY, JSON.stringify({
-                language: lw.get('language') ?? 'ckb',
-                chunkLengthS: safeInt(lw.get('chunkLengthS'), 30),
-                strideLeftS: safeInt(lw.get('strideLeftS'), 5),
-                strideRightS: safeInt(lw.get('strideRightS'), 5),
-                beamSize: safeInt(lw.get('beamSize'), 5),
+                modelVariant: lw.get('modelVariant') ?? 'fine_tuned',
                 ts: Date.now(),
             }));
         } catch (_) {}
@@ -1643,22 +1520,18 @@ class extends Component
         const saved = formLoad();
         if (!saved) return;
 
-        const lw = getWasrComponent();
+        const lw = getQasrComponent();
         if (!lw || typeof lw.set !== 'function') return;
 
         try {
-            lw.set('language', saved.language ?? 'ckb');
-            lw.set('chunkLengthS', safeInt(saved.chunkLengthS, 30));
-            lw.set('strideLeftS', safeInt(saved.strideLeftS, 5));
-            lw.set('strideRightS', safeInt(saved.strideRightS, 5));
-            lw.set('beamSize', safeInt(saved.beamSize, 5));
+            lw.set('modelVariant', saved.modelVariant ?? 'fine_tuned');
         } catch (_) {}
     }
 
     function watchAndPersistForm() {
         if (S.formWatchBoot) return;
 
-        const lw = getWasrComponent();
+        const lw = getQasrComponent();
         if (!lw || typeof lw.$watch !== 'function') return;
 
         S.formWatchBoot = true;
@@ -1670,11 +1543,7 @@ class extends Component
         };
 
         [
-            'language',
-            'chunkLengthS',
-            'strideLeftS',
-            'strideRightS',
-            'beamSize',
+            'modelVariant',
         ].forEach((field) => {
             try {
                 lw.$watch(field, debouncedSave);
@@ -1683,12 +1552,12 @@ class extends Component
     }
 
     function bootPond() {
-        const input = document.getElementById('wasr-audio-pond');
+        const input = document.getElementById('qasr-audio-pond');
         if (!input) return;
 
         destroyPond();
 
-        const lw = getWasrComponent();
+        const lw = getQasrComponent();
         if (!lw) return;
 
         S.pond = FilePond.create(input, {
@@ -1747,7 +1616,7 @@ class extends Component
         });
     }
 
-    function bootWasrFilePondPage() {
+    function bootQasrFilePondPage() {
         if (S.bootTimer) {
             clearTimeout(S.bootTimer);
         }
@@ -1763,8 +1632,8 @@ class extends Component
     if (!S.listenersBound) {
         S.listenersBound = true;
 
-        document.addEventListener('livewire:initialized', bootWasrFilePondPage);
-        document.addEventListener('livewire:navigated', bootWasrFilePondPage);
+        document.addEventListener('livewire:initialized', bootQasrFilePondPage);
+        document.addEventListener('livewire:navigated', bootQasrFilePondPage);
         document.addEventListener('livewire:navigating', () => {
             formSave();
             S.formWatchBoot = false;
@@ -1775,20 +1644,20 @@ class extends Component
     if (window.Livewire && !S.livewireBound) {
         S.livewireBound = true;
 
-        Livewire.on('wasr-audio-file-cleared', () => {
+        Livewire.on('qasr-audio-file-cleared', () => {
             if (S.pond) {
                 try { S.pond.removeFiles(); } catch (_) {}
             }
         });
 
-        Livewire.on('wasr-form-reset', () => {
+        Livewire.on('qasr-form-reset', () => {
             if (S.pond) {
                 try { S.pond.removeFiles(); } catch (_) {}
             }
             formClear();
         });
 
-        Livewire.on('wasr-copy-text', (e) => {
+        Livewire.on('qasr-copy-text', (e) => {
             const text = e?.text || '';
             if (!text) return;
             navigator.clipboard?.writeText(text).catch(() => {});
@@ -1801,7 +1670,7 @@ class extends Component
                 succeed(() => {
                     requestAnimationFrame(() => {
                         formSave();
-                        const input = document.getElementById('wasr-audio-pond');
+                        const input = document.getElementById('qasr-audio-pond');
                         if (input && !S.pond) {
                             bootPond();
                         }
@@ -1811,7 +1680,7 @@ class extends Component
         }
     }
 
-    bootWasrFilePondPage();
+    bootQasrFilePondPage();
 })();
 </script>
 @endpush
@@ -1822,11 +1691,11 @@ class extends Component
 (function () {
     'use strict';
 
-    if (!window.__WASR_WAVE__) {
-        window.__WASR_WAVE__ = {};
+    if (!window.__QASR_WAVE__) {
+        window.__QASR_WAVE__ = {};
     }
 
-    const S = window.__WASR_WAVE__;
+    const S = window.__QASR_WAVE__;
 
     S.previewWS = S.previewWS || new Map();
     S.previewMeta = S.previewMeta || new Map();
@@ -1836,7 +1705,7 @@ class extends Component
     S.listenersBound = S.listenersBound || false;
     S.bootTimer = S.bootTimer || null;
 
-    const CACHE_NAME = 'wasr-audio-v1';
+    const CACHE_NAME = 'qasr-audio-v1';
     const CACHE_MAX = 30;
     const PRELOAD_LIMIT = 10;
 
@@ -1961,13 +1830,13 @@ class extends Component
 
         S.previewMeta.delete(jobId);
 
-        const wave = document.getElementById('wasr-wave-' + jobId);
+        const wave = document.getElementById('qasr-wave-' + jobId);
         if (wave) {
             wave.innerHTML = '';
             wave.style.display = 'none';
         }
 
-        const ph = document.getElementById('wasr-ph-' + jobId);
+        const ph = document.getElementById('qasr-ph-' + jobId);
         if (ph) {
             ph.style.display = '';
         }
@@ -1975,7 +1844,7 @@ class extends Component
 
     function cleanupOrphanPreviews() {
         S.previewWS.forEach((_, jobId) => {
-            if (!document.getElementById('wasr-wave-' + jobId)) {
+            if (!document.getElementById('qasr-wave-' + jobId)) {
                 destroyPreview(jobId);
             }
         });
@@ -1990,9 +1859,9 @@ class extends Component
             return null;
         }
 
-        const ph = document.getElementById('wasr-ph-' + jobId);
-        const wave = document.getElementById('wasr-wave-' + jobId);
-        const time = document.getElementById('wasr-time-' + jobId);
+        const ph = document.getElementById('qasr-ph-' + jobId);
+        const wave = document.getElementById('qasr-wave-' + jobId);
+        const time = document.getElementById('qasr-time-' + jobId);
 
         if (!wave || !url) return null;
 
@@ -2021,7 +1890,7 @@ class extends Component
         });
 
         ws.on('error', (error) => {
-            console.error('[WASR] WaveSurfer error', jobId, error);
+            console.error('[QASR] WaveSurfer error', jobId, error);
         });
 
         (async () => {
@@ -2029,7 +1898,7 @@ class extends Component
                 const blobUrl = await getBlobUrl(jobId, url);
                 ws.load(blobUrl);
             } catch (error) {
-                console.warn('[WASR] Falling back to direct URL', jobId, error);
+                console.warn('[QASR] Falling back to direct URL', jobId, error);
                 ws.load(url);
             }
         })();
@@ -2046,7 +1915,7 @@ class extends Component
     }
 
     function bindPreviewButtons() {
-        document.querySelectorAll('.btn-wasr-preview[data-job][data-url]').forEach((btn) => {
+        document.querySelectorAll('.btn-qasr-preview[data-job][data-url]').forEach((btn) => {
             if (btn.dataset.bound === '1') return;
             btn.dataset.bound = '1';
 
@@ -2063,7 +1932,7 @@ class extends Component
             });
         });
 
-        document.querySelectorAll('.btn-wasr-stop[data-job]').forEach((btn) => {
+        document.querySelectorAll('.btn-qasr-stop[data-job]').forEach((btn) => {
             if (btn.dataset.bound === '1') return;
             btn.dataset.bound = '1';
 
@@ -2075,7 +1944,7 @@ class extends Component
 
     async function preloadAndRenderRecentAudio() {
         const buttons = Array.from(
-            document.querySelectorAll('.btn-wasr-preview[data-job][data-url]')
+            document.querySelectorAll('.btn-qasr-preview[data-job][data-url]')
         )
             .sort((a, b) =>
                 Number(a.getAttribute('data-preload-rank') ?? 9999) -
@@ -2095,7 +1964,7 @@ class extends Component
                 getBlob(url).catch(() => {});
                 initPreview(jobId, url, isLatest);
             } catch (error) {
-                console.error('[WASR] Preload failed', jobId, error);
+                console.error('[QASR] Preload failed', jobId, error);
             }
         }
     }
@@ -2119,7 +1988,7 @@ class extends Component
         }
     }
 
-    function bootWasrWavePage() {
+    function bootQasrWavePage() {
         if (S.bootTimer) {
             clearTimeout(S.bootTimer);
         }
@@ -2127,7 +1996,7 @@ class extends Component
         S.bootTimer = setTimeout(() => {
             S.bootTimer = null;
 
-            const root = document.getElementById('wasr-page-root');
+            const root = document.getElementById('qasr-page-root');
             if (!root) return;
 
             registerLivewireEvents();
@@ -2137,7 +2006,7 @@ class extends Component
         }, 0);
     }
 
-    function teardownWasrWavePage() {
+    function teardownQasrWavePage() {
         if (S.bootTimer) {
             clearTimeout(S.bootTimer);
             S.bootTimer = null;
@@ -2151,14 +2020,15 @@ class extends Component
     if (!S.listenersBound) {
         S.listenersBound = true;
 
-        document.addEventListener('livewire:initialized', bootWasrWavePage);
-        document.addEventListener('livewire:navigated', bootWasrWavePage);
-        document.addEventListener('livewire:navigating', teardownWasrWavePage);
+        document.addEventListener('livewire:initialized', bootQasrWavePage);
+        document.addEventListener('livewire:navigated', bootQasrWavePage);
+        document.addEventListener('livewire:navigating', teardownQasrWavePage);
     }
 
-    window.addEventListener('beforeunload', teardownWasrWavePage);
+    window.addEventListener('beforeunload', teardownQasrWavePage);
 
-    bootWasrWavePage();
+    bootQasrWavePage();
 })();
 </script>
 @endpush
+

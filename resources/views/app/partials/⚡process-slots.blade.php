@@ -88,7 +88,9 @@ new class extends Component {
 
             $route = $isAccessible ? match ($toolCode) {
                 'tts' => route('app.xtts', ['locale' => app()->getLocale()]),
+                'ftts' => route('app.f5tts', ['locale' => app()->getLocale()]),
                 'clone_tts' => route('app.clone-xtts', ['locale' => app()->getLocale()]),
+                'qasr' => route('app.qasr', ['locale' => app()->getLocale()]),
                 'wasr', 'asr' => route('app.wasr', ['locale' => app()->getLocale()]),
                 'ocr' => route('app.ocr', ['locale' => app()->getLocale()]),
                 'stem' => route('app.stem', ['locale' => app()->getLocale()]),
