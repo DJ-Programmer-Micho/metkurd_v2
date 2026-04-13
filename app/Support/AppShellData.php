@@ -116,7 +116,7 @@ class AppShellData
      */
     protected function buildAccessMap(Customer $customer): array
     {
-        $toolCodes = ['tts', 'ftts', 'clone_tts', 'asr', 'qasr', 'stem', 'ocr', 'youtube_audio', 'youtube_video'];
+        $toolCodes = ['tts', 'ftts', 'clone_tts', 'asr', 'qasr', 'tran', 'stem', 'ocr', 'youtube_audio', 'youtube_video'];
         $map = array_fill_keys($toolCodes, false);
 
         $actions = ToolAction::query()

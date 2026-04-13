@@ -1274,7 +1274,7 @@ class extends Component
                                                                                     <div class="d-flex align-items-start justify-content-between gap-2">
                                                                                         <div class="min-w-0">
                                                                                             <div class="d-flex align-items-center gap-2 flex-wrap">
-                                                                                                <div class="fw-semibold text-light text-break" x-text="speaker.display_name"></div>
+                                                                                                <div class="fw-semibold  text-break" x-text="speaker.display_name"></div>
                                                                                                 <span class="xtts-speaker-badge" x-text="speaker.gender_label"></span>
                                                                                             </div>
 

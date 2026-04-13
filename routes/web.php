@@ -9,6 +9,7 @@ use App\Http\Controllers\App\Services\F5ttsSpeakerAssetController;
 use App\Http\Controllers\App\Services\OcrRenderController;
 use App\Http\Controllers\App\Services\QasrRenderController;
 use App\Http\Controllers\App\Services\StemRenderController;
+use App\Http\Controllers\App\Services\TranRenderController;
 use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Controllers\App\Services\XttsSpeakerAssetController;
@@ -156,6 +157,9 @@ Route::prefix('{locale}')
         Route::livewire('/app/qasr', 'app::pages.qasr.app-qasr')
             ->middleware('app.tool.access:qasr.standard')
             ->name('app.qasr');
+        Route::livewire('/app/tran', 'app::pages.tran.app-tran')
+            ->middleware('app.tool.access:tran.standard')
+            ->name('app.tran');
         Route::livewire('/app/stem', 'app::pages.stem.app-stem')
             ->middleware('app.tool.access:stem')
             ->name('app.stem');
@@ -243,6 +247,14 @@ Route::prefix('{locale}')
     Route::get('/app/renders/qasr/{jobId}/input-audio', [QasrRenderController::class, 'inputAudio'])
         ->middleware('app.tool.access:qasr.standard')
         ->name('app.renders.qasr.input-audio');
+
+    Route::get('/app/renders/tran/{jobId}/source', [TranRenderController::class, 'downloadSource'])
+        ->middleware('app.tool.access:tran.standard')
+        ->name('app.renders.tran.source');
+
+    Route::get('/app/renders/tran/{jobId}/target', [TranRenderController::class, 'downloadTarget'])
+        ->middleware('app.tool.access:tran.standard')
+        ->name('app.renders.tran.target');
 
     Route::get('/app/renders/stem/{jobId}/stream/{track}', [StemRenderController::class, 'stream'])
         ->middleware('app.tool.access:stem')

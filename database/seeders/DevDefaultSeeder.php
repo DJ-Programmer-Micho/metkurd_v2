@@ -398,10 +398,11 @@ class DevDefaultSeeder extends Seeder
             ['code' => 'clone_tts',      'name' => 'Clone Text To Speech',  'sort_order' => 3],
             ['code' => 'asr',            'name' => 'Automatic Speech Recognition', 'sort_order' => 4],
             ['code' => 'qasr',           'name' => 'Qwen Automatic Speech Recognition', 'sort_order' => 5],
-            ['code' => 'stem',           'name' => 'Stem Separation',       'sort_order' => 6],
-            ['code' => 'ocr',            'name' => 'OCR',                   'sort_order' => 7],
-            ['code' => 'youtube_audio',  'name' => 'YouTube Audio Downloader', 'sort_order' => 8],
-            ['code' => 'youtube_video',  'name' => 'YouTube Video Downloader', 'sort_order' => 9],
+            ['code' => 'tran',           'name' => 'MET Translation',       'sort_order' => 6],
+            ['code' => 'stem',           'name' => 'Stem Separation',       'sort_order' => 7],
+            ['code' => 'ocr',            'name' => 'OCR',                   'sort_order' => 8],
+            ['code' => 'youtube_audio',  'name' => 'YouTube Audio Downloader', 'sort_order' => 9],
+            ['code' => 'youtube_video',  'name' => 'YouTube Video Downloader', 'sort_order' => 10],
         ];
 
         $tools = [];
@@ -426,6 +427,7 @@ class DevDefaultSeeder extends Seeder
 
             ['tool_code' => 'asr',           'action_code' => 'standard', 'name' => 'ASR Standard',         'metric' => 'minute'],
             ['tool_code' => 'qasr',          'action_code' => 'standard', 'name' => 'QASR Standard',        'metric' => 'minute'],
+            ['tool_code' => 'tran',          'action_code' => 'standard', 'name' => 'Translation Standard', 'metric' => 'character'],
 
             ['tool_code' => 'stem',          'action_code' => 'sep2',     'name' => 'Stem Separation 2',    'metric' => 'stem_output'],
             ['tool_code' => 'stem',          'action_code' => 'sep4',     'name' => 'Stem Separation 4',    'metric' => 'stem_output'],
@@ -525,6 +527,14 @@ class DevDefaultSeeder extends Seeder
                 'rounding_mode' => 'ceil',
                 'rounding_step' => 1,
                 'minimum_credits' => 1000,
+            ],
+            'tran.standard' => [
+                'metric_code' => 'character',
+                'unit_size' => 1,
+                'credits_per_unit' => 1.0,
+                'rounding_mode' => 'ceil',
+                'rounding_step' => 1,
+                'minimum_credits' => 1,
             ],
             'stem.sep2' => [
                 'metric_code' => 'stem_output',

@@ -91,6 +91,7 @@ new class extends Component {
                 'ftts' => route('app.f5tts', ['locale' => app()->getLocale()]),
                 'clone_tts' => route('app.clone-xtts', ['locale' => app()->getLocale()]),
                 'qasr' => route('app.qasr', ['locale' => app()->getLocale()]),
+                'tran' => route('app.tran', ['locale' => app()->getLocale()]),
                 'wasr', 'asr' => route('app.wasr', ['locale' => app()->getLocale()]),
                 'ocr' => route('app.ocr', ['locale' => app()->getLocale()]),
                 'stem' => route('app.stem', ['locale' => app()->getLocale()]),

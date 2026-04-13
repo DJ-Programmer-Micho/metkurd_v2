@@ -75,13 +75,13 @@
             ],
         ],
         [
-            'title' => __('Transcription Tools'),
+            'title' => __('Translation Tools'),
             'items' => [
                 [
-                    'route' => 'app.youtube',
-                    'icon' => 'ri-trademark-line',
+                    'route' => 'app.tran',
+                    'icon' => 'ri-translate-2',
                     'label' => __('MET Translation'),
-                    'enabled' => (bool) ($accessMap['youtube_download'] ?? false),
+                    'enabled' => (bool) ($accessMap['tran'] ?? false),
                 ],
             ],
         ],

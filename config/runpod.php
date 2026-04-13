@@ -10,6 +10,7 @@ return [
         'ftts' => env('RUNPOD_ENDPOINT_ID_FTTS'),
         'wasr' => env('RUNPOD_ENDPOINT_ID_WASR'),
         'qasr' => env('RUNPOD_ENDPOINT_ID_QASR'),
+        'tran' => env('RUNPOD_ENDPOINT_ID_TRAN'),
         'stem' => env('RUNPOD_ENDPOINT_ID_STEM'),
         'kocr' => env('RUNPOD_ENDPOINT_ID_KOCR'),
     ],

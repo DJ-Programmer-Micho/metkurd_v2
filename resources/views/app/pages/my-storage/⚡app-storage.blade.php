@@ -50,6 +50,7 @@ class extends Component
             'stem'      => ['label' => __('Stem Separation'), 'icon' => 'ri-equalizer-line', 'color' => 'success'],
             'wasr'      => ['label' => __('Speech to Text'), 'icon' => 'ri-file-text-line', 'color' => 'warning'],
             'qasr'      => ['label' => __('QASR Speech to Text'), 'icon' => 'ri-file-text-line', 'color' => 'warning'],
+            'tran'      => ['label' => __('MET Translation'), 'icon' => 'ri-translate-2', 'color' => 'primary'],
             'ocr'       => ['label' => __('Optical Character Recognition'), 'icon' => 'ri-scan-2-line', 'color' => 'danger'],
         ];
 

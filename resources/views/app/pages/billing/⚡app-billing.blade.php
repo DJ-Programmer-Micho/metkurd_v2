@@ -70,6 +70,7 @@ class extends Component
             'stem'      => __('Stem Separation'),
             'wasr'      => __('Speech to Text'),
             'qasr'      => __('QASR Speech to Text'),
+            'tran'      => __('MET Translation'),
             'ocr'       => __('Optical Character Recognition'),
         ];
 
@@ -551,6 +552,7 @@ class extends Component
             'stem' => 'success',
             'wasr' => 'warning',
             'qasr' => 'warning',
+            'tran' => 'primary',
             'ocr' => 'danger',
             default => 'secondary',
         };
