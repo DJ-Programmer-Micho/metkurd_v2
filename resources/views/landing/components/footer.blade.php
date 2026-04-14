@@ -73,7 +73,7 @@ new class extends Component
 <footer class="site-footer">
     <div class="container">
         <div class="newsletter glass-card mb-5 reveal">
-            <div class="row align-items-center g-4">
+            <div class="row align-items-center justify-content-between g-4">
                 <div class="col-lg-7">
                     <span class="section-badge mb-3">
                         <i class="bi bi-envelope-paper"></i>
@@ -83,31 +83,8 @@ new class extends Component
                     <p class="text-muted-soft mb-0">{{ LandingContent::text('footer.newsletter_copy') }}</p>
                 </div>
 
-                <div class="col-lg-5">
-                    <form class="row g-2" wire:submit="submitNewsletter">
-                        <div class="col-8">
-                            <input
-                                class="form-control"
-                                type="email"
-                                wire:model.defer="newsletterEmail"
-                                placeholder="{{ LandingContent::text('footer.newsletter_placeholder') }}"
-                                aria-label="{{ LandingContent::text('footer.newsletter_form_label') }}"
-                            >
-                        </div>
-                        <div class="col-4 d-grid">
-                            <button class="btn btn-glow" type="submit">{{ LandingContent::text('footer.subscribe') }}</button>
-                        </div>
-                    </form>
-
-                    <div class="newsletter-feedback mt-3">
-                        @error('newsletterEmail')
-                            <div class="small text-danger">{{ $message }}</div>
-                        @enderror
-
-                        @if($newsletterSubmitted)
-                            <span class="badge-soft">{{ LandingContent::text('footer.newsletter_success') }}</span>
-                        @endif
-                    </div>
+                <div class="col-lg-5 ">
+                    <img src="{{ asset('/app/logo/qr_tele.png') }}" alt="https://t.me/metkurd_ai" width="50%">
                 </div>
             </div>
         </div>
