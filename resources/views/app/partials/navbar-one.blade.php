@@ -87,7 +87,7 @@
             ],
         ],
         [
-            // 'title' => __('YouTube'),
+            'title' => __(''),
             'items' => [
                 [
                     'route' => 'app.youtube',
