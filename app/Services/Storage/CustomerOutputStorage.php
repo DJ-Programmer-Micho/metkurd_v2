@@ -45,17 +45,17 @@ class CustomerOutputStorage
         $mime = $meta['mime'] ?? 'audio/wav';
         $startedAt = microtime(true);
 
-        Log::info('CUSTOMER_OUTPUT_S3_SAVE_START', [
-            'disk' => $disk,
-            'path' => $path,
-            'bytes' => $bytes,
-            'mime' => $mime,
-            'bucket' => config('filesystems.disks.s3.bucket'),
-            'region' => config('filesystems.disks.s3.region'),
-            'endpoint' => config('filesystems.disks.s3.endpoint'),
-            'use_path_style_endpoint' => config('filesystems.disks.s3.use_path_style_endpoint'),
-            'config_cached' => app()->configurationIsCached(),
-        ]);
+        // Log::info('CUSTOMER_OUTPUT_S3_SAVE_START', [
+        //     'disk' => $disk,
+        //     'path' => $path,
+        //     'bytes' => $bytes,
+        //     'mime' => $mime,
+        //     'bucket' => config('filesystems.disks.s3.bucket'),
+        //     'region' => config('filesystems.disks.s3.region'),
+        //     'endpoint' => config('filesystems.disks.s3.endpoint'),
+        //     'use_path_style_endpoint' => config('filesystems.disks.s3.use_path_style_endpoint'),
+        //     'config_cached' => app()->configurationIsCached(),
+        // ]);
 
         try {
             Storage::disk($disk)->put($path, $bin, [
@@ -73,11 +73,11 @@ class CustomerOutputStorage
             throw $e;
         }
 
-        Log::info('CUSTOMER_OUTPUT_S3_SAVE_DONE', [
-            'disk' => $disk,
-            'path' => $path,
-            'elapsed_ms' => (int) round((microtime(true) - $startedAt) * 1000),
-        ]);
+        // Log::info('CUSTOMER_OUTPUT_S3_SAVE_DONE', [
+        //     'disk' => $disk,
+        //     'path' => $path,
+        //     'elapsed_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+        // ]);
 
         $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
 

@@ -134,6 +134,16 @@
             direction: rtl;
             text-align: right;
         }
+
+        #app-navbar-menu .navbar-nav .nav-link.menu-link.active{
+            color: var(--vz-vertical-menu-item-active-color) !important;
+            background-color: rgba(var(--vz-primary-rgb, 102, 145, 231), .16);
+            font-weight: 600;
+        }
+
+        #app-navbar-menu .navbar-nav .nav-link.menu-link.active:hover{
+            color: var(--vz-vertical-menu-item-active-color) !important;
+        }
     </style>
 
     <script data-navigate-once src="{{ asset('app/js/layout.js') }}"></script>
@@ -365,6 +375,104 @@
                 hamburger.setAttribute('aria-expanded', expanded ? 'true' : 'false');
             }
 
+            function handleHamburgerToggle(event) {
+                event.preventDefault();
+
+                const viewportWidth = document.documentElement.clientWidth;
+                const layout = document.documentElement.getAttribute('data-layout');
+                const hamburgerIcon = event.currentTarget?.querySelector('.hamburger-icon') ?? document.querySelector('.hamburger-icon');
+
+                if (viewportWidth > 767) {
+                    hamburgerIcon?.classList.toggle('open');
+                }
+
+                if (layout === 'horizontal') {
+                    document.body.classList.toggle('menu');
+                }
+
+                if (layout === 'vertical') {
+                    if (viewportWidth <= 1025 && viewportWidth > 767) {
+                        document.body.classList.remove('vertical-sidebar-enable');
+                        document.documentElement.setAttribute(
+                            'data-sidebar-size',
+                            document.documentElement.getAttribute('data-sidebar-size') === 'sm' ? '' : 'sm'
+                        );
+                    } else if (viewportWidth > 1025) {
+                        document.body.classList.remove('vertical-sidebar-enable');
+                        document.documentElement.setAttribute(
+                            'data-sidebar-size',
+                            document.documentElement.getAttribute('data-sidebar-size') === 'lg' ? 'sm' : 'lg'
+                        );
+                    } else {
+                        document.body.classList.add('vertical-sidebar-enable');
+                        document.documentElement.setAttribute('data-sidebar-size', 'lg');
+                    }
+                }
+
+                if (layout === 'semibox') {
+                    if (viewportWidth > 767) {
+                        if (document.documentElement.getAttribute('data-sidebar-visibility') === 'show') {
+                            document.documentElement.setAttribute(
+                                'data-sidebar-size',
+                                document.documentElement.getAttribute('data-sidebar-size') === 'lg' ? 'sm' : 'lg'
+                            );
+                        } else {
+                            document.getElementById('sidebar-visibility-show')?.click();
+                        }
+                    } else {
+                        document.body.classList.add('vertical-sidebar-enable');
+                        document.documentElement.setAttribute('data-sidebar-size', 'lg');
+                    }
+                }
+
+                if (layout === 'twocolumn') {
+                    document.body.classList.toggle('twocolumn-panel');
+                }
+
+                syncSidebarTriggerState();
+            }
+
+            function bindHamburgerToggle() {
+                const hamburger = document.getElementById('topnav-hamburger-icon');
+                if (!hamburger) return;
+
+                if (hamburger.dataset.layoutHamburgerBound === '1') {
+                    syncSidebarTriggerState();
+                    return;
+                }
+
+                // Replacing the node clears one-time theme listeners that are bound to stale elements after wire:navigate.
+                const reboundHamburger = hamburger.cloneNode(true);
+                reboundHamburger.dataset.layoutHamburgerBound = '1';
+                hamburger.replaceWith(reboundHamburger);
+                reboundHamburger.addEventListener('click', handleHamburgerToggle);
+
+                syncSidebarTriggerState();
+            }
+
+            function closeVerticalSidebarFromOverlay() {
+                document.body.classList.remove('vertical-sidebar-enable');
+
+                if (sessionStorage.getItem('data-layout') === 'twocolumn') {
+                    document.body.classList.add('twocolumn-panel');
+                } else {
+                    const savedSidebarSize = sessionStorage.getItem('data-sidebar-size');
+                    if (savedSidebarSize) {
+                        document.documentElement.setAttribute('data-sidebar-size', savedSidebarSize);
+                    }
+                }
+
+                syncSidebarTriggerState();
+            }
+
+            function bindVerticalOverlayDismiss() {
+                document.querySelectorAll('.vertical-overlay').forEach((overlay) => {
+                    if (overlay.dataset.layoutOverlayBound === '1') return;
+                    overlay.dataset.layoutOverlayBound = '1';
+                    overlay.addEventListener('click', closeVerticalSidebarFromOverlay);
+                });
+            }
+
             function resetMobileSidebarState() {
                 if (window.innerWidth > 767) {
                     syncSidebarTriggerState();
@@ -379,6 +487,8 @@
 
             function initThemeInteractions() {
                 syncSidebarTriggerState();
+                bindHamburgerToggle();
+                bindVerticalOverlayDismiss();
 
                 // Fullscreen
                 document.querySelectorAll('[data-toggle="fullscreen"]').forEach((btn) => {

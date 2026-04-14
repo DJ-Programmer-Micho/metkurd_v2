@@ -4,6 +4,7 @@
     $shellData = app(\App\Support\AppShellData::class);
     $shell = $shellData->forCurrentCustomer();
     $accessMap = $shell['access_map'] ?? [];
+    $currentRouteName = request()->route()?->getName();
 
     $navSections = [
         [
@@ -86,7 +87,7 @@
             ],
         ],
         [
-            'title' => __('YouTube'),
+            // 'title' => __('YouTube'),
             'items' => [
                 [
                     'route' => 'app.youtube',
@@ -152,11 +153,15 @@
                         @endif
 
                         @foreach($items as $item)
+                            @php
+                                $isActive = $currentRouteName === $item['route'];
+                            @endphp
                             <li class="nav-item">
                                 <a
-                                    class="nav-link menu-link"
+                                    class="nav-link menu-link {{ $isActive ? 'active' : '' }}"
                                     href="{{ route($item['route'], ['locale' => app()->getLocale()]) }}"
                                     wire:navigate
+                                    @if($isActive) aria-current="page" @endif
                                 >
                                     <i class="{{ $item['icon'] }}"></i>
                                     <span>{{ $item['label'] }}</span>
