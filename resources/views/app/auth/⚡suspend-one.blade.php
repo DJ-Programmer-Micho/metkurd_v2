@@ -32,7 +32,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                     <div class="mt-4 pt-2">
                         <h5>{{ __('Your account is suspended') }}</h5>
                         <p class="text-muted mb-0">{{ __('If you think this is a mistake, please send an email to') }}</p>
-                        <a href="mailto:support@metkurd.com" class="fw-semibold text-primary text-decoration-underline">support@metkurd.com</a>
+                        <a href="mailto:support@metkurd.ai" class="fw-semibold text-primary text-decoration-underline">support@metkurd.ai</a>
                     </div>
                 </div>
             </div>

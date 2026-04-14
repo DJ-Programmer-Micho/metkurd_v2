@@ -712,8 +712,68 @@ class LandingContent
         ],
     ];
 
+    public static function rawText(string $path, ?string $fallback = null): string
+    {
+        $value = Arr::get(self::CONTENT, $path);
+
+        if (! is_string($value)) {
+            return $fallback ?? '';
+        }
+
+        return $value;
+    }
+
+    public static function rawSection(string $path): array
+    {
+        $value = Arr::get(self::CONTENT, $path, []);
+
+        return is_array($value) ? $value : [];
+    }
+
+    public static function translationCatalog(?array $allowedRoots = null): array
+    {
+        $flat = [];
+        $roots = $allowedRoots ?: [
+            'site',
+            'nav',
+            'footer',
+            'common',
+            'home',
+            'tools_page',
+            'pricing_page',
+            'contact_page',
+            'privacy_page',
+            'terms_page',
+            'tool_catalog',
+            'tool_pages',
+            'tool_detail',
+            'plans',
+            'locales',
+        ];
+
+        foreach ($roots as $root) {
+            $value = Arr::get(self::CONTENT, $root);
+
+            if (! is_array($value)) {
+                continue;
+            }
+
+            self::flattenCatalogValues($value, $root, $flat);
+        }
+
+        ksort($flat, SORT_NATURAL);
+
+        return $flat;
+    }
+
     public static function text(string $path, array $replace = [], ?string $fallback = null): string
     {
+        $override = AreaJsonTranslations::get($path, 'landing');
+
+        if ($override !== null) {
+            return self::interpolate($override, $replace);
+        }
+
         $value = Arr::get(self::CONTENT, $path);
 
         if (! is_string($value)) {
@@ -725,6 +785,12 @@ class LandingContent
 
     public static function section(string $path): array
     {
+        $override = AreaJsonTranslations::group($path, 'landing');
+
+        if ($override !== []) {
+            return $override;
+        }
+
         $value = Arr::get(self::CONTENT, $path, []);
 
         if (! is_array($value)) {
@@ -745,5 +811,56 @@ class LandingContent
         }
 
         return $value;
+    }
+
+    protected static function flattenCatalogValues(array $value, string $prefix, array &$flat): void
+    {
+        foreach ($value as $key => $item) {
+            $path = $prefix . '.' . $key;
+
+            if (is_array($item)) {
+                self::flattenCatalogValues($item, $path, $flat);
+                continue;
+            }
+
+            if (! is_string($item)) {
+                continue;
+            }
+
+            if (! self::isCatalogValueEditable($path, $item)) {
+                continue;
+            }
+
+            $flat[$path] = $item;
+        }
+    }
+
+    protected static function isCatalogValueEditable(string $path, string $value): bool
+    {
+        if (str_contains($path, '.icon') || str_ends_with($path, '.slug')) {
+            return false;
+        }
+
+        // Keep machine-oriented tokens out of the admin translation grid.
+        if (preg_match('/^bi bi-[a-z0-9\\-]+$/', trim($value)) === 1) {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected static function interpolate(string $value, array $replace = []): string
+    {
+        if ($replace === []) {
+            return $value;
+        }
+
+        $map = [];
+
+        foreach ($replace as $key => $item) {
+            $map[':' . $key] = (string) $item;
+        }
+
+        return strtr($value, $map);
     }
 }

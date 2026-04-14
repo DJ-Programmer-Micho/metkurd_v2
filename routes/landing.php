@@ -1,7 +1,11 @@
 <?php
 
+use App\Http\Controllers\LawController;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
+
+Route::get('law/terms-conditions', [LawController::class, 'termsCondition'])->name('law.terms');
+Route::get('law/privacy-policy', [LawController::class, 'privacyPolicy'])->name('law.privacy');
 
 Route::get('/', function () {
     $locale = session('applocale', config('app.locale'));

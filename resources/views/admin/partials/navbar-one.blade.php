@@ -83,6 +83,40 @@
                     />
                 </livewire:partials.components.nav-multi-feature-link>
 
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Landing CMS') }}</span></li>
+
+                <livewire:partials.components.nav-multi-feature-link
+                    id="sidebarLandingCms"
+                    icon="bx bx-globe"
+                    :label="__('Landing CMS')"
+                    :features="null"
+                    >
+
+                    <livewire:partials.components.nav-feature-link
+                        route="admin.landing.translations"
+                        icon="bx bx-translate"
+                        :label="__('Translations')"
+                    />
+
+                    <livewire:partials.components.nav-feature-link
+                        route="admin.landing.tools"
+                        icon="bx bx-grid-alt"
+                        :label="__('Tools Pages')"
+                    />
+
+                    <livewire:partials.components.nav-feature-link
+                        route="admin.landing.contact"
+                        icon="bx bx-mail-send"
+                        :label="__('Contact & Social')"
+                    />
+
+                    <livewire:partials.components.nav-feature-link
+                        route="admin.landing.meta"
+                        icon="bx bx-palette"
+                        :label="__('Meta & Icons')"
+                    />
+                </livewire:partials.components.nav-multi-feature-link>
+
                 <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Customers') }}</span></li>
 
                 <livewire:partials.components.nav-multi-feature-link

@@ -69,6 +69,10 @@ Route::prefix('{locale}/'.app('aurl'))
         Route::livewire('/services/voices', 'admin::pages.services.adm-services-voices')->name('admin.services.voices');
         Route::livewire('/services/pricing', 'admin::pages.services.adm-services-pricing')->name('admin.services.pricing');
         Route::livewire('/services/entitlements', 'admin::pages.services.adm-services-entitlements')->name('admin.services.entitlements');
+        Route::livewire('/landing/translations', 'admin::pages.landing.adm-landing-translations')->name('admin.landing.translations');
+        Route::livewire('/landing/tools', 'admin::pages.landing.adm-landing-tools')->name('admin.landing.tools');
+        Route::livewire('/landing/contact', 'admin::pages.landing.adm-landing-contact')->name('admin.landing.contact');
+        Route::livewire('/landing/meta-settings', 'admin::pages.landing.adm-landing-meta-settings')->name('admin.landing.meta');
         Route::livewire('/customers/list', 'admin::pages.customers.adm-customers-list')->name('admin.customers.list');
         Route::livewire('/customers/ranking', 'admin::pages.customers.adm-customers-ranking')->name('admin.customers.ranking');
         Route::livewire('/customers/register', 'admin::pages.customers.adm-customers-register')->name('admin.customers.register');    

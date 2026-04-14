@@ -1,6 +1,8 @@
 <?php
 
 use App\Support\LandingContent;
+use App\Support\Landing\LandingToolPageCatalog;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -16,19 +18,27 @@ new class extends Component
     #[Computed]
     public function tools(): array
     {
-        $tools = collect(LandingContent::section('tool_catalog'))
-            ->map(function (array $tool, string $code) {
-                $slug = $tool['slug'] ?? $code;
+        $tools = collect(app(LandingToolPageCatalog::class)->listForLocale(app()->getLocale()))
+            ->map(function (array $tool) {
+                $slug = trim((string) ($tool['slug'] ?? ''));
 
-                return array_merge([
-                    'code' => $code,
-                    'name' => $tool['title'] ?? strtoupper($code),
-                ], $tool, [
+                if ($slug === '') {
+                    return null;
+                }
+
+                return [
+                    'slug' => $slug,
+                    'name' => (string) ($tool['title'] ?? strtoupper($slug)),
+                    'title' => (string) ($tool['title'] ?? strtoupper($slug)),
+                    'summary' => (string) ($tool['summary'] ?? ''),
+                    'square_image_url' => data_get($tool, 'square_image_url'),
+                    'card_image_url' => data_get($tool, 'card_image_url'),
+                    'capabilities' => $this->normalizeStringList($tool['capabilities'] ?? []),
                     'href' => route('landing.tools.show', [
                         'locale' => app()->getLocale(),
                         'slug' => $slug,
                     ]),
-                ]);
+                ];
             })
             ->filter()
             ->values();
@@ -39,6 +49,21 @@ new class extends Component
 
         return $tools->all();
     }
+
+    /**
+     * @return string[]
+     */
+    protected function normalizeStringList(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(fn ($item) => trim((string) $item), $value),
+            fn (string $item) => $item !== ''
+        ));
+    }
 };
 ?>
 
@@ -47,8 +72,28 @@ new class extends Component
         @foreach($this->tools as $tool)
             <div class="{{ $columnClass }}">
                 <article class="tool-card glass-card reveal">
-                    <div class="icon-chip mb-3">
-                        <i class="{{ $tool['icon'] ?? 'bi bi-grid-1x2' }}"></i>
+                    <div class="tool-card-media mb-3">
+                    @if(! empty($tool['square_image_url']))
+                        <div class="icon-chip tool-square-chip">
+                            <img
+                                src="{{ $tool['square_image_url'] }}"
+                                alt="{{ $tool['title'] ?? $tool['name'] }}"
+                                class="tool-square-image"
+                                loading="lazy"
+                            >
+                        </div>
+                    @elseif(! empty($tool['card_image_url']))
+                        <img
+                            src="{{ $tool['card_image_url'] }}"
+                            alt="{{ $tool['title'] ?? $tool['name'] }}"
+                            class="img-fluid rounded-3 w-100 tool-card-cover"
+                            loading="lazy"
+                        >
+                    @else
+                        <div class="icon-chip">
+                            <span class="tool-fallback-letter">{{ Str::upper(Str::substr((string) ($tool['title'] ?? $tool['name']), 0, 1)) }}</span>
+                        </div>
+                    @endif
                     </div>
 
                     <h3>{{ $tool['title'] ?? $tool['name'] }}</h3>

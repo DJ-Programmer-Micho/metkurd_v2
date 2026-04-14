@@ -9,6 +9,61 @@ class AreaJsonTranslations
 {
     protected static array $cache = [];
 
+    public static function get(string $key, ?string $area = null, ?string $locale = null): ?string
+    {
+        $key = trim($key);
+
+        if ($key === '') {
+            return null;
+        }
+
+        $translations = static::translations($area, $locale);
+
+        if (! array_key_exists($key, $translations)) {
+            return null;
+        }
+
+        $value = $translations[$key];
+
+        if (is_array($value)) {
+            return null;
+        }
+
+        return (string) $value;
+    }
+
+    public static function all(?string $area = null, ?string $locale = null): array
+    {
+        return static::translations($area, $locale);
+    }
+
+    public static function flush(?string $area = null, ?string $locale = null): void
+    {
+        if ($area === null && $locale === null) {
+            static::$cache = [];
+            return;
+        }
+
+        if ($area !== null && $locale !== null) {
+            unset(static::$cache["{$area}:{$locale}"]);
+            return;
+        }
+
+        foreach (array_keys(static::$cache) as $cacheKey) {
+            [$cachedArea, $cachedLocale] = array_pad(explode(':', $cacheKey, 2), 2, null);
+
+            if ($area !== null && $cachedArea !== $area) {
+                continue;
+            }
+
+            if ($locale !== null && $cachedLocale !== $locale) {
+                continue;
+            }
+
+            unset(static::$cache[$cacheKey]);
+        }
+    }
+
     public static function group(string $prefix, ?string $area = null, ?string $locale = null): array
     {
         $prefix = trim($prefix);

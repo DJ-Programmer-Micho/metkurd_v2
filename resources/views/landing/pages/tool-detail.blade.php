@@ -1,44 +1,49 @@
 <?php
 
+use App\Support\Landing\LandingToolPageCatalog;
 use App\Support\LandingContent;
-use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 new #[Layout('landing::layouts.app')] class extends Component
 {
-    public string $toolCode = '';
+    /** @var array<string, mixed> */
+    public array $tool = [];
 
     public function mount(string $slug): void
     {
-        $normalized = Str::of($slug)->lower()->replace('_', '-')->toString();
+        $tool = app(LandingToolPageCatalog::class)->findForLocaleBySlug($slug, app()->getLocale());
 
-        $toolCode = match ($normalized) {
-            'tts' => 'tts',
-            'ctts', 'clone-tts', 'clone-xtts' => 'clone_tts',
-            'asr', 'wasr', 'qasr' => 'asr',
-            'ocr' => 'ocr',
-            'stem' => 'stem',
-            default => '',
-        };
+        abort_if(! is_array($tool) || $tool === [], 404);
 
-        abort_if($toolCode === '', 404);
-        abort_if(LandingContent::section("tool_catalog.{$toolCode}") === [], 404);
-
-        $this->toolCode = $toolCode;
+        $this->tool = $tool;
     }
 };
 ?>
 
 @php
-    $toolPage = LandingContent::section("tool_pages.{$toolCode}");
-    $toolCatalog = LandingContent::section("tool_catalog.{$toolCode}");
-    $canonicalSlug = data_get($toolCatalog, 'slug', $toolCode);
-    $title = data_get($toolCatalog, 'title', __('Tool'));
+    $tool = $this->tool;
+    $canonicalSlug = (string) data_get($tool, 'slug', request()->route('slug'));
+    $title = (string) data_get($tool, 'title', __('Tool'));
+    $toolSquareImage = (string) data_get($tool, 'square_image_url', '');
+    $featureCards = (array) data_get($tool, 'feature_cards', []);
+
+    if ($featureCards === []) {
+        $featureCards = collect((array) data_get($tool, 'feature_bullets', []))
+            ->map(fn ($bullet) => trim((string) $bullet))
+            ->filter()
+            ->values()
+            ->map(fn (string $bullet) => [
+                'icon' => 'bi bi-stars',
+                'title' => $bullet,
+                'copy' => '',
+            ])
+            ->all();
+    }
 @endphp
 
-<x-slot:title>{{ data_get($toolPage, 'meta_title', $title) }}</x-slot:title>
-<x-slot:description>{{ data_get($toolPage, 'meta_description', LandingContent::text('site.meta_description')) }}</x-slot:description>
+<x-slot:title>{{ data_get($tool, 'meta_title', $title) }}</x-slot:title>
+<x-slot:description>{{ data_get($tool, 'meta_description', LandingContent::text('site.meta_description')) }}</x-slot:description>
 <x-slot:canonical>{{ route('landing.tools.show', ['locale' => app()->getLocale(), 'slug' => $canonicalSlug]) }}</x-slot:canonical>
 
 <div>
@@ -47,11 +52,15 @@ new #[Layout('landing::layouts.app')] class extends Component
             <div class="row g-5 align-items-center">
                 <div class="col-lg-6 reveal">
                     <span class="hero-badge mb-3">
-                        <i class="{{ data_get($toolCatalog, 'icon', 'bi bi-grid-1x2') }}"></i>
-                        {{ data_get($toolPage, 'badge', $title) }}
+                        @if($toolSquareImage !== '')
+                            <img src="{{ $toolSquareImage }}" alt="{{ $title }}" class="tool-badge-image" loading="lazy">
+                        @else
+                            <span class="tool-fallback-letter">{{ \Illuminate\Support\Str::upper(\Illuminate\Support\Str::substr($title, 0, 1)) }}</span>
+                        @endif
+                        {{ data_get($tool, 'badge', $title) }}
                     </span>
-                    <h1 class="display-hero mb-3">{{ data_get($toolPage, 'title') }}</h1>
-                    <p class="lead-soft mb-4">{{ data_get($toolPage, 'lead') }}</p>
+                    <h1 class="display-hero mb-3">{{ $title }}</h1>
+                    <p class="lead-soft mb-4">{{ data_get($tool, 'hero_text') }}</p>
                     <div class="d-flex gap-3 flex-wrap">
                         <a href="{{ route('app.signup') }}" class="btn btn-glow rounded-pill px-4" wire:navigate>{{ LandingContent::text('common.get_started') }}</a>
                         <a href="{{ route('landing.pricing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-soft rounded-pill px-4" wire:navigate>{{ LandingContent::text('common.view_pricing') }}</a>
@@ -61,23 +70,32 @@ new #[Layout('landing::layouts.app')] class extends Component
                 <div class="col-lg-6 reveal">
                     <div class="screenshot-frame grid-shine">
                         <div class="screenshot-inner d-flex flex-column gap-3">
-                            <div class="glass-card p-3 d-flex justify-content-between">
-                                <span>{{ LandingContent::text('tool_detail.model_label') }}</span>
-                                <span class="kbd-soft">{{ $title }}</span>
-                            </div>
-                            <div class="glass-card p-3 d-flex justify-content-between">
-                                <span>{{ LandingContent::text('tool_detail.status_label') }}</span>
-                                <span class="badge-soft">{{ LandingContent::text('tool_detail.status_ready') }}</span>
-                            </div>
-                            <div class="glass-card p-3 flex-grow-1">
-                                <div class="code-lines">
-                                    <div style="width:92%"></div>
-                                    <div style="width:76%"></div>
-                                    <div style="width:88%"></div>
-                                    <div style="width:69%"></div>
-                                    <div style="width:58%"></div>
+                            @if(data_get($tool, 'hero_image_url'))
+                                <img
+                                    src="{{ data_get($tool, 'hero_image_url') }}"
+                                    alt="{{ $title }}"
+                                    class="img-fluid rounded-4 w-100"
+                                    loading="lazy"
+                                >
+                            @else
+                                <div class="glass-card p-3 d-flex justify-content-between">
+                                    <span>{{ LandingContent::text('tool_detail.model_label') }}</span>
+                                    <span class="kbd-soft">{{ $title }}</span>
                                 </div>
-                            </div>
+                                <div class="glass-card p-3 d-flex justify-content-between">
+                                    <span>{{ LandingContent::text('tool_detail.status_label') }}</span>
+                                    <span class="badge-soft">{{ LandingContent::text('tool_detail.status_ready') }}</span>
+                                </div>
+                                <div class="glass-card p-3 flex-grow-1">
+                                    <div class="code-lines">
+                                        <div style="width:92%"></div>
+                                        <div style="width:76%"></div>
+                                        <div style="width:88%"></div>
+                                        <div style="width:69%"></div>
+                                        <div style="width:58%"></div>
+                                    </div>
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -94,8 +112,8 @@ new #[Layout('landing::layouts.app')] class extends Component
                             <i class="bi bi-lightbulb"></i>
                             {{ LandingContent::text('common.learn_more') }}
                         </span>
-                        <h2 class="section-title h1 mb-3">{{ data_get($toolPage, 'about_title') }}</h2>
-                        <p class="text-muted-soft">{{ data_get($toolPage, 'about_copy') }}</p>
+                        <h2 class="section-title h1 mb-3">{{ data_get($tool, 'about_title') }}</h2>
+                        <p class="text-muted-soft">{{ data_get($tool, 'about_copy') }}</p>
                     </div>
                 </div>
 
@@ -103,10 +121,10 @@ new #[Layout('landing::layouts.app')] class extends Component
                     <div class="policy-card glass-card reveal">
                         <span class="section-badge mb-3">
                             <i class="bi bi-briefcase"></i>
-                            {{ data_get($toolPage, 'use_cases_title') }}
+                            {{ data_get($tool, 'use_cases_title', __('Use cases')) }}
                         </span>
                         <ul class="check-list">
-                            @foreach((array) data_get($toolPage, 'use_cases', []) as $useCase)
+                            @foreach((array) data_get($tool, 'use_cases', []) as $useCase)
                                 <li>
                                     <i class="bi bi-check-circle-fill"></i>
                                     <span>{{ $useCase }}</span>
@@ -121,7 +139,9 @@ new #[Layout('landing::layouts.app')] class extends Component
 
     <section class="section pt-0">
         <div class="container">
-            <livewire:landing::components.feature-grid :items="(array) data_get($toolPage, 'features', [])" columns="col-md-4" />
+            <livewire:landing::components.feature-grid :items="$featureCards" columns="col-md-4" />
         </div>
     </section>
+
+    <livewire:landing::components.tool-app-download :tool="$tool" />
 </div>

@@ -1,6 +1,7 @@
 <?php
 
 use App\Rules\ValidTurnstile;
+use App\Support\Landing\LandingSettingsRepository;
 use App\Support\LandingContent;
 use App\Notifications\Landing\TelegramContactUs;
 use Illuminate\Support\Facades\Log;
@@ -182,8 +183,10 @@ new #[Layout('landing::layouts.app')] class extends Component
 ?>
 
 @php
-    $supportLines = LandingContent::section('contact_page.support_lines');
-    $companyLines = LandingContent::section('contact_page.company_lines');
+    $settingsRepository = app(LandingSettingsRepository::class);
+    $supportLines = $settingsRepository->contactSupportLines();
+    $companyLines = $settingsRepository->contactCompanyLines();
+    $socialLinks = $settingsRepository->activeSocialLinks();
 @endphp
 
 <x-slot:title>{{ LandingContent::text('contact_page.meta.title') }}</x-slot:title>
@@ -330,12 +333,21 @@ new #[Layout('landing::layouts.app')] class extends Component
                         <div class="col-12">
                             <div class="contact-card glass-card reveal">
                                 <h3>{{ LandingContent::text('contact_page.social_title') }}</h3>
-                                <div class="d-flex gap-2 mt-3">
-                                    <a class="social-link" href="#" aria-label="{{ __('LinkedIn') }}"><i class="bi bi-linkedin"></i></a>
-                                    <a class="social-link" href="#" aria-label="{{ __('X') }}"><i class="bi bi-twitter-x"></i></a>
-                                    <a class="social-link" href="#" aria-label="{{ __('YouTube') }}"><i class="bi bi-youtube"></i></a>
-                                    <a class="social-link" href="#" aria-label="{{ __('GitHub') }}"><i class="bi bi-github"></i></a>
-                                </div>
+                                @if($socialLinks)
+                                    <div class="d-flex gap-2 mt-3">
+                                        @foreach($socialLinks as $social)
+                                            <a
+                                                class="social-link"
+                                                href="{{ $social['url'] }}"
+                                                aria-label="{{ $social['platform'] }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                <i class="{{ $social['icon_class'] }}"></i>
+                                            </a>
+                                        @endforeach
+                                    </div>
+                                @endif
                             </div>
                         </div>
                     </div>

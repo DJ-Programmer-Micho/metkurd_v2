@@ -145,8 +145,8 @@ class CustomerEmailNotifier
 
         return [
             'customerName' => $name !== '' ? $name : 'there',
-            'supportEmail' => 'support@metkurd.com',
-            'supportMailto' => 'mailto:support@metkurd.com',
+            'supportEmail' => 'support@metkurd.ai',
+            'supportMailto' => 'mailto:support@metkurd.ai',
         ];
     }
 

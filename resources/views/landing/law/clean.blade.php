@@ -267,13 +267,7 @@
     {{ $head ?? '' }}
 </head>
 <body class="{{ $direction === 'rtl' ? 'landing-rtl' : 'landing-ltr' }}">
-    <livewire:landing::components.navigation />
-
-    <main id="main-content">
-        {{ $slot }}
-    </main>
-
-    <livewire:landing::components.footer />
+    @yield('law')
 
     <script data-navigate-once src="{{ asset('app/libs/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     @livewireScripts

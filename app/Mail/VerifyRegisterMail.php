@@ -26,7 +26,7 @@ class VerifyRegisterMail extends Mailable
             ->view('app.otp.verify-register', [
                 'otpCode' => $this->otpCode,
                 'expiresMinutes' => $this->expiresMinutes,
-                'supportEmail' => 'support@metkurd.com',
+                'supportEmail' => 'support@metkurd.ai',
             ]);
     }
 

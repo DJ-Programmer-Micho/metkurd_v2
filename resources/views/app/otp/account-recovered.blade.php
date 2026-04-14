@@ -235,8 +235,8 @@
 
             <div class="footer">
                 <p><strong>{{ __('Support') }}</strong></p>
-                <p>{{ __('Team Support:') }} <a href="mailto:{{ $supportEmail ?? 'support@metkurd.com' }}">{{ $supportEmail ?? 'support@metkurd.com' }}</a></p>
-                <p>{{ __('Developer Support:') }} <a href="mailto:{{ $supportEmail ?? 'support@metkurd.com' }}">{{ $supportEmail ?? 'support@metkurd.com' }}</a></p>
+                <p>{{ __('Team Support:') }} <a href="mailto:{{ $supportEmail ?? 'support@metkurd.ai' }}">{{ $supportEmail ?? 'support@metkurd.ai' }}</a></p>
+                <p>{{ __('Developer Support:') }} <a href="mailto:{{ $supportEmail ?? 'support@metkurd.ai' }}">{{ $supportEmail ?? 'support@metkurd.ai' }}</a></p>
                 <p>{{ __('METKURD is an AI platform for Kurdish language tools, voice workflows, and secure account access.') }}</p>
             </div>
 

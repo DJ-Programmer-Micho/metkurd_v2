@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\Landing\LandingSettingsRepository;
+use App\Support\Landing\LandingToolPageCatalog;
 use App\Support\LandingContent;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -12,20 +14,32 @@ new class extends Component
     #[Computed]
     public function resourceLinks(): array
     {
-        return collect(LandingContent::section('tool_catalog'))
+        return collect(app(LandingToolPageCatalog::class)->listForLocale(app()->getLocale()))
             ->take(3)
-            ->map(function (array $tool, string $code) {
+            ->map(function (array $tool) {
+                $slug = trim((string) ($tool['slug'] ?? ''));
+
+                if ($slug === '') {
+                    return null;
+                }
+
                 return [
-                    'label' => $tool['title'] ?? strtoupper($code),
+                    'label' => (string) ($tool['title'] ?? strtoupper($slug)),
                     'href' => route('landing.tools.show', [
                         'locale' => app()->getLocale(),
-                        'slug' => $tool['slug'] ?? $code,
+                        'slug' => $slug,
                     ]),
                 ];
             })
             ->filter()
             ->values()
             ->all();
+    }
+
+    #[Computed]
+    public function socialLinks(): array
+    {
+        return app(LandingSettingsRepository::class)->activeSocialLinks();
     }
 
     public function submitNewsletter(): void
@@ -107,12 +121,21 @@ new class extends Component
                     <strong>{{ LandingContent::text('site.name') }}</strong>
                 </div>
                 <p class="text-muted-soft">{{ LandingContent::text('footer.copy') }}</p>
-                <div class="d-flex gap-2">
-                    <a class="social-link" href="#" aria-label="{{ __('LinkedIn') }}"><i class="bi bi-linkedin"></i></a>
-                    <a class="social-link" href="#" aria-label="{{ __('X') }}"><i class="bi bi-twitter-x"></i></a>
-                    <a class="social-link" href="#" aria-label="{{ __('GitHub') }}"><i class="bi bi-github"></i></a>
-                    <a class="social-link" href="#" aria-label="{{ __('YouTube') }}"><i class="bi bi-youtube"></i></a>
-                </div>
+                @if($this->socialLinks)
+                    <div class="d-flex gap-2">
+                        @foreach($this->socialLinks as $social)
+                            <a
+                                class="social-link"
+                                href="{{ $social['url'] }}"
+                                aria-label="{{ $social['platform'] }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                <i class="{{ $social['icon_class'] }}"></i>
+                            </a>
+                        @endforeach
+                    </div>
+                @endif
             </div>
 
             <div class="col-6 col-lg-2">
