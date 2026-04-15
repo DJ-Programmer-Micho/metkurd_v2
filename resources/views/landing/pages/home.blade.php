@@ -162,7 +162,7 @@ new #[Layout('landing::layouts.app')] class extends Component
                 <p class="lead-soft mx-auto">{{ $toolsHeading['copy'] }}</p>
             </div>
 
-            <livewire:landing::components.tool-grid :limit="6" />
+            <livewire:landing::components.tool-grid :key="'home-tools-grid-' . app()->getLocale()" :limit="6" />
         </div>
     </section>
 

@@ -29,7 +29,12 @@ new #[Layout('landing::layouts.app')] class extends Component
 
     <section class="section pt-0">
         <div class="container">
-            <livewire:landing::components.tool-grid button-style="button" :show-meta="false" :button-label="LandingContent::text('common.open_page')" />
+            <livewire:landing::components.tool-grid
+                :key="'tools-grid-' . app()->getLocale()"
+                button-style="button"
+                :show-meta="false"
+                :button-label="LandingContent::text('common.open_page')"
+            />
         </div>
     </section>
 </div>

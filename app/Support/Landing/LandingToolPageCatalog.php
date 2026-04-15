@@ -22,7 +22,10 @@ class LandingToolPageCatalog
 
         $definedSlugs = LandingToolPage::query()
             ->pluck('slug')
-            ->map(fn ($slug) => (string) $slug)
+            ->map(fn ($slug) => $this->normalizeSlug((string) $slug))
+            ->filter()
+            ->unique()
+            ->values()
             ->all();
 
         $dynamicPages = LandingToolPage::query()
@@ -34,11 +37,12 @@ class LandingToolPageCatalog
             ->values();
 
         $fallbackPages = collect($this->fallbackCatalog($locale))
-            ->reject(fn (array $item) => in_array((string) ($item['slug'] ?? ''), $definedSlugs, true))
+            ->reject(fn (array $item) => in_array($this->normalizeSlug((string) ($item['slug'] ?? '')), $definedSlugs, true))
             ->values();
 
         return $dynamicPages
             ->concat($fallbackPages)
+            ->unique(fn (array $item) => $this->normalizeSlug((string) ($item['slug'] ?? '')))
             ->values()
             ->all();
     }
@@ -77,8 +81,7 @@ class LandingToolPageCatalog
         $created = 0;
 
         foreach ($this->fallbackToolCodes() as $index => $toolCode) {
-            $defaultCatalog = LandingContent::rawSection("tool_catalog.{$toolCode}");
-            $slug = (string) data_get($defaultCatalog, 'slug', $toolCode);
+            $slug = $this->canonicalFallbackSlug($toolCode);
 
             if ($slug === '') {
                 continue;
@@ -127,7 +130,7 @@ class LandingToolPageCatalog
 
         return [
             'source' => 'db',
-            'slug' => (string) $page->slug,
+            'slug' => $this->normalizeSlug((string) $page->slug),
             'icon' => 'bi bi-grid-1x2',
             'badge' => (string) $field('badge', ''),
             'title' => (string) $field('title', strtoupper((string) $page->slug)),
@@ -159,7 +162,7 @@ class LandingToolPageCatalog
         $items = [];
 
         foreach ($this->fallbackToolCodes() as $toolCode) {
-            $tool = $this->fallbackToolBySlug((string) data_get(LandingContent::rawSection("tool_catalog.{$toolCode}"), 'slug', $toolCode), $locale);
+            $tool = $this->fallbackToolBySlug($this->canonicalFallbackSlug($toolCode), $locale);
 
             if ($tool) {
                 $items[] = $tool;
@@ -206,7 +209,7 @@ class LandingToolPageCatalog
 
         return [
             'source' => 'fallback',
-            'slug' => (string) data_get($toolCatalog, 'slug', $toolCode),
+            'slug' => $this->canonicalFallbackSlug($toolCode),
             'icon' => (string) data_get($toolCatalog, 'icon', 'bi bi-grid-1x2'),
             'badge' => (string) data_get($toolPage, 'badge', data_get($toolCatalog, 'title', strtoupper($toolCode))),
             'title' => (string) data_get($toolPage, 'title', data_get($toolCatalog, 'title', strtoupper($toolCode))),
@@ -232,7 +235,7 @@ class LandingToolPageCatalog
 
     protected function resolveFallbackToolCode(string $slug): ?string
     {
-        return match (Str::of($slug)->lower()->replace('_', '-')->toString()) {
+        return match ($this->normalizeSlug($slug)) {
             'tts' => 'tts',
             'ctts', 'clone-tts', 'clone-xtts' => 'clone_tts',
             'asr', 'wasr', 'qasr' => 'asr',
@@ -248,6 +251,33 @@ class LandingToolPageCatalog
     protected function fallbackToolCodes(): array
     {
         return ['tts', 'clone_tts', 'asr', 'ocr', 'stem'];
+    }
+
+    protected function canonicalFallbackSlug(string $toolCode): string
+    {
+        $fallbackSlug = $this->normalizeSlug((string) data_get(
+            LandingContent::rawSection("tool_catalog.{$toolCode}"),
+            'slug',
+            ''
+        ));
+
+        if ($fallbackSlug !== '') {
+            return $fallbackSlug;
+        }
+
+        return match ($toolCode) {
+            'clone_tts' => 'ctts',
+            default => $this->normalizeSlug($toolCode),
+        };
+    }
+
+    protected function normalizeSlug(string $slug): string
+    {
+        return Str::of($slug)
+            ->trim()
+            ->lower()
+            ->replace('_', '-')
+            ->toString();
     }
 
     /**

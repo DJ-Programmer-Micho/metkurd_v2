@@ -22,7 +22,10 @@
   --muted:#51627d;
   --shadow:0 18px 50px rgba(15,23,42,.08);
 }
-html{scroll-behavior:smooth}
+html{
+  scroll-behavior:smooth;
+  overflow-x:hidden;
+}
 body{
   font-family:'Inter',system-ui,sans-serif;
   background:
@@ -33,6 +36,7 @@ body{
   color:var(--text);
   min-height:100vh;
   overflow-x:hidden;
+  max-width:100%;
 }
 [data-theme="light"] body{
   background:
@@ -94,12 +98,21 @@ a{text-decoration:none}
 .locale-link:hover,.locale-link.is-active{background:rgba(255,255,255,.08);color:var(--text)}
 .nav-action-link{color:var(--muted)!important;font-weight:600}
 .nav-action-link:hover{color:var(--text)!important}
+.nav-actions{min-width:0}
+.nav-actions .btn,
+.nav-actions .nav-action-link{
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
 .mode-toggle:hover{background:rgba(255,255,255,.08);color:var(--text)}
 .hero{padding:8rem 0 5rem;position:relative;overflow:hidden}
 .hero-badge,.section-badge{
   display:inline-flex;align-items:center;gap:.5rem;
   padding:.55rem .9rem;border-radius:999px;border:1px solid var(--stroke);
-  background:rgba(255,255,255,.05);color:var(--muted);font-size:.95rem
+  background:rgba(255,255,255,.05);color:var(--muted);font-size:.95rem;
+  max-width:100%;
+  flex-wrap:wrap;
+  overflow-wrap:anywhere;
 }
 .gradient-text,.landing-gradient-text{
   background:linear-gradient(135deg,#fff 20%, #88c6ff 45%, #9e7bff 70%, #6ef2c2 100%);
@@ -194,6 +207,12 @@ a{text-decoration:none}
 .tool-card p{
   line-height:1.65;
 }
+.tool-card h3,
+.section-title,
+.lead-soft,
+.footer-link{
+  overflow-wrap:anywhere;
+}
 .tool-card:hover,.feature-card:hover,.price-card:hover,.testimonial-card:hover,.stats-card:hover,.contact-card:hover,.signup-card:hover{
   transform:translateY(-6px);border-color:rgba(124,92,255,.32);box-shadow:0 24px 70px rgba(10,20,40,.22)
 }
@@ -206,7 +225,8 @@ a{text-decoration:none}
 .code-lines div{height:10px;border-radius:999px;background:linear-gradient(90deg,rgba(124,92,255,.45),rgba(6,214,255,.12));margin-bottom:.75rem}
 .demo-badge{font-size:.82rem;border:1px solid var(--stroke);padding:.28rem .55rem;border-radius:999px;color:var(--muted)}
 .step-item{display:flex;gap:1rem;align-items:flex-start}
-.step-number{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;flex-shrink:0}
+.step-item > :last-child{min-width:0;flex:1 1 auto}
+.step-number{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;flex-shrink:0;direction:ltr;unicode-bidi:isolate}
 .price-card.recommended{
   position:relative;
   overflow:hidden;
@@ -270,6 +290,9 @@ a{text-decoration:none}
 }
 .pricing-plan-amount{
   display:inline-block;
+  min-width:0;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 .plan-price small,.pricing-plan-period{
   font-size:1rem;
@@ -367,7 +390,9 @@ a{text-decoration:none}
 .badge-soft{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .7rem;border-radius:999px;background:rgba(67,231,168,.12);color:#86f2c7;border:1px solid rgba(67,231,168,.18)}
 .kbd-soft{padding:.25rem .55rem;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid var(--stroke);font-size:.85rem;color:var(--muted)}
 .landing-rtl{font-family:'Noto Sans Arabic','Inter',system-ui,sans-serif}
-.landing-rtl .step-item,.landing-rtl .check-list li{flex-direction:row-reverse;text-align:right}
+.landing-rtl .step-item{flex-direction:row-reverse;text-align:right}
+.landing-rtl .step-item .step-number{direction:ltr;unicode-bidi:isolate}
+.landing-rtl .check-list li{text-align:right}
 .landing-rtl .price-ribbon{right:auto;left:-36px;transform:rotate(-35deg)}
 .landing-rtl .faq-button{text-align:right}
 .landing-rtl .locale-switch{flex-direction:row-reverse}
@@ -380,6 +405,11 @@ a{text-decoration:none}
   .site-navbar .navbar-nav{padding:1rem 0}
   .nav-actions{flex-wrap:wrap}
   .locale-switch{width:100%;justify-content:center}
+  .nav-actions .btn,
+  .nav-actions .nav-action-link{
+    width:100%;
+    justify-content:center;
+  }
   .nav-action-link{display:inline-flex!important}
   .pricing-card-copy,
   .pricing-card-price-block,
