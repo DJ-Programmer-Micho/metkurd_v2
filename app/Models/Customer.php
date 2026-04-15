@@ -63,6 +63,24 @@ class Customer extends Authenticatable
         'password' => 'hashed',
     ];
 
+    public function hasCompletedVerification(): bool
+    {
+        return (bool) $this->email_verify && (bool) $this->phone_verify;
+    }
+
+    public function nextVerificationRouteName(): ?string
+    {
+        if (! (bool) $this->email_verify) {
+            return 'app.email.otp';
+        }
+
+        if (! (bool) $this->phone_verify) {
+            return 'app.phone.otp';
+        }
+
+        return null;
+    }
+
     // =========================================================
     // Relations
     // =========================================================

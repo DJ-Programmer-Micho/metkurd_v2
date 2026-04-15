@@ -266,8 +266,31 @@
     @stack('styles')
     {{ $head ?? '' }}
 </head>
-<body class="{{ $direction === 'rtl' ? 'landing-rtl' : 'landing-ltr' }}">
-    @yield('law')
+<body>
+
+    <div class="container mt-4">
+            <a
+                class="navbar-brand d-flex align-items-center gap-2 text-decoration-none"
+                href="{{ route('landing.home', ['locale' => $locale]) }}"
+                aria-label="{{ LandingContent::text('nav.home_label') }}"
+                wire:navigate
+            >
+                <span class="brand-badge">
+                    <img
+                        class="brand-logo brand-logo--dark"
+                        src="{{ asset(app('logo_1024_tran_black')) }}"
+                        alt="{{ __('METKURD') }}"
+                    >
+                    <img
+                        class="brand-logo brand-logo--light"
+                        src="{{ asset(app('logo_1024_tran')) }}"
+                        alt="{{ __('METKURD') }}"
+                    >
+                </span>
+                <span>{{ LandingContent::text('site.name') }}</span>
+            </a>
+        @yield('law')
+    </div>
 
     <script data-navigate-once src="{{ asset('app/libs/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     @livewireScripts

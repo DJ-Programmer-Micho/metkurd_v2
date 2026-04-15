@@ -150,7 +150,7 @@ a{text-decoration:none}
 .tool-square-chip{
   width:64px;
   height:64px;
-  border-radius:18px;
+  border-radius:15px;
   overflow:hidden;
   padding:0;
 }

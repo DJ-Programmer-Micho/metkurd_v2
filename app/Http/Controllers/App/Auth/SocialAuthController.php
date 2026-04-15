@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\CustomerProfile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 
@@ -22,9 +23,7 @@ class SocialAuthController extends Controller
 
     public function googleCallback()
     {
-        $providerUser = Socialite::driver('google')->stateless()->user();
-
-        return $this->loginOrCreate($providerUser, 'google');
+        return $this->handleProviderCallback('google');
     }
 
     public function githubRedirect()
@@ -36,14 +35,30 @@ class SocialAuthController extends Controller
 
     public function githubCallback()
     {
-        $providerUser = Socialite::driver('github')->user();
+        return $this->handleProviderCallback('github');
+    }
 
-        return $this->loginOrCreate($providerUser, 'github');
+    protected function handleProviderCallback(string $provider)
+    {
+        try {
+            $providerUser = Socialite::driver($provider)->user();
+        } catch (\Throwable $e) {
+            Log::warning('Social provider callback failed.', [
+                'provider' => $provider,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()
+                ->route('app.signin')
+                ->withErrors(['login' => __('Authentication failed. Please try again.')]);
+        }
+
+        return $this->loginOrCreate($providerUser, $provider);
     }
 
     protected function loginOrCreate($providerUser, string $provider)
     {
-        $email = $providerUser->getEmail();
+        $email = strtolower(trim((string) $providerUser->getEmail()));
         $name = $providerUser->getName() ?: $providerUser->getNickname();
         $avatarUrl = $providerUser->getAvatar();
         $providerId = (string) $providerUser->getId();
@@ -55,110 +70,124 @@ class SocialAuthController extends Controller
 
         $normalizedAvatar = $this->normalizeProviderAvatarUrl($avatarUrl);
 
-        $customer = DB::transaction(function () use ($email, $name, $provider, $providerId, $normalizedAvatar) {
-            [$first, $last] = $this->splitName($name);
+        try {
+            $customer = DB::transaction(function () use ($email, $name, $provider, $providerId, $normalizedAvatar) {
+                [$first, $last] = $this->splitName($name);
 
-            $customerByProvider = Customer::query()
-                ->when($provider === 'google', fn ($query) => $query->where('g_id', $providerId))
-                ->when($provider === 'github', fn ($query) => $query->where('h_id', $providerId))
-                ->lockForUpdate()
-                ->first();
+                $customerByProvider = Customer::query()
+                    ->when($provider === 'google', fn ($query) => $query->where('g_id', $providerId))
+                    ->when($provider === 'github', fn ($query) => $query->where('h_id', $providerId))
+                    ->lockForUpdate()
+                    ->first();
 
-            $customerByEmail = Customer::query()
-                ->where('email', $email)
-                ->lockForUpdate()
-                ->first();
+                $customerByEmail = Customer::query()
+                    ->where('email', $email)
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($customerByProvider && $customerByEmail && $customerByProvider->id !== $customerByEmail->id) {
-                throw new \RuntimeException('This '.$provider.' account is already linked to another user.');
-            }
+                if ($customerByProvider && $customerByEmail && $customerByProvider->id !== $customerByEmail->id) {
+                    throw new \RuntimeException('This '.$provider.' account is already linked to another user.');
+                }
 
-            $customer = $customerByProvider
-                ?? Customer::query()->firstOrCreate(
-                    ['email' => $email],
+                $customer = $customerByProvider
+                    ?? Customer::query()->firstOrCreate(
+                        ['email' => $email],
+                        [
+                            'username' => $this->uniqueUsernameFromName($name ?: Str::before($email, '@')),
+                            'password' => Str::random(32),
+                            'status' => 1,
+                            'email_verify' => true,
+                            'email_verified_at' => now(),
+                            'phone_verify' => false,
+                            'uid' => (string) Str::ulid(),
+                            'g_id' => $provider === 'google' ? $providerId : null,
+                            'h_id' => $provider === 'github' ? $providerId : null,
+                        ]
+                    );
+
+                $customerNeedsSave = false;
+
+                if ($provider === 'google' && empty($customer->g_id)) {
+                    $customer->g_id = $providerId;
+                    $customerNeedsSave = true;
+                }
+
+                if ($provider === 'github' && empty($customer->h_id)) {
+                    $customer->h_id = $providerId;
+                    $customerNeedsSave = true;
+                }
+
+                if (! $customer->email_verify) {
+                    $customer->email_verify = true;
+                    $customerNeedsSave = true;
+                }
+
+                if (! $customer->email_verified_at) {
+                    $customer->email_verified_at = now();
+                    $customerNeedsSave = true;
+                }
+
+                if ($customerNeedsSave) {
+                    $customer->save();
+                }
+
+                $profile = CustomerProfile::firstOrCreate(
+                    ['customer_id' => $customer->id],
                     [
-                        'username' => $this->uniqueUsernameFromName($name ?: Str::before($email, '@')),
-                        'password' => Str::random(32),
-                        'status' => 1,
-                        'email_verify' => true,
-                        'email_verified_at' => now(),
-                        'phone_verify' => false,
-                        'uid' => (string) Str::ulid(),
-                        'g_id' => $provider === 'google' ? $providerId : null,
-                        'h_id' => $provider === 'github' ? $providerId : null,
+                        'first_name' => $first,
+                        'last_name' => $last,
+                        'avatar' => $normalizedAvatar,
                     ]
                 );
 
-            $customerNeedsSave = false;
+                $profileNeedsSave = false;
 
-            if ($provider === 'google' && empty($customer->g_id)) {
-                $customer->g_id = $providerId;
-                $customerNeedsSave = true;
-            }
+                if (blank($profile->first_name) && filled($first)) {
+                    $profile->first_name = $first;
+                    $profileNeedsSave = true;
+                }
 
-            if ($provider === 'github' && empty($customer->h_id)) {
-                $customer->h_id = $providerId;
-                $customerNeedsSave = true;
-            }
+                if (blank($profile->last_name) && filled($last)) {
+                    $profile->last_name = $last;
+                    $profileNeedsSave = true;
+                }
 
-            if (! $customer->email_verify) {
-                $customer->email_verify = true;
-                $customerNeedsSave = true;
-            }
+                if ($normalizedAvatar && empty($profile->avatar)) {
+                    $profile->avatar = $normalizedAvatar;
+                    $profileNeedsSave = true;
+                }
 
-            if (! $customer->email_verified_at) {
-                $customer->email_verified_at = now();
-                $customerNeedsSave = true;
-            }
+                if ($profileNeedsSave) {
+                    $profile->save();
+                }
 
-            if ($customerNeedsSave) {
-                $customer->save();
-            }
+                return $customer->fresh('profile');
+            });
+        } catch (\Throwable $e) {
+            Log::warning('Social login account provisioning failed.', [
+                'provider' => $provider,
+                'email' => $email,
+                'provider_id' => $providerId,
+                'error' => $e->getMessage(),
+            ]);
 
-            $profile = CustomerProfile::firstOrCreate(
-                ['customer_id' => $customer->id],
-                [
-                    'first_name' => $first,
-                    'last_name' => $last,
-                    'avatar' => $normalizedAvatar,
-                ]
-            );
-
-            $profileNeedsSave = false;
-
-            if (blank($profile->first_name) && filled($first)) {
-                $profile->first_name = $first;
-                $profileNeedsSave = true;
-            }
-
-            if (blank($profile->last_name) && filled($last)) {
-                $profile->last_name = $last;
-                $profileNeedsSave = true;
-            }
-
-            if ($normalizedAvatar && empty($profile->avatar)) {
-                $profile->avatar = $normalizedAvatar;
-                $profileNeedsSave = true;
-            }
-
-            if ($profileNeedsSave) {
-                $profile->save();
-            }
-
-            return $customer->fresh('profile');
-        });
+            return redirect()
+                ->route('app.signin')
+                ->withErrors(['login' => __('We could not complete social sign-in. Please try again.')]);
+        }
 
         if (! $customer instanceof Customer) {
             return redirect()->route('app.signin')->withErrors(['login' => 'Login failed.']);
         }
 
         Auth::guard('app')->login($customer, true);
+        request()->session()->regenerate();
 
-        if (! $customer->phone_verify) {
-            return redirect()->route('app.phone.otp');
+        if ($nextVerificationRoute = $customer->nextVerificationRouteName()) {
+            return redirect()->route($nextVerificationRoute);
         }
 
-        return redirect()->route('app.home', ['locale' => 'en'])
+        return redirect()->route('app.home', ['locale' => app()->getLocale()])
             ->with('status', 'Welcome back!');
     }
 

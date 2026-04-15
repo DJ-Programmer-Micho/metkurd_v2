@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\CustomerProfile;
+use App\Support\RegistrationPhoneCountryManager;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -14,7 +15,12 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     public int $flag = 0;
 
     public string $phone = '';
+    public string $phone_country = '';
+    public string $phone_dial_code = '';
     public string $channel = '';
+
+    public array $allowedPhoneCountries = [];
+    public array $preferredPhoneCountries = [];
 
     public string $digit1 = '';
     public string $digit2 = '';
@@ -37,11 +43,29 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     {
         $user = Auth::guard('app')->user();
 
+        if (! $user || ! $user->email_verify) {
+            $this->dispatch('alert', type: 'warning', message: __('Please verify your email first.'));
+
+            return redirect()->to(route('app.email.otp'));
+        }
+
+        $this->allowedPhoneCountries = RegistrationPhoneCountryManager::enabledCountryCodes();
+        if ($this->allowedPhoneCountries === []) {
+            $this->allowedPhoneCountries = RegistrationPhoneCountryManager::defaultEnabledCountryCodes();
+        }
+
+        $this->preferredPhoneCountries = array_slice($this->allowedPhoneCountries, 0, min(3, count($this->allowedPhoneCountries)));
+
         $this->phone = (string) (
             optional($user->profile)->phone_number
             ?? CustomerProfile::where('customer_id', $user->id)->value('phone_number')
             ?? ''
         );
+
+        $profileCountry = RegistrationPhoneCountryManager::normalizeIso2(optional($user->profile)->country);
+        $this->phone_country = $profileCountry !== ''
+            ? $profileCountry
+            : ($this->preferredPhoneCountries[0] ?? $this->allowedPhoneCountries[0] ?? 'iq');
 
         $this->syncState();
     }
@@ -51,8 +75,25 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         $this->syncState();
     }
 
+    private function redirectIfEmailNotVerified()
+    {
+        $user = Auth::guard('app')->user();
+
+        if ($user && $user->email_verify) {
+            return null;
+        }
+
+        $this->dispatch('alert', type: 'warning', message: __('Please verify your email first.'));
+
+        return redirect()->to(route('app.email.otp'));
+    }
+
     public function sendCode(string $channel)
     {
+        if ($redirect = $this->redirectIfEmailNotVerified()) {
+            return $redirect;
+        }
+
         $user = Auth::guard('app')->user();
 
         if ($user->phone_verify) {
@@ -116,7 +157,13 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
     public function savePhone()
     {
+        if ($redirect = $this->redirectIfEmailNotVerified()) {
+            return $redirect;
+        }
+
         $this->validatePhoneOnly();
+        $this->phone_country = $this->normalizePhoneCountry($this->phone_country);
+        $this->phone_dial_code = $this->normalizeDialCode($this->phone_dial_code);
 
         $user = Auth::guard('app')->user();
 
@@ -129,11 +176,33 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                 Rule::unique('customer_profiles', 'phone_number')
                     ->ignore(CustomerProfile::where('customer_id', $user->id)->value('id')),
             ],
+            'phone_country' => ['required', 'string', 'size:2'],
+            'phone_dial_code' => ['required', 'string', 'max:4', 'regex:/^\d{1,4}$/'],
+        ], [
+            'phone_country.required' => __('Please choose your phone country.'),
+            'phone_country.size' => __('Please choose a valid phone country.'),
+            'phone_dial_code.required' => __('Please choose your phone country code.'),
+            'phone_dial_code.regex' => __('Please choose a valid phone country code.'),
         ]);
+
+        if (! RegistrationPhoneCountryManager::isCountryAllowed($this->phone_country)) {
+            $this->addError('phone', __('Please select a valid phone country.'));
+
+            return;
+        }
+
+        if (! RegistrationPhoneCountryManager::matchesDialCode($this->phone, $this->phone_dial_code)) {
+            $this->addError('phone', __('Phone country code and number do not match.'));
+
+            return;
+        }
 
         CustomerProfile::updateOrCreate(
             ['customer_id' => $user->id],
-            ['phone_number' => $this->phone]
+            [
+                'phone_number' => $this->phone,
+                'country' => strtoupper($this->phone_country),
+            ]
         );
 
         $user->phone_verify = false;
@@ -146,6 +215,9 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         $this->channel = '';
 
         $this->phone = (string) CustomerProfile::where('customer_id', $user->id)->value('phone_number');
+        $this->phone_country = RegistrationPhoneCountryManager::normalizeIso2(
+            (string) CustomerProfile::where('customer_id', $user->id)->value('country')
+        ) ?: $this->phone_country;
 
         $this->dispatch('alert', type: 'success', message: __('Phone updated. Choose a provider to receive a code.'));
         $this->flag = 0;
@@ -154,6 +226,10 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
     public function confirm()
     {
+        if ($redirect = $this->redirectIfEmailNotVerified()) {
+            return $redirect;
+        }
+
         $this->syncState();
 
         if ($this->isLocked) {
@@ -187,6 +263,11 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             $this->clearOtpState();
 
             $this->dispatch('alert', type: 'success', message: __('Phone verified successfully! Redirecting...'));
+
+            if ($nextVerificationRoute = $user->nextVerificationRouteName()) {
+                return redirect()->to(route($nextVerificationRoute));
+            }
+
             return redirect()->to(route('app.home',['locale' => app()->getLocale()]));
         }
 
@@ -206,6 +287,10 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
     public function resend()
     {
+        if ($redirect = $this->redirectIfEmailNotVerified()) {
+            return $redirect;
+        }
+
         $this->syncState();
 
         if ($this->isLocked) {
@@ -317,15 +402,30 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         $this->digit1 = $this->digit2 = $this->digit3 = $this->digit4 = $this->digit5 = $this->digit6 = '';
     }
 
-    private function validatePhoneOnly(): void
+    private function normalizePhone(?string $phone): string
     {
-        $digits = preg_replace('/\D+/', '', $this->phone ?? '');
+        $digits = preg_replace('/\D+/', '', (string) $phone);
 
         if (str_starts_with($digits, '00')) {
             $digits = substr($digits, 2);
         }
 
-        $this->phone = $digits ? ('+' . $digits) : '';
+        return $digits ? ('+' . $digits) : '';
+    }
+
+    private function normalizePhoneCountry(?string $country): string
+    {
+        return RegistrationPhoneCountryManager::normalizeIso2($country);
+    }
+
+    private function normalizeDialCode(?string $dialCode): string
+    {
+        return RegistrationPhoneCountryManager::normalizeDialCode($dialCode);
+    }
+
+    private function validatePhoneOnly(): void
+    {
+        $this->phone = $this->normalizePhone($this->phone);
 
         $this->validate([
             'phone' => [
@@ -364,6 +464,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 ?>
 
 <x-slot:title>{{ __('Verify Phone') }} | {{ __('MET KURD') }}</x-slot:title>
+
+@include('app.auth.partials.intl-tel-input-shared')
 
 <div class="row"
     @if ($flag === 1)
@@ -433,7 +535,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                             </div>
 
                             <div class="text-muted text-center mx-lg-3 mb-4">
-                                <h4><b>{{ $phone ?: '—' }}</b></h4>
+                                <h4><b>{{ $phone ?: '--' }}</b></h4>
                                 <h5>{{ __('Is this your phone number?') }}</h5>
                                 <small>{{ __('Please choose one of the providers') }}</small>
 
@@ -549,6 +651,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         <label for="phone" class="form-label">{{ __('Phone') }} <span class="text-danger">*</span></label>
 
         <input type="hidden" id="phone_hidden" wire:model.defer="phone">
+        <input type="hidden" id="phone_country_hidden" wire:model.defer="phone_country">
+        <input type="hidden" id="phone_dial_code_hidden" wire:model.defer="phone_dial_code">
 
         <div wire:ignore>
             <input type="tel"
@@ -562,6 +666,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         </div>
 
         @error('phone') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
+        @error('phone_country') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
+        @error('phone_dial_code') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
         <div id="phone_client_error" class="text-danger small mt-1" style="display:none;"></div>
     </div>
 
@@ -687,123 +793,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         </div>
     </div>
 </div>
-@push('styles')
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/css/intlTelInput.css">
-<style>
-    .iti {
-        width: 100%;
-        display: block;
-        z-index: 9999;
-    }
-
-    .iti input {
-        width: 100% !important;
-    }
-
-    /* Dark dropdown shell */
-    .iti__dropdown-content {
-        background: #111827 !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
-        border-radius: 14px !important;
-        box-shadow: 0 18px 40px rgba(0,0,0,0.45) !important;
-        color: #e5e7eb !important;
-    }
-    .iti .iti__selected-dial-code {
-        margin-right: 4px;
-    }
-    /* Country list area */
-    .iti__country-list {
-        background: #111827 !important;
-        color: #e5e7eb !important;
-    }
-
-    /* Each country row */
-    .iti__country {
-        padding: 10px 12px !important;
-        transition: background-color .18s ease, color .18s ease;
-    }
-
-    .iti__country:hover {
-        background: rgba(255,255,255,0.06) !important;
-    }
-
-    /* Highlighted / active row */
-    .iti__country.iti__highlight,
-    .iti__country.iti__active {
-        background: rgba(204, 0, 34, 0.18) !important;
-        color: #ffffff !important;
-    }
-
-    /* Country name */
-    .iti__country-name {
-        color: #f3f4f6 !important;
-    }
-
-    /* Dial code */
-    .iti__dial-code {
-        color: #9ca3af !important;
-    }
-
-    .iti__country.iti__highlight .iti__dial-code,
-    .iti__country:hover .iti__dial-code {
-        color: #d1d5db !important;
-    }
-
-    /* Search box wrapper */
-    .iti__search-input {
-        background: #0f172a !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
-        color: #f9fafb !important;
-        border-radius: 10px !important;
-        padding: 10px 12px !important;
-        outline: none !important;
-        box-shadow: none !important;
-    }
-
-    .iti__search-input::placeholder {
-        color: #6b7280 !important;
-    }
-
-    .iti__search-input:focus {
-        border-color: rgba(204, 0, 34, 0.55) !important;
-        box-shadow: 0 0 0 3px rgba(204, 0, 34, 0.15) !important;
-    }
-
-    /* Selected flag button area */
-    .iti__selected-country {
-        background: #1f2937 !important;
-        border-right: 1px solid rgba(255,255,255,0.06);
-    }
-
-    .iti__selected-country:hover {
-        background: #243041 !important;
-    }
-
-    /* Arrow color */
-    .iti__arrow {
-        border-top-color: #d1d5db !important;
-    }
-
-    /* Scrollbar */
-    .iti__country-list::-webkit-scrollbar {
-        width: 10px;
-    }
-
-    .iti__country-list::-webkit-scrollbar-track {
-        background: #0b1220;
-    }
-
-    .iti__country-list::-webkit-scrollbar-thumb {
-        background: #374151;
-        border-radius: 999px;
-    }
-
-    .iti__country-list::-webkit-scrollbar-thumb:hover {
-        background: #4b5563;
-    }
-</style>
-@endpush
-
 @push('scripts')
 <script>
 window.moveToNext = function (index, e) {
@@ -824,189 +813,84 @@ window.moveToNext = function (index, e) {
 };
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/js/intlTelInput.min.js"></script>
+@php
+    $phoneOtpConfig = [
+        'invalidPhoneMessage' => __('Please enter a valid phone number.'),
+        'assetErrorMessage' => __('Phone input failed to load. Please refresh and try again.'),
+        'allowedCountries' => $allowedPhoneCountries ?? [],
+        'preferredCountries' => $preferredPhoneCountries ?? [],
+    ];
+@endphp
+<script>
+window.phoneConfig = @json($phoneOtpConfig);
+</script>
+
 <script>
 (() => {
-    const PHONE_INVALID_MESSAGE = window.phoneOtpInvalidMessage || 'Please enter a valid phone number.';
-    const phoneState = {
-        iti: null,
-        input: null,
-    };
+    const config = window.phoneConfig || {};
 
-    function getLivewireComponent() {
-        const el = document.getElementById('phone')?.closest('[wire\\:id]');
-        if (!el || !window.Livewire) return null;
-        return window.Livewire.find(el.getAttribute('wire:id'));
-    }
+    const invalidPhoneMessage = typeof config.invalidPhoneMessage === 'string' && config.invalidPhoneMessage.trim() !== ''
+        ? config.invalidPhoneMessage
+        : 'Please enter a valid phone number.';
+    const assetErrorMessage = typeof config.assetErrorMessage === 'string' && config.assetErrorMessage.trim() !== ''
+        ? config.assetErrorMessage
+        : 'Phone input failed to load. Please refresh and try again.';
+    const allowedCountries = Array.isArray(config.allowedCountries) ? config.allowedCountries : [];
+    const preferredCountries = Array.isArray(config.preferredCountries) ? config.preferredCountries : [];
 
-    function showPhoneClientError(message = '') {
-        const el = document.getElementById('phone_client_error');
-        if (!el) return;
+    let initQueued = false;
 
-        if (message) {
-            el.textContent = message;
-            el.style.display = 'block';
-        } else {
-            el.textContent = '';
-            el.style.display = 'none';
-        }
-    }
-
-    function destroyPhoneInput() {
-        if (phoneState.iti && typeof phoneState.iti.destroy === 'function') {
-            phoneState.iti.destroy();
-        }
-
-        phoneState.iti = null;
-        phoneState.input = null;
-    }
-
-    function pushPhoneToLivewire(value) {
-        const hidden = document.getElementById('phone_hidden');
-        if (hidden && hidden.value !== value) {
-            hidden.value = value;
-            hidden.dispatchEvent(new Event('input', { bubbles: true }));
-            hidden.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-    }
-
-    function getFormattedPhone(rawValue = '') {
-        if (!phoneState.iti) return '';
-
-        try {
-            const number = phoneState.iti.getNumber() || '';
-            if (number) return number;
-        } catch (error) {
-        }
-
-        const digits = (rawValue || phoneState.input?.value || '').replace(/\D+/g, '');
-        const dialCode = phoneState.iti.getSelectedCountryData()?.dialCode || '';
-
-        if (!digits || !dialCode) return '';
-
-        return digits.startsWith(dialCode)
-            ? `+${digits}`
-            : `+${dialCode}${digits}`;
-    }
-
-    function syncPhoneValue({ validate = false } = {}) {
-        const input = document.getElementById('phone');
-        if (!input || !phoneState.iti) return false;
-
-        const rawValue = input.value.trim();
-        const fullNumber = getFormattedPhone(rawValue);
-
-        if (!rawValue) {
-            pushPhoneToLivewire('');
-            showPhoneClientError('');
-            return false;
-        }
-
-        if (validate) {
-            const utilsReady = typeof window.intlTelInputUtils !== 'undefined';
-
-            if (utilsReady && typeof phoneState.iti.isValidNumber === 'function' && !phoneState.iti.isValidNumber()) {
-                pushPhoneToLivewire('');
-                showPhoneClientError(PHONE_INVALID_MESSAGE);
-                return false;
-            }
-        }
-
-        if (fullNumber) {
-            pushPhoneToLivewire(fullNumber);
-        }
-
-        showPhoneClientError('');
-        return true;
-    }
-
-    function initPhoneInput() {
-        const input = document.getElementById('phone');
-        const hidden = document.getElementById('phone_hidden');
-
-        if (!input || !hidden || typeof window.intlTelInput === 'undefined') {
-            destroyPhoneInput();
+    async function initPhoneInput() {
+        if (!window.MetIntlTelInput) {
             return;
         }
 
-        if (phoneState.input !== input) {
-            destroyPhoneInput();
-            phoneState.input = input;
-        }
+        const initialCountry = document.getElementById('phone_country_hidden')?.value
+            || preferredCountries[0]
+            || allowedCountries[0]
+            || 'iq';
 
-        if (input.dataset.itiInitialized === 'true' && phoneState.iti) {
-            syncPhoneValue();
-            return;
-        }
-
-        phoneState.iti = window.intlTelInput(input, {
-            initialCountry: 'iq',
-            countryOrder: ['iq', 'de', 'us'],
-            onlyCountries: ['iq', 'tr', 'us', 'de', 'ir', 'fr', 'se', 'at', 'be', 'dk', 'it', 'nl', 'es', 'ch', 'gb', 'ax', 'au', 'ca'],
-            nationalMode: false,
-            separateDialCode: true,
-            autoPlaceholder: 'polite',
-            formatAsYouType: true,
-            strictMode: false,
-            dropdownContainer: document.body,
-            loadUtils: () => import('https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/js/utils.js'),
+        await window.MetIntlTelInput.init({
+            key: 'phone-otp-edit-number',
+            inputSelector: '#phone',
+            hiddenPhoneSelector: '#phone_hidden',
+            hiddenCountrySelector: '#phone_country_hidden',
+            hiddenDialCodeSelector: '#phone_dial_code_hidden',
+            formSelector: '#phone-edit-form',
+            errorSelector: '#phone_client_error',
+            invalidMessage: invalidPhoneMessage,
+            assetErrorMessage,
+            initialCountry,
+            onlyCountries: allowedCountries,
+            preferredCountries,
         });
-
-        input.dataset.itiInitialized = 'true';
-
-        if (hidden.value) {
-            try {
-                phoneState.iti.setNumber(hidden.value);
-            } catch (e) {}
-        }
-
-        input.addEventListener('input', () => syncPhoneValue({ validate: false }));
-        input.addEventListener('blur', () => syncPhoneValue({ validate: true }));
-        input.addEventListener('countrychange', () => syncPhoneValue({ validate: true }));
-
-        syncPhoneValue({ validate: false });
     }
 
-function bindPhoneFormSubmit() {
-    const form = document.getElementById('phone-edit-form');
-    if (!form || form.dataset.phoneSubmitBound === 'true') return;
-
-    form.addEventListener('submit', (e) => {
-        const ok = syncPhoneValue({ validate: true });
-
-        if (!ok) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
+    function queueInit() {
+        if (initQueued) {
             return;
         }
 
-        const latest = getFormattedPhone(document.getElementById('phone')?.value || '');
-        if (latest) {
-            pushPhoneToLivewire(latest);
-        }
-    }, true);
-
-    form.dataset.phoneSubmitBound = 'true';
-}
-
-    function init() {
-        initPhoneInput();
-        bindPhoneFormSubmit();
+        initQueued = true;
+        requestAnimationFrame(() => {
+            initQueued = false;
+            initPhoneInput();
+        });
     }
 
-    document.addEventListener('DOMContentLoaded', init);
-    document.addEventListener('livewire:navigated', init);
-    document.addEventListener('livewire:initialized', init);
+    document.addEventListener('DOMContentLoaded', queueInit);
+    document.addEventListener('met:intl-tel-input-ready', queueInit);
+    document.addEventListener('livewire:navigated', queueInit);
+    document.addEventListener('livewire:initialized', queueInit);
 
     if (window.Livewire && typeof window.Livewire.hook === 'function' && !window.__phoneOtpMorphHookBound) {
         window.__phoneOtpMorphHookBound = true;
         window.Livewire.hook('morphed', () => {
-            requestAnimationFrame(init);
+            queueInit();
         });
     }
 
-    init();
+    queueInit();
 })();
 </script>
 @endpush

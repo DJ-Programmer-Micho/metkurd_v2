@@ -138,7 +138,7 @@ Route::middleware(['auth:app', 'app.active', LocalizationMainMiddleware::class])
         Route::livewire('/app/suspended-301', 'app::auth.suspend-one')->name('app.suspended');
 });
 Route::prefix('{locale}')
-    ->middleware(['auth:app', 'app.active', LocalizationMainMiddleware::class])
+    ->middleware(['auth:app', 'app.active', 'app.verified', LocalizationMainMiddleware::class])
     ->group(function () {
         // pages
         Route::livewire('/app/home', 'app::pages.home.app-home')->name('app.home');

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\Authenticate;
+use App\Http\Middleware\EnsureCustomerVerificationIsComplete;
 use App\Http\Middleware\EnsureCustomerCanAccessTool;
 use App\Http\Middleware\EnsureUserAppIsActive;
 use App\Http\Middleware\LocalizationMainMiddleware;
@@ -19,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth' => Authenticate::class,
             'localization.main' => LocalizationMainMiddleware::class,
             'app.active' => EnsureUserAppIsActive::class,
+            'app.verified' => EnsureCustomerVerificationIsComplete::class,
             'app.tool.access' => EnsureCustomerCanAccessTool::class,
         ]);
 

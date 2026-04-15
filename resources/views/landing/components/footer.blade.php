@@ -72,8 +72,8 @@ new class extends Component
     }
 
     $legalLinks = [
-        ['label' => LandingContent::text('nav.terms'), 'href' => route('landing.terms', ['locale' => $locale])],
-        ['label' => LandingContent::text('nav.privacy'), 'href' => route('landing.privacy', ['locale' => $locale])],
+        ['label' => LandingContent::text('nav.terms'), 'href' => route('law.terms')],
+        ['label' => LandingContent::text('nav.privacy'), 'href' => route('law.privacy')],
         ['label' => LandingContent::text('nav.contact'), 'href' => route('landing.contact', ['locale' => $locale])],
     ];
 
@@ -97,8 +97,8 @@ new class extends Component
                     <p class="text-muted-soft mb-0">{{ LandingContent::text('footer.newsletter_copy') }}</p>
                 </div>
 
-                <div class="col-lg-5 ">
-                    <img src="{{ asset('/app/logo/qr_tele.png') }}" alt="https://t.me/metkurd_ai" width="50%">
+                <div class="col-lg-5 icon-chip tool-square-chip" style="width: 256px; height: 256px;">
+                    <img src="{{ asset('/app/logo/qr_tele.png') }}" alt="https://t.me/metkurd_ai" width="100%">
                 </div>
             </div>
         </div>

@@ -19,7 +19,7 @@ class LawController extends Controller
 
     public function privacyPolicy()
     {
-        $filePath = public_path('landing/law/METKURDPrivacyPolicy.html'); // Path to the exported HTML file
+        $filePath = public_path('landing/law/METKURDPrivacy.html'); // Path to the exported HTML file
         $htmlContent = file_get_contents($filePath); // Read HTML content
 
         return view('law.privacy-policy-one', [

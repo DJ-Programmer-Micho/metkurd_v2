@@ -15,6 +15,7 @@ use Illuminate\Validation\ValidationException;
 use App\Models\Customer;
 use App\Models\CustomerProfile;
 use App\Notifications\Landing\TelegramNewRegister;
+use App\Support\RegistrationPhoneCountryManager;
 use Stevebauman\Location\Facades\Location;
 
 new #[Layout('app::layouts.app-auth')] class extends Component
@@ -24,15 +25,36 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     public string $username = '';
     public string $job_title = '';
     public string $phone_number = '';
+    public string $phone_country = '';
+    public string $phone_dial_code = '';
     public string $email = '';
     public string $password = '';
     public string $password_confirmation = '';
     public string $cfTurnstileResponse = '';
+    public bool $accept_terms = false;
+
+    public array $allowedPhoneCountries = [];
+    public array $preferredPhoneCountries = [];
+
+    public function mount(): void
+    {
+        $this->allowedPhoneCountries = RegistrationPhoneCountryManager::enabledCountryCodes();
+
+        if ($this->allowedPhoneCountries === []) {
+            $this->allowedPhoneCountries = RegistrationPhoneCountryManager::defaultEnabledCountryCodes();
+        }
+
+        $this->preferredPhoneCountries = array_slice($this->allowedPhoneCountries, 0, min(3, count($this->allowedPhoneCountries)));
+        $this->phone_country = $this->preferredPhoneCountries[0] ?? $this->allowedPhoneCountries[0] ?? 'iq';
+    }
 
     public function signUp()
     {
         $this->resetErrorBag('form');
         $this->ensureNotRateLimited();
+        $this->phone_number = $this->normalizePhone($this->phone_number);
+        $this->phone_country = $this->normalizePhoneCountry($this->phone_country);
+        $this->phone_dial_code = $this->normalizeDialCode($this->phone_dial_code);
 
         try {
             $this->validate([
@@ -47,12 +69,32 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                     'regex:/^\+\d{10,15}$/',
                     Rule::unique('customer_profiles', 'phone_number'),
                 ],
+                'phone_country' => ['required', 'string', 'size:2'],
+                'phone_dial_code' => ['required', 'string', 'max:4', 'regex:/^\d{1,4}$/'],
                 'email' => ['required', 'email', 'max:255', 'unique:customers,email'],
                 'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+                'accept_terms' => ['accepted'],
                 'cfTurnstileResponse' => ['bail', 'required', 'string', new ValidTurnstile()],
             ], [
                 'cfTurnstileResponse.required' => __('Please complete the human verification challenge.'),
+                'accept_terms.accepted' => __('You must agree to the Terms & Conditions and Privacy Policy.'),
+                'phone_country.required' => __('Please choose your phone country.'),
+                'phone_country.size' => __('Please choose a valid phone country.'),
+                'phone_dial_code.required' => __('Please choose your phone country code.'),
+                'phone_dial_code.regex' => __('Please choose a valid phone country code.'),
             ]);
+
+            if (! RegistrationPhoneCountryManager::isCountryAllowed($this->phone_country)) {
+                throw ValidationException::withMessages([
+                    'phone_number' => __('Please select a valid phone country.'),
+                ]);
+            }
+
+            if (! RegistrationPhoneCountryManager::matchesDialCode($this->phone_number, $this->phone_dial_code)) {
+                throw ValidationException::withMessages([
+                    'phone_number' => __('Phone country code and number do not match.'),
+                ]);
+            }
         } catch (ValidationException $e) {
             $this->resetTurnstileChallenge();
 
@@ -76,7 +118,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                         'first_name'   => trim($this->first_name),
                         'last_name'    => trim($this->last_name),
                         'job_title'    => $this->job_title !== '' ? trim($this->job_title) : null,
-                        'phone_number' => $this->normalizePhone($this->phone_number),
+                        'phone_number' => $this->phone_number,
+                        'country'      => strtoupper($this->phone_country),
                     ]
                 );
 
@@ -115,6 +158,16 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         }
 
         return $digits ? ('+' . $digits) : '';
+    }
+
+    private function normalizePhoneCountry(?string $country): string
+    {
+        return RegistrationPhoneCountryManager::normalizeIso2($country);
+    }
+
+    private function normalizeDialCode(?string $dialCode): string
+    {
+        return RegistrationPhoneCountryManager::normalizeDialCode($dialCode);
     }
 
     private function sendTelegramRegistrationNotification(): void
@@ -212,134 +265,13 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
 <x-slot:title>{{ __('Sign Up') }} | {{ __('MET KURD') }}</x-slot:title>
 
-@push('styles')
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/css/intlTelInput.css">
+@include('app.auth.partials.intl-tel-input-shared')
 
+@push('styles')
 <style>
     #password-contain { display:block !important; visibility:visible !important; }
     #password-contain p.valid { color:#16a34a; }
     #password-contain p.invalid { color:#dc2626; }
-
-    .iti {
-        width: 100%;
-    }
-
-    .iti input {
-        width: 100%;
-    }  
-</style>
-<style>
-    .iti {
-        width: 100%;
-        display: block;
-        z-index: 9999;
-    }
-
-    .iti input {
-        width: 100% !important;
-    }
-
-    /* Dark dropdown shell */
-    .iti__dropdown-content {
-        background: #111827 !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
-        border-radius: 14px !important;
-        box-shadow: 0 18px 40px rgba(0,0,0,0.45) !important;
-        color: #e5e7eb !important;
-    }
-    .iti .iti__selected-dial-code {
-        margin-right: 4px;
-    }
-    /* Country list area */
-    .iti__country-list {
-        background: #111827 !important;
-        color: #e5e7eb !important;
-    }
-
-    /* Each country row */
-    .iti__country {
-        padding: 10px 12px !important;
-        transition: background-color .18s ease, color .18s ease;
-    }
-
-    .iti__country:hover {
-        background: rgba(255,255,255,0.06) !important;
-    }
-
-    /* Highlighted / active row */
-    .iti__country.iti__highlight,
-    .iti__country.iti__active {
-        background: rgba(204, 0, 34, 0.18) !important;
-        color: #ffffff !important;
-    }
-
-    /* Country name */
-    .iti__country-name {
-        color: #f3f4f6 !important;
-    }
-
-    /* Dial code */
-    .iti__dial-code {
-        color: #9ca3af !important;
-    }
-
-    .iti__country.iti__highlight .iti__dial-code,
-    .iti__country:hover .iti__dial-code {
-        color: #d1d5db !important;
-    }
-
-    /* Search box wrapper */
-    .iti__search-input {
-        background: #0f172a !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
-        color: #f9fafb !important;
-        border-radius: 10px !important;
-        padding: 10px 12px !important;
-        outline: none !important;
-        box-shadow: none !important;
-    }
-
-    .iti__search-input::placeholder {
-        color: #6b7280 !important;
-    }
-
-    .iti__search-input:focus {
-        border-color: rgba(204, 0, 34, 0.55) !important;
-        box-shadow: 0 0 0 3px rgba(204, 0, 34, 0.15) !important;
-    }
-
-    /* Selected flag button area */
-    .iti__selected-country {
-        background: #1f2937 !important;
-        border-right: 1px solid rgba(255,255,255,0.06);
-    }
-
-    .iti__selected-country:hover {
-        background: #243041 !important;
-    }
-
-    /* Arrow color */
-    .iti__arrow {
-        border-top-color: #d1d5db !important;
-    }
-
-    /* Scrollbar */
-    .iti__country-list::-webkit-scrollbar {
-        width: 10px;
-    }
-
-    .iti__country-list::-webkit-scrollbar-track {
-        background: #0b1220;
-    }
-
-    .iti__country-list::-webkit-scrollbar-thumb {
-        background: #374151;
-        border-radius: 999px;
-    }
-
-    .iti__country-list::-webkit-scrollbar-thumb:hover {
-        background: #4b5563;
-    }
 </style>
 @endpush
 
@@ -435,6 +367,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                     <label class="form-label">{{ __('Phone *') }}</label>
 
                                     <input type="hidden" id="phone_number_hidden" wire:model.defer="phone_number">
+                                    <input type="hidden" id="phone_country_hidden" wire:model.defer="phone_country">
+                                    <input type="hidden" id="phone_dial_code_hidden" wire:model.defer="phone_dial_code">
 
                                     <div wire:ignore>
                                         <input
@@ -449,6 +383,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                     </div>
 
                                     @error('phone_number') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                                    @error('phone_country') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                                    @error('phone_dial_code') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
                                     <div id="phone_number_client_error" class="invalid-feedback d-block" style="display:none;"></div>
                                 </div>
 
@@ -496,6 +432,19 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                     <x-turnstile-widget model="cfTurnstileResponse" theme="dark" />
                                 </div>
 
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input @error('accept_terms') is-invalid @enderror"
+                                               type="checkbox"
+                                               id="accept_terms"
+                                               wire:model="accept_terms">
+                                        <label class="form-check-label" for="accept_terms">
+                                            {!! __('I agree to the <a href=\":terms\" target=\"_blank\" rel=\"noopener noreferrer\">Terms &amp; Conditions</a> and <a href=\":privacy\" target=\"_blank\" rel=\"noopener noreferrer\">Privacy Policy</a>.', ['terms' => route('law.terms'), 'privacy' => route('law.privacy')]) !!}
+                                        </label>
+                                    </div>
+                                    @error('accept_terms') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                                </div>
+
                                 <div class="mt-4">
                                     <button class="btn btn-success w-100" type="submit" wire:loading.attr="disabled">
                                         <span wire:loading.remove>{{ __('Sign Up') }}</span>
@@ -504,6 +453,21 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                             {{ __('Creating...') }}
                                         </span>
                                     </button>
+                                </div>
+
+                                <div class="mt-4 text-center">
+                                    <div class="signin-other-title">
+                                        <h5 class="fs-13 mb-4 title">{{ __('Sign Up with') }}</h5>
+                                    </div>
+
+                                    <div>
+                                        <a href="{{ route('social.google.redirect') }}" class="btn btn-primary btn-icon waves-effect waves-light" aria-label="{{ __('Sign up with Google') }}">
+                                            <i class="ri-google-fill fs-16"></i>
+                                        </a>
+                                        <a href="{{ route('social.github.redirect') }}" class="btn btn-dark btn-icon waves-effect waves-light" aria-label="{{ __('Sign up with GitHub') }}">
+                                            <i class="ri-github-fill fs-16"></i>
+                                        </a>
+                                    </div>
                                 </div>
                             </form>
                         </div>
@@ -522,10 +486,31 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     </div>
 </div>
 @push('scripts')
-<script src="https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/js/intlTelInput.min.js"></script>
+@php
+    $signupPhoneConfig = [
+        'invalidPhoneMessage' => __('Please enter a valid phone number.'),
+        'assetErrorMessage' => __('Phone input failed to load. Please refresh and try again.'),
+        'allowedCountries' => $allowedPhoneCountries ?? [],
+        'preferredCountries' => $preferredPhoneCountries ?? [],
+    ];
+@endphp
+<script>
+window.phoneConfig = @json($signupPhoneConfig);
+</script>
 <script>
 (() => {
-    let iti = null;
+    const config = window.phoneConfig || {};
+
+    const invalidPhoneMessage = typeof config.invalidPhoneMessage === 'string' && config.invalidPhoneMessage.trim() !== ''
+        ? config.invalidPhoneMessage
+        : 'Please enter a valid phone number.';
+    const assetErrorMessage = typeof config.assetErrorMessage === 'string' && config.assetErrorMessage.trim() !== ''
+        ? config.assetErrorMessage
+        : 'Phone input failed to load. Please refresh and try again.';
+    const allowedCountries = Array.isArray(config.allowedCountries) ? config.allowedCountries : [];
+    const preferredCountries = Array.isArray(config.preferredCountries) ? config.preferredCountries : [];
+
+    let initQueued = false;
 
     function setState(el, ok) {
         if (!el) return;
@@ -544,126 +529,51 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     }
 
     function checkMatch() {
-        const pwd     = document.getElementById('password');
+        const pwd = document.getElementById('password');
         const confirm = document.getElementById('password_confirmation');
-        const el      = document.getElementById('pass-match');
+        const el = document.getElementById('pass-match');
+
         if (!pwd || !confirm || !el) return;
+
         const bothFilled = pwd.value.length > 0 && confirm.value.length > 0;
         setState(el, bothFilled && pwd.value === confirm.value);
     }
 
-    function showPhoneClientError(message = '') {
-        const el = document.getElementById('phone_number_client_error');
-        if (!el) return;
-
-        if (message) {
-            el.textContent = message;
-            el.style.display = 'block';
-        } else {
-            el.textContent = '';
-            el.style.display = 'none';
-        }
-    }
-
-    function syncPhoneValue({ validate = false } = {}) {
-        const input = document.getElementById('phone_number');
-        const hidden = document.getElementById('phone_number_hidden');
-
-        if (!input || !hidden || !iti) return false;
-
-        const rawValue = input.value.trim();
-        const fullNumber = iti.getNumber() || '';
-
-        if (!rawValue) {
-            hidden.value = '';
-            hidden.dispatchEvent(new Event('input', { bubbles: true }));
-            showPhoneClientError('');
-            return false;
-        }
-
-        // do not aggressively fail while user is still typing
-        if (validate) {
-            const utilsReady = typeof window.intlTelInputUtils !== 'undefined';
-
-            if (utilsReady && typeof iti.isValidNumber === 'function' && !iti.isValidNumber()) {
-                hidden.value = '';
-                hidden.dispatchEvent(new Event('input', { bubbles: true }));
-                showPhoneClientError('{{ __("Please enter a valid phone number.") }}');
-                return false;
-            }
-        }
-
-        if (fullNumber) {
-            hidden.value = fullNumber;
-            hidden.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-
-        showPhoneClientError('');
-        return true;
-    }
-
-    function initPhoneInput() {
-        const input = document.getElementById('phone_number');
-        const hidden = document.getElementById('phone_number_hidden');
-
-        if (!input || !hidden || typeof window.intlTelInput === 'undefined') return;
-
-        if (input.dataset.itiInitialized === 'true') {
-            if (iti) syncPhoneValue();
+    async function initPhoneInput() {
+        if (!window.MetIntlTelInput) {
             return;
         }
 
-        iti = window.intlTelInput(input, {
-            initialCountry: 'iq',
-            preferredCountries: ['iq', 'de', 'us'],
-            onlyCountries: ['iq', 'tr', 'us', 'de', 'ir', 'fr', 'se', 'at', 'be', 'dk', 'it', 'nl', 'es', 'ch', 'gb', 'ax', 'au', 'ca'],
-            nationalMode: false,
-            separateDialCode: true,
-            autoPlaceholder: 'polite',
-            formatAsYouType: true,
-            strictMode: false,
-            loadUtils: () => import('https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/js/utils.js'),
+        const initialCountry = document.getElementById('phone_country_hidden')?.value
+            || preferredCountries[0]
+            || allowedCountries[0]
+            || 'iq';
+
+        await window.MetIntlTelInput.init({
+            key: 'signup-phone-number',
+            inputSelector: '#phone_number',
+            hiddenPhoneSelector: '#phone_number_hidden',
+            hiddenCountrySelector: '#phone_country_hidden',
+            hiddenDialCodeSelector: '#phone_dial_code_hidden',
+            formSelector: 'form[wire\\:submit\\.prevent="signUp"]',
+            errorSelector: '#phone_number_client_error',
+            invalidMessage: invalidPhoneMessage,
+            assetErrorMessage,
+            initialCountry,
+            onlyCountries: allowedCountries,
+            preferredCountries,
         });
-
-        input.dataset.itiInitialized = 'true';
-
-        if (hidden.value) {
-            try {
-                iti.setNumber(hidden.value);
-            } catch (e) {}
-        }
-
-        input.addEventListener('input', () => syncPhoneValue());
-        input.addEventListener('blur', () => syncPhoneValue({ validate: true }));
-        input.addEventListener('countrychange', () => syncPhoneValue({ validate: true }));
-
-        syncPhoneValue();
-    }
-
-    function bindFormSubmit() {
-        const form = document.querySelector('form[wire\\:submit\\.prevent="signUp"]');
-        if (!form || form.dataset.phoneSubmitBound === 'true') return;
-
-        form.addEventListener('submit', (e) => {
-            const ok = syncPhoneValue({ validate: true });
-            if (!ok) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        });
-
-        form.dataset.phoneSubmitBound = 'true';
     }
 
     if (!window.__signupToggleBound) {
         window.__signupToggleBound = true;
 
-        document.addEventListener('click', e => {
+        document.addEventListener('click', (e) => {
             const btn = e.target.closest('.password-addon');
             if (!btn) return;
 
             const input = btn.closest('.input-group')?.querySelector('input');
-            const icon  = btn.querySelector('i');
+            const icon = btn.querySelector('i');
             if (!input) return;
 
             const toText = input.type === 'password';
@@ -679,7 +589,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     if (!window.__signupStrengthBound) {
         window.__signupStrengthBound = true;
 
-        document.addEventListener('input', e => {
+        document.addEventListener('input', (e) => {
             if (e.target?.id === 'password') applyPasswordRules(e.target.value);
             if (e.target?.id === 'password_confirmation') checkMatch();
         }, true);
@@ -695,21 +605,33 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         if (pwd) applyPasswordRules(pwd.value);
 
         initPhoneInput();
-        bindFormSubmit();
     }
 
-    document.addEventListener('DOMContentLoaded', init);
-    document.addEventListener('livewire:navigated', init);
-    document.addEventListener('livewire:initialized', init);
+    function queueInit() {
+        if (initQueued) {
+            return;
+        }
+
+        initQueued = true;
+        requestAnimationFrame(() => {
+            initQueued = false;
+            init();
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', queueInit);
+    document.addEventListener('met:intl-tel-input-ready', queueInit);
+    document.addEventListener('livewire:navigated', queueInit);
+    document.addEventListener('livewire:initialized', queueInit);
 
     if (window.Livewire && typeof window.Livewire.hook === 'function' && !window.__signupPhoneMorphHookBound) {
         window.__signupPhoneMorphHookBound = true;
         window.Livewire.hook('morphed', () => {
-            requestAnimationFrame(init);
+            queueInit();
         });
     }
 
-    init();
+    queueInit();
 })();
 </script>
 @endpush

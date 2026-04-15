@@ -67,16 +67,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
         $user = Auth::guard('app')->user();
 
-        // ✅ Decide if this is a “social” account (no real password usage)
-        $isSocial = !empty($user->g_id) || !empty($user->h_id);
-
-        // ✅ Your flow rules
-        if (!$isSocial) {
-            if (! $user->email_verify) return redirect()->to(route('app.email.otp'));
-            if (! $user->phone_verify) return redirect()->to(route('app.phone.otp'));
-        } else {
-            // Social: only phone must be verified
-            if (! $user->phone_verify) return redirect()->to(route('app.phone.otp'));
+        if ($nextVerificationRoute = $user->nextVerificationRouteName()) {
+            return redirect()->to(route($nextVerificationRoute));
         }
 
         $this->dispatch('alert', type: 'success', message: __('Welcome back!'));
@@ -252,3 +244,4 @@ document.addEventListener('click', function (e) {
     }
 });
 </script>
+
