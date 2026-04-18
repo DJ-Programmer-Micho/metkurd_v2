@@ -454,9 +454,7 @@ $notifications = [];
             @php
                 $shell = app(\App\Support\AppShellData::class)->forCurrentCustomer();
                 $profile = $shell['profile'] ?? null;
-                $fallbackAvatarUrl = app('userImg');
-                $reviewAvatarFallbackUrl = app('userImg'); //met fix
-                // $reviewAvatarFallbackUrl = asset('app/images/users/user-dummy-img.jpg');
+                $fallbackAvatarUrl = app(\App\Support\AvatarFallbackUrl::class)->customer();
                 $avatarUrl = $profile?->avatar_url ?: $fallbackAvatarUrl;
             @endphp
             <div class="dropdown ms-sm-3 header-item topbar-user" wire:ignore>
@@ -469,24 +467,12 @@ $notifications = [];
                                 style="width:38px;height:38px;object-fit:cover;"
                                 src="{{ $avatarUrl }}"
                                 data-avatar-fallback="{{ $fallbackAvatarUrl }}"
-                                data-avatar-placeholder="{{ $reviewAvatarFallbackUrl }}"
                                 onerror="
-                                    const fallback = this.dataset.avatarFallback;
-                                    const placeholder = this.dataset.avatarPlaceholder;
-                                    const current = this.getAttribute('src');
-
-                                    if (current !== fallback) {
-                                        this.setAttribute('src', fallback);
-                                        return;
-                                    }
-
-                                    if (current !== placeholder) {
-                                        this.setAttribute('src', placeholder);
-                                        return;
-                                    }
-
                                     this.onerror = null;
+                                    this.setAttribute('src', this.dataset.avatarFallback);
                                 "
+                                loading="lazy"
+                                referrerpolicy="no-referrer"
                                 alt="{{ $profile?->first_name ?? __('User') }}">
 
                             {{-- ✅ badge position fixed --}}

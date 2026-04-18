@@ -133,28 +133,6 @@ class LandingContent
                     ],
                 ],
             ],
-            'stats' => [
-                [
-                    'title' => 'Generated audio',
-                    'value' => '12M+',
-                    'copy' => 'Words synthesized',
-                ],
-                [
-                    'title' => 'Voice models',
-                    'value' => '150+',
-                    'copy' => 'Custom speaker profiles',
-                ],
-                [
-                    'title' => 'OCR pages',
-                    'value' => '800K+',
-                    'copy' => 'Processed documents',
-                ],
-                [
-                    'title' => 'Platform uptime',
-                    'value' => '99.95%',
-                    'copy' => 'Cloud reliability',
-                ],
-            ],
             'tools' => [
                 'badge' => 'Core platform',
                 'title' => 'High-impact Kurdish AI tools in one polished product.',

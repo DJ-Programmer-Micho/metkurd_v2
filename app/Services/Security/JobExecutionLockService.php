@@ -14,7 +14,7 @@ class JobExecutionLockService
     public function acquireCloneLock(
         int $customerId,
         string $jobId,
-        Session $session,
+        Session|string|null $session,
         ?string $agent = null,
         ?string $ip = null
     ): array {
@@ -22,7 +22,7 @@ class JobExecutionLockService
             $now = now();
             $expiresAt = $now->copy()->addMinutes(30);
 
-            $sessionId = (string) $session->getId();
+            $sessionId = $this->resolveLockOwnerId($session, $customerId, 'clone_tts');
             $fingerprint = $this->makeFingerprint($customerId, $agent, $ip, 'clone_tts');
 
             MlJob::query()
@@ -89,7 +89,7 @@ class JobExecutionLockService
         int $customerId,
         string $jobId,
         string $inputHash,
-        Session $session,
+        Session|string|null $session,
         ?string $agent = null,
         ?string $ip = null,
         string $jobKind = 'wasr'
@@ -98,7 +98,7 @@ class JobExecutionLockService
             $now = now();
             $expiresAt = $now->copy()->addMinutes(60);
 
-            $sessionId = (string) $session->getId();
+            $sessionId = $this->resolveLockOwnerId($session, $customerId, 'asr');
             $fingerprint = $this->makeFingerprint($customerId, $agent, $ip, 'asr');
 
             MlJob::query()
@@ -197,7 +197,7 @@ class JobExecutionLockService
         int $customerId,
         string $jobId,
         string $inputHash,
-        Session $session,
+        Session|string|null $session,
         ?string $agent = null,
         ?string $ip = null
     ): array {
@@ -205,7 +205,7 @@ class JobExecutionLockService
             $now = now();
             $expiresAt = $now->copy()->addMinutes(60);
 
-            $sessionId = (string) $session->getId();
+            $sessionId = $this->resolveLockOwnerId($session, $customerId, 'stem');
             $fingerprint = $this->makeFingerprint($customerId, $agent, $ip, 'stem');
 
             /*
@@ -329,7 +329,7 @@ class JobExecutionLockService
         int $customerId,
         string $jobId,
         string $inputHash,
-        Session $session,
+        Session|string|null $session,
         ?string $agent = null,
         ?string $ip = null
     ): array {
@@ -337,7 +337,7 @@ class JobExecutionLockService
             $now = now();
             $expiresAt = $now->copy()->addMinutes(60);
 
-            $sessionId = (string) $session->getId();
+            $sessionId = $this->resolveLockOwnerId($session, $customerId, 'ocr');
             $fingerprint = $this->makeFingerprint($customerId, $agent, $ip, 'ocr');
 
             MlJob::query()
@@ -436,7 +436,7 @@ class JobExecutionLockService
         string $scope,
         int $customerId,
         string $jobId,
-        Session $session,
+        Session|string|null $session,
         ?string $userAgent = null,
         ?string $ip = null,
         int $ttlSeconds = 3600
@@ -444,7 +444,7 @@ class JobExecutionLockService
         return DB::transaction(function () use ($scope, $customerId, $jobId, $session, $userAgent, $ip, $ttlSeconds) {
             $now = now();
             $expiresAt = $now->copy()->addSeconds(max(60, $ttlSeconds));
-            $sessionId = (string) $session->getId();
+            $sessionId = $this->resolveLockOwnerId($session, $customerId, $scope);
             $fingerprint = $this->makeFingerprint($customerId, $userAgent, $ip, $scope);
             $scopeLabel = Str::headline(str_replace('_', ' ', $scope));
 
@@ -570,6 +570,25 @@ class JobExecutionLockService
             $customerId,
             $agent,
             $ip,
+            config('app.key'),
+        ]));
+    }
+
+    protected function resolveLockOwnerId(Session|string|null $session, int $customerId, string $scope): string
+    {
+        if ($session instanceof Session) {
+            return (string) $session->getId();
+        }
+
+        $ownerId = trim((string) $session);
+
+        if ($ownerId !== '') {
+            return $ownerId;
+        }
+
+        return 'owner:' . hash('sha256', implode('|', [
+            $scope,
+            $customerId,
             config('app.key'),
         ]));
     }

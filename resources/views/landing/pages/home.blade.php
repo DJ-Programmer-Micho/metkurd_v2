@@ -1,11 +1,18 @@
 <?php
 
 use App\Support\LandingContent;
+use App\Support\Landing\LandingPublicMetrics;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 new #[Layout('landing::layouts.app')] class extends Component
 {
+    public array $publicStats = [];
+
+    public function mount(LandingPublicMetrics $publicMetrics): void
+    {
+        $this->publicStats = $publicMetrics->cards();
+    }
 };
 ?>
 
@@ -13,7 +20,6 @@ new #[Layout('landing::layouts.app')] class extends Component
     $locale = app()->getLocale();
     $hero = LandingContent::section('home.hero');
     $preview = LandingContent::section('home.preview');
-    $stats = LandingContent::section('home.stats');
     $toolsHeading = LandingContent::section('home.tools');
     $demo = LandingContent::section('home.demo');
     $reasons = LandingContent::section('home.reasons');
@@ -138,7 +144,7 @@ new #[Layout('landing::layouts.app')] class extends Component
     <section class="section">
         <div class="container">
             <div class="row g-4">
-                @foreach((array) $stats as $stat)
+                @foreach((array) $publicStats as $stat)
                     <div class="col-md-3">
                         <div class="stats-card glass-card reveal">
                             <div class="text-muted-soft mb-2">{{ $stat['title'] }}</div>

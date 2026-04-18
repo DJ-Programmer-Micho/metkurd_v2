@@ -1,0 +1,1237 @@
+openapi: 3.0.3
+info:
+  title: METKURD Mobile API
+  version: 1.1.0
+  description: |
+    Mobile API for the six METKURD FlutterFlow apps.
+    Authentication uses Laravel Sanctum bearer tokens.
+    Payments and advanced website-only account management are intentionally excluded.
+servers:
+  - url: https://example.com
+    description: Replace with your real domain
+tags:
+  - name: Authentication
+  - name: Session
+  - name: Jobs
+  - name: Files
+paths:
+  /api/mobile/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Sign in with email and password
+      operationId: mobileAuthLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '422':
+          $ref: '#/components/responses/Validation422'
+        '423':
+          $ref: '#/components/responses/Message423'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/auth/social/{provider}:
+    post:
+      tags: [Authentication]
+      summary: Sign in with Google or GitHub mobile token
+      operationId: mobileAuthSocialLogin
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialLoginRequest'
+      responses:
+        '200':
+          description: Login succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '422':
+          $ref: '#/components/responses/Message422'
+        '423':
+          $ref: '#/components/responses/Message423'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/auth/me:
+    get:
+      tags: [Session]
+      summary: Get the current mobile user
+      operationId: mobileAuthMe
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Current user payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUserEnvelope'
+        '401':
+          $ref: '#/components/responses/Message401'
+  /api/mobile/auth/logout:
+    post:
+      tags: [Session]
+      summary: Revoke the current mobile token
+      operationId: mobileAuthLogout
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/Message401'
+  /api/mobile/auth/apps:
+    get:
+      tags: [Session]
+      summary: List accessible mobile apps for the current customer
+      operationId: mobileAuthApps
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Accessible app list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppsResponse'
+        '401':
+          $ref: '#/components/responses/Message401'
+  /api/mobile/{app}/jobs:
+    get:
+      tags: [Jobs]
+      summary: List jobs for one mobile app
+      operationId: mobileJobsIndex
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppSlug'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Paginated jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCollection'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+  /api/mobile/{app}/jobs/{jobId}:
+    get:
+      tags: [Jobs]
+      summary: Get one job in an app scope
+      operationId: mobileJobsShow
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppSlug'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobEnvelope'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '404':
+          $ref: '#/components/responses/Message404'
+  /api/mobile/tts/jobs:
+    post:
+      tags: [Jobs]
+      summary: Create an XTTS or F5TTS job
+      operationId: mobileTtsJobsStore
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/TtsXttsRequest'
+                - $ref: '#/components/schemas/TtsF5Request'
+      responses:
+        '201':
+          $ref: '#/components/responses/JobCreated201'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '409':
+          $ref: '#/components/responses/Message409'
+        '422':
+          $ref: '#/components/responses/Validation422'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/ctts/jobs:
+    post:
+      tags: [Jobs]
+      summary: Create a Clone XTTS job
+      operationId: mobileCttsJobsStore
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CttsJobRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/JobCreated201'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '409':
+          $ref: '#/components/responses/Message409'
+        '422':
+          $ref: '#/components/responses/Validation422'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/asr/jobs:
+    post:
+      tags: [Jobs]
+      summary: Create a WASR or QASR transcription job
+      operationId: mobileAsrJobsStore
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/AsrWasrRequest'
+                - $ref: '#/components/schemas/AsrQasrRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/JobCreated201'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '409':
+          $ref: '#/components/responses/Message409'
+        '422':
+          $ref: '#/components/responses/Validation422'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/stem/jobs:
+    post:
+      tags: [Jobs]
+      summary: Create a STEM separation job
+      operationId: mobileStemJobsStore
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StemJobRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/JobCreated201'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '409':
+          $ref: '#/components/responses/Message409'
+        '422':
+          $ref: '#/components/responses/Validation422'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/ocr/jobs:
+    post:
+      tags: [Jobs]
+      summary: Create an OCR job
+      operationId: mobileOcrJobsStore
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OcrJobRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/JobCreated201'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '409':
+          $ref: '#/components/responses/Message409'
+        '422':
+          $ref: '#/components/responses/Validation422'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/tran/jobs:
+    post:
+      tags: [Jobs]
+      summary: Create a translation job
+      operationId: mobileTranJobsStore
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranJobRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/JobCreated201'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '409':
+          $ref: '#/components/responses/Message409'
+        '422':
+          $ref: '#/components/responses/Validation422'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/{app}/files:
+    get:
+      tags: [Files]
+      summary: List files for one mobile app
+      operationId: mobileFilesIndex
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppSlug'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Paginated files
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileCollection'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+  /api/mobile/{app}/files/upload:
+    post:
+      tags: [Files]
+      summary: Upload an app-scoped file when uploads are enabled
+      operationId: mobileFilesStore
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppSlug'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadResponse'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '405':
+          $ref: '#/components/responses/Message405'
+        '422':
+          $ref: '#/components/responses/Validation422'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/{app}/files/{fileId}:
+    get:
+      tags: [Files]
+      summary: Get one file in an app scope
+      operationId: mobileFilesShow
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppSlug'
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: File detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileEnvelope'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '404':
+          $ref: '#/components/responses/Message404'
+  /api/mobile/{app}/files/{fileId}/download:
+    get:
+      tags: [Files]
+      summary: Create a temporary download URL for one file
+      operationId: mobileFilesDownload
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppSlug'
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: Temporary signed download URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDownloadResponse'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '404':
+          $ref: '#/components/responses/Message404'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: SanctumToken
+  parameters:
+    AppSlug:
+      name: app
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [tts, ctts, asr, stem, ocr, tran]
+    Provider:
+      name: provider
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [google, github]
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      description: UUID string from ml_jobs.id
+      schema:
+        type: string
+        format: uuid
+    FileId:
+      name: fileId
+      in: path
+      required: true
+      description: Numeric integer from customer_files.id
+      schema:
+        type: integer
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 15
+  responses:
+    Message401:
+      description: Unauthenticated
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+    Message403:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+    Message404:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+    Message405:
+      description: Method not allowed for this app
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+    Message409:
+      description: Conflict or quota restriction
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+    Message422:
+      description: Unprocessable entity
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+    Message423:
+      description: Locked account
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+    Message429:
+      description: Too many attempts
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+    Validation422:
+      description: Validation failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+    JobCreated201:
+      description: Job created
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JobSubmissionResponse'
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        device_name:
+          type: string
+          maxLength: 120
+        app_slug:
+          type: string
+          enum: [tts, ctts, asr, stem, ocr, tran]
+    SocialLoginRequest:
+      type: object
+      required: [access_token]
+      properties:
+        access_token:
+          type: string
+        device_name:
+          type: string
+          maxLength: 120
+        app_slug:
+          type: string
+          enum: [tts, ctts, asr, stem, ocr, tran]
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/MessageResponse'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+    LoginResponse:
+      type: object
+      properties:
+        token_type:
+          type: string
+          example: Bearer
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        abilities:
+          type: array
+          items:
+            type: string
+        user:
+          $ref: '#/components/schemas/CurrentUser'
+      required: [token_type, token, abilities, user]
+    CurrentUserEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/CurrentUser'
+    CurrentUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        avatar_url:
+          type: string
+        verification_complete:
+          type: boolean
+        service_plan:
+          $ref: '#/components/schemas/ServicePlan'
+        storage:
+          $ref: '#/components/schemas/StorageState'
+        accessible_apps:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppDefinition'
+        token:
+          $ref: '#/components/schemas/TokenMeta'
+    ServicePlan:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        is_paid:
+          type: boolean
+    StorageState:
+      type: object
+      properties:
+        quota_mb:
+          type: integer
+        used_bytes:
+          type: integer
+        over_quota:
+          type: boolean
+        upload_blocked:
+          type: boolean
+    TokenMeta:
+      type: object
+      properties:
+        abilities:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+    AppsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppDefinition'
+    AppDefinition:
+      type: object
+      properties:
+        slug:
+          type: string
+          enum: [tts, ctts, asr, stem, ocr, tran]
+        name:
+          type: string
+        tool_codes:
+          type: array
+          items:
+            type: string
+        job_submission_enabled:
+          type: boolean
+        upload_enabled:
+          type: boolean
+    JobSubmissionResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            job:
+              $ref: '#/components/schemas/Job'
+            next_actions:
+              $ref: '#/components/schemas/JobNextActions'
+    JobNextActions:
+      type: object
+      properties:
+        status_url:
+          type: string
+        jobs_url:
+          type: string
+        files_url:
+          type: string
+        recommended_poll_interval_seconds:
+          type: integer
+    JobCollection:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    JobEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Job'
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        app:
+          type: string
+          nullable: true
+          enum: [tts, ctts, asr, stem, ocr, tran]
+        status:
+          type: string
+        job_kind:
+          type: string
+          nullable: true
+        tool_code:
+          type: string
+          nullable: true
+        tool_action:
+          type: string
+          nullable: true
+        summary:
+          type: string
+        credits_charged:
+          type: integer
+        storage_in_bytes:
+          type: integer
+        storage_out_bytes:
+          type: integer
+        provider:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        input:
+          $ref: '#/components/schemas/JobInput'
+        result:
+          $ref: '#/components/schemas/JobResult'
+    JobInput:
+      type: object
+      properties:
+        text_preview:
+          type: string
+          nullable: true
+        audio_name:
+          type: string
+          nullable: true
+        reference_audio_name:
+          type: string
+          nullable: true
+        file_name:
+          type: string
+          nullable: true
+        language:
+          type: string
+          nullable: true
+        lang:
+          type: string
+          nullable: true
+        source_lang:
+          type: string
+          nullable: true
+        target_lang:
+          type: string
+          nullable: true
+        speaker_id:
+          type: string
+          nullable: true
+        model_variant:
+          type: string
+          nullable: true
+        stems:
+          type: integer
+          nullable: true
+        page_range:
+          type: string
+          nullable: true
+    JobResult:
+      type: object
+      properties:
+        text_preview:
+          type: string
+        has_output:
+          type: boolean
+        has_error:
+          type: boolean
+        outputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobOutputFile'
+        primary_output:
+          allOf:
+            - $ref: '#/components/schemas/JobOutputFile'
+          nullable: true
+    JobOutputFile:
+      type: object
+      properties:
+        id:
+          type: integer
+        app:
+          type: string
+          nullable: true
+          enum: [tts, ctts, asr, stem, ocr, tran]
+        tool_code:
+          type: string
+        purpose:
+          type: string
+        role:
+          type: string
+        name:
+          type: string
+        mime:
+          type: string
+        size_bytes:
+          type: integer
+        is_primary:
+          type: boolean
+        file_endpoint:
+          type: string
+        download_endpoint:
+          type: string
+    TtsXttsRequest:
+      type: object
+      required: [tool_code, text, speaker_id]
+      properties:
+        tool_code:
+          type: string
+          enum: [tts]
+        text:
+          type: string
+        speaker_id:
+          type: string
+        language:
+          type: string
+          default: ar
+        split:
+          type: boolean
+          default: true
+        max_words:
+          type: integer
+          minimum: 5
+          maximum: 80
+          default: 25
+        fade_ms:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 80
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2.5
+          default: 0.65
+        top_k:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 50
+        top_p:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.8
+        repetition_penalty:
+          type: number
+          minimum: 1
+          maximum: 8
+          default: 2.0
+        length_penalty:
+          type: number
+          minimum: -5
+          maximum: 6
+          default: 1.0
+        speed:
+          type: number
+          minimum: 0.5
+          maximum: 2.0
+          default: 1.0
+    TtsF5Request:
+      type: object
+      required: [tool_code, text, speaker_id]
+      properties:
+        tool_code:
+          type: string
+          enum: [ftts]
+        text:
+          type: string
+        speaker_id:
+          type: string
+        use_ema:
+          type: boolean
+          default: true
+        nfe_step:
+          type: integer
+          minimum: 1
+          default: 32
+        cfg_strength:
+          type: number
+          minimum: 0
+          default: 2.0
+        speed:
+          type: number
+          minimum: 0.1
+          default: 1.0
+        remove_silence:
+          type: boolean
+          default: false
+    CttsJobRequest:
+      type: object
+      required: [text, referenceAudio]
+      properties:
+        text:
+          type: string
+        referenceAudio:
+          type: string
+          format: binary
+        language:
+          type: string
+          default: ar
+        split:
+          type: boolean
+          default: true
+        max_words:
+          type: integer
+          minimum: 5
+          maximum: 80
+          default: 25
+        fade_ms:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 80
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2.5
+          default: 0.65
+        top_k:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 50
+        top_p:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.8
+        repetition_penalty:
+          type: number
+          minimum: 1
+          maximum: 8
+          default: 2.0
+        length_penalty:
+          type: number
+          minimum: -5
+          maximum: 6
+          default: 1.0
+        speed:
+          type: number
+          minimum: 0.5
+          maximum: 2.0
+          default: 1.0
+    AsrWasrRequest:
+      type: object
+      required: [tool_code, audioFile]
+      properties:
+        tool_code:
+          type: string
+          enum: [wasr]
+        audioFile:
+          type: string
+          format: binary
+        language:
+          type: string
+          enum: [ckb, ar, en]
+          default: ckb
+        chunkLengthS:
+          type: integer
+          minimum: 5
+          maximum: 120
+          default: 30
+        strideLeftS:
+          type: integer
+          minimum: 0
+          maximum: 30
+          default: 5
+        strideRightS:
+          type: integer
+          minimum: 0
+          maximum: 30
+          default: 5
+        beamSize:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+    AsrQasrRequest:
+      type: object
+      required: [tool_code, audioFile]
+      properties:
+        tool_code:
+          type: string
+          enum: [qasr]
+        audioFile:
+          type: string
+          format: binary
+        modelVariant:
+          type: string
+          enum: [fine_tuned]
+          default: fine_tuned
+    StemJobRequest:
+      type: object
+      required: [audioFile]
+      properties:
+        audioFile:
+          type: string
+          format: binary
+        stems:
+          type: integer
+          enum: [2, 4]
+          default: 4
+        model:
+          type: string
+          maxLength: 100
+          default: htdemucs_ft
+        stemCodec:
+          type: string
+          enum: [mp3]
+          default: mp3
+        stemBitrate:
+          type: string
+          enum: [192k]
+          default: 192k
+    OcrJobRequest:
+      type: object
+      required: [documentFile]
+      properties:
+        documentFile:
+          type: string
+          format: binary
+        lang:
+          type: string
+          maxLength: 50
+          default: ckb+ara+eng
+        pageRange:
+          type: string
+          maxLength: 255
+        dpi:
+          type: integer
+          minimum: 72
+          maximum: 600
+          default: 200
+        psm:
+          type: integer
+          minimum: 0
+          maximum: 13
+          default: 6
+        oem:
+          type: integer
+          minimum: 0
+          maximum: 3
+          default: 3
+        normalize:
+          type: boolean
+          default: false
+        grayscale:
+          type: boolean
+          default: true
+        autocontrast:
+          type: boolean
+          default: true
+        sharpen:
+          type: boolean
+          default: true
+        binarize:
+          type: boolean
+          default: false
+        clientPdfPageCount:
+          type: integer
+          minimum: 1
+          nullable: true
+    TranJobRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+        sourceLang:
+          type: string
+          default: ku
+        targetLang:
+          type: string
+          default: en
+        maxNewTokens:
+          type: integer
+          minimum: 64
+          maximum: 2048
+          default: 256
+        chunkChars:
+          type: integer
+          minimum: 200
+          maximum: 5000
+          default: 1200
+    FileCollection:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/File'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    FileEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/File'
+    FileUploadResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/File'
+    FileDownloadResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            file:
+              $ref: '#/components/schemas/File'
+            download_url:
+              type: string
+            expires_at:
+              type: string
+              format: date-time
+    File:
+      type: object
+      properties:
+        id:
+          type: integer
+        app:
+          type: string
+          nullable: true
+          enum: [tts, ctts, asr, stem, ocr, tran]
+        tool_code:
+          type: string
+        purpose:
+          type: string
+        disk:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        mime:
+          type: string
+        size_bytes:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        download_endpoint:
+          type: string
+          nullable: true
+    PaginationLinks:
+      type: object
+      properties:
+        first:
+          type: string
+          nullable: true
+        last:
+          type: string
+          nullable: true
+        prev:
+          type: string
+          nullable: true
+        next:
+          type: string
+          nullable: true
+    PaginationMeta:
+      type: object
+      properties:
+        current_page:
+          type: integer
+        from:
+          type: integer
+          nullable: true
+        last_page:
+          type: integer
+        path:
+          type: string
+        per_page:
+          type: integer
+        to:
+          type: integer
+          nullable: true
+        total:
+          type: integer

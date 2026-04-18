@@ -144,7 +144,7 @@ class CustomerOutputStorage
 
     public function temporaryUrl(string $path, int $minutes = 60, array $options = []): string
     {
-        return Storage::disk('s3')->temporaryUrl($path, now()->addMinutes($minutes), $options);
+        return $this->temporaryUrlForDisk('s3', $path, now()->addMinutes($minutes), $options);
     }
 
     public function temporaryUrlForDisk(string $disk, string $path, ?\DateTimeInterface $expiresAt = null, array $options = []): string

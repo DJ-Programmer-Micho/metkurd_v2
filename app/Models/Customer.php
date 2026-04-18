@@ -8,9 +8,11 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
+use Laravel\Sanctum\HasApiTokens;
 
 class Customer extends Authenticatable
 {
+    use HasApiTokens;
     use Notifiable;
 
     protected array $toolActionAllowanceCache = [];

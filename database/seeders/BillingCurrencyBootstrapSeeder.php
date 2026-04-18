@@ -39,7 +39,7 @@ class BillingCurrencyBootstrapSeeder extends Seeder
             [
                 'base_currency_code' => 'IQD',
                 'quote_currency_code' => 'USD',
-                'rate' => round(1 / 1320, 8),
+                'rate' => round(1 / 1500, 8),
                 'source' => 'bootstrap',
                 'effective_at' => $now,
                 'expires_at' => null,
