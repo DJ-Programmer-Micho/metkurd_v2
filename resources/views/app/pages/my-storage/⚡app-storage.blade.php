@@ -233,6 +233,9 @@ class extends Component
     public function usage(): array
     {
         $customer = auth('app')->user();
+        $state = method_exists($customer, 'storageQuotaState')
+            ? $customer->storageQuotaState()
+            : [];
 
         $usage = CustomerUsage::query()
             ->firstOrCreate(
@@ -246,12 +249,7 @@ class extends Component
             );
 
         $used = (int) $usage->storage_used_bytes;
-
-        $limitBytes = (int) (
-
-            data_get($customer, 'storagePlan.quota_mb') * 1024 * 1024
-            ?? (20 * 1024 * 1024 * 1024) // fallback 20 GB
-        );
+        $limitBytes = (int) ($state['current_limit_bytes'] ?? (512 * 1024 * 1024));
 
         $percent = $limitBytes > 0
             ? min(100, (int) round(($used / $limitBytes) * 100))

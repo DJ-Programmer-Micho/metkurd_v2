@@ -15,7 +15,8 @@ use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Controllers\App\Services\XttsSpeakerAssetController;
 use App\Http\Controllers\App\Services\YoutubeRenderController;
 use App\Http\Controllers\Payments\AreebaWebhookController;
-use App\Http\Controllers\Payments\FibWebhookController;
+use App\Http\Controllers\Payments\FibCallbackController;
+use App\Http\Controllers\Payments\FibPaymentController;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
@@ -35,9 +36,9 @@ Route::get("sitemap.xml" , function () { return \Illuminate\Support\Facades\Redi
 Route::post('/set-locale', [LocalizationMainMiddleware::class, 'setLocale'])->name('setLocale');
 
 Route::prefix('payments/webhooks')->group(function () {
-    Route::post('/fib', FibWebhookController::class)
+    Route::post('/fib', FibCallbackController::class)
         ->withoutMiddleware(VerifyCsrfToken::class)
-        ->name('payments.webhooks.fib');
+        ->name('payments.fib.callback');
     Route::post('/areeba', AreebaWebhookController::class)
         ->withoutMiddleware(VerifyCsrfToken::class)
         ->name('payments.webhooks.areeba');
@@ -182,6 +183,10 @@ Route::prefix('{locale}')
     Route::livewire('/app/subscription-plans', 'app::pages.subscription-plan.subscription-plan')->name('subscription-plan');
     Route::livewire('/app/storage-plans', 'app::pages.storage-plan.storage-plan')->name('storage-plan');
     Route::livewire('/app/addon-credits', 'app::pages.addon-credits.addon-credits')->name('addon-credits');
+    Route::livewire('/app/payments/fib/{payment}', 'app::pages.payments.fib-payment')->name('payments.fib.show');
+    Route::post('/app/payments/fib/{payment}/refresh', [FibPaymentController::class, 'refresh'])->name('payments.fib.refresh');
+    Route::post('/app/payments/fib/{payment}/cancel', [FibPaymentController::class, 'cancel'])->name('payments.fib.cancel');
+    Route::get('/app/payments/fib/{payment}/thank-you', [FibPaymentController::class, 'thankYou'])->name('payments.fib.thank-you');
 
 /*
 |--------------------------------------------------------------------------

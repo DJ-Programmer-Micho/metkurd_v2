@@ -22,10 +22,9 @@ it('marks fake payments as config-ready and checkout-ready', function () {
 
 it('marks fib as config-ready and checkout-ready when credentials are present', function () {
     config()->set('payments.providers.fib.enabled', true);
-    config()->set('fib.base_url', 'https://fib.stage.fib.iq');
-    config()->set('fib.client_id', 'fib-test-client');
-    config()->set('fib.client_secret', 'fib-secret');
-    config()->set('fib.realm', 'fib-online-shop');
+    config()->set('services.fib.base_url', 'https://fib-stage.fib.iq');
+    config()->set('services.fib.client_id', 'fib-test-client');
+    config()->set('services.fib.client_secret', 'fib-secret');
 
     $method = new PaymentMethod([
         'code' => 'fib',
@@ -43,10 +42,9 @@ it('marks fib as config-ready and checkout-ready when credentials are present', 
 
 it('reports missing fib configuration clearly', function () {
     config()->set('payments.providers.fib.enabled', true);
-    config()->set('fib.base_url', null);
-    config()->set('fib.client_id', null);
-    config()->set('fib.client_secret', null);
-    config()->set('fib.realm', null);
+    config()->set('services.fib.base_url', null);
+    config()->set('services.fib.client_id', null);
+    config()->set('services.fib.client_secret', null);
 
     $method = new PaymentMethod([
         'code' => 'fib',
@@ -60,6 +58,5 @@ it('reports missing fib configuration clearly', function () {
         ->and($manager->checkoutReady($method))->toBeFalse()
         ->and($manager->configurationIssues($method))->toContain('Missing Base URL')
         ->and($manager->configurationIssues($method))->toContain('Missing Client ID')
-        ->and($manager->configurationIssues($method))->toContain('Missing Client Secret')
-        ->and($manager->configurationIssues($method))->toContain('Missing Realm');
+        ->and($manager->configurationIssues($method))->toContain('Missing Client Secret');
 });

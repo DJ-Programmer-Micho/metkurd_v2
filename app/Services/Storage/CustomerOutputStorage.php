@@ -2,9 +2,11 @@
 
 namespace App\Services\Storage;
 
+use App\Models\Customer;
 use App\Models\CustomerFile;
 use App\Models\CustomerUsage;
 use App\Models\MlJob;
+use App\Services\Billing\CustomerBillingStateService;
 use App\Support\CustomerFolder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +46,8 @@ class CustomerOutputStorage
         $bytes = strlen($bin);
         $mime = $meta['mime'] ?? 'audio/wav';
         $startedAt = microtime(true);
+
+        $this->assertCanConsumeStorage($customerId, $bytes);
 
         // Log::info('CUSTOMER_OUTPUT_S3_SAVE_START', [
         //     'disk' => $disk,
@@ -94,6 +98,8 @@ class CustomerOutputStorage
         $bytes = strlen($content);
         $mime = $meta['mime'] ?? 'text/plain';
 
+        $this->assertCanConsumeStorage($customerId, $bytes);
+
         Storage::disk($disk)->put($path, $content, [
             'visibility' => 'private',
             'ContentType' => $mime,
@@ -118,6 +124,9 @@ class CustomerOutputStorage
         }
 
         $mime = $file->getMimeType() ?: 'application/octet-stream';
+        $bytes = (int) $file->getSize();
+
+        $this->assertCanConsumeStorage($customerId, $bytes);
 
         Storage::disk($disk)->put($path, $stream, [
             'visibility' => 'private',
@@ -127,8 +136,6 @@ class CustomerOutputStorage
         if (is_resource($stream)) {
             fclose($stream);
         }
-
-        $bytes = (int) $file->getSize();
 
         $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
 
@@ -204,9 +211,6 @@ class CustomerOutputStorage
             return null;
         }
 
-        $bytes = (int) Storage::disk($disk)->size($path);
-        $mime = (string) (Storage::disk($disk)->mimeType($path) ?: ($meta['mime'] ?? 'application/octet-stream'));
-
         $existing = CustomerFile::query()
             ->where('customer_id', $customerId)
             ->where('disk', $disk)
@@ -214,7 +218,11 @@ class CustomerOutputStorage
             ->where('status', '!=', 'deleted')
             ->first();
 
+        $bytes = (int) Storage::disk($disk)->size($path);
+        $mime = (string) (Storage::disk($disk)->mimeType($path) ?: ($meta['mime'] ?? 'application/octet-stream'));
+
         if (!$existing) {
+            $this->assertCanConsumeStorage($customerId, $bytes);
             $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
         }
 
@@ -293,6 +301,8 @@ class CustomerOutputStorage
 
     public function makeStemUploadTargets(MlJob $job, string $codec = 'mp3', int $stemsMode = 4): array
     {
+        $this->assertCanConsumeStorage((int) $job->customer_id);
+
         $paths = $this->stemPaths($job, $codec, $stemsMode);
 
         return [
@@ -489,6 +499,8 @@ class CustomerOutputStorage
 
     public function makeOcrUploadTargets(MlJob $job, ?string $inputPath = null): array
     {
+        $this->assertCanConsumeStorage((int) $job->customer_id);
+
         $paths = $this->ocrPaths($job, $inputPath);
 
         return [
@@ -560,5 +572,32 @@ class CustomerOutputStorage
             'error' => null,
             'updated_at' => now(),
         ]);
+    }
+
+    protected function assertCanConsumeStorage(int $customerId, int $bytes = 0): void
+    {
+        $customer = Customer::query()
+            ->with('usage')
+            ->find($customerId);
+
+        if (! $customer instanceof Customer) {
+            return;
+        }
+
+        $state = app(CustomerBillingStateService::class)->storageQuotaState($customer);
+        $usedBytes = (int) ($state['used_bytes'] ?? 0);
+        $limitBytes = max(1, (int) ($state['current_limit_bytes'] ?? (512 * 1024 * 1024)));
+
+        if ((bool) ($state['upload_blocked'] ?? false)) {
+            throw new StorageQuotaExceededException(
+                __('Your account is over quota. Delete files or upgrade your storage plan to continue.')
+            );
+        }
+
+        if ($bytes > 0 && ($usedBytes + $bytes) > $limitBytes) {
+            throw new StorageQuotaExceededException(
+                __('This action would exceed your current storage quota. Delete files or upgrade your storage plan and try again.')
+            );
+        }
     }
 }

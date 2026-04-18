@@ -8,6 +8,7 @@ class CustomerStorageSubscription extends Model
 {
     protected $fillable = [
         'customer_id',
+        'payment_id',
         'storage_plan_id',
         'status',
         'source',
@@ -52,6 +53,11 @@ class CustomerStorageSubscription extends Model
     public function plan()
     {
         return $this->belongsTo(StoragePlan::class, 'storage_plan_id');
+    }
+
+    public function payment()
+    {
+        return $this->belongsTo(\App\Domain\Payments\Models\Payment::class, 'payment_id');
     }
 
     public function storagePlan()

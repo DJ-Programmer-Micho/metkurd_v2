@@ -89,6 +89,42 @@ return [
         'site_key' => env('TURNSTILE_SITE_KEY'),
         'secret_key' => env('TURNSTILE_SECRET_KEY'),
     ],
+    'fib' => [
+        'enabled' => (bool) env('FIB_ENABLED', false),
+        'environment' => strtolower(trim((string) env('FIB_ENV', 'staging'))) === 'production' ? 'production' : 'staging',
+        'base_url' => env('FIB_BASE_URL')
+            ?: (strtolower(trim((string) env('FIB_ENV', 'staging'))) === 'production'
+                ? env('FIB_BASE_URL_PRODUCTION', 'https://fib.prod.fib.iq')
+                : env('FIB_BASE_URL_STAGING', 'https://fib-stage.fib.iq')),
+        'realm' => env('FIB_REALM', 'fib-online-shop'),
+        'client_id' => env('FIB_CLIENT_ID')
+            ?: (strtolower(trim((string) env('FIB_ENV', 'staging'))) === 'production'
+                ? env('FIB_CLIENT_ID_PRODUCTION')
+                : env('FIB_CLIENT_ID_STAGING')),
+        'client_secret' => env('FIB_CLIENT_SECRET')
+            ?: (strtolower(trim((string) env('FIB_ENV', 'staging'))) === 'production'
+                ? env('FIB_CLIENT_SECRET_PRODUCTION')
+                : env('FIB_CLIENT_SECRET_STAGING')),
+        'callback_secret' => env('FIB_CALLBACK_SECRET'),
+        'callback_secret_header' => env('FIB_CALLBACK_SECRET_HEADER', 'x-callback-secret'),
+        'token_ttl_seconds' => (int) env('FIB_TOKEN_TTL_SECONDS', 60),
+        'payment' => [
+            'category' => env('FIB_PAYMENT_CATEGORY', 'ECOMMERCE'),
+            'expires_in' => env('FIB_PAYMENT_EXPIRES_IN', 'PT1H'),
+            'refundable_for' => env('FIB_PAYMENT_REFUNDABLE_FOR', 'PT48H'),
+        ],
+        'http' => [
+            'timeout' => (int) env('FIB_HTTP_TIMEOUT', 15),
+            'retries' => (int) env('FIB_HTTP_RETRIES', 2),
+            'retry_sleep_ms' => (int) env('FIB_HTTP_RETRY_SLEEP_MS', 200),
+        ],
+        'paths' => [
+            'token' => env('FIB_TOKEN_PATH', '/auth/realms/fib-online-shop/protocol/openid-connect/token'),
+            'payments' => env('FIB_PAYMENTS_PATH', '/protected/v1/payments'),
+            'payment_status' => env('FIB_PAYMENT_STATUS_PATH', '/protected/v1/payments/{paymentId}/status'),
+            'payment_cancel' => env('FIB_PAYMENT_CANCEL_PATH', '/protected/v1/payments/{paymentId}/cancel'),
+        ],
+    ],
     'telegram-bot-api' => [
         'token' => env('TELEGRAM_BOT_TOKEN', '7860562413:AAF7NeKkAZBS433KxwfZ1DtekirBllvPLxY')
     ],

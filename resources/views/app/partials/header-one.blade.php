@@ -455,7 +455,8 @@ $notifications = [];
                 $shell = app(\App\Support\AppShellData::class)->forCurrentCustomer();
                 $profile = $shell['profile'] ?? null;
                 $fallbackAvatarUrl = app('userImg');
-                $reviewAvatarFallbackUrl = asset('app/images/users/user-dummy-img.jpg');
+                $reviewAvatarFallbackUrl = app('userImg'); //met fix
+                // $reviewAvatarFallbackUrl = asset('app/images/users/user-dummy-img.jpg');
                 $avatarUrl = $profile?->avatar_url ?: $fallbackAvatarUrl;
             @endphp
             <div class="dropdown ms-sm-3 header-item topbar-user" wire:ignore>

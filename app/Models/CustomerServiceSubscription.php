@@ -15,6 +15,7 @@ class CustomerServiceSubscription extends Model
 
     protected $fillable = [
         'customer_id',
+        'payment_id',
         'service_plan_id',
         'previous_service_plan_id',
         'status',
@@ -62,6 +63,11 @@ class CustomerServiceSubscription extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class, 'customer_id');
+    }
+
+    public function payment(): BelongsTo
+    {
+        return $this->belongsTo(\App\Domain\Payments\Models\Payment::class, 'payment_id');
     }
 
     public function servicePlan(): BelongsTo

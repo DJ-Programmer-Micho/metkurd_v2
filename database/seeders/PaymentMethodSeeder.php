@@ -24,24 +24,24 @@ class PaymentMethodSeeder extends Seeder
                 'supported_currencies' => ['IQD'],
                 'supported_purchase_types' => ['service_plan', 'storage_plan', 'credit_product'],
                 'supports_recurring' => false,
-                'supports_refunds' => true,
+                'supports_refunds' => false,
                 'supports_webhooks' => true,
                 'supports_redirect' => true,
                 'supports_qr' => true,
                 'settings' => [
-                    'credential_source' => 'config.payments.providers.fib',
+                    'credential_source' => 'config.services.fib',
                     'checkout_mode' => 'qr_or_redirect',
                 ],
                 'fee_config' => [
                     'default' => [
                         'percent' => 1.0,
                         'fixed_iqd' => 0,
-                        'pass_to_customer' => false,
+                        'pass_to_customer' => true,
                     ],
                 ],
                 'meta' => [
-                    'adapter_status' => 'planned',
-                    'admin_note' => 'Credentials stay in .env/config. Database values here are non-secret display and business rules only.',
+                    'adapter_status' => 'ready',
+                    'admin_note' => 'Runtime credentials live in config/services.php and .env. Database values here are non-secret display and business rules only.',
                 ],
             ],
             [

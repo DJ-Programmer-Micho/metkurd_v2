@@ -43,18 +43,22 @@ class AppShellData
             ? $customer->currentServicePlan()
             : ($customer->servicePlan ?: $customer->activeServiceSubscription?->servicePlan);
 
-        $storagePlan = method_exists($customer, 'currentStoragePlan')
-            ? $customer->currentStoragePlan()
-            : ($customer->storagePlan ?: $customer->activeStorageSubscription?->storagePlan);
+        $storageState = method_exists($customer, 'storageQuotaState')
+            ? $customer->storageQuotaState()
+            : [];
+        $storagePlan = $storageState['current_plan']
+            ?? (method_exists($customer, 'currentStoragePlan')
+                ? $customer->currentStoragePlan()
+                : ($customer->storagePlan ?: $customer->activeStorageSubscription?->storagePlan));
         $wallet = $customer->wallet;
         $usage = $customer->usage;
 
         $planCode = strtolower((string) ($customer->serviceCode() ?: 'free'));
         $monthlyCredits = (int) ($servicePlan?->monthly_credits ?? 0);
         $creditBalance = (int) ($wallet?->balance_credits ?? 0);
-        $quotaMb = (int) ($storagePlan?->quota_mb ?? 512);
-        $usedBytes = (int) ($usage?->storage_used_bytes ?? 0);
-        $usedMb = (int) round($usedBytes / 1024 / 1024);
+        $quotaMb = (int) ($storageState['current_limit_mb'] ?? $storagePlan?->quota_mb ?? 512);
+        $usedBytes = (int) ($storageState['used_bytes'] ?? $usage?->storage_used_bytes ?? 0);
+        $usedMb = (int) ($storageState['used_mb'] ?? round($usedBytes / 1024 / 1024));
         $allowedSlots = $this->allowedSlotsForPlan($planCode);
 
         return self::$cache[$customerId] = [
@@ -79,6 +83,8 @@ class AppShellData
             'storage_quota_mb' => $quotaMb,
             'storage_used_mb' => $usedMb,
             'storage_pct' => $quotaMb > 0 ? min(100, (int) round(($usedMb / $quotaMb) * 100)) : 0,
+            'storage_over_quota' => (bool) ($storageState['over_quota'] ?? false),
+            'storage_cancellation_scheduled' => (bool) ($storageState['cancellation_scheduled'] ?? false),
             'allowed_slots' => $allowedSlots,
             'active_jobs' => Cache::remember(
                 "app-shell:{$customerId}:active-jobs",
@@ -106,6 +112,8 @@ class AppShellData
             'storage_quota_mb' => 512,
             'storage_used_mb' => 0,
             'storage_pct' => 0,
+            'storage_over_quota' => false,
+            'storage_cancellation_scheduled' => false,
             'allowed_slots' => 2,
             'active_jobs' => 0,
         ];

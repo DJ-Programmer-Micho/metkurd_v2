@@ -4,6 +4,7 @@ namespace App\Services\Payments;
 
 use App\Enums\PaymentCardOrigin;
 use App\Models\PaymentMethod;
+use InvalidArgumentException;
 
 class PaymentFeeCalculator
 {
@@ -29,11 +30,31 @@ class PaymentFeeCalculator
         $percent = (float) ($rule['percent'] ?? 0);
         $fixed = (int) round((float) ($rule['fixed_iqd'] ?? 0));
         $passToCustomer = (bool) ($rule['pass_to_customer'] ?? false);
+        $grossFormulaAmount = null;
 
-        $providerFee = (int) ceil(($baseAmountIqd * ($percent / 100)) + $fixed);
-        $surcharge = $passToCustomer ? $providerFee : 0;
-        $grossAmount = $baseAmountIqd + $surcharge;
-        $netAmount = max(0, $grossAmount - $providerFee);
+        if ($passToCustomer) {
+            if ($percent >= 100.0) {
+                throw new InvalidArgumentException('Pass-through fee percent must be lower than 100.');
+            }
+
+            $grossFormulaAmount = ($baseAmountIqd + $fixed) / (1 - ($percent / 100));
+            $grossAmount = max(0, (int) ceil($grossFormulaAmount));
+            $providerFee = $this->providerFeeForAmount($grossAmount, $percent, $fixed);
+            $netAmount = max(0, $grossAmount - $providerFee);
+
+            while ($netAmount < $baseAmountIqd) {
+                $grossAmount++;
+                $providerFee = $this->providerFeeForAmount($grossAmount, $percent, $fixed);
+                $netAmount = max(0, $grossAmount - $providerFee);
+            }
+
+            $surcharge = max(0, $grossAmount - $baseAmountIqd);
+        } else {
+            $providerFee = $this->providerFeeForAmount($baseAmountIqd, $percent, $fixed);
+            $surcharge = 0;
+            $grossAmount = $baseAmountIqd;
+            $netAmount = max(0, $grossAmount - $providerFee);
+        }
 
         return [
             'base_amount_iqd' => $baseAmountIqd,
@@ -49,8 +70,17 @@ class PaymentFeeCalculator
                 'percent' => $percent,
                 'fixed_iqd' => $fixed,
                 'pass_to_customer' => $passToCustomer,
+                'gross_formula_amount_iqd_raw' => $grossFormulaAmount !== null
+                    ? round($grossFormulaAmount, 6)
+                    : null,
+                'rounding_strategy' => $passToCustomer ? 'ceil_to_whole_iqd' : 'none',
             ],
         ];
+    }
+
+    protected function providerFeeForAmount(int $amountIqd, float $percent, int $fixed): int
+    {
+        return (int) ceil(($amountIqd * ($percent / 100)) + $fixed);
     }
 
     protected function providerRule(?PaymentMethod $method, string $provider, string $cardOrigin): array

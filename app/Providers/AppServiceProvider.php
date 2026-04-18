@@ -3,13 +3,19 @@
 namespace App\Providers;
 
 use App\Contracts\Payments\AreebaGatewayInterface;
-use App\Contracts\Payments\FibGatewayInterface;
+use App\Domain\Payments\Contracts\PaymentGateway;
+use App\Domain\Payments\Fib\FibClient;
+use App\Domain\Payments\Models\Payment;
+use App\Events\Payments\PaymentConfirmed;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use App\Models\Customer;
 use App\Observers\CustomerObserver;
+use App\Policies\PaymentPolicy;
+use App\Listeners\Payments\RunPaymentFulfillment;
 use App\Services\Payments\Areeba\AreebaHttpGateway;
-use App\Services\Payments\Fib\FibHttpGateway;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -26,7 +32,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(FibGatewayInterface::class, FibHttpGateway::class);
+        $this->app->singleton(PaymentGateway::class, FibClient::class);
         $this->app->singleton(AreebaGatewayInterface::class, AreebaHttpGateway::class);
     }
 
@@ -44,6 +50,8 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->configureLivewireRoutes();
         Customer::observe(CustomerObserver::class);
+        Gate::policy(Payment::class, PaymentPolicy::class);
+        Event::listen(PaymentConfirmed::class, RunPaymentFulfillment::class);
 
         $this->app->singleton('cloudfront', function () {
             return $this->hetzner_S3_domain;

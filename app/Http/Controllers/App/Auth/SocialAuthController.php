@@ -41,7 +41,7 @@ class SocialAuthController extends Controller
     protected function handleProviderCallback(string $provider)
     {
         try {
-            $providerUser = Socialite::driver($provider)->user();
+            $providerUser = Socialite::driver($provider)->stateless()->user();
         } catch (\Throwable $e) {
             Log::warning('Social provider callback failed.', [
                 'provider' => $provider,

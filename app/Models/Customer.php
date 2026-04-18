@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Billing\CustomerBillingStateService;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -120,6 +121,11 @@ class Customer extends Authenticatable
         return $this->hasMany(CustomerPaymentMethod::class, 'customer_id');
     }
 
+    public function payments(): HasMany
+    {
+        return $this->hasMany(\App\Domain\Payments\Models\Payment::class, 'customer_id');
+    }
+
     public function creditMonthlyGrants(): HasMany
     {
         return $this->hasMany(CreditMonthlyGrant::class);
@@ -163,6 +169,16 @@ class Customer extends Authenticatable
     {
         return $this->hasOne(CustomerServiceSubscription::class)
             ->where('customer_service_subscriptions.status', 'active')
+            ->where(function ($query) {
+                $query
+                    ->whereNull('customer_service_subscriptions.starts_at')
+                    ->orWhere('customer_service_subscriptions.starts_at', '<=', now());
+            })
+            ->where(function ($query) {
+                $query
+                    ->whereNull('customer_service_subscriptions.ends_at')
+                    ->orWhere('customer_service_subscriptions.ends_at', '>=', now());
+            })
             ->latestOfMany();
     }
 
@@ -175,7 +191,18 @@ class Customer extends Authenticatable
             'id',
             'id',
             'service_plan_id'
-        )->where('customer_service_subscriptions.status', 'active');
+        )
+            ->where('customer_service_subscriptions.status', 'active')
+            ->where(function ($query) {
+                $query
+                    ->whereNull('customer_service_subscriptions.starts_at')
+                    ->orWhere('customer_service_subscriptions.starts_at', '<=', now());
+            })
+            ->where(function ($query) {
+                $query
+                    ->whereNull('customer_service_subscriptions.ends_at')
+                    ->orWhere('customer_service_subscriptions.ends_at', '>=', now());
+            });
     }
 
     public function serviceCode(): string
@@ -224,6 +251,10 @@ class Customer extends Authenticatable
             $plan = $this->activeServiceSubscription?->servicePlan;
         }
 
+        if (! $plan) {
+            $plan = app(CustomerBillingStateService::class)->defaultServicePlan();
+        }
+
         if ($plan) {
             $this->setRelation('servicePlan', $plan);
         }
@@ -256,7 +287,17 @@ class Customer extends Authenticatable
     public function activeStorageSubscription(): HasOne
     {
         return $this->hasOne(CustomerStorageSubscription::class)
-            ->where('status', 'active')
+            ->where('customer_storage_subscriptions.status', 'active')
+            ->where(function ($query) {
+                $query
+                    ->whereNull('customer_storage_subscriptions.starts_at')
+                    ->orWhere('customer_storage_subscriptions.starts_at', '<=', now());
+            })
+            ->where(function ($query) {
+                $query
+                    ->whereNull('customer_storage_subscriptions.ends_at')
+                    ->orWhere('customer_storage_subscriptions.ends_at', '>=', now());
+            })
             ->latestOfMany();
     }
 
@@ -269,7 +310,18 @@ class Customer extends Authenticatable
             'id',
             'id',
             'storage_plan_id'
-        )->where('customer_storage_subscriptions.status', 'active');
+        )
+            ->where('customer_storage_subscriptions.status', 'active')
+            ->where(function ($query) {
+                $query
+                    ->whereNull('customer_storage_subscriptions.starts_at')
+                    ->orWhere('customer_storage_subscriptions.starts_at', '<=', now());
+            })
+            ->where(function ($query) {
+                $query
+                    ->whereNull('customer_storage_subscriptions.ends_at')
+                    ->orWhere('customer_storage_subscriptions.ends_at', '>=', now());
+            });
     }
 
     public function storageQuotaMb(int $default = 512): int
@@ -316,6 +368,10 @@ class Customer extends Authenticatable
             $plan = $this->activeStorageSubscription?->storagePlan;
         }
 
+        if (! $plan) {
+            $plan = app(CustomerBillingStateService::class)->defaultStoragePlan();
+        }
+
         if ($plan) {
             $this->setRelation('storagePlan', $plan);
         }
@@ -323,6 +379,22 @@ class Customer extends Authenticatable
         $this->resolvedStoragePlanLoaded = true;
 
         return $this->resolvedStoragePlan = $plan ?: null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function servicePlanState(): array
+    {
+        return app(CustomerBillingStateService::class)->servicePlanState($this);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function storageQuotaState(): array
+    {
+        return app(CustomerBillingStateService::class)->storageQuotaState($this);
     }
 
     // =========================================================

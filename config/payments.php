@@ -33,7 +33,7 @@ return [
             'fees' => [
                 'percent' => 1.0,
                 'fixed_iqd' => 0,
-                'pass_to_customer' => false,
+                'pass_to_customer' => true,
             ],
         ],
 

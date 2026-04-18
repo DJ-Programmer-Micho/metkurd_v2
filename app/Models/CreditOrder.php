@@ -15,6 +15,7 @@ class CreditOrder extends Model
     protected $fillable = [
         'customer_id',
         'payment_intent_id',
+        'payment_id',
         'order_type',
         'source_type',
         'service_plan_id',
@@ -77,6 +78,11 @@ class CreditOrder extends Model
     public function paymentIntent(): BelongsTo
     {
         return $this->belongsTo(PaymentIntent::class, 'payment_intent_id');
+    }
+
+    public function payment(): BelongsTo
+    {
+        return $this->belongsTo(\App\Domain\Payments\Models\Payment::class, 'payment_id');
     }
 
     public function servicePlan(): BelongsTo

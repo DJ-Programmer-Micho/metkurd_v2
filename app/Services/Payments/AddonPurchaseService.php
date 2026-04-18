@@ -38,6 +38,7 @@ class AddonPurchaseService
             $order = CreditOrder::create([
                 'customer_id' => (int) $customer->id,
                 'payment_intent_id' => $meta['payment_intent_id'] ?? null,
+                'payment_id' => $meta['payment_id'] ?? null,
                 'order_type' => 'addon',
                 'source_type' => 'credit_product',
                 'status' => 'paid',

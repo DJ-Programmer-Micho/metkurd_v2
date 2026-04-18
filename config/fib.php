@@ -6,7 +6,7 @@ $envSuffix = strtoupper($environment);
 
 return [
     'environment' => $environment,
-    'base_url' => env('FIB_BASE_URL') ?: env("FIB_BASE_URL_{$envSuffix}", 'https://fib.stage.fib.iq'),
+    'base_url' => env('FIB_BASE_URL') ?: env("FIB_BASE_URL_{$envSuffix}", 'https://fib-stage.fib.iq'),
     'realm' => env('FIB_REALM', 'fib-online-shop'),
     'client_id' => env('FIB_CLIENT_ID') ?: env("FIB_CLIENT_ID_{$envSuffix}"),
     'client_secret' => env('FIB_CLIENT_SECRET') ?: env("FIB_CLIENT_SECRET_{$envSuffix}"),

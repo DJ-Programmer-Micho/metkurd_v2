@@ -6,6 +6,7 @@ use App\Enums\PaymentPurposeType;
 use App\Models\Customer;
 use App\Models\PaymentMethod;
 use App\Models\ServicePlan;
+use App\Services\Billing\CustomerBillingStateService;
 use Illuminate\Auth\Access\AuthorizationException;
 
 class CheckoutAuthorizationService
@@ -13,6 +14,7 @@ class CheckoutAuthorizationService
     public function __construct(
         protected PaymentMethodCatalog $paymentMethods,
         protected PaymentProviderManager $providers,
+        protected CustomerBillingStateService $billingState,
     ) {
     }
 
@@ -104,27 +106,7 @@ class CheckoutAuthorizationService
 
     protected function resolveCurrentPlan(Customer $customer): ?ServicePlan
     {
-        $customer->loadMissing([
-            'activeServiceSubscription.servicePlan' => fn ($query) => $query->select(
-                'service_plans.id',
-                'service_plans.code',
-                'service_plans.name',
-                'service_plans.is_free'
-            ),
-        ]);
-
-        if ($customer->activeServiceSubscription?->servicePlan instanceof ServicePlan) {
-            return $customer->activeServiceSubscription->servicePlan;
-        }
-
-        return $customer->servicePlan()
-            ->select(
-                'service_plans.id',
-                'service_plans.code',
-                'service_plans.name',
-                'service_plans.is_free'
-            )
-            ->first();
+        return $this->billingState->servicePlanState($customer)['current_plan'] ?? null;
     }
 
     public function recurringStrategyForMethod(PaymentMethod $method, PaymentPurposeType|string $purposeType): string

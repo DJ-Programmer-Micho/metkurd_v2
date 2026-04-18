@@ -29,6 +29,7 @@ class PlanSwitcher
             $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999)));
             $paymentMethod = (string) ($meta['payment_method'] ?? $provider);
             $paymentIntentId = $meta['payment_intent_id'] ?? null;
+            $paymentId = $meta['payment_id'] ?? null;
             $merchantTransactionId = $meta['merchant_transaction_id'] ?? null;
             $providerTransactionId = $meta['provider_transaction_id'] ?? null;
             $grossAmount = (int) ($meta['gross_amount_iqd'] ?? $amountIqd);
@@ -44,6 +45,7 @@ class PlanSwitcher
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
                 'payment_intent_id' => $paymentIntentId,
+                'payment_id' => $paymentId,
                 'order_type' => 'subscription',
                 'source_type' => 'service_plan',
                 'service_plan_id' => $plan->id,
@@ -97,6 +99,7 @@ class PlanSwitcher
 
             $newSub = CustomerServiceSubscription::create([
                 'customer_id' => $customer->id,
+                'payment_id' => $paymentId,
                 'service_plan_id' => $plan->id,
                 'status' => 'active',
                 'starts_at' => now(),
@@ -216,6 +219,7 @@ class PlanSwitcher
             $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-STORAGE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999)));
             $paymentMethod = (string) ($meta['payment_method'] ?? $provider);
             $paymentIntentId = $meta['payment_intent_id'] ?? null;
+            $paymentId = $meta['payment_id'] ?? null;
             $merchantTransactionId = $meta['merchant_transaction_id'] ?? null;
             $providerTransactionId = $meta['provider_transaction_id'] ?? null;
             $grossAmount = (int) ($meta['gross_amount_iqd'] ?? $amountIqd);
@@ -228,6 +232,7 @@ class PlanSwitcher
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
                 'payment_intent_id' => $paymentIntentId,
+                'payment_id' => $paymentId,
                 'order_type' => 'adjustment',
                 'source_type' => 'storage_plan',
                 'service_plan_id' => null,
@@ -284,6 +289,7 @@ class PlanSwitcher
 
             return CustomerStorageSubscription::create([
                 'customer_id' => $customer->id,
+                'payment_id' => $paymentId,
                 'storage_plan_id' => $plan->id,
                 'status' => 'active',
                 'price_iqd_snapshot' => $amountIqd,

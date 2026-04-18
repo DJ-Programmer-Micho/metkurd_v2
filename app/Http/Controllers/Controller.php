@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\MlJob;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 abstract class Controller
 {
+    use AuthorizesRequests;
+
     protected function abortUnlessCustomerCanAccessJob(MlJob $job): void
     {
         $customer = auth('app')->user();
