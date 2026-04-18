@@ -24,6 +24,8 @@ new
 #[Layout('app::layouts.app')]
 class extends Component
 {
+    use \App\Support\Plans\ResolvesConcurrentJobLimit;
+
     protected string $toolCode = 'ftts';
     protected string $actionCode = 'standard';
     protected string $fullActionCode = 'ftts.standard';
@@ -502,19 +504,6 @@ class extends Component
         }
 
         $this->creditsCost = (int) ceil($chars * 1.0);
-    }
-
-    protected function allowedConcurrentJobs(): int
-    {
-        $c = auth('app')->user();
-        $planCode = strtolower((string) ($c?->serviceCode() ?? 'free'));
-
-        return match ($planCode) {
-            'student' => 4,
-            'pro'     => 8,
-            'premium' => 10,
-            default   => 2,
-        };
     }
 
     protected function currentActiveJobsCount(): int

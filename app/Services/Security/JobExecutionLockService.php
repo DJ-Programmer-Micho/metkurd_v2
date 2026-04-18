@@ -2,7 +2,9 @@
 
 namespace App\Services\Security;
 
+use App\Models\Customer;
 use App\Models\MlJob;
+use App\Services\Plans\PlanConcurrencyService;
 use Illuminate\Contracts\Session\Session;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -155,7 +157,7 @@ class JobExecutionLockService
                 ->where('lock_expires_at', '>', $now)
                 ->count();
 
-            $maxConcurrent = $this->resolveMaxConcurrentAsr($customerId);
+            $maxConcurrent = $this->resolveMaxConcurrentJobs($customerId);
 
             if ($activeCount >= $maxConcurrent) {
                 return [
@@ -282,7 +284,7 @@ class JobExecutionLockService
                 ->where('lock_expires_at', '>', $now)
                 ->count();
 
-            $maxConcurrent = $this->resolveMaxConcurrentStem($customerId);
+            $maxConcurrent = $this->resolveMaxConcurrentJobs($customerId);
 
             if ($activeCount >= $maxConcurrent) {
                 return [
@@ -394,7 +396,7 @@ class JobExecutionLockService
                 ->where('lock_expires_at', '>', $now)
                 ->count();
 
-            $maxConcurrent = $this->resolveMaxConcurrentOcr($customerId);
+            $maxConcurrent = $this->resolveMaxConcurrentJobs($customerId);
 
             if ($activeCount >= $maxConcurrent) {
                 return [
@@ -543,54 +545,14 @@ class JobExecutionLockService
             ]);
     }
 
-    protected function resolveMaxConcurrentAsr(int $customerId): int
+    protected function resolveMaxConcurrentJobs(int $customerId): int
     {
         try {
-            $customer = \App\Models\Customer::find($customerId);
-            $planCode = strtolower((string) ($customer?->serviceCode() ?? 'free'));
+            $customer = Customer::query()->find($customerId);
 
-            return match ($planCode) {
-                'student' => 2,
-                'pro' => 3,
-                'premium' => 5,
-                default => 1,
-            };
+            return app(PlanConcurrencyService::class)->allowedConcurrentJobsForCustomer($customer);
         } catch (\Throwable) {
-            return 1;
-        }
-    }
-
-    protected function resolveMaxConcurrentStem(int $customerId): int
-    {
-        try {
-            $customer = \App\Models\Customer::find($customerId);
-            $planCode = strtolower((string) ($customer?->serviceCode() ?? 'free'));
-
-            return match ($planCode) {
-                'student' => 1,
-                'pro' => 2,
-                'premium' => 3,
-                default => 1,
-            };
-        } catch (\Throwable) {
-            return 1;
-        }
-    }
-
-    protected function resolveMaxConcurrentOcr(int $customerId): int
-    {
-        try {
-            $customer = \App\Models\Customer::find($customerId);
-            $planCode = strtolower((string) ($customer?->serviceCode() ?? 'free'));
-
-            return match ($planCode) {
-                'student' => 1,
-                'pro' => 2,
-                'premium' => 3,
-                default => 1,
-            };
-        } catch (\Throwable) {
-            return 1;
+            return PlanConcurrencyService::DEFAULT_LIMIT;
         }
     }
 

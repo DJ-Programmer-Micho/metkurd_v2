@@ -36,6 +36,7 @@ trait ManagesPaymentPlansPage
     public string $name = '';
     public string $billingInterval = 'monthly';
     public $monthlyCredits = '';
+    public $concurrentJobsLimit = 2;
     public $priceIqdMonthly = '';
     public $priceIqdYearly = '';
     public bool $isFree = false;
@@ -99,6 +100,7 @@ trait ManagesPaymentPlansPage
             'name' => 'required|string|max:120',
             'billingInterval' => 'required|string|in:monthly,yearly,lifetime',
             'monthlyCredits' => 'required|integer|min:0',
+            'concurrentJobsLimit' => 'required|integer|min:1|max:65535',
             'priceIqdMonthly' => 'nullable|integer|min:0',
             'priceIqdYearly' => 'nullable|integer|min:0',
             'sortOrder' => 'nullable|integer|min:0|max:65535',
@@ -226,6 +228,7 @@ trait ManagesPaymentPlansPage
         $this->name = (string) $plan->name;
         $this->billingInterval = (string) $plan->billing_interval;
         $this->monthlyCredits = (int) ($plan->monthly_credits ?? 0);
+        $this->concurrentJobsLimit = (int) ($plan->concurrent_jobs_limit ?? 2);
         $this->priceIqdMonthly = (string) ((int) $plan->priceIqdForCycle('monthly'));
         $this->priceIqdYearly = (string) ((int) $plan->priceIqdForCycle('yearly'));
         $this->isFree = (bool) $plan->is_free;
@@ -255,6 +258,7 @@ trait ManagesPaymentPlansPage
             'name' => $validated['name'],
             'billing_interval' => $validated['billingInterval'],
             'monthly_credits' => (int) $validated['monthlyCredits'],
+            'concurrent_jobs_limit' => (int) $validated['concurrentJobsLimit'],
             'price_usd_monthly' => $this->usdReferenceAmount($priceIqdMonthly),
             'price_usd_yearly' => $this->usdReferenceAmount($priceIqdYearly),
             'is_free' => (bool) $this->isFree,
@@ -356,6 +360,7 @@ trait ManagesPaymentPlansPage
         $this->name = '';
         $this->billingInterval = 'monthly';
         $this->monthlyCredits = '';
+        $this->concurrentJobsLimit = 2;
         $this->priceIqdMonthly = '';
         $this->priceIqdYearly = '';
         $this->isFree = false;

@@ -30,6 +30,7 @@ class extends Component
 {
     use WithPagination;
     use WithFileUploads;
+    use \App\Support\Plans\ResolvesConcurrentJobLimit;
 
     protected $paginationTheme = 'bootstrap';
 
@@ -293,19 +294,6 @@ class extends Component
         }
 
         $this->creditsCost = $this->audioBillableMin * 1000;
-    }
-
-    protected function allowedConcurrentJobs(): int
-    {
-        $c = auth('app')->user();
-        $planCode = strtolower((string) ($c?->serviceCode() ?? 'free'));
-
-        return match ($planCode) {
-            'student' => 2,
-            'pro'     => 3,
-            'premium' => 5,
-            default   => 1,
-        };
     }
 
     protected function currentActiveJobsCount(): int

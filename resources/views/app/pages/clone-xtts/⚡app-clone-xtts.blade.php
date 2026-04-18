@@ -31,6 +31,7 @@ class extends Component
 {
     use WithPagination;
     use WithFileUploads;
+    use \App\Support\Plans\ResolvesConcurrentJobLimit;
 
     protected $paginationTheme = 'bootstrap';
 
@@ -411,19 +412,6 @@ class extends Component
         }
 
         $this->creditsCost = (int) ceil($chars * 1.2);
-    }
-
-    protected function allowedConcurrentJobs(): int
-    {
-        $c = auth('app')->user();
-        $planCode = strtolower((string) ($c?->serviceCode() ?? 'free'));
-
-        return match ($planCode) {
-            'student' => 4,
-            'pro'     => 8,
-            'premium' => 10,
-            default   => 2,
-        };
     }
 
     protected function currentActiveJobsCount(): int

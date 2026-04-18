@@ -29,6 +29,7 @@ class extends Component
 {
     use WithPagination;
     use WithFileUploads;
+    use \App\Support\Plans\ResolvesConcurrentJobLimit;
 
     protected $paginationTheme = 'bootstrap';
 
@@ -401,6 +402,23 @@ class extends Component
         $this->creditsCost = max(0, $this->requiredCredits());
     }
 
+    protected function currentActiveJobsCount(): int
+    {
+        $customerId = auth('app')->id();
+
+        if (! $customerId) {
+            return 0;
+        }
+
+        return MlJob::query()
+            ->where('customer_id', $customerId)
+            ->where('job_kind', $this->jobKind)
+            ->whereIn('status', ['queued', 'running', 'saving'])
+            ->whereNotNull('lock_expires_at')
+            ->where('lock_expires_at', '>', now())
+            ->count();
+    }
+
     #[Computed]
     public function canSeparate(): bool
     {
@@ -418,6 +436,10 @@ class extends Component
 
         if ($this->currentJobId && !$this->jobFinished) {
             return __('A stem separation job is already in progress.');
+        }
+
+        if ($this->currentActiveJobsCount() >= $this->allowedConcurrentJobs()) {
+            return __('You reached your concurrent job limit for the current plan.');
         }
 
         if (method_exists($customer, 'isAllowed') && !$customer->isAllowed($this->fullActionCode())) {
@@ -478,6 +500,11 @@ class extends Component
 
         if ($this->currentJobId && !$this->jobFinished) {
             $this->dispatch('alert', type: 'warning', message: __('A stem separation job is already in progress.'));
+            return;
+        }
+
+        if ($this->currentActiveJobsCount() >= $this->allowedConcurrentJobs()) {
+            $this->dispatch('alert', type: 'warning', message: __('You reached your concurrent job limit for the current plan.'));
             return;
         }
 

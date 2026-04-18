@@ -24,7 +24,7 @@ class extends Component
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
                     <h4 class="mb-sm-0">{{ __('Service Plan Payments') }}</h4>
-                    <p class="text-muted mb-0">{{ __('Manage subscription packs, credit allowances, monthly and yearly pricing, and activation state.') }}</p>
+                    <p class="text-muted mb-0">{{ __('Manage subscription packs, credit allowances, concurrent job limits, pricing, and activation state.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <select class="form-select" wire:model.live="displayCurrencyCode" style="min-width: 180px;">
@@ -148,6 +148,7 @@ class extends Component
                         <tr class="text-uppercase">
                             <th>{{ __('Plan') }}</th>
                             <th>{{ __('Credits') }}</th>
+                            <th>{{ __('Concurrent Jobs') }}</th>
                             <th>{{ __('Pricing') }}</th>
                             <th>{{ __('Adoption') }}</th>
                             <th>{{ __('Revenue') }}</th>
@@ -170,6 +171,12 @@ class extends Component
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold">{{ $this->formatCredits($plan->monthly_credits) }}</span>
                                         <span class="text-muted small">{{ __('monthly credits') }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column">
+                                        <span class="fw-semibold">{{ number_format((int) ($plan->concurrent_jobs_limit ?? 2)) }}</span>
+                                        <span class="text-muted small">{{ __('Maximum simultaneous active jobs this plan can run') }}</span>
                                     </div>
                                 </td>
                                 <td>
@@ -221,7 +228,7 @@ class extends Component
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="text-center py-5 text-muted">{{ __('No service plans matched the current filters.') }}</td>
+                                <td colspan="8" class="text-center py-5 text-muted">{{ __('No service plans matched the current filters.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -239,7 +246,7 @@ class extends Component
                 <div class="modal-header">
                     <div>
                         <h5 class="modal-title mb-1">{{ $editingPlanId ? __('Edit Service Plan') : __('Create Service Plan') }}</h5>
-                        <p class="text-muted mb-0">{{ __('Adjust credits, billing interval, and plan pricing from one form.') }}</p>
+                        <p class="text-muted mb-0">{{ __('Adjust credits, concurrent job capacity, billing interval, and plan pricing from one form.') }}</p>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetPlanForm"></button>
                 </div>
@@ -270,6 +277,12 @@ class extends Component
                                 <label class="form-label">{{ __('Monthly Credits') }}</label>
                                 <input type="number" min="0" class="form-control @error('monthlyCredits') is-invalid @enderror" wire:model.defer="monthlyCredits">
                                 @error('monthlyCredits') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">{{ __('Concurrent Jobs Limit') }}</label>
+                                <input type="number" min="1" class="form-control @error('concurrentJobsLimit') is-invalid @enderror" wire:model.defer="concurrentJobsLimit">
+                                <div class="form-text">{{ __('Maximum simultaneous active jobs this plan can run') }}</div>
+                                @error('concurrentJobsLimit') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">{{ __('Monthly Price (IQD)') }}</label>

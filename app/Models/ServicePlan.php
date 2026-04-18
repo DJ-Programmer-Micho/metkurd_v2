@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Plans\PlanConcurrencyService;
 use Illuminate\Support\Arr;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -18,6 +19,7 @@ class ServicePlan extends Model
         'name',
         'billing_interval',
         'monthly_credits',
+        'concurrent_jobs_limit',
         'is_free',
         'is_active',
         'sort_order',
@@ -31,6 +33,7 @@ class ServicePlan extends Model
 
     protected $casts = [
         'monthly_credits' => 'integer',
+        'concurrent_jobs_limit' => 'integer',
         'is_free' => 'boolean',
         'is_active' => 'boolean',
         'sort_order' => 'integer',
@@ -41,6 +44,16 @@ class ServicePlan extends Model
         'ui_features' => 'array',
         'meta' => 'array',
     ];
+
+    protected static function booted(): void
+    {
+        $flushConcurrencyCache = static function (): void {
+            app(PlanConcurrencyService::class)->flushCache();
+        };
+
+        static::saved($flushConcurrencyCache);
+        static::deleted($flushConcurrencyCache);
+    }
 
     public function subscriptions(): HasMany
     {

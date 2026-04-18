@@ -7,6 +7,7 @@ use App\Models\CustomerEntitlement;
 use App\Models\MlJob;
 use App\Models\PlanEntitlement;
 use App\Models\ToolAction;
+use App\Services\Plans\PlanConcurrencyService;
 use Illuminate\Support\Facades\Cache;
 
 class AppShellData
@@ -59,7 +60,7 @@ class AppShellData
         $quotaMb = (int) ($storageState['current_limit_mb'] ?? $storagePlan?->quota_mb ?? 512);
         $usedBytes = (int) ($storageState['used_bytes'] ?? $usage?->storage_used_bytes ?? 0);
         $usedMb = (int) ($storageState['used_mb'] ?? round($usedBytes / 1024 / 1024));
-        $allowedSlots = $this->allowedSlotsForPlan($planCode);
+        $allowedSlots = app(PlanConcurrencyService::class)->allowedConcurrentJobsForPlan($servicePlan);
 
         return self::$cache[$customerId] = [
             'customer' => $customer,
@@ -189,16 +190,6 @@ class AppShellData
         $map['youtube_download'] = (bool) ($map['youtube_audio'] ?? false) || (bool) ($map['youtube_video'] ?? false);
 
         return $map;
-    }
-
-    protected function allowedSlotsForPlan(string $planCode): int
-    {
-        return match ($planCode) {
-            'student' => 2,
-            'pro' => 3,
-            'premium' => 5,
-            default => 2,
-        };
     }
 
     protected function activeJobsCount(int $customerId): int
