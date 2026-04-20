@@ -17,6 +17,8 @@ Shared notes:
 - File-based job routes use direct `multipart/form-data` submission today. They do not accept `file_id`.
 - `jobId` is always a UUID string from `ml_jobs.id`.
 - `fileId` is always a numeric integer from `customer_files.id`.
+- TTS voice IDs come from `GET /api/mobile/tts/voices`.
+- Generated output audio stays private. Always use the returned `download_endpoint` instead of building raw storage URLs.
 - For normal output retrieval, do not guess the file id. Wait for the completed job detail response and use `result.outputs[*].download_endpoint`.
 
 ## TTS
@@ -27,6 +29,7 @@ App name:
 
 Endpoint:
 
+- `GET /api/mobile/tts/voices`
 - `POST /api/mobile/tts/jobs`
 
 Headers:
@@ -35,13 +38,56 @@ Headers:
 - `Authorization: Bearer {token}`
 - `Content-Type: application/json`
 
+Voice loading flow:
+
+1. Call `GET /api/mobile/tts/voices`
+2. Read `data.voices[*].speaker_id`
+3. Keep `tool_code` with the selected voice
+4. Submit both values to `POST /api/mobile/tts/jobs`
+
+Sample voice-catalog response:
+
+```json
+{
+  "data": {
+    "voices": [
+      {
+        "speaker_id": "xtts_female_1",
+        "tool_code": "tts",
+        "engine": "xtts",
+        "name": "Female 1",
+        "description": "Warm Kurdish narration voice.",
+        "language_codes": ["ku", "ar", "en"],
+        "gender": "female",
+        "sort_order": 1,
+        "is_featured": true,
+        "avatar": {
+          "file_name": "mobile_xtts_voice.png",
+          "path": "metkurd_audio_data/xtts/mobile_xtts_voice.png",
+          "url": "https://example.com/api/mobile/tts/voices/xtts_female_1/avatar"
+        },
+        "preview": {
+          "available": false,
+          "file_id": null,
+          "download_endpoint": null
+        }
+      }
+    ]
+  }
+}
+```
+
+Avatar note:
+
+- `avatar.url` is an authenticated backend image route, not a public bucket URL.
+
 Request body fields:
 
 | Key | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `tool_code` | string | yes | none | `tts` for XTTS, `ftts` for F5TTS |
 | `text` | string | yes | none | source text |
-| `speaker_id` | string | yes | none | must be allowed for the selected engine |
+| `speaker_id` | string | yes | none | must come from the voices endpoint for the selected engine |
 | `language` | string | XTTS only | `ar` | XTTS only |
 | `split` | boolean | XTTS only | `true` | XTTS only |
 | `max_words` | integer | XTTS only | `25` | XTTS only |
@@ -63,7 +109,7 @@ Sample Postman body for XTTS:
 {
   "tool_code": "tts",
   "text": "Hello from the XTTS mobile endpoint.",
-  "speaker_id": "liza",
+  "speaker_id": "xtts_female_1",
   "language": "ar",
   "split": true,
   "max_words": 20,
@@ -83,7 +129,7 @@ Sample Postman body for F5TTS:
 {
   "tool_code": "ftts",
   "text": "Hello from the F5TTS mobile endpoint.",
-  "speaker_id": "mobile_f5_voice",
+  "speaker_id": "ftts_female_1",
   "use_ema": false,
   "nfe_step": 48,
   "cfg_strength": 2.4,
@@ -198,6 +244,7 @@ FlutterFlow notes:
 
 - Use `application/json`.
 - Keep `tool_code` in page state if users switch between XTTS and F5TTS.
+- Do not hardcode speakers. Load them from `GET /api/mobile/tts/voices`.
 - Save `job.id` from the response and poll `status_url`.
 - Once the job is done, store `result.primary_output.id` or `result.outputs[*].id` in app state before calling the download endpoint.
 

@@ -12,6 +12,7 @@ servers:
 tags:
   - name: Authentication
   - name: Session
+  - name: Voices
   - name: Jobs
   - name: Files
 paths:
@@ -117,6 +118,67 @@ paths:
                 $ref: '#/components/schemas/AppsResponse'
         '401':
           $ref: '#/components/responses/Message401'
+  /api/mobile/tts/voices:
+    get:
+      tags: [Voices]
+      summary: List entitled XTTS and F5TTS voices
+      operationId: mobileTtsVoicesIndex
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TtsVoiceToolCode'
+      responses:
+        '200':
+          description: Voice list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TtsVoiceListResponse'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '422':
+          $ref: '#/components/responses/Validation422'
+  /api/mobile/tts/voices/{speakerId}/avatar:
+    get:
+      tags: [Voices]
+      summary: Get a protected TTS voice avatar
+      operationId: mobileTtsVoiceAvatarShow
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SpeakerId'
+      responses:
+        '200':
+          description: Binary image response for the requested voice avatar
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            image/svg+xml:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '404':
+          $ref: '#/components/responses/Message404'
   /api/mobile/{app}/jobs:
     get:
       tags: [Jobs]
@@ -450,6 +512,13 @@ components:
       schema:
         type: string
         format: uuid
+    SpeakerId:
+      name: speakerId
+      in: path
+      required: true
+      description: Exact voice code returned by GET /api/mobile/tts/voices
+      schema:
+        type: string
     FileId:
       name: fileId
       in: path
@@ -457,6 +526,14 @@ components:
       description: Numeric integer from customer_files.id
       schema:
         type: integer
+    TtsVoiceToolCode:
+      name: tool_code
+      in: query
+      required: false
+      description: Filter voices to one TTS engine
+      schema:
+        type: string
+        enum: [tts, ftts]
     PerPage:
       name: per_page
       in: query
@@ -680,6 +757,72 @@ components:
           type: boolean
         upload_enabled:
           type: boolean
+    TtsVoiceListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            voices:
+              type: array
+              items:
+                $ref: '#/components/schemas/TtsVoice'
+    TtsVoice:
+      type: object
+      properties:
+        speaker_id:
+          type: string
+        tool_code:
+          type: string
+          nullable: true
+          enum: [tts, ftts]
+        engine:
+          type: string
+          nullable: true
+          enum: [xtts, ftts]
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        language_codes:
+          type: array
+          items:
+            type: string
+        gender:
+          type: string
+          nullable: true
+        sort_order:
+          type: integer
+        is_featured:
+          type: boolean
+        avatar:
+          allOf:
+            - $ref: '#/components/schemas/TtsVoiceAvatar'
+          nullable: true
+        preview:
+          $ref: '#/components/schemas/TtsVoicePreview'
+    TtsVoiceAvatar:
+      type: object
+      properties:
+        file_name:
+          type: string
+          nullable: true
+        path:
+          type: string
+        url:
+          type: string
+    TtsVoicePreview:
+      type: object
+      properties:
+        available:
+          type: boolean
+        file_id:
+          type: integer
+          nullable: true
+        download_endpoint:
+          type: string
+          nullable: true
     JobSubmissionResponse:
       type: object
       properties:
@@ -864,6 +1007,8 @@ components:
           type: string
         speaker_id:
           type: string
+          description: Exact speaker_id returned by GET /api/mobile/tts/voices for XTTS
+          example: xtts_female_1
         language:
           type: string
           default: ar
@@ -921,6 +1066,8 @@ components:
           type: string
         speaker_id:
           type: string
+          description: Exact speaker_id returned by GET /api/mobile/tts/voices for F5TTS
+          example: ftts_female_1
         use_ema:
           type: boolean
           default: true

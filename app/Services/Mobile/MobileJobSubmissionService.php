@@ -37,6 +37,7 @@ class MobileJobSubmissionService
         protected AudioProbeService $audioProbe,
         protected JobExecutionLockService $locks,
         protected AppToolCatalog $toolCatalog,
+        protected MobileTtsVoiceCatalog $voiceCatalog,
         protected PlanConcurrencyService $planConcurrency,
         protected StemJobSyncService $stemSync,
         protected OcrJobSyncService $ocrSync,
@@ -1654,19 +1655,7 @@ class MobileJobSubmissionService
 
     protected function availableSpeakers(Customer $customer, string $engine): array
     {
-        $planId = method_exists($customer, 'currentServicePlanId')
-            ? (int) ($customer->currentServicePlanId() ?? 0)
-            : 0;
-
-        if ($planId <= 0) {
-            $planId = (int) ($customer->service_plan_id ?? 0);
-        }
-
-        if ($planId <= 0) {
-            return [];
-        }
-
-        return $this->toolCatalog->voiceOptionsForPlanAndEngine($planId, $engine);
+        return $this->voiceCatalog->speakerOptionsForCustomer($customer, $engine);
     }
 
     protected function firstAvailableSpeaker(array $speakers): string

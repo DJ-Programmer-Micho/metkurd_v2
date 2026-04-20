@@ -21,10 +21,12 @@ General rules:
 - Mobile apps support sign-in only. Registration stays website-only.
 - Payments, billing changes, password changes, email changes, and advanced account-security management are not exposed here.
 - Job and file routes are always app-scoped.
+- The TTS app also exposes a dedicated voice catalog at `GET /api/mobile/tts/voices`.
 - `GET /api/mobile/{app}/jobs/{jobId}` is the polling endpoint after submission.
 - `jobId` is the UUID string from `ml_jobs.id`.
 - `fileId` is the numeric integer from `customer_files.id`.
 - Completed job detail responses include explicit output file references with the correct `fileId` values and download endpoints.
+- TTS avatars and generated outputs stay private. Avatars are served through an authenticated backend route, and file downloads still use temporary signed URLs returned by `download_endpoint`.
 - Unless noted otherwise, send `Accept: application/json`.
 
 ## Authentication
@@ -306,6 +308,121 @@ Example success response:
 }
 ```
 
+## Voice Catalog
+
+### GET /api/mobile/tts/voices
+
+Purpose:
+
+- List the XTTS and F5TTS voices the authenticated customer is actually allowed to use.
+- Give Flutter the exact `speaker_id` and `tool_code` values needed for `POST /api/mobile/tts/jobs`.
+
+Used by:
+
+- `METKURD - TTS`
+
+Auth:
+
+- Yes
+
+Headers:
+
+- `Accept: application/json`
+- `Authorization: Bearer {token}`
+
+Query parameters:
+
+- `tool_code`: optional, one of `tts` or `ftts`
+
+Response notes:
+
+- `speaker_id` is the exact value the job request must send back.
+- `tool_code` is the exact engine selector for the job request.
+- `avatar.url` is an authenticated backend endpoint, not a public object-storage URL.
+- If no private avatar is available for a voice, `avatar` is `null`.
+- `preview` is reserved for future audio previews and currently returns placeholder values.
+
+Example response:
+
+```json
+{
+  "data": {
+    "voices": [
+      {
+        "speaker_id": "xtts_female_1",
+        "tool_code": "tts",
+        "engine": "xtts",
+        "name": "Female 1",
+        "description": "Warm Kurdish narration voice.",
+        "language_codes": [
+          "ku",
+          "ar",
+          "en"
+        ],
+        "gender": "female",
+        "sort_order": 1,
+        "is_featured": true,
+        "avatar": {
+          "file_name": "mobile_xtts_voice.png",
+          "path": "metkurd_audio_data/xtts/mobile_xtts_voice.png",
+          "url": "https://example.com/api/mobile/tts/voices/xtts_female_1/avatar"
+        },
+        "preview": {
+          "available": false,
+          "file_id": null,
+          "download_endpoint": null
+        }
+      },
+      {
+        "speaker_id": "ftts_female_1",
+        "tool_code": "ftts",
+        "engine": "ftts",
+        "name": "Female 1",
+        "description": null,
+        "language_codes": [],
+        "gender": "female",
+        "sort_order": 1,
+        "is_featured": false,
+        "avatar": null,
+        "preview": {
+          "available": false,
+          "file_id": null,
+          "download_endpoint": null
+        }
+      }
+    ]
+  }
+}
+```
+
+### GET /api/mobile/tts/voices/{speakerId}/avatar
+
+Purpose:
+
+- Return a private avatar image for an entitled TTS voice.
+
+Used by:
+
+- `METKURD - TTS`
+
+Auth:
+
+- Yes
+
+Headers:
+
+- `Authorization: Bearer {token}`
+
+Route parameters:
+
+- `speakerId`: exact voice code from the voices endpoint
+
+Notes:
+
+- This is an authenticated backend asset route.
+- The response is binary image content such as `image/png` or `image/jpeg`.
+- Missing or unavailable private avatars return `404 Not Found`.
+
 ## Shared Job Endpoints
 
 ### GET /api/mobile/{app}/jobs
@@ -536,7 +653,7 @@ Request body fields:
 | --- | --- | --- | --- | --- | --- |
 | `tool_code` | string | yes | `tts`, `ftts` | none | Selects XTTS or F5TTS mode. |
 | `text` | string | yes | `1..400` chars unless plan entitlement overrides | none | Source text to synthesize. |
-| `speaker_id` | string | yes | must be available for the user's plan and selected engine | none | Voice code. |
+| `speaker_id` | string | yes | must be available from `GET /api/mobile/tts/voices` for the selected engine | none | Voice code. |
 | `language` | string | XTTS only | any string up to `8` chars | `ar` | XTTS language code. |
 | `split` | boolean | XTTS only | `true`, `false` | `true` | XTTS text splitting. |
 | `max_words` | integer | XTTS only | `5..80` | `25` | XTTS split chunk size. |
@@ -559,6 +676,7 @@ Validation:
 - `speaker_id` must exist in the backend plan-scoped voice catalog for the selected engine.
 - XTTS fields are validated only when `tool_code=tts`.
 - F5TTS fields are validated only when `tool_code=ftts`.
+- Engine-specific fields for the other mode are ignored and are not persisted to the job input.
 - The selected action must be allowed by the customer's real backend entitlement state.
 - Concurrency is checked before creation.
 
@@ -568,7 +686,7 @@ Example XTTS request:
 {
   "tool_code": "tts",
   "text": "Hello from the XTTS mobile endpoint.",
-  "speaker_id": "liza",
+  "speaker_id": "xtts_female_1",
   "language": "ar",
   "split": true,
   "max_words": 20,
@@ -588,7 +706,7 @@ Example F5TTS request:
 {
   "tool_code": "ftts",
   "text": "Hello from the F5TTS mobile endpoint.",
-  "speaker_id": "mobile_f5_voice",
+  "speaker_id": "ftts_female_1",
   "use_ema": false,
   "nfe_step": 48,
   "cfg_strength": 2.4,
@@ -625,6 +743,7 @@ Example errors:
 Notes:
 
 - No file upload is used here.
+- Load `speaker_id` values from `GET /api/mobile/tts/voices` instead of hardcoding them in the app.
 - Credits are charged server-side before provider start and refunded on start failure.
 - After the job finishes, poll the job detail endpoint and use `result.primary_output.download_endpoint`.
 
@@ -1157,6 +1276,11 @@ Recommended output retrieval flow:
 2. Poll `GET /api/mobile/{app}/jobs/{jobId}`
 3. When `status=done`, read `data.result.outputs[*].id`
 4. Download with `data.result.outputs[*].download_endpoint`
+
+Privacy notes:
+
+- Generated output files remain private in Hetzner S3-compatible storage.
+- `GET /api/mobile/{app}/files/{fileId}/download` returns a temporary signed URL. It does not make the underlying object public.
 
 ## Error Format
 

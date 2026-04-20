@@ -3,6 +3,7 @@
 use App\Models\Customer;
 use App\Models\CustomerFile;
 use App\Models\MlJob;
+use App\Models\PlanEntitlement;
 use App\Models\PlanVoiceAccess;
 use App\Models\ServicePlan;
 use App\Models\Tool;
@@ -233,6 +234,160 @@ it('returns a json 401 response for unauthenticated mobile job creation even wit
     $response->assertStatus(401)
         ->assertHeader('content-type', 'application/json')
         ->assertJsonPath('message', 'Unauthenticated.');
+});
+
+it('requires authentication for the mobile tts voices endpoint', function () {
+    $this->getJson('/api/mobile/tts/voices')
+        ->assertStatus(401)
+        ->assertHeader('content-type', 'application/json')
+        ->assertJsonPath('message', 'Unauthenticated.');
+});
+
+it('lists mobile tts voices with the normalized flutter payload', function () {
+    Storage::fake('s3');
+
+    $customer = mobileApiCustomer('mobile-voices@example.com', 'mobile_voices_user');
+    $plan = assignMobilePlan($customer, 'premium');
+
+    ensurePlanSpeaker($plan, 'ftts', 'mobile_f5_voice', 'Mobile F5 Voice');
+
+    $xttsSpeaker = firstPlanSpeaker($plan, 'xtts');
+    $xttsVoice = Voice::query()->where('code', $xttsSpeaker)->firstOrFail();
+    $xttsVoice->update([
+        'meta' => array_merge((array) ($xttsVoice->meta ?? []), [
+            'avatar' => 'xtts/mobile_xtts_voice.png',
+            'description' => 'Warm Kurdish narration voice.',
+            'language_codes' => ['ku', 'ar', 'en'],
+            'is_featured' => true,
+        ]),
+    ]);
+
+    Storage::disk('s3')->put('metkurd_audio_data/xtts/mobile_xtts_voice.png', 'fake-image-bytes');
+
+    $response = $this->withToken(mobileApiToken($customer, 'tts'))
+        ->getJson('/api/mobile/tts/voices');
+
+    $voices = collect($response->json('data.voices'));
+    $xttsPayload = $voices->firstWhere('speaker_id', $xttsSpeaker);
+
+    $response->assertOk()
+        ->assertJsonStructure([
+            'data' => [
+                'voices' => [[
+                    'speaker_id',
+                    'tool_code',
+                    'engine',
+                    'name',
+                    'description',
+                    'language_codes',
+                    'gender',
+                    'sort_order',
+                    'is_featured',
+                    'avatar',
+                    'preview',
+                ]],
+            ],
+        ]);
+
+    expect($voices)->not->toBeEmpty()
+        ->and($voices->pluck('tool_code')->all())->toContain('tts')
+        ->and($voices->pluck('tool_code')->all())->toContain('ftts')
+        ->and($xttsPayload)->not->toBeNull()
+        ->and(data_get($xttsPayload, 'tool_code'))->toBe('tts')
+        ->and(data_get($xttsPayload, 'engine'))->toBe('xtts')
+        ->and(data_get($xttsPayload, 'description'))->toBe('Warm Kurdish narration voice.')
+        ->and(data_get($xttsPayload, 'language_codes'))->toBe(['ku', 'ar', 'en'])
+        ->and(data_get($xttsPayload, 'is_featured'))->toBeTrue()
+        ->and(data_get($xttsPayload, 'avatar.path'))->toBe('metkurd_audio_data/xtts/mobile_xtts_voice.png')
+        ->and(data_get($xttsPayload, 'avatar.url'))->toBe(route('api.mobile.tts.voices.avatar', ['speakerId' => $xttsSpeaker]))
+        ->and(data_get($xttsPayload, 'preview.available'))->toBeFalse();
+});
+
+it('filters mobile tts voices by tool code', function () {
+    $customer = mobileApiCustomer('mobile-voices-filter@example.com', 'mobile_voices_filter_user');
+    $plan = assignMobilePlan($customer, 'premium');
+
+    ensurePlanSpeaker($plan, 'ftts', 'mobile_f5_voice', 'Mobile F5 Voice');
+
+    $response = $this->withToken(mobileApiToken($customer, 'tts'))
+        ->getJson('/api/mobile/tts/voices?tool_code=ftts');
+
+    $toolCodes = collect($response->json('data.voices'))->pluck('tool_code')->unique()->values()->all();
+
+    $response->assertOk();
+
+    expect($toolCodes)->toBe(['ftts']);
+});
+
+it('returns only voices for the engines the customer is entitled to use', function () {
+    $customer = mobileApiCustomer('mobile-voices-entitlement@example.com', 'mobile_voices_entitlement_user');
+    $plan = assignMobilePlan($customer, 'premium');
+
+    ensurePlanSpeaker($plan, 'ftts', 'mobile_f5_voice', 'Mobile F5 Voice');
+
+    PlanEntitlement::query()->updateOrCreate(
+        [
+            'service_plan_id' => (int) $plan->id,
+            'tool_action_id' => (int) ToolAction::query()->where('full_code', 'ftts.standard')->value('id'),
+        ],
+        [
+            'allowed' => false,
+        ]
+    );
+
+    $response = $this->withToken(mobileApiToken($customer, 'tts'))
+        ->getJson('/api/mobile/tts/voices');
+
+    $toolCodes = collect($response->json('data.voices'))->pluck('tool_code')->unique()->values()->all();
+
+    $response->assertOk();
+
+    expect($toolCodes)->toBe(['tts']);
+});
+
+it('streams mobile voice avatars through the protected endpoint', function () {
+    Storage::fake('s3');
+
+    $customer = mobileApiCustomer('mobile-voice-avatar@example.com', 'mobile_voice_avatar_user');
+    $plan = assignMobilePlan($customer, 'premium');
+
+    $speaker = firstPlanSpeaker($plan, 'xtts');
+    $voice = Voice::query()->where('code', $speaker)->firstOrFail();
+    $voice->update([
+        'meta' => array_merge((array) ($voice->meta ?? []), [
+            'avatar' => 'xtts/mobile_voice_avatar.png',
+        ]),
+    ]);
+
+    Storage::disk('s3')->put('metkurd_audio_data/xtts/mobile_voice_avatar.png', 'mobile-avatar-image');
+
+    $response = $this->withToken(mobileApiToken($customer, 'tts'))
+        ->get('/api/mobile/tts/voices/' . $speaker . '/avatar');
+
+    $response->assertOk()
+        ->assertHeader('content-type', 'image/png');
+
+    expect($response->streamedContent())->toBe('mobile-avatar-image');
+});
+
+it('returns 404 when a protected mobile voice avatar is missing', function () {
+    Storage::fake('s3');
+
+    $customer = mobileApiCustomer('mobile-voice-avatar-missing@example.com', 'mobile_voice_avatar_missing_user');
+    $plan = assignMobilePlan($customer, 'premium');
+
+    $speaker = firstPlanSpeaker($plan, 'xtts');
+    $voice = Voice::query()->where('code', $speaker)->firstOrFail();
+    $voice->update([
+        'meta' => array_merge((array) ($voice->meta ?? []), [
+            'avatar' => 'xtts/missing_mobile_voice_avatar.png',
+        ]),
+    ]);
+
+    $this->withToken(mobileApiToken($customer, 'tts'))
+        ->getJson('/api/mobile/tts/voices/' . $speaker . '/avatar')
+        ->assertStatus(404)
+        ->assertHeader('content-type', 'application/json');
 });
 
 it('lists only the jobs that belong to the requested mobile app', function () {
@@ -521,6 +676,35 @@ it('submits xtts mobile jobs with the web payload contract', function () {
         ->and((string) $job->provider_job_id)->toBe('runpod-xtts-1')
         ->and((string) data_get($job->input, 'speaker_id'))->toBe($speaker)
         ->and((bool) data_get($job->input, 'split'))->toBeTrue();
+});
+
+it('validates speaker ids against the selected tts engine', function () {
+    $customer = mobileApiCustomer('mobile-engine-speaker-validation@example.com', 'mobile_engine_speaker_validation_user');
+    $plan = assignMobilePlan($customer, 'premium');
+
+    ensurePlanSpeaker($plan, 'ftts', 'mobile_f5_voice', 'Mobile F5 Voice');
+
+    $xttsSpeaker = firstPlanSpeaker($plan, 'xtts');
+    $fttsSpeaker = firstPlanSpeaker($plan, 'ftts');
+
+    $this->withToken(mobileApiToken($customer, 'tts'))
+        ->postJson('/api/mobile/tts/jobs', [
+            'tool_code' => 'tts',
+            'text' => 'This should fail because the speaker belongs to F5TTS.',
+            'speaker_id' => $fttsSpeaker,
+            'language' => 'ar',
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['speaker_id']);
+
+    $this->withToken(mobileApiToken($customer, 'tts'))
+        ->postJson('/api/mobile/tts/jobs', [
+            'tool_code' => 'ftts',
+            'text' => 'This should fail because the speaker belongs to XTTS.',
+            'speaker_id' => $xttsSpeaker,
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['speaker_id']);
 });
 
 it('submits f5tts mobile jobs with the web payload contract', function () {

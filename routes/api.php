@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Mobile\Auth\MobileAuthController;
 use App\Http\Controllers\Api\Mobile\Auth\MobileSocialAuthController;
 use App\Http\Controllers\Api\Mobile\MobileFilesController;
 use App\Http\Controllers\Api\Mobile\MobileJobsController;
+use App\Http\Controllers\Api\Mobile\MobileTtsVoicesController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('mobile')->name('api.mobile.')->group(function () {
@@ -25,6 +26,12 @@ Route::prefix('mobile')->name('api.mobile.')->group(function () {
     });
 
     Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/tts/voices', [MobileTtsVoicesController::class, 'index'])
+            ->name('tts.voices.index');
+        Route::get('/tts/voices/{speakerId}/avatar', [MobileTtsVoicesController::class, 'avatar'])
+            ->where(['speakerId' => '[A-Za-z0-9_-]+'])
+            ->name('tts.voices.avatar');
+
         Route::prefix('{app}')
             ->where(['app' => 'tts|ctts|asr|stem|ocr|tran'])
             ->name('apps.')
