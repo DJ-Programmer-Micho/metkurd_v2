@@ -5,7 +5,9 @@ use App\Models\CustomerFile;
 use App\Models\MlJob;
 use App\Models\PlanEntitlement;
 use App\Models\PlanVoiceAccess;
+use App\Models\PricingRule;
 use App\Models\ServicePlan;
+use App\Models\StoragePlan;
 use App\Models\Tool;
 use App\Models\ToolAction;
 use App\Models\Voice;
@@ -45,6 +47,18 @@ function assignMobilePlan(Customer $customer, string $code = 'premium'): Service
     $plan = ServicePlan::query()->where('code', $code)->firstOrFail();
 
     app(PlanSwitcher::class)->switchServicePlan($customer, $plan->id, [
+        'provider' => 'fake',
+        'billing_cycle' => 'monthly',
+    ]);
+
+    return $plan->fresh();
+}
+
+function assignMobileStoragePlan(Customer $customer, string $code = 'free-512'): StoragePlan
+{
+    $plan = StoragePlan::query()->where('code', $code)->firstOrFail();
+
+    app(PlanSwitcher::class)->switchStoragePlan($customer, $plan->id, [
         'provider' => 'fake',
         'billing_cycle' => 'monthly',
     ]);
@@ -234,6 +248,176 @@ it('returns a json 401 response for unauthenticated mobile job creation even wit
     $response->assertStatus(401)
         ->assertHeader('content-type', 'application/json')
         ->assertJsonPath('message', 'Unauthenticated.');
+});
+
+it('returns a json 401 response for unauthenticated mobile account usage access', function () {
+    $this->getJson('/api/mobile/account/usage')
+        ->assertStatus(401)
+        ->assertHeader('content-type', 'application/json')
+        ->assertJsonPath('message', 'Unauthenticated.');
+});
+
+it('returns the authenticated customer mobile account usage summary with pricing metadata', function () {
+    $customer = mobileApiCustomer('mobile-usage@example.com', 'mobile_usage_user');
+    $servicePlan = assignMobilePlan($customer, 'premium');
+    $storagePlan = assignMobileStoragePlan($customer, 'premium-10240');
+
+    $servicePlan->update(['monthly_credits' => 5000]);
+    $storagePlan->update(['quota_mb' => 1024]);
+
+    $customer->wallet()->updateOrCreate(
+        ['customer_id' => (int) $customer->id],
+        ['balance_credits' => 1200]
+    );
+    $customer->usage()->updateOrCreate(
+        ['customer_id' => (int) $customer->id],
+        ['storage_used_bytes' => 100 * 1024 * 1024]
+    );
+
+    $response = $this->withToken(mobileApiToken($customer))
+        ->getJson('/api/mobile/account/usage');
+
+    $response->assertOk()
+        ->assertJsonPath('data.credits.balance', 1200)
+        ->assertJsonPath('data.credits.monthly', 5000)
+        ->assertJsonPath('data.credits.used', 3800)
+        ->assertJsonPath('data.credits.percent_used', 76)
+        ->assertJsonPath('data.credits.percent_remaining', 24)
+        ->assertJsonPath('data.storage.used_bytes', 104857600)
+        ->assertJsonPath('data.storage.used_mb', 100)
+        ->assertJsonPath('data.storage.quota_bytes', 1073741824)
+        ->assertJsonPath('data.storage.quota_mb', 1024)
+        ->assertJsonPath('data.storage.remaining_bytes', 968884224)
+        ->assertJsonPath('data.storage.remaining_mb', 924)
+        ->assertJsonPath('data.storage.percent_used', 10)
+        ->assertJsonPath('data.storage.percent_remaining', 90)
+        ->assertJsonPath('data.storage.over_quota', false)
+        ->assertJsonPath('data.storage.upload_blocked', false)
+        ->assertJsonPath('data.pricing.currency', 'credits')
+        ->assertJsonPath('data.meta.plan_code', 'premium')
+        ->assertJsonPath('data.meta.plan_name', 'Premium');
+
+    $pricingVersion = (string) $response->json('data.pricing.version');
+    $rules = collect($response->json('data.pricing.rules'));
+    $ttsRule = $rules->firstWhere('tool_action', 'tts.standard');
+    $fttsRule = $rules->firstWhere('tool_action', 'ftts.standard');
+
+    expect($pricingVersion)->toMatch('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/')
+        ->and($rules)->not->toBeEmpty()
+        ->and($ttsRule)->not->toBeNull()
+        ->and(data_get($ttsRule, 'tool_code'))->toBe('tts')
+        ->and(data_get($ttsRule, 'metric_code'))->toBe('chars')
+        ->and(data_get($ttsRule, 'unit_label'))->toBe('characters')
+        ->and(data_get($ttsRule, 'billing_unit'))->toBe(1)
+        ->and(data_get($ttsRule, 'credits_per_unit'))->toBe(1)
+        ->and(data_get($ttsRule, 'minimum_credits'))->toBe(1)
+        ->and(data_get($ttsRule, 'rounding_mode'))->toBe('ceil')
+        ->and($fttsRule)->not->toBeNull()
+        ->and(data_get($fttsRule, 'metric_code'))->toBe('chars');
+});
+
+it('returns over quota state in the mobile account usage summary', function () {
+    $customer = mobileApiCustomer('mobile-usage-over-quota@example.com', 'mobile_usage_over_quota_user');
+    assignMobilePlan($customer, 'premium');
+    $storagePlan = assignMobileStoragePlan($customer, 'premium-10240');
+
+    $storagePlan->update(['quota_mb' => 10]);
+
+    $customer->usage()->updateOrCreate(
+        ['customer_id' => (int) $customer->id],
+        ['storage_used_bytes' => 12 * 1024 * 1024]
+    );
+
+    $this->withToken(mobileApiToken($customer))
+        ->getJson('/api/mobile/account/usage')
+        ->assertOk()
+        ->assertJsonPath('data.storage.quota_mb', 10)
+        ->assertJsonPath('data.storage.used_mb', 12)
+        ->assertJsonPath('data.storage.remaining_bytes', 0)
+        ->assertJsonPath('data.storage.remaining_mb', 0)
+        ->assertJsonPath('data.storage.percent_used', 100)
+        ->assertJsonPath('data.storage.percent_remaining', 0)
+        ->assertJsonPath('data.storage.over_quota', true)
+        ->assertJsonPath('data.storage.upload_blocked', true);
+});
+
+it('returns null percentages when monthly credits or storage quota have no positive denominator', function () {
+    $customer = mobileApiCustomer('mobile-usage-zero@example.com', 'mobile_usage_zero_user');
+    $servicePlan = assignMobilePlan($customer, 'premium');
+    $storagePlan = assignMobileStoragePlan($customer, 'premium-10240');
+
+    $servicePlan->update(['monthly_credits' => 0]);
+    $storagePlan->update(['quota_mb' => 0]);
+
+    $customer->wallet()->updateOrCreate(
+        ['customer_id' => (int) $customer->id],
+        ['balance_credits' => 0]
+    );
+    $customer->usage()->updateOrCreate(
+        ['customer_id' => (int) $customer->id],
+        ['storage_used_bytes' => 0]
+    );
+
+    $this->withToken(mobileApiToken($customer))
+        ->getJson('/api/mobile/account/usage')
+        ->assertOk()
+        ->assertJsonPath('data.credits.monthly', 0)
+        ->assertJsonPath('data.credits.used', 0)
+        ->assertJsonPath('data.credits.percent_used', null)
+        ->assertJsonPath('data.credits.percent_remaining', null)
+        ->assertJsonPath('data.storage.quota_bytes', 0)
+        ->assertJsonPath('data.storage.quota_mb', 0)
+        ->assertJsonPath('data.storage.remaining_bytes', 0)
+        ->assertJsonPath('data.storage.remaining_mb', 0)
+        ->assertJsonPath('data.storage.percent_used', null)
+        ->assertJsonPath('data.storage.percent_remaining', null)
+        ->assertJsonPath('data.storage.over_quota', false)
+        ->assertJsonPath('data.storage.upload_blocked', false);
+});
+
+it('returns only pricing rules for tool actions the customer is allowed to use', function () {
+    $customer = mobileApiCustomer('mobile-usage-pricing-access@example.com', 'mobile_usage_pricing_access_user');
+    $plan = assignMobilePlan($customer, 'premium');
+
+    PlanEntitlement::query()->updateOrCreate(
+        [
+            'service_plan_id' => (int) $plan->id,
+            'tool_action_id' => (int) ToolAction::query()->where('full_code', 'ftts.standard')->value('id'),
+        ],
+        [
+            'allowed' => false,
+        ]
+    );
+
+    $rules = collect(
+        $this->withToken(mobileApiToken($customer))
+            ->getJson('/api/mobile/account/usage')
+            ->assertOk()
+            ->json('data.pricing.rules')
+    );
+
+    expect($rules->pluck('tool_action')->all())->toContain('tts.standard')
+        ->and($rules->pluck('tool_action')->all())->not->toContain('ftts.standard');
+});
+
+it('excludes inactive pricing rules from the mobile account usage summary', function () {
+    $customer = mobileApiCustomer('mobile-usage-pricing-inactive@example.com', 'mobile_usage_pricing_inactive_user');
+    assignMobilePlan($customer, 'premium');
+
+    $ttsActionId = (int) ToolAction::query()->where('full_code', 'tts.standard')->value('id');
+
+    PricingRule::query()
+        ->where('tool_action_id', $ttsActionId)
+        ->update(['is_active' => false]);
+
+    $rules = collect(
+        $this->withToken(mobileApiToken($customer))
+            ->getJson('/api/mobile/account/usage')
+            ->assertOk()
+            ->json('data.pricing.rules')
+    );
+
+    expect($rules->pluck('tool_action')->all())->not->toContain('tts.standard');
 });
 
 it('requires authentication for the mobile tts voices endpoint', function () {

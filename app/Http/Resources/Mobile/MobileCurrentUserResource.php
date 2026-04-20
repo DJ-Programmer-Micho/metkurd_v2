@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Mobile;
 
+use App\Services\Billing\CustomerUsageSummaryService;
 use App\Support\AvatarFallbackUrl;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -23,7 +24,7 @@ class MobileCurrentUserResource extends JsonResource
         $profile = $this->resource->profile;
         $displayName = trim((string) (($profile?->first_name ?? '') . ' ' . ($profile?->last_name ?? '')));
         $servicePlan = $this->resource->currentServicePlan();
-        $storageState = $this->resource->storageQuotaState();
+        $usageSummary = app(CustomerUsageSummaryService::class)->forCustomer($this->resource);
 
         return [
             'id' => (int) $this->resource->id,
@@ -39,10 +40,10 @@ class MobileCurrentUserResource extends JsonResource
                 'is_paid' => (bool) $this->resource->hasPaidServicePlan(),
             ],
             'storage' => [
-                'quota_mb' => (int) ($storageState['current_limit_mb'] ?? 512),
-                'used_bytes' => (int) ($storageState['used_bytes'] ?? 0),
-                'over_quota' => (bool) ($storageState['over_quota'] ?? false),
-                'upload_blocked' => (bool) ($storageState['upload_blocked'] ?? false),
+                'quota_mb' => data_get($usageSummary, 'storage.quota_mb', 512),
+                'used_bytes' => (int) data_get($usageSummary, 'storage.used_bytes', 0),
+                'over_quota' => (bool) data_get($usageSummary, 'storage.over_quota', false),
+                'upload_blocked' => (bool) data_get($usageSummary, 'storage.upload_blocked', false),
             ],
             'accessible_apps' => app(\App\Services\Mobile\MobileAppCatalog::class)->appsForCustomer($this->resource),
             'token' => [

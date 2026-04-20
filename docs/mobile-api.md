@@ -308,6 +308,131 @@ Example success response:
 }
 ```
 
+## Account Usage
+
+### GET /api/mobile/account/usage
+
+Purpose:
+
+- Return the authenticated customer's current credit summary.
+- Return the authenticated customer's current storage summary.
+- Return the mobile-safe pricing metadata derived from active DB-backed pricing rules so Flutter can estimate costs locally.
+
+Used by:
+
+- All mobile apps
+
+Auth:
+
+- Yes
+
+Headers:
+
+- `Accept: application/json`
+- `Authorization: Bearer {token}`
+
+Response notes:
+
+- `credits.balance` is the current remaining wallet balance in credits.
+- `credits.monthly` is the current plan's included monthly credits.
+- `credits.used` is derived from the monthly plan baseline when that baseline exists.
+- `pricing.rules` is ordered by backend precedence.
+- Pricing metadata is derived from `pricing_rules` and `customer_pricing_rules`.
+- Client-side estimation is allowed for UX, but the server remains the source of truth for final charged credits.
+- If a denominator is not positive, percentage fields return `null`.
+- If a future plan introduces unlimited credits or unlimited storage through nullable plan limits, the percentage fields also return `null`.
+
+Example success response:
+
+```json
+{
+  "data": {
+    "credits": {
+      "balance": 1200,
+      "monthly": 5000,
+      "used": 3800,
+      "percent_used": 76,
+      "percent_remaining": 24
+    },
+    "storage": {
+      "used_bytes": 104857600,
+      "used_mb": 100,
+      "quota_bytes": 1073741824,
+      "quota_mb": 1024,
+      "remaining_bytes": 968884224,
+      "remaining_mb": 924,
+      "percent_used": 10,
+      "percent_remaining": 90,
+      "over_quota": false,
+      "upload_blocked": false
+    },
+    "pricing": {
+      "version": "2026-04-20T12:00:00Z",
+      "currency": "credits",
+      "rules": [
+        {
+          "tool_code": "tts",
+          "tool_action": "tts.standard",
+          "metric_code": "chars",
+          "unit_label": "characters",
+          "billing_unit": 1,
+          "credits_per_unit": 1,
+          "min_billable_units": 1,
+          "rounding_mode": "ceil",
+          "rounding_step": 1,
+          "client_formula_hint": "max(minimum_credits, apply_rounding((input_size / billing_unit) * credits_per_unit, rounding_mode, rounding_step))",
+          "minimum_credits": 1,
+          "maximum_credits": null,
+          "conditions": null
+        },
+        {
+          "tool_code": "ftts",
+          "tool_action": "ftts.standard",
+          "metric_code": "chars",
+          "unit_label": "characters",
+          "billing_unit": 1,
+          "credits_per_unit": 1.5,
+          "min_billable_units": 1,
+          "rounding_mode": "ceil",
+          "rounding_step": 1,
+          "client_formula_hint": "max(minimum_credits, apply_rounding((input_size / billing_unit) * credits_per_unit, rounding_mode, rounding_step))",
+          "minimum_credits": 0,
+          "maximum_credits": null,
+          "conditions": null
+        }
+      ]
+    },
+    "meta": {
+      "plan_code": "premium",
+      "plan_name": "Premium"
+    }
+  }
+}
+```
+
+Client estimation guidance:
+
+- `chars`: send the text length as `input_size`
+- `minutes`: send the rounded or measured minutes as `input_size`
+- `seconds`: send the seconds count as `input_size`
+- `pages`: send the page count as `input_size`
+- `files`: send the file count as `input_size`
+- `stem_outputs`: send the output stem count as `input_size`
+
+Recommended client approach:
+
+1. Cache the response by `pricing.version`.
+2. Find the rule that matches the selected `tool_action`.
+3. If multiple rules exist for one action, use the first rule whose `conditions` match the current input.
+4. Apply the formula hint locally for preview only.
+5. Treat the final charged credits from the server as authoritative.
+
+Possible error responses:
+
+- `401` => unauthenticated bearer token
+- `403` => account verification is incomplete
+- `423` => account is inactive
+
 ## Voice Catalog
 
 ### GET /api/mobile/tts/voices

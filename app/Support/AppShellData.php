@@ -7,6 +7,7 @@ use App\Models\CustomerEntitlement;
 use App\Models\MlJob;
 use App\Models\PlanEntitlement;
 use App\Models\ToolAction;
+use App\Services\Billing\CustomerUsageSummaryService;
 use App\Services\Plans\PlanConcurrencyService;
 use Illuminate\Support\Facades\Cache;
 
@@ -53,13 +54,14 @@ class AppShellData
                 : ($customer->storagePlan ?: $customer->activeStorageSubscription?->storagePlan));
         $wallet = $customer->wallet;
         $usage = $customer->usage;
+        $usageSummary = app(CustomerUsageSummaryService::class)->forCustomer($customer);
 
         $planCode = strtolower((string) ($customer->serviceCode() ?: 'free'));
-        $monthlyCredits = (int) ($servicePlan?->monthly_credits ?? 0);
-        $creditBalance = (int) ($wallet?->balance_credits ?? 0);
-        $quotaMb = (int) ($storageState['current_limit_mb'] ?? $storagePlan?->quota_mb ?? 512);
-        $usedBytes = (int) ($storageState['used_bytes'] ?? $usage?->storage_used_bytes ?? 0);
-        $usedMb = (int) ($storageState['used_mb'] ?? round($usedBytes / 1024 / 1024));
+        $monthlyCredits = data_get($usageSummary, 'credits.monthly', (int) ($servicePlan?->monthly_credits ?? 0));
+        $creditBalance = data_get($usageSummary, 'credits.balance', (int) ($wallet?->balance_credits ?? 0));
+        $quotaMb = data_get($usageSummary, 'storage.quota_mb', (int) ($storageState['current_limit_mb'] ?? $storagePlan?->quota_mb ?? 512));
+        $usedBytes = data_get($usageSummary, 'storage.used_bytes', (int) ($storageState['used_bytes'] ?? $usage?->storage_used_bytes ?? 0));
+        $usedMb = data_get($usageSummary, 'storage.used_mb', (int) ($storageState['used_mb'] ?? round($usedBytes / 1024 / 1024)));
         $allowedSlots = app(PlanConcurrencyService::class)->allowedConcurrentJobsForPlan($servicePlan);
 
         return self::$cache[$customerId] = [
@@ -80,11 +82,11 @@ class AppShellData
             ),
             'credit_balance' => $creditBalance,
             'monthly_credits' => $monthlyCredits,
-            'credits_pct' => $monthlyCredits > 0 ? min(100, (int) round(($creditBalance / $monthlyCredits) * 100)) : 0,
+            'credits_pct' => (int) (data_get($usageSummary, 'credits.percent_remaining') ?? 0),
             'storage_quota_mb' => $quotaMb,
             'storage_used_mb' => $usedMb,
-            'storage_pct' => $quotaMb > 0 ? min(100, (int) round(($usedMb / $quotaMb) * 100)) : 0,
-            'storage_over_quota' => (bool) ($storageState['over_quota'] ?? false),
+            'storage_pct' => (int) (data_get($usageSummary, 'storage.percent_used') ?? 0),
+            'storage_over_quota' => (bool) data_get($usageSummary, 'storage.over_quota', $storageState['over_quota'] ?? false),
             'storage_cancellation_scheduled' => (bool) ($storageState['cancellation_scheduled'] ?? false),
             'allowed_slots' => $allowedSlots,
             'active_jobs' => Cache::remember(

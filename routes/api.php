@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Mobile\Auth\MobileAuthController;
 use App\Http\Controllers\Api\Mobile\Auth\MobileSocialAuthController;
+use App\Http\Controllers\Api\Mobile\MobileAccountUsageController;
 use App\Http\Controllers\Api\Mobile\MobileFilesController;
 use App\Http\Controllers\Api\Mobile\MobileJobsController;
 use App\Http\Controllers\Api\Mobile\MobileTtsVoicesController;
@@ -31,6 +32,8 @@ Route::prefix('mobile')->name('api.mobile.')->group(function () {
         Route::get('/tts/voices/{speakerId}/avatar', [MobileTtsVoicesController::class, 'avatar'])
             ->where(['speakerId' => '[A-Za-z0-9_-]+'])
             ->name('tts.voices.avatar');
+        Route::get('/account/usage', [MobileAccountUsageController::class, 'show'])
+            ->name('account.usage');
 
         Route::prefix('{app}')
             ->where(['app' => 'tts|ctts|asr|stem|ocr|tran'])

@@ -12,6 +12,7 @@ servers:
 tags:
   - name: Authentication
   - name: Session
+  - name: Account
   - name: Voices
   - name: Jobs
   - name: Files
@@ -118,6 +119,26 @@ paths:
                 $ref: '#/components/schemas/AppsResponse'
         '401':
           $ref: '#/components/responses/Message401'
+  /api/mobile/account/usage:
+    get:
+      tags: [Account]
+      summary: Get account credits, storage, and pricing metadata
+      operationId: mobileAccountUsageShow
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Account usage summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountUsageResponse'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '423':
+          $ref: '#/components/responses/Message423'
   /api/mobile/tts/voices:
     get:
       tags: [Voices]
@@ -757,6 +778,138 @@ components:
           type: boolean
         upload_enabled:
           type: boolean
+    AccountUsageResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AccountUsage'
+    AccountUsage:
+      type: object
+      properties:
+        credits:
+          $ref: '#/components/schemas/AccountCreditSummary'
+        storage:
+          $ref: '#/components/schemas/AccountStorageSummary'
+        pricing:
+          $ref: '#/components/schemas/AccountPricingSummary'
+        meta:
+          $ref: '#/components/schemas/AccountUsageMeta'
+    AccountCreditSummary:
+      type: object
+      properties:
+        balance:
+          type: integer
+        monthly:
+          type: integer
+          nullable: true
+        used:
+          type: integer
+          nullable: true
+        percent_used:
+          type: integer
+          nullable: true
+        percent_remaining:
+          type: integer
+          nullable: true
+    AccountStorageSummary:
+      type: object
+      properties:
+        used_bytes:
+          type: integer
+        used_mb:
+          type: integer
+        quota_bytes:
+          type: integer
+          nullable: true
+        quota_mb:
+          type: integer
+          nullable: true
+        remaining_bytes:
+          type: integer
+          nullable: true
+        remaining_mb:
+          type: integer
+          nullable: true
+        percent_used:
+          type: integer
+          nullable: true
+        percent_remaining:
+          type: integer
+          nullable: true
+        over_quota:
+          type: boolean
+        upload_blocked:
+          type: boolean
+    AccountPricingSummary:
+      type: object
+      properties:
+        version:
+          type: string
+          nullable: true
+          description: Latest updated_at timestamp among the serialized DB pricing rules returned for this customer.
+        currency:
+          type: string
+          enum: [credits]
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountPricingRule'
+    AccountPricingRule:
+      type: object
+      properties:
+        tool_code:
+          type: string
+        tool_action:
+          type: string
+        metric_code:
+          type: string
+          description: Canonical metric derived from DB pricing rules, such as chars, minutes, seconds, pages, files, or stem_outputs.
+        unit_label:
+          type: string
+        billing_unit:
+          oneOf:
+            - type: integer
+            - type: number
+              format: float
+          nullable: true
+        credits_per_unit:
+          oneOf:
+            - type: integer
+            - type: number
+              format: float
+          nullable: true
+        min_billable_units:
+          type: integer
+          nullable: true
+        rounding_mode:
+          type: string
+        rounding_step:
+          oneOf:
+            - type: integer
+            - type: number
+              format: float
+          nullable: true
+        client_formula_hint:
+          type: string
+        minimum_credits:
+          type: integer
+        maximum_credits:
+          oneOf:
+            - type: integer
+            - type: number
+              format: float
+          nullable: true
+        conditions:
+          type: object
+          nullable: true
+          additionalProperties: true
+    AccountUsageMeta:
+      type: object
+      properties:
+        plan_code:
+          type: string
+        plan_name:
+          type: string
     TtsVoiceListResponse:
       type: object
       properties:
