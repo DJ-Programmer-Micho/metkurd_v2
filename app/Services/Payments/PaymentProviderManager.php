@@ -48,8 +48,8 @@ class PaymentProviderManager
 
         return match ($driver) {
             PaymentProvider::FAKE->value => (bool) config('payments.fake_enabled', true),
-            PaymentProvider::FIB->value => (bool) env('FIB_ENABLED', false),
-            PaymentProvider::AREEBA->value => (bool) env('AREEBA_ENABLED', false),
+            PaymentProvider::FIB->value => (bool) config('payments.providers.fib.enabled', false),
+            PaymentProvider::AREEBA->value => (bool) config('payments.providers.areeba.enabled', false),
             default => false,
         };
     }

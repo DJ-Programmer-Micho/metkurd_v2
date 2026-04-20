@@ -571,9 +571,9 @@ class extends Component
 
                                 <div class="alert alert-warning mt-3 mb-0">
                                     <div class="fw-semibold mb-2">{{ __('Next step: complete payment in First Iraqi Bank') }}</div>
-                                    <div>{{ __('We will open a dedicated FIB payment page with QR scan, manual code entry, refresh, and cancel controls.') }}</div>
+                                    <div>{{ __('We will open a dedicated FIB subscription page with QR scan, manual code entry, automatic status refresh, and cancel controls.') }}</div>
                                     <div class="small mt-2">
-                                        {{ __('Plan subscriptions stay separated in the recurring application flow. Because the published FIB documentation only exposes single-payment endpoints, renewal remains app-managed and manual.') }}
+                                        {{ __('Plan subscriptions now use the dedicated FIB recurring subscription API, while local entitlement activation stays server-side and idempotent.') }}
                                     </div>
                                 </div>
                             </div>
@@ -586,7 +586,7 @@ class extends Component
                                     @if($processing)
                                         {{ __('Preparing...') }}
                                     @else
-                                        {{ __('Open FIB Payment') }}
+                                        {{ __('Open FIB Subscription') }}
                                     @endif
                                 </button>
                             </div>

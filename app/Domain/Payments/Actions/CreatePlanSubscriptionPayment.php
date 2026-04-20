@@ -4,10 +4,12 @@ namespace App\Domain\Payments\Actions;
 
 use App\Domain\Payments\Enums\PaymentMode;
 use App\Domain\Payments\Enums\PaymentProvider;
+use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
+use App\Enums\PaymentRecurringStrategy;
 use App\Models\Customer;
 use App\Models\ServicePlan;
 use App\Services\Billing\BillingCurrencyService;
@@ -19,7 +21,7 @@ use Illuminate\Validation\ValidationException;
 class CreatePlanSubscriptionPayment
 {
     public function __construct(
-        protected \App\Domain\Payments\Fib\FibPaymentService $fib,
+        protected \App\Domain\Payments\Fib\FibSubscriptionService $fib,
         protected BillingCurrencyService $currency,
         protected PaymentFeeCalculator $fees,
         protected PaymentEventRecorder $events,
@@ -53,6 +55,7 @@ class CreatePlanSubscriptionPayment
                 'provider' => PaymentProvider::FIB,
                 'purchase_type' => PurchaseType::PLAN_SUBSCRIPTION,
                 'payment_mode' => PaymentMode::RECURRING,
+                'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
                 'status' => PaymentStatus::PENDING,
                 'local_reference' => $this->localReference('PLAN'),
                 'idempotency_key' => (string) Str::uuid(),
@@ -68,12 +71,12 @@ class CreatePlanSubscriptionPayment
                     'display' => $display,
                     'base_display' => $baseDisplay,
                     'fee_quote' => $feeQuote,
-                    'renewal_strategy' => 'manual_renewal',
+                    'renewal_strategy' => PaymentRecurringStrategy::PROVIDER_SCHEDULE->value,
                 ],
                 'meta' => [
                     'locale' => app()->getLocale(),
                     'fee_quote' => $feeQuote,
-                    'manual_renewal_notice' => 'The published FIB docs do not describe provider-managed recurring billing, so recurring purchases remain app-level subscriptions with manual renewal.',
+                    'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
                 ],
                 'purchasable_type' => ServicePlan::class,
                 'purchasable_id' => $plan->id,
@@ -95,35 +98,36 @@ class CreatePlanSubscriptionPayment
     protected function initializeFibPayment(Payment $payment): Payment
     {
         try {
-            $result = $this->fib->createPayment(
-                $payment,
-                route('payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $payment])
-            );
+            $result = $this->fib->createSubscription($payment);
 
-            /** @var \App\Domain\Payments\Data\FibCreatePaymentRequestData $request */
+            /** @var \App\Domain\Payments\Data\FibCreateSubscriptionRequestData $request */
             $request = $result['request'];
-            /** @var \App\Domain\Payments\Data\FibCreatePaymentResponseData $response */
+            /** @var \App\Domain\Payments\Data\FibCreateSubscriptionResponseData $response */
             $response = $result['response'];
 
             $payment->forceFill([
                 'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
-                'provider_status' => 'UNPAID',
-                'fib_payment_id' => $response->paymentId,
+                'provider_status' => (string) data_get($response->raw, 'status', 'UNPAID'),
+                'provider_subscription_status' => (string) data_get($response->raw, 'status', 'UNPAID'),
+                'fib_subscription_id' => $response->subscriptionId,
                 'readable_code' => $response->readableCode,
                 'qr_code' => $response->qrCode,
                 'provider_links' => $response->providerLinks,
                 'valid_until' => $response->validUntil,
+                'provider_interval' => $request->interval,
+                'provider_trial_period' => $request->trialPeriod,
                 'create_payload' => $request->toArray(),
                 'create_response' => $response->raw,
             ])->save();
 
             $this->events->record($payment, [
-                'event_type' => 'provider_payment_created',
+                'event_type' => 'provider_subscription_created',
                 'source' => 'customer_checkout',
                 'before_status' => PaymentStatus::PENDING->value,
                 'after_status' => PaymentStatus::AWAITING_CUSTOMER_ACTION->value,
                 'payload' => $response->raw,
                 'meta' => [
+                    'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
                     'create_payload' => $request->toArray(),
                 ],
             ]);
@@ -136,11 +140,12 @@ class CreatePlanSubscriptionPayment
             ])->save();
 
             $this->events->record($payment, [
-                'event_type' => 'provider_payment_create_failed',
+                'event_type' => 'provider_subscription_create_failed',
                 'source' => 'customer_checkout',
                 'before_status' => PaymentStatus::PENDING->value,
                 'after_status' => PaymentStatus::FAILED->value,
                 'meta' => [
+                    'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
                     'message' => $exception->getMessage(),
                 ],
             ]);

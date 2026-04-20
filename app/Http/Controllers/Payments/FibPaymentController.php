@@ -42,25 +42,36 @@ class FibPaymentController extends Controller
             'locale' => app()->getLocale(),
             'payment' => $payment,
         ])->with('payment_status_message', $payment->isPaid()
-            ? __('Congrats! Your payment was confirmed successfully. We sent the confirmation by email.')
+            ? $this->successMessage($payment)
             : $this->statusMessage($payment));
     }
 
     protected function statusMessage(Payment $payment): string
     {
+        $object = $payment->isProviderSubscriptionObject() ? __('subscription checkout') : __('payment');
+
         return match ($payment->status->value) {
-            'paid' => __('Congrats! Your payment was confirmed successfully. We sent the confirmation by email.'),
-            'failed' => __('Payment was declined by FIB.'),
-            'canceled' => __('Payment was canceled before completion.'),
-            'expired' => __('This FIB payment expired. Please start a new checkout.'),
-            default => __('Payment is still waiting to be completed.'),
+            'paid' => $this->successMessage($payment),
+            'failed' => __('Your FIB :object was declined.', ['object' => $object]),
+            'canceled' => __('Your FIB :object was canceled before completion.', ['object' => $object]),
+            'expired' => __('This FIB :object expired. Please start a new checkout.', ['object' => $object]),
+            default => __('Your FIB :object is still waiting to be completed.', ['object' => $object]),
         };
     }
 
     protected function cancelMessage(Payment $payment): string
     {
+        $object = $payment->isProviderSubscriptionObject() ? __('subscription checkout') : __('payment');
+
         return $payment->status->value === 'canceled'
-            ? __('Payment was canceled before completion.')
-            : __('Cancel was requested. Refresh the status if the provider has not confirmed the cancellation yet.');
+            ? __('Your FIB :object was canceled before completion.', ['object' => $object])
+            : __('Cancel was requested for this FIB :object. Refresh the status if the provider has not confirmed the cancellation yet.', ['object' => $object]);
+    }
+
+    protected function successMessage(Payment $payment): string
+    {
+        return $payment->isProviderSubscriptionObject()
+            ? __('Congrats! Your subscription was confirmed successfully. We sent the confirmation by email.')
+            : __('Congrats! Your payment was confirmed successfully. We sent the confirmation by email.');
     }
 }

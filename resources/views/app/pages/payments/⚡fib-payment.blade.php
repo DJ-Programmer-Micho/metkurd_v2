@@ -79,7 +79,7 @@ class extends Component
 };
 ?>
 
-<x-slot:title>{{ __('FIB Payment') }} | {{ __('MET KURD') }}</x-slot:title>
+<x-slot:title>{{ $payment->isProviderSubscriptionObject() ? __('FIB Subscription Checkout') : __('FIB Payment') }} | {{ __('MET KURD') }}</x-slot:title>
 
 @php
     $billing = app(\App\Services\Billing\BillingCurrencyService::class);
@@ -117,12 +117,22 @@ class extends Component
     };
     $statusAlertMessage = session('payment_status_message');
     if ($statusAlertMessage === null && $payment->isPaid()) {
-        $statusAlertMessage = __('Congrats! Your payment was confirmed successfully. We sent the confirmation by email.');
+        $statusAlertMessage = $payment->isProviderSubscriptionObject()
+            ? __('Congrats! Your subscription was confirmed successfully. We sent the confirmation by email.')
+            : __('Congrats! Your payment was confirmed successfully. We sent the confirmation by email.');
     }
     $homeUrl = route('app.home', ['locale' => app()->getLocale()]);
     $shouldAutoRedirectHome = $payment->isPaid() && $payment->fulfilled_at !== null;
     $showCancel = $payment->status->value === 'awaiting_customer_action';
     $showRefresh = in_array($payment->status->value, ['awaiting_customer_action', 'pending'], true);
+    $isSubscriptionCheckout = $payment->isProviderSubscriptionObject();
+    $providerObjectLabel = $isSubscriptionCheckout ? __('Subscription') : __('Payment');
+    $providerObjectLabelLower = $isSubscriptionCheckout ? __('subscription checkout') : __('payment');
+    $providerReferenceLabel = $isSubscriptionCheckout ? __('Subscription ID') : __('Payment ID');
+    $providerReferenceValue = $payment->providerReference();
+    $intervalLabel = $payment->provider_interval ?: data_get($snapshot, 'billing_cycle');
+    $trialPeriodLabel = $payment->provider_trial_period;
+    $activeUntilLabel = $payment->active_until?->timezone(config('app.timezone'))->format('Y-m-d H:i');
 @endphp
 
 <div class="row justify-content-center mt-4"
@@ -137,7 +147,7 @@ class extends Component
             <div class="alert alert-info d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2" aria-live="polite">
                 <div>
                     <div class="fw-semibold">{{ __('Waiting for FIB confirmation') }}</div>
-                    <div class="small mt-1">{{ __('This page checks your payment status automatically every 5 seconds while it remains pending.') }}</div>
+                    <div class="small mt-1">{{ __('This page checks your :object status automatically every 5 seconds while it remains pending.', ['object' => $providerObjectLabelLower]) }}</div>
                 </div>
                 <div class="small text-muted" wire:loading.remove wire:target="pollStatus">
                     {{ __('Automatic check is active.') }}
@@ -149,10 +159,10 @@ class extends Component
         @endif
 
         @if ($shouldAutoRedirectHome)
-            <div class="alert alert-success"
-                 x-data
-                 x-init="setTimeout(() => { window.location = @js($homeUrl); }, 2200)">
-                <div class="fw-semibold">{{ __('Payment completed successfully.') }}</div>
+                <div class="alert alert-success"
+                     x-data
+                     x-init="setTimeout(() => { window.location = @js($homeUrl); }, 2200)">
+                <div class="fw-semibold">{{ $isSubscriptionCheckout ? __('Subscription completed successfully.') : __('Payment completed successfully.') }}</div>
                 <div class="small mt-1">{{ __('Redirecting you to your app home...') }}</div>
             </div>
         @endif
@@ -187,6 +197,9 @@ class extends Component
                                 <dt class="col-sm-5 text-muted">{{ __('Provider') }}</dt>
                                 <dd class="col-sm-7">FIB</dd>
 
+                                <dt class="col-sm-5 text-muted">{{ __('Provider Object') }}</dt>
+                                <dd class="col-sm-7">{{ $providerObjectLabel }}</dd>
+
                                 <dt class="col-sm-5 text-muted">{{ __('Payment Mode') }}</dt>
                                 <dd class="col-sm-7">{{ $payment->payment_mode->value === 'recurring' ? __('Recurring') : __('One-Time') }}</dd>
 
@@ -211,8 +224,26 @@ class extends Component
                                 <dt class="col-sm-5 text-muted">{{ __('Readable Code') }}</dt>
                                 <dd class="col-sm-7">{{ $payment->readable_code ?: __('Pending') }}</dd>
 
+                                <dt class="col-sm-5 text-muted">{{ $providerReferenceLabel }}</dt>
+                                <dd class="col-sm-7">{{ $providerReferenceValue ?: __('Pending') }}</dd>
+
                                 <dt class="col-sm-5 text-muted">{{ __('Valid Until') }}</dt>
                                 <dd class="col-sm-7">{{ $validUntilLabel ?: __('Not provided') }}</dd>
+
+                                @if ($isSubscriptionCheckout && $intervalLabel)
+                                    <dt class="col-sm-5 text-muted">{{ __('Interval') }}</dt>
+                                    <dd class="col-sm-7">{{ strtoupper((string) $intervalLabel) }}</dd>
+                                @endif
+
+                                @if ($isSubscriptionCheckout && $trialPeriodLabel)
+                                    <dt class="col-sm-5 text-muted">{{ __('Trial Period') }}</dt>
+                                    <dd class="col-sm-7">{{ $trialPeriodLabel }}</dd>
+                                @endif
+
+                                @if ($isSubscriptionCheckout && $activeUntilLabel)
+                                    <dt class="col-sm-5 text-muted">{{ __('Active Until') }}</dt>
+                                    <dd class="col-sm-7">{{ $activeUntilLabel }}</dd>
+                                @endif
 
                                 <dt class="col-sm-5 text-muted">{{ __('Status Reason') }}</dt>
                                 <dd class="col-sm-7">{{ $payment->status_reason ?: __('Waiting for FIB confirmation') }}</dd>
@@ -220,11 +251,11 @@ class extends Component
 
                             @if ($payment->purchase_type->value === 'plan_subscription')
                                 <div class="mt-4 small text-muted">
-                                    {{ __('Recurring plan payments are currently handled as app-level subscriptions with manual renewal, because the published FIB docs do not expose a provider-managed recurring billing API.') }}
+                                    {{ __('Plan subscriptions now use the dedicated FIB subscription API. The checkout stays separate from local entitlement fulfillment, and your app access updates only after the server confirms the subscription status.') }}
                                 </div>
                             @elseif ($payment->purchase_type->value === 'storage_subscription')
                                 <div class="mt-4 small text-muted">
-                                    {{ __('Storage subscriptions follow the same recurring application mode boundary with manual renewal behavior on top of the documented FIB payment endpoints.') }}
+                                    {{ __('Storage subscriptions now use the dedicated FIB subscription API. Local downgrade and over-quota rules still stay server-side after the provider confirms the recurring subscription state.') }}
                                 </div>
                             @else
                                 <div class="mt-4 small text-muted">
@@ -236,7 +267,7 @@ class extends Component
 
                     <div class="col-lg-6">
                         <div class="border rounded-4 p-4 h-100">
-                            <div class="fw-semibold mb-3">{{ __('Complete Payment In FIB') }}</div>
+                            <div class="fw-semibold mb-3">{{ $isSubscriptionCheckout ? __('Complete Subscription In FIB') : __('Complete Payment In FIB') }}</div>
 
                             @if (!empty($payment->qr_code) && $payment->status->value === 'awaiting_customer_action')
                                 <div class="text-center mb-3">
@@ -265,7 +296,7 @@ class extends Component
                             @endif
 
                             <div class="small text-muted mt-3">
-                                {{ __('You can either scan the QR code or enter the readable code manually inside the FIB app. While the payment is still pending, this page checks the status automatically every few seconds. Keep the refresh button only as a fallback if something looks stuck.') }}
+                                {{ __('You can either scan the QR code or enter the readable code manually inside the FIB app. While the checkout is still pending, this page checks the server-side status automatically every few seconds. Keep the refresh button only as a fallback if something looks stuck.') }}
                             </div>
                         </div>
                     </div>
@@ -280,7 +311,7 @@ class extends Component
                         @if ($showCancel)
                             <form method="POST" action="{{ route('payments.fib.cancel', ['locale' => app()->getLocale(), 'payment' => $payment]) }}">
                                 @csrf
-                                <button type="submit" class="btn btn-outline-danger">{{ __('Cancel Payment') }}</button>
+                                <button type="submit" class="btn btn-outline-danger">{{ $isSubscriptionCheckout ? __('Cancel Subscription Checkout') : __('Cancel Payment') }}</button>
                             </form>
                         @endif
 

@@ -3,17 +3,17 @@
 namespace App\Http\Controllers\Payments;
 
 use App\Domain\Payments\Actions\SyncFibCheckoutStatus;
-use App\Domain\Payments\Fib\FibOneTimeWebhookValidator;
+use App\Domain\Payments\Fib\FibSubscriptionWebhookValidator;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class FibCallbackController extends Controller
+class FibSubscriptionCallbackController extends Controller
 {
     public function __invoke(
         Request $request,
-        FibOneTimeWebhookValidator $validator,
+        FibSubscriptionWebhookValidator $validator,
         SyncFibCheckoutStatus $sync,
         PaymentEventRecorder $events,
     ): JsonResponse {
@@ -23,9 +23,9 @@ class FibCallbackController extends Controller
         if (! $validation['valid']) {
             $events->record(null, [
                 'event_type' => 'callback_rejected',
-                'source' => 'fib_callback',
+                'source' => 'fib_subscription_callback',
                 'event_key' => sha1(json_encode($payload)),
-                'fib_payment_id' => $validation['payment_id'],
+                'fib_subscription_id' => $validation['subscription_id'],
                 'response_code' => 406,
                 'payload' => $payload,
                 'meta' => [
@@ -40,14 +40,14 @@ class FibCallbackController extends Controller
         }
 
         try {
-            $payment = $sync->handleByFibPaymentId((string) $validation['payment_id'], 'callback', $payload);
+            $payment = $sync->handleByFibSubscriptionId((string) $validation['subscription_id'], 'callback', $payload);
 
             if ($payment === null) {
                 $events->record(null, [
                     'event_type' => 'callback_orphaned',
-                    'source' => 'fib_callback',
-                    'event_key' => 'callback:' . (string) $validation['payment_id'] . ':' . sha1(json_encode($payload)),
-                    'fib_payment_id' => (string) $validation['payment_id'],
+                    'source' => 'fib_subscription_callback',
+                    'event_key' => 'subscription-callback:' . (string) $validation['subscription_id'] . ':' . sha1(json_encode($payload)),
+                    'fib_subscription_id' => (string) $validation['subscription_id'],
                     'response_code' => 202,
                     'payload' => $payload,
                 ]);
@@ -60,8 +60,8 @@ class FibCallbackController extends Controller
 
             $events->record($payment, [
                 'event_type' => 'callback_processed',
-                'source' => 'fib_callback',
-                'event_key' => 'callback:' . (string) $validation['payment_id'] . ':' . sha1(json_encode($payload)),
+                'source' => 'fib_subscription_callback',
+                'event_key' => 'subscription-callback:' . (string) $validation['subscription_id'] . ':' . sha1(json_encode($payload)),
                 'before_status' => $payment->status->value,
                 'after_status' => $payment->status->value,
                 'response_code' => 202,
@@ -75,9 +75,9 @@ class FibCallbackController extends Controller
         } catch (\Throwable $exception) {
             $events->record(null, [
                 'event_type' => 'callback_failed',
-                'source' => 'fib_callback',
-                'event_key' => 'callback:' . (string) $validation['payment_id'] . ':' . sha1(json_encode($payload)),
-                'fib_payment_id' => (string) $validation['payment_id'],
+                'source' => 'fib_subscription_callback',
+                'event_key' => 'subscription-callback:' . (string) $validation['subscription_id'] . ':' . sha1(json_encode($payload)),
+                'fib_subscription_id' => (string) $validation['subscription_id'],
                 'response_code' => 500,
                 'payload' => $payload,
                 'meta' => [

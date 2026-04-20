@@ -44,3 +44,30 @@ Use the admin payment-method page to update:
 ## Secrets
 
 Keep API keys, client IDs, client secrets, webhook secrets, and environment-specific credentials in `.env` and `config/payments.php`. The database only stores non-secret business and UI configuration.
+
+## FIB configuration
+
+FIB runtime configuration now lives in `config/fib.php` with explicit payment and subscription profiles.
+
+Preferred env keys:
+- `FIB_ENV`
+- `FIB_PAYMENT_BASE_URL_STAGING`
+- `FIB_PAYMENT_BASE_URL_PRODUCTION`
+- `FIB_SUBSCRIPTION_BASE_URL_STAGING`
+- `FIB_SUBSCRIPTION_BASE_URL_PRODUCTION`
+- `FIB_PAYMENT_CLIENT_ID`
+- `FIB_PAYMENT_CLIENT_SECRET`
+- `FIB_SUBSCRIPTION_CLIENT_ID`
+- `FIB_SUBSCRIPTION_CLIENT_SECRET`
+- `FIB_CALLBACK_BASE_URL`
+
+Legacy generic keys such as `FIB_BASE_URL` and `FIB_CLIENT_ID` are still accepted as temporary fallbacks, but `php artisan fib:debug-config` will flag them as legacy so the effective source is visible.
+
+For local debugging, run:
+
+```bash
+php artisan fib:debug-config
+php artisan fib:debug-config --probe
+```
+
+The probe command does not print secrets or bearer tokens. It reports the resolved host, token issuer, and the protected-endpoint response for each profile so staging host mismatches are easy to spot.

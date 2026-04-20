@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Enums\PaymentRecurringStrategy;
 use App\Models\{
     Customer,
     ServicePlan,
@@ -13,6 +14,7 @@ use App\Models\{
     CreditMonthlyGrant,
     CreditOrder
 };
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class PlanSwitcher
@@ -37,10 +39,12 @@ class PlanSwitcher
             $providerFeeAmount = (int) ($meta['provider_fee_amount_iqd'] ?? 0);
             $netAmount = (int) ($meta['net_amount_iqd'] ?? max(0, $grossAmount - $providerFeeAmount));
             $customerPaymentMethodId = $meta['customer_payment_method_id'] ?? null;
-            $renewalStrategy = (string) ($meta['renewal_strategy'] ?? 'manual_renewal');
-            $nextRenewalOn = $billingCycle === 'yearly'
-                ? now()->addYear()->toDateString()
-                : now()->addMonth()->toDateString();
+            $renewalStrategy = (string) ($meta['renewal_strategy'] ?? PaymentRecurringStrategy::MANUAL_RENEWAL->value);
+            $activeUntil = $this->dateString($meta['active_until'] ?? null);
+            $nextRenewalOn = $activeUntil
+                ?: ($billingCycle === 'yearly'
+                    ? now()->addYear()->toDateString()
+                    : now()->addMonth()->toDateString());
 
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
@@ -110,7 +114,8 @@ class PlanSwitcher
                 'source' => $provider,
                 'provider_ref' => $order->provider_ref,
                 'next_renewal_on' => $nextRenewalOn,
-                'auto_renew' => $customerPaymentMethodId !== null && $renewalStrategy !== 'manual_renewal',
+                'auto_renew' => $renewalStrategy === PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
+                    || ($customerPaymentMethodId !== null && $renewalStrategy !== PaymentRecurringStrategy::MANUAL_RENEWAL->value),
                 'customer_payment_method_id' => $customerPaymentMethodId,
                 'renewal_strategy' => $renewalStrategy,
                 'price_iqd_snapshot' => $amountIqd,
@@ -132,6 +137,7 @@ class PlanSwitcher
                     'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                     'merchant_transaction_id' => $merchantTransactionId,
                     'provider_transaction_id' => $providerTransactionId,
+                    'provider_active_until' => $meta['active_until'] ?? null,
                 ],
             ]);
 
@@ -227,7 +233,8 @@ class PlanSwitcher
             $providerFeeAmount = (int) ($meta['provider_fee_amount_iqd'] ?? 0);
             $netAmount = (int) ($meta['net_amount_iqd'] ?? max(0, $grossAmount - $providerFeeAmount));
             $customerPaymentMethodId = $meta['customer_payment_method_id'] ?? null;
-            $renewalStrategy = (string) ($meta['renewal_strategy'] ?? 'manual_renewal');
+            $renewalStrategy = (string) ($meta['renewal_strategy'] ?? PaymentRecurringStrategy::MANUAL_RENEWAL->value);
+            $activeUntil = $this->dateString($meta['active_until'] ?? null);
 
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
@@ -304,9 +311,10 @@ class PlanSwitcher
                 'source' => $provider,
                 'provider_ref' => $order->provider_ref,
                 'cycle_started_on' => now()->toDateString(),
-                'cycle_ends_on' => now()->addMonth()->toDateString(),
-                'next_renewal_on' => now()->addMonth()->toDateString(),
-                'auto_renew' => $customerPaymentMethodId !== null && $renewalStrategy !== 'manual_renewal',
+                'cycle_ends_on' => $activeUntil ?: now()->addMonth()->toDateString(),
+                'next_renewal_on' => $activeUntil ?: now()->addMonth()->toDateString(),
+                'auto_renew' => $renewalStrategy === PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
+                    || ($customerPaymentMethodId !== null && $renewalStrategy !== PaymentRecurringStrategy::MANUAL_RENEWAL->value),
                 'customer_payment_method_id' => $customerPaymentMethodId,
                 'renewal_strategy' => $renewalStrategy,
                 'meta' => [
@@ -322,8 +330,26 @@ class PlanSwitcher
                     'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                     'merchant_transaction_id' => $merchantTransactionId,
                     'provider_transaction_id' => $providerTransactionId,
+                    'provider_active_until' => $meta['active_until'] ?? null,
                 ],
             ]);
         }, 3);
+    }
+
+    protected function dateString(mixed $value): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return Carbon::instance($value)->toDateString();
+        }
+
+        if (! is_scalar($value) || trim((string) $value) === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse((string) $value)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

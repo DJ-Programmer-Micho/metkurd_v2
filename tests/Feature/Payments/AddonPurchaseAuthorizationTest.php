@@ -36,24 +36,25 @@ function createPaymentTestCustomer(string $email, string $username): Customer
 function configureAddonFib(): void
 {
     config()->set('payments.providers.fib.enabled', true);
-    config()->set('services.fib.enabled', true);
-    config()->set('services.fib.base_url', 'https://fib-stage.fib.iq');
-    config()->set('services.fib.realm', 'fib-online-shop');
-    config()->set('services.fib.client_id', 'fib-test-client');
-    config()->set('services.fib.client_secret', 'fib-secret');
-    config()->set('services.fib.callback_secret', 'fib-callback-secret');
-    config()->set('services.fib.callback_secret_header', 'x-callback-secret');
-    config()->set('services.fib.payment.category', 'ECOMMERCE');
-    config()->set('services.fib.payment.expires_in', 'PT1H');
-    config()->set('services.fib.payment.refundable_for', 'PT48H');
-    config()->set('services.fib.token_ttl_seconds', 60);
-    config()->set('services.fib.http.timeout', 15);
-    config()->set('services.fib.http.retries', 1);
-    config()->set('services.fib.http.retry_sleep_ms', 1);
-    config()->set('services.fib.paths.token', '/auth/realms/fib-online-shop/protocol/openid-connect/token');
-    config()->set('services.fib.paths.payments', '/protected/v1/payments');
-    config()->set('services.fib.paths.payment_status', '/protected/v1/payments/{paymentId}/status');
-    config()->set('services.fib.paths.payment_cancel', '/protected/v1/payments/{paymentId}/cancel');
+    config()->set('fib.enabled', true);
+    config()->set('fib.realm', 'fib-online-shop');
+    config()->set('fib.profiles.payment.base_url', 'https://fib-stage.fib.iq');
+    config()->set('fib.profiles.payment.client_id', 'fib-test-client');
+    config()->set('fib.profiles.payment.client_secret', 'fib-secret');
+    config()->set('fib.callback_base_url', 'https://metkurd.test');
+    config()->set('fib.callback_secret', 'fib-callback-secret');
+    config()->set('fib.callback_secret_header', 'x-callback-secret');
+    config()->set('fib.payment.category', 'ECOMMERCE');
+    config()->set('fib.payment.expires_in', 'PT1H');
+    config()->set('fib.payment.refundable_for', 'PT48H');
+    config()->set('fib.token_ttl_seconds', 60);
+    config()->set('fib.http.timeout', 15);
+    config()->set('fib.http.retries', 1);
+    config()->set('fib.http.retry_sleep_ms', 1);
+    config()->set('fib.paths.token', '/auth/realms/fib-online-shop/protocol/openid-connect/token');
+    config()->set('fib.paths.payments', '/protected/v1/payments');
+    config()->set('fib.paths.payment_status', '/protected/v1/payments/{paymentId}/status');
+    config()->set('fib.paths.payment_cancel', '/protected/v1/payments/{paymentId}/cancel');
 }
 
 function addonStageUrl(string $path): string

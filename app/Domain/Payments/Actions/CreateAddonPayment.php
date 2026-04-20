@@ -4,6 +4,7 @@ namespace App\Domain\Payments\Actions;
 
 use App\Domain\Payments\Enums\PaymentMode;
 use App\Domain\Payments\Enums\PaymentProvider;
+use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
@@ -19,7 +20,7 @@ use Illuminate\Support\Str;
 class CreateAddonPayment
 {
     public function __construct(
-        protected \App\Domain\Payments\Fib\FibPaymentService $fib,
+        protected \App\Domain\Payments\Fib\FibOneTimePaymentService $fib,
         protected BillingCurrencyService $currency,
         protected CheckoutAuthorizationService $authorization,
         protected PaymentFeeCalculator $fees,
@@ -44,6 +45,7 @@ class CreateAddonPayment
                 'provider' => PaymentProvider::FIB,
                 'purchase_type' => PurchaseType::ADDON_CREDITS,
                 'payment_mode' => PaymentMode::ONE_TIME,
+                'provider_object_type' => PaymentProviderObjectType::PAYMENT,
                 'status' => PaymentStatus::PENDING,
                 'local_reference' => $this->localReference('ADDON'),
                 'idempotency_key' => (string) Str::uuid(),
@@ -91,6 +93,7 @@ class CreateAddonPayment
             $payment->forceFill([
                 'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
                 'provider_status' => 'UNPAID',
+                'provider_payment_status' => 'UNPAID',
                 'fib_payment_id' => $response->paymentId,
                 'readable_code' => $response->readableCode,
                 'qr_code' => $response->qrCode,
@@ -107,6 +110,7 @@ class CreateAddonPayment
                 'after_status' => PaymentStatus::AWAITING_CUSTOMER_ACTION->value,
                 'payload' => $response->raw,
                 'meta' => [
+                    'provider_object_type' => PaymentProviderObjectType::PAYMENT->value,
                     'create_payload' => $request->toArray(),
                 ],
             ]);
@@ -124,6 +128,7 @@ class CreateAddonPayment
                 'before_status' => PaymentStatus::PENDING->value,
                 'after_status' => PaymentStatus::FAILED->value,
                 'meta' => [
+                    'provider_object_type' => PaymentProviderObjectType::PAYMENT->value,
                     'message' => $exception->getMessage(),
                 ],
             ]);

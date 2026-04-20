@@ -1,5 +1,11 @@
 <?php
 
+use App\Domain\Payments\Enums\PaymentMode;
+use App\Domain\Payments\Enums\PaymentProvider;
+use App\Domain\Payments\Enums\PaymentProviderObjectType;
+use App\Domain\Payments\Enums\PaymentStatus;
+use App\Domain\Payments\Enums\PurchaseType;
+use App\Domain\Payments\Models\Payment;
 use App\Models\Customer;
 use App\Models\CustomerFile;
 use App\Models\CustomerUsage;
@@ -11,7 +17,9 @@ use App\Services\Billing\ScheduleStoragePlanCancellation;
 use App\Services\Storage\CustomerOutputStorage;
 use App\Services\Storage\StorageQuotaExceededException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -21,6 +29,20 @@ beforeEach(function () {
 afterEach(function () {
     Carbon::setTestNow();
 });
+
+function billingConfigureFibRecurring(): void
+{
+    config()->set('fib.enabled', true);
+    config()->set('fib.realm', 'fib-online-shop');
+    config()->set('fib.profiles.subscription.base_url', 'https://fib-stage.fib.iq');
+    config()->set('fib.profiles.subscription.client_id', 'fib-subscription-client');
+    config()->set('fib.profiles.subscription.client_secret', 'fib-subscription-secret');
+    config()->set('fib.http.timeout', 15);
+    config()->set('fib.http.retries', 1);
+    config()->set('fib.http.retry_sleep_ms', 1);
+    config()->set('fib.paths.token', '/auth/realms/fib-online-shop/protocol/openid-connect/token');
+    config()->set('fib.paths.subscription_cancel', '/protected/v1/subscriptions/{subscriptionId}/cancel');
+}
 
 function billingArchitectureCustomer(string $email, string $username): Customer
 {
@@ -55,6 +77,30 @@ function grantPaidStoragePlan(Customer $customer, string $code = 'premium-10240'
     ]);
 
     return $plan;
+}
+
+function fibRecurringPayment(Customer $customer, PurchaseType $purchaseType, int $purchasableId, string $subscriptionId): Payment
+{
+    return Payment::create([
+        'uuid' => (string) Str::uuid(),
+        'customer_id' => $customer->id,
+        'provider' => PaymentProvider::FIB,
+        'purchase_type' => $purchaseType,
+        'payment_mode' => PaymentMode::RECURRING,
+        'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
+        'status' => PaymentStatus::PAID,
+        'local_reference' => 'TEST-' . strtoupper(Str::random(10)),
+        'idempotency_key' => (string) Str::uuid(),
+        'fib_subscription_id' => $subscriptionId,
+        'amount' => 25000,
+        'currency' => 'IQD',
+        'purchase_snapshot' => [
+            'renewal_strategy' => 'provider_schedule',
+        ],
+        'purchasable_type' => $purchaseType === PurchaseType::PLAN_SUBSCRIPTION ? ServicePlan::class : StoragePlan::class,
+        'purchasable_id' => $purchasableId,
+        'paid_at' => now(),
+    ]);
 }
 
 it('hides the free plan card when the customer already has an active paid main plan', function () {
@@ -93,6 +139,39 @@ it('schedules main plan cancellation for period end only and keeps paid access u
         ->and($freshCustomer->hasPaidServicePlan())->toBeFalse();
 });
 
+it('cancels the fib provider subscription when scheduling main plan cancellation at period end', function () {
+    Http::preventStrayRequests();
+    billingConfigureFibRecurring();
+
+    $customer = billingArchitectureCustomer('cancel-main-fib@example.com', 'cancel_main_fib_user');
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+    $payment = fibRecurringPayment($customer, PurchaseType::PLAN_SUBSCRIPTION, $plan->id, 'fib-service-sub-123');
+
+    app(PlanSwitcher::class)->switchServicePlan($customer, $plan->id, [
+        'provider' => 'fib',
+        'payment_id' => $payment->id,
+        'provider_ref' => $payment->providerReference(),
+        'billing_cycle' => 'monthly',
+        'renewal_strategy' => 'provider_schedule',
+    ]);
+
+    Http::fake([
+        'https://fib-stage.fib.iq/auth/realms/fib-online-shop/protocol/openid-connect/token' => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-service-sub-123/cancel' => Http::response(null, 204),
+    ]);
+
+    $scheduled = app(ScheduleServicePlanCancellation::class)->handle($customer->fresh());
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-service-sub-123/cancel');
+
+    expect(data_get($scheduled->meta, 'provider_cancellation.provider'))->toBe('fib')
+        ->and(data_get($scheduled->meta, 'provider_cancellation.provider_ref'))->toBe($payment->providerReference())
+        ->and($scheduled->auto_renew)->toBeFalse();
+});
+
 it('schedules storage cancellation for period end and downgrades entitlement to the free storage plan afterwards', function () {
     $customer = billingArchitectureCustomer('cancel-storage@example.com', 'cancel_storage_user');
     $plan = grantPaidStoragePlan($customer);
@@ -113,6 +192,38 @@ it('schedules storage cancellation for period end and downgrades entitlement to 
 
     expect($freshCustomer->currentStoragePlan()?->code)->toBe('free-512')
         ->and((int) ($state['current_limit_mb'] ?? 0))->toBe(512);
+});
+
+it('cancels the fib provider subscription when scheduling storage cancellation at period end', function () {
+    Http::preventStrayRequests();
+    billingConfigureFibRecurring();
+
+    $customer = billingArchitectureCustomer('cancel-storage-fib@example.com', 'cancel_storage_fib_user');
+    $plan = StoragePlan::query()->where('code', 'premium-10240')->firstOrFail();
+    $payment = fibRecurringPayment($customer, PurchaseType::STORAGE_SUBSCRIPTION, $plan->id, 'fib-storage-sub-123');
+
+    app(PlanSwitcher::class)->switchStoragePlan($customer, $plan->id, [
+        'provider' => 'fib',
+        'payment_id' => $payment->id,
+        'provider_ref' => $payment->providerReference(),
+        'renewal_strategy' => 'provider_schedule',
+    ]);
+
+    Http::fake([
+        'https://fib-stage.fib.iq/auth/realms/fib-online-shop/protocol/openid-connect/token' => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-storage-sub-123/cancel' => Http::response(null, 204),
+    ]);
+
+    $scheduled = app(ScheduleStoragePlanCancellation::class)->handle($customer->fresh());
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-storage-sub-123/cancel');
+
+    expect(data_get($scheduled->meta, 'provider_cancellation.provider'))->toBe('fib')
+        ->and(data_get($scheduled->meta, 'provider_cancellation.provider_ref'))->toBe($payment->providerReference())
+        ->and($scheduled->auto_renew)->toBeFalse();
 });
 
 it('keeps existing files intact after a storage downgrade makes the account over quota', function () {

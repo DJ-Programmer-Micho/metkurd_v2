@@ -4,7 +4,7 @@ namespace App\Providers;
 
 use App\Contracts\Payments\AreebaGatewayInterface;
 use App\Domain\Payments\Contracts\PaymentGateway;
-use App\Domain\Payments\Fib\FibClient;
+use App\Domain\Payments\Fib\FibOneTimePaymentClient;
 use App\Domain\Payments\Models\Payment;
 use App\Events\Payments\PaymentConfirmed;
 use App\Http\Middleware\LocalizationMainMiddleware;
@@ -32,7 +32,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(PaymentGateway::class, FibClient::class);
+        $this->app->singleton(PaymentGateway::class, FibOneTimePaymentClient::class);
         $this->app->singleton(AreebaGatewayInterface::class, AreebaHttpGateway::class);
     }
 

@@ -29,7 +29,7 @@ class FibPaymentProvider extends AbstractConfiguredPaymentProvider
             return 'none';
         }
 
-        return 'manual_renewal';
+        return 'provider_schedule';
     }
 
     /**
@@ -121,7 +121,7 @@ class FibPaymentProvider extends AbstractConfiguredPaymentProvider
     protected function runtimeConfig(?PaymentMethod $method = null): array
     {
         return array_replace_recursive(
-            (array) config('services.fib', []),
+            (array) config('fib', []),
             is_array($method?->settings) ? $method->settings : [],
         );
     }
@@ -132,9 +132,9 @@ class FibPaymentProvider extends AbstractConfiguredPaymentProvider
     protected function requiredConfigKeys(?PaymentMethod $method = null): array
     {
         return [
-            'base_url' => 'Base URL',
-            'client_id' => 'Client ID',
-            'client_secret' => 'Client Secret',
+            'profiles.payment.base_url' => 'Payment Base URL',
+            'profiles.payment.client_id' => 'Payment Client ID',
+            'profiles.payment.client_secret' => 'Payment Client Secret',
         ];
     }
 

@@ -6,35 +6,54 @@ use App\Domain\Payments\Data\FibTokenData;
 use App\Domain\Payments\Exceptions\FibApiException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class FibTokenService
 {
     public function __construct(
         protected HttpFactory $http,
+        protected FibConfiguration $config,
     ) {
     }
 
-    public function getToken(): FibTokenData
+    public function getToken(string $profile = 'payment'): FibTokenData
     {
-        $cached = Cache::get($this->cacheKey());
+        $profileConfig = $this->config->profile($profile);
+
+        if ($profileConfig['client_id'] === '' || $profileConfig['client_secret'] === '') {
+            throw new FibApiException("FIB {$profile} client credentials are not configured.");
+        }
+
+        if ($profileConfig['base_url'] === '') {
+            throw new FibApiException("FIB {$profile} base URL is not configured.");
+        }
+
+        $cached = Cache::get($this->cacheKey($profile, $profileConfig['base_url'], $profileConfig['client_id']));
 
         if (is_array($cached) && filled($cached['access_token'] ?? null)) {
             return FibTokenData::fromArray($cached);
         }
 
+        $this->logDiagnostics('token_request_start', $profile, [
+            'base_url' => $profileConfig['base_url'],
+            'base_url_source' => $profileConfig['base_url_source'],
+            'client_id_source' => $profileConfig['client_id_source'],
+            'token_url' => $this->config->url($profile, 'token'),
+        ]);
+
         $response = $this->http
-            ->baseUrl((string) config('services.fib.base_url'))
-            ->timeout((int) config('services.fib.http.timeout', 15))
+            ->baseUrl($profileConfig['base_url'])
+            ->timeout((int) config('fib.http.timeout', 15))
             ->retry(
-                (int) config('services.fib.http.retries', 2),
-                (int) config('services.fib.http.retry_sleep_ms', 200),
+                (int) config('fib.http.retries', 2),
+                (int) config('fib.http.retry_sleep_ms', 200),
                 fn () => true
             )
             ->asForm()
-            ->post((string) config('services.fib.paths.token'), [
+            ->post($this->config->path('token'), [
                 'grant_type' => 'client_credentials',
-                'client_id' => (string) config('services.fib.client_id'),
-                'client_secret' => (string) config('services.fib.client_secret'),
+                'client_id' => $profileConfig['client_id'],
+                'client_secret' => $profileConfig['client_secret'],
             ]);
 
         $payload = $response->json() ?? ['body' => $response->body()];
@@ -53,11 +72,11 @@ class FibTokenService
             5,
             min(
                 max(5, $token->expiresIn - 5),
-                (int) config('services.fib.token_ttl_seconds', 60)
+                (int) config('fib.token_ttl_seconds', 60)
             )
         );
 
-        Cache::put($this->cacheKey(), [
+        Cache::put($this->cacheKey($profile, $profileConfig['base_url'], $profileConfig['client_id']), [
             'access_token' => $token->accessToken,
             'expires_in' => $token->expiresIn,
             'token_type' => $token->tokenType,
@@ -67,13 +86,14 @@ class FibTokenService
         return $token;
     }
 
-    protected function cacheKey(): string
+    protected function cacheKey(string $profile = 'payment', ?string $baseUrl = null, ?string $clientId = null): string
     {
         return sprintf(
-            'fib:token:%s:%s:%s',
-            sha1((string) config('services.fib.base_url')),
-            sha1((string) config('services.fib.realm')),
-            sha1((string) config('services.fib.client_id')),
+            'fib:token:%s:%s:%s:%s',
+            sha1((string) ($baseUrl ?? $this->config->baseUrl($profile))),
+            sha1((string) $this->config->realm()),
+            sha1($profile),
+            sha1((string) ($clientId ?? $this->config->clientId($profile))),
         );
     }
 
@@ -91,5 +111,21 @@ class FibTokenService
         ));
 
         return $details !== '' ? "{$fallback} {$details}" : $fallback;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    protected function logDiagnostics(string $event, string $profile, array $context = []): void
+    {
+        if (! $this->config->diagnosticsEnabled()) {
+            return;
+        }
+
+        Log::debug('FIB diagnostics', array_merge([
+            'event' => $event,
+            'profile' => $profile,
+            'environment' => $this->config->environment(),
+        ], $context));
     }
 }

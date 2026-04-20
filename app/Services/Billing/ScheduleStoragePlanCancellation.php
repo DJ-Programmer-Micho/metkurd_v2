@@ -2,6 +2,8 @@
 
 namespace App\Services\Billing;
 
+use App\Domain\Payments\Fib\FibSubscriptionService;
+use App\Enums\PaymentRecurringStrategy;
 use App\Models\Customer;
 use App\Models\CustomerStorageSubscription;
 use App\Models\StoragePlan;
@@ -12,6 +14,7 @@ class ScheduleStoragePlanCancellation
 {
     public function __construct(
         protected CustomerBillingStateService $billingState,
+        protected FibSubscriptionService $fibSubscriptions,
     ) {
     }
 
@@ -38,12 +41,22 @@ class ScheduleStoragePlanCancellation
         return DB::transaction(function () use ($subscription, $periodEndsAt, $defaultPlan, $state) {
             /** @var CustomerStorageSubscription $locked */
             $locked = CustomerStorageSubscription::query()
-                ->with('storagePlan')
+                ->with(['storagePlan', 'payment'])
                 ->lockForUpdate()
                 ->findOrFail($subscription->id);
 
             if ($locked->canceled_at !== null && $locked->ends_at !== null && $locked->ends_at->isFuture()) {
-                return $locked->fresh(['storagePlan']);
+                return $locked->fresh(['storagePlan', 'payment']);
+            }
+
+            $payment = $locked->payment;
+            $shouldCancelProvider = $payment?->isProviderSubscriptionObject()
+                && $payment->provider?->value === 'fib'
+                && $locked->renewal_strategy === PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
+                && filled($payment->fib_subscription_id);
+
+            if ($shouldCancelProvider) {
+                $this->fibSubscriptions->cancel($payment);
             }
 
             $meta = (array) $locked->meta;
@@ -56,6 +69,13 @@ class ScheduleStoragePlanCancellation
                 'current_limit_bytes' => $state['current_limit_bytes'] ?? null,
                 'future_limit_bytes' => $state['future_limit_bytes'] ?? null,
             ], static fn (mixed $value) => $value !== null);
+            if ($shouldCancelProvider) {
+                $meta['provider_cancellation'] = [
+                    'provider' => 'fib',
+                    'provider_ref' => $payment?->providerReference(),
+                    'requested_at' => now()->toIso8601String(),
+                ];
+            }
 
             $locked->forceFill([
                 'auto_renew' => false,
@@ -64,7 +84,7 @@ class ScheduleStoragePlanCancellation
                 'meta' => $meta,
             ])->save();
 
-            return $locked->fresh(['storagePlan']);
+            return $locked->fresh(['storagePlan', 'payment']);
         }, 3);
     }
 }

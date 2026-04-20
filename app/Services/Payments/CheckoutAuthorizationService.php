@@ -124,12 +124,20 @@ class CheckoutAuthorizationService
 
     public function recurringStrategy(string $provider, PaymentPurposeType|string $purposeType): string
     {
+        $purposeType = $purposeType instanceof PaymentPurposeType
+            ? $purposeType
+            : PaymentPurposeType::from((string) $purposeType);
+
         $method = $this->paymentMethods->firstByDriver($provider);
 
         if ($method instanceof PaymentMethod) {
             return $this->recurringStrategyForMethod($method, $purposeType);
         }
 
-        return 'manual_renewal';
+        if (strtolower(trim($provider)) === 'fib' && $purposeType !== PaymentPurposeType::CREDIT_PRODUCT) {
+            return 'provider_schedule';
+        }
+
+        return $purposeType === PaymentPurposeType::CREDIT_PRODUCT ? 'none' : 'manual_renewal';
     }
 }

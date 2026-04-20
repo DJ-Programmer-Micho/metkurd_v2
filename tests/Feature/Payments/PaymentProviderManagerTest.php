@@ -22,9 +22,9 @@ it('marks fake payments as config-ready and checkout-ready', function () {
 
 it('marks fib as config-ready and checkout-ready when credentials are present', function () {
     config()->set('payments.providers.fib.enabled', true);
-    config()->set('services.fib.base_url', 'https://fib-stage.fib.iq');
-    config()->set('services.fib.client_id', 'fib-test-client');
-    config()->set('services.fib.client_secret', 'fib-secret');
+    config()->set('fib.profiles.payment.base_url', 'https://fib-stage.fib.iq');
+    config()->set('fib.profiles.payment.client_id', 'fib-test-client');
+    config()->set('fib.profiles.payment.client_secret', 'fib-secret');
 
     $method = new PaymentMethod([
         'code' => 'fib',
@@ -42,9 +42,9 @@ it('marks fib as config-ready and checkout-ready when credentials are present', 
 
 it('reports missing fib configuration clearly', function () {
     config()->set('payments.providers.fib.enabled', true);
-    config()->set('services.fib.base_url', null);
-    config()->set('services.fib.client_id', null);
-    config()->set('services.fib.client_secret', null);
+    config()->set('fib.profiles.payment.base_url', null);
+    config()->set('fib.profiles.payment.client_id', null);
+    config()->set('fib.profiles.payment.client_secret', null);
 
     $method = new PaymentMethod([
         'code' => 'fib',
@@ -56,7 +56,7 @@ it('reports missing fib configuration clearly', function () {
 
     expect($manager->configurationReady($method))->toBeFalse()
         ->and($manager->checkoutReady($method))->toBeFalse()
-        ->and($manager->configurationIssues($method))->toContain('Missing Base URL')
-        ->and($manager->configurationIssues($method))->toContain('Missing Client ID')
-        ->and($manager->configurationIssues($method))->toContain('Missing Client Secret');
+        ->and($manager->configurationIssues($method))->toContain('Missing Payment Base URL')
+        ->and($manager->configurationIssues($method))->toContain('Missing Payment Client ID')
+        ->and($manager->configurationIssues($method))->toContain('Missing Payment Client Secret');
 });

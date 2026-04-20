@@ -7,6 +7,7 @@ use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
+use App\Enums\PaymentRecurringStrategy;
 use App\Services\Billing\PlanSwitcher;
 use App\Support\CustomerEmailNotifier;
 use App\Support\TelegramPaymentNotifier;
@@ -42,7 +43,7 @@ class FulfillPlanSubscription implements RecurringPaymentHandler
             $billingCycle = (string) ($snapshot['billing_cycle'] ?? 'monthly');
             $subscription = $this->switcher->switchServicePlan($customer, (int) $locked->purchasable_id, [
                 'provider' => $locked->provider->value,
-                'provider_ref' => $locked->fib_payment_id ?: $locked->local_reference,
+                'provider_ref' => $locked->providerReference(),
                 'payment_method' => $locked->provider->value,
                 'payment_id' => $locked->id,
                 'merchant_transaction_id' => $locked->local_reference,
@@ -53,7 +54,10 @@ class FulfillPlanSubscription implements RecurringPaymentHandler
                 'fee_breakdown' => data_get($feeQuote, 'fee_breakdown'),
                 'paid_at' => $locked->paid_at ?? now(),
                 'billing_cycle' => $billingCycle,
-                'renewal_strategy' => 'manual_renewal',
+                'renewal_strategy' => $locked->isProviderSubscriptionObject()
+                    ? PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
+                    : PaymentRecurringStrategy::MANUAL_RENEWAL->value,
+                'active_until' => $locked->active_until,
             ]);
 
             $locked->forceFill([
@@ -74,7 +78,7 @@ class FulfillPlanSubscription implements RecurringPaymentHandler
                     'Price (IQD)' => (string) data_get($snapshot, 'display.iqd_label', ''),
                     'Estimated Local Price' => (string) data_get($snapshot, 'display.display_label', ''),
                     'Provider' => strtoupper($locked->provider->value),
-                    'Reference' => (string) ($locked->fib_payment_id ?: $locked->local_reference),
+                    'Reference' => $locked->providerReference(),
                 ],
                 'FIB plan fulfillment'
             );

@@ -30,7 +30,7 @@ abstract class AbstractConfiguredPaymentProvider implements PaymentProviderInter
         foreach ($this->requiredConfigKeys($method) as $key => $label) {
             $configKey = is_string($key) ? $key : $label;
             $humanLabel = is_string($key) ? $label : $this->humanizeConfigKey($configKey);
-            $value = $config[$configKey] ?? null;
+            $value = data_get($config, $configKey);
 
             if (! is_scalar($value) || trim((string) $value) === '') {
                 $issues[] = __('Missing :value', ['value' => $humanLabel]);

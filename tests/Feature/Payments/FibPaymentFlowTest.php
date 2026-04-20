@@ -5,6 +5,7 @@ use App\Domain\Payments\Actions\CreateAddonPayment;
 use App\Domain\Payments\Actions\CreatePlanSubscriptionPayment;
 use App\Domain\Payments\Actions\CreateStorageSubscriptionPayment;
 use App\Domain\Payments\Enums\PaymentMode;
+use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Exceptions\FibApiException;
@@ -40,24 +41,35 @@ function fibFlowConfigure(): void
     app()->setLocale('en');
 
     config()->set('payments.providers.fib.enabled', true);
-    config()->set('services.fib.enabled', true);
-    config()->set('services.fib.base_url', 'https://fib-stage.fib.iq');
-    config()->set('services.fib.realm', 'fib-online-shop');
-    config()->set('services.fib.client_id', 'fib-test-client');
-    config()->set('services.fib.client_secret', 'fib-secret');
-    config()->set('services.fib.callback_secret', 'fib-callback-secret');
-    config()->set('services.fib.callback_secret_header', 'x-callback-secret');
-    config()->set('services.fib.payment.category', 'ECOMMERCE');
-    config()->set('services.fib.payment.expires_in', 'PT1H');
-    config()->set('services.fib.payment.refundable_for', 'PT48H');
-    config()->set('services.fib.token_ttl_seconds', 60);
-    config()->set('services.fib.http.timeout', 15);
-    config()->set('services.fib.http.retries', 1);
-    config()->set('services.fib.http.retry_sleep_ms', 1);
-    config()->set('services.fib.paths.token', '/auth/realms/fib-online-shop/protocol/openid-connect/token');
-    config()->set('services.fib.paths.payments', '/protected/v1/payments');
-    config()->set('services.fib.paths.payment_status', '/protected/v1/payments/{paymentId}/status');
-    config()->set('services.fib.paths.payment_cancel', '/protected/v1/payments/{paymentId}/cancel');
+    config()->set('fib.enabled', true);
+    config()->set('fib.realm', 'fib-online-shop');
+    config()->set('fib.profiles.payment.base_url', 'https://fib-stage.fib.iq');
+    config()->set('fib.profiles.payment.client_id', 'fib-test-client');
+    config()->set('fib.profiles.payment.client_secret', 'fib-secret');
+    config()->set('fib.profiles.subscription.base_url', 'https://fib-stage.fib.iq');
+    config()->set('fib.profiles.subscription.client_id', 'fib-subscription-client');
+    config()->set('fib.profiles.subscription.client_secret', 'fib-subscription-secret');
+    config()->set('fib.callback_base_url', 'https://metkurd.test');
+    config()->set('fib.callback_secret', 'fib-callback-secret');
+    config()->set('fib.callback_secret_header', 'x-callback-secret');
+    config()->set('fib.payment.category', 'ECOMMERCE');
+    config()->set('fib.payment.expires_in', 'PT1H');
+    config()->set('fib.payment.refundable_for', 'PT48H');
+    config()->set('fib.subscription.expires_in', 'PT1H');
+    config()->set('fib.subscription.trial_period', null);
+    config()->set('fib.subscription.intervals.monthly', 'P1M');
+    config()->set('fib.subscription.intervals.yearly', 'P1Y');
+    config()->set('fib.token_ttl_seconds', 60);
+    config()->set('fib.http.timeout', 15);
+    config()->set('fib.http.retries', 1);
+    config()->set('fib.http.retry_sleep_ms', 1);
+    config()->set('fib.paths.token', '/auth/realms/fib-online-shop/protocol/openid-connect/token');
+    config()->set('fib.paths.payments', '/protected/v1/payments');
+    config()->set('fib.paths.payment_status', '/protected/v1/payments/{paymentId}/status');
+    config()->set('fib.paths.payment_cancel', '/protected/v1/payments/{paymentId}/cancel');
+    config()->set('fib.paths.subscriptions', '/protected/v1/subscriptions');
+    config()->set('fib.paths.subscription_status', '/protected/v1/subscriptions/{subscriptionId}');
+    config()->set('fib.paths.subscription_cancel', '/protected/v1/subscriptions/{subscriptionId}/cancel');
 }
 
 function fibFlowCustomer(?string $email = null, ?string $username = null): Customer
@@ -105,6 +117,38 @@ function fibFlowStatusResponse(string $paymentId, string $status, array $overrid
     ], $overrides);
 }
 
+function fibFlowSubscriptionCreateResponse(string $subscriptionId, array $overrides = []): array
+{
+    return array_merge([
+        'subscriptionId' => $subscriptionId,
+        'readableCode' => 'SUB-CODE-123',
+        'qrCode' => 'data:image/png;base64,fake-subscription-qr',
+        'appLink' => 'https://fib.iq/app/' . $subscriptionId,
+        'validUntil' => '2026-05-01T10:15:00Z',
+    ], $overrides);
+}
+
+function fibFlowSubscriptionStatusResponse(string $subscriptionId, string $status, array $overrides = []): array
+{
+    return array_merge([
+        'id' => $subscriptionId,
+        'readableCode' => 'SUB-CODE-123',
+        'title' => 'MET KURD Subscription',
+        'description' => 'Recurring checkout',
+        'monetaryValue' => [
+            'amount' => '26500',
+            'currency' => 'IQD',
+        ],
+        'interval' => 'P1M',
+        'trialPeriod' => null,
+        'status' => $status,
+        'validUntil' => '2026-05-01T10:15:00Z',
+        'activeUntil' => '2026-06-01T10:15:00Z',
+        'lastPaymentAt' => '2026-05-01T10:05:00Z',
+        'appLink' => 'https://fib.iq/app/' . $subscriptionId,
+    ], $overrides);
+}
+
 function fibFlowGrantPaidPlan(Customer $customer): ServicePlan
 {
     $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
@@ -117,19 +161,20 @@ function fibFlowGrantPaidPlan(Customer $customer): ServicePlan
     return $plan;
 }
 
-it('creates a plan payment and stores fib checkout details', function () {
+it('creates a plan subscription checkout and stores fib subscription details', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
     $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
 
     Http::fake([
-        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
-            'access_token' => 'fib-access-token',
-            'expires_in' => 60,
-        ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-plan-123'),
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => function ($request) {
+            return str_contains((string) data_get($request->data(), 'client_id'), 'subscription')
+                ? Http::response(['access_token' => 'fib-subscription-access-token', 'expires_in' => 60], 200)
+                : Http::response(['access_token' => 'fib-access-token', 'expires_in' => 60], 200);
+        },
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-plan-sub-123'),
             201
         ),
     ]);
@@ -139,31 +184,31 @@ it('creates a plan payment and stores fib checkout details', function () {
 
     expect($payment->purchase_type)->toBe(PurchaseType::PLAN_SUBSCRIPTION)
         ->and($payment->payment_mode)->toBe(PaymentMode::RECURRING)
+        ->and($payment->provider_object_type)->toBe(PaymentProviderObjectType::SUBSCRIPTION)
         ->and($payment->status)->toBe(PaymentStatus::AWAITING_CUSTOMER_ACTION)
         ->and((int) round((float) $payment->amount))->toBe((int) $quote['gross_amount_iqd'])
-        ->and($payment->fib_payment_id)->toBe('fib-plan-123')
-        ->and($payment->readable_code)->toBe('CODE-123')
+        ->and($payment->fib_subscription_id)->toBe('fib-plan-sub-123')
+        ->and($payment->fib_payment_id)->toBeNull()
+        ->and($payment->provider_interval)->toBe('P1Y')
+        ->and($payment->readable_code)->toBe('SUB-CODE-123')
         ->and($payment->valid_until)->not->toBeNull()
         ->and(data_get($payment->create_payload, 'monetaryValue.currency'))->toBe('IQD')
         ->and((int) data_get($payment->purchase_snapshot, 'fee_quote.net_amount_iqd'))->toBe($plan->priceIqdForCycle('yearly'))
-        ->and(data_get($payment->purchase_snapshot, 'renewal_strategy'))->toBe('manual_renewal');
+        ->and(data_get($payment->purchase_snapshot, 'renewal_strategy'))->toBe('provider_schedule');
 
     Http::assertSent(function ($request) use ($quote) {
-        if ($request->url() !== fibFlowStageUrl('/protected/v1/payments')) {
+        if ($request->url() !== fibFlowStageUrl('/protected/v1/subscriptions')) {
             return true;
         }
 
         return data_get($request->data(), 'monetaryValue.amount') === (string) $quote['gross_amount_iqd']
             && data_get($request->data(), 'monetaryValue.currency') === 'IQD'
-            && data_get($request->data(), 'category') === 'ECOMMERCE'
-            && data_get($request->data(), 'expiresIn') === 'PT1H'
-            && data_get($request->data(), 'refundableFor') === 'PT48H'
-            && filled(data_get($request->data(), 'statusCallbackUrl'))
-            && filled(data_get($request->data(), 'redirectUri'));
+            && data_get($request->data(), 'interval') === 'P1Y'
+            && filled(data_get($request->data(), 'statusCallbackUrl'));
     });
 });
 
-it('marks the local payment as failed when fib payment creation fails', function () {
+it('marks the local subscription checkout as failed when fib subscription creation fails', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -174,7 +219,7 @@ it('marks the local payment as failed when fib payment creation fails', function
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response([
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response([
             'message' => 'invalid request',
         ], 400),
     ]);
@@ -185,15 +230,15 @@ it('marks the local payment as failed when fib payment creation fails', function
     $payment = Payment::query()->latest('id')->firstOrFail();
 
     expect($payment->status)->toBe(PaymentStatus::FAILED)
-        ->and($payment->fib_payment_id)->toBeNull()
+        ->and($payment->fib_subscription_id)->toBeNull()
         ->and($payment->status_reason)->toContain('invalid request')
         ->and(PaymentEvent::query()
             ->where('payment_id', $payment->id)
-            ->where('event_type', 'provider_payment_create_failed')
+            ->where('event_type', 'provider_subscription_create_failed')
             ->exists())->toBeTrue();
 });
 
-it('updates payment state from a validated callback and fulfills storage exactly once', function () {
+it('updates storage subscription state from a validated callback and fulfills it exactly once', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -204,14 +249,12 @@ it('updates payment state from a validated callback and fulfills storage exactly
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-storage-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-storage-sub-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-storage-123/status') => Http::response(
-            fibFlowStatusResponse('fib-storage-123', 'PAID', [
-                'paidAt' => '2026-05-01T10:05:00Z',
-            ]),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-storage-sub-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-storage-sub-123', 'ACTIVE'),
             200
         ),
     ]);
@@ -219,8 +262,8 @@ it('updates payment state from a validated callback and fulfills storage exactly
     $payment = app(CreateStorageSubscriptionPayment::class)->handle($customer, $plan->id);
 
     $this->postJson(
-        route('payments.fib.callback'),
-        ['id' => $payment->fib_payment_id, 'status' => 'PAID'],
+        route('payments.fib.subscription.callback'),
+        ['id' => $payment->fib_subscription_id, 'status' => 'ACTIVE'],
         ['x-callback-secret' => 'fib-callback-secret'],
     )->assertStatus(202)->assertJson([
         'ok' => true,
@@ -244,10 +287,10 @@ it('updates payment state from a validated callback and fulfills storage exactly
         ->get(route('payments.fib.show', ['locale' => 'en', 'payment' => $payment]))
         ->assertOk()
         ->assertSee($plan->name)
-        ->assertSee('Congrats! Your payment was confirmed successfully.');
+        ->assertSee('Congrats! Your subscription was confirmed successfully.');
 });
 
-it('updates payment state from a manual status refresh and redirects back to the fib payment page', function () {
+it('updates subscription state from a manual status refresh and redirects back to the fib checkout page', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -258,14 +301,12 @@ it('updates payment state from a manual status refresh and redirects back to the
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-refresh-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-refresh-sub-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-refresh-123/status') => Http::response(
-            fibFlowStatusResponse('fib-refresh-123', 'PAID', [
-                'paidAt' => '2026-05-01T10:05:00Z',
-            ]),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-refresh-sub-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-refresh-sub-123', 'ACTIVE'),
             200
         ),
     ]);
@@ -286,10 +327,10 @@ it('updates payment state from a manual status refresh and redirects back to the
         ->get(route('payments.fib.show', ['locale' => 'en', 'payment' => $payment]))
         ->assertOk()
         ->assertSee('Success')
-        ->assertSee('Congrats! Your payment was confirmed successfully.');
+        ->assertSee('Congrats! Your subscription was confirmed successfully.');
 });
 
-it('renders automatic polling on pending fib payment pages and keeps manual refresh as a fallback', function () {
+it('renders automatic polling on pending fib checkout pages and keeps manual refresh as a fallback', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -300,8 +341,8 @@ it('renders automatic polling on pending fib payment pages and keeps manual refr
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-live-page-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-live-page-sub-123'),
             201
         ),
     ]);
@@ -314,7 +355,8 @@ it('renders automatic polling on pending fib payment pages and keeps manual refr
         ->assertSee('data-payment-status-polling="active"', false)
         ->assertSee('wire:poll.5s="pollStatus"', false)
         ->assertSee('Automatic check is active.')
-        ->assertSee('Refresh Status');
+        ->assertSee('Refresh Status')
+        ->assertSee('Complete Subscription In FIB');
 });
 
 it('ignores duplicate callbacks without double-fulfilling addon credits', function () {
@@ -359,7 +401,7 @@ it('ignores duplicate callbacks without double-fulfilling addon credits', functi
         ->and((int) ($wallet?->addon_balance_credits ?? 0))->toBe((int) $product->credits_amount);
 });
 
-it('fulfills a successful plan subscription payment', function () {
+it('fulfills a successful plan subscription checkout', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -370,13 +412,14 @@ it('fulfills a successful plan subscription payment', function () {
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-plan-fulfill-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-plan-fulfill-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-plan-fulfill-123/status') => Http::response(
-            fibFlowStatusResponse('fib-plan-fulfill-123', 'PAID', [
-                'paidAt' => '2026-05-01T10:05:00Z',
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-plan-fulfill-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-plan-fulfill-123', 'ACTIVE', [
+                'interval' => 'P1Y',
+                'activeUntil' => '2027-05-01T10:15:00Z',
             ]),
             200
         ),
@@ -385,15 +428,19 @@ it('fulfills a successful plan subscription payment', function () {
     $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'yearly');
     $payment = app(ConfirmFibPayment::class)->handle($payment, 'test_plan_confirmation')->fresh();
 
+    $subscription = CustomerServiceSubscription::query()
+        ->where('payment_id', $payment->id)
+        ->where('service_plan_id', $plan->id)
+        ->firstOrFail();
+
     expect($payment->purchase_type)->toBe(PurchaseType::PLAN_SUBSCRIPTION)
         ->and($payment->payment_mode)->toBe(PaymentMode::RECURRING)
+        ->and($payment->provider_object_type)->toBe(PaymentProviderObjectType::SUBSCRIPTION)
         ->and($payment->status)->toBe(PaymentStatus::PAID)
         ->and($payment->fulfilled_at)->not->toBeNull()
         ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id)
-        ->and(CustomerServiceSubscription::query()
-            ->where('payment_id', $payment->id)
-            ->where('service_plan_id', $plan->id)
-            ->exists())->toBeTrue()
+        ->and($subscription->renewal_strategy)->toBe('provider_schedule')
+        ->and($subscription->auto_renew)->toBeTrue()
         ->and(CreditOrder::query()
             ->where('payment_id', $payment->id)
             ->where('source_type', 'service_plan')
@@ -406,7 +453,7 @@ it('fulfills a successful plan subscription payment', function () {
         ->assertSee('Success');
 });
 
-it('fulfills a successful storage subscription payment', function () {
+it('fulfills a successful storage subscription checkout', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -417,14 +464,12 @@ it('fulfills a successful storage subscription payment', function () {
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-storage-fulfill-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-storage-fulfill-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-storage-fulfill-123/status') => Http::response(
-            fibFlowStatusResponse('fib-storage-fulfill-123', 'PAID', [
-                'paidAt' => '2026-05-01T10:05:00Z',
-            ]),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-storage-fulfill-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-storage-fulfill-123', 'ACTIVE'),
             200
         ),
     ]);
@@ -432,15 +477,19 @@ it('fulfills a successful storage subscription payment', function () {
     $payment = app(CreateStorageSubscriptionPayment::class)->handle($customer, $plan->id);
     $payment = app(ConfirmFibPayment::class)->handle($payment, 'test_storage_confirmation')->fresh();
 
+    $subscription = CustomerStorageSubscription::query()
+        ->where('payment_id', $payment->id)
+        ->where('storage_plan_id', $plan->id)
+        ->firstOrFail();
+
     expect($payment->purchase_type)->toBe(PurchaseType::STORAGE_SUBSCRIPTION)
         ->and($payment->payment_mode)->toBe(PaymentMode::RECURRING)
+        ->and($payment->provider_object_type)->toBe(PaymentProviderObjectType::SUBSCRIPTION)
         ->and($payment->status)->toBe(PaymentStatus::PAID)
         ->and($payment->fulfilled_at)->not->toBeNull()
         ->and((int) ($customer->fresh()->currentStoragePlan()?->id ?? 0))->toBe($plan->id)
-        ->and(CustomerStorageSubscription::query()
-            ->where('payment_id', $payment->id)
-            ->where('storage_plan_id', $plan->id)
-            ->exists())->toBeTrue();
+        ->and($subscription->renewal_strategy)->toBe('provider_schedule')
+        ->and($subscription->auto_renew)->toBeTrue();
 });
 
 it('fulfills a successful addon credits payment', function () {
@@ -473,6 +522,7 @@ it('fulfills a successful addon credits payment', function () {
 
     expect($payment->purchase_type)->toBe(PurchaseType::ADDON_CREDITS)
         ->and($payment->payment_mode)->toBe(PaymentMode::ONE_TIME)
+        ->and($payment->provider_object_type)->toBe(PaymentProviderObjectType::PAYMENT)
         ->and($payment->status)->toBe(PaymentStatus::PAID)
         ->and($payment->fulfilled_at)->not->toBeNull()
         ->and(CreditOrder::query()->where('payment_id', $payment->id)->count())->toBe(1)
@@ -485,7 +535,7 @@ it('fulfills a successful addon credits payment', function () {
         ->assertSee('Success');
 });
 
-it('cancels a fib payment and keeps it unfulfilled', function () {
+it('cancels a fib subscription checkout and keeps it unfulfilled', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -496,15 +546,15 @@ it('cancels a fib payment and keeps it unfulfilled', function () {
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-cancel-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-cancel-sub-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-cancel-123/cancel') => Http::response(null, 204),
-        fibFlowStageUrl('/protected/v1/payments/fib-cancel-123/status') => Http::response(
-            fibFlowStatusResponse('fib-cancel-123', 'DECLINED', [
-                'decliningReason' => 'PAYMENT_CANCELLATION',
-                'declinedAt' => '2026-05-01T10:08:00Z',
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-cancel-sub-123/cancel') => Http::response(null, 204),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-cancel-sub-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-cancel-sub-123', 'CANCELED', [
+                'lastPaymentAt' => null,
+                'activeUntil' => null,
             ]),
             200
         ),
@@ -523,11 +573,11 @@ it('cancels a fib payment and keeps it unfulfilled', function () {
         ->and($payment->fulfilled_at)->toBeNull()
         ->and(PaymentEvent::query()
             ->where('payment_id', $payment->id)
-            ->where('event_type', 'payment_cancel_requested')
+            ->where('event_type', 'provider_cancel_requested')
             ->exists())->toBeTrue();
 });
 
-it('keeps unpaid payments awaiting customer action without fulfillment', function () {
+it('keeps unpaid subscription checkouts awaiting customer action without fulfillment', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -538,12 +588,14 @@ it('keeps unpaid payments awaiting customer action without fulfillment', functio
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-unpaid-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-unpaid-sub-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-unpaid-123/status') => Http::response(
-            fibFlowStatusResponse('fib-unpaid-123', 'UNPAID'),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-unpaid-sub-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-unpaid-sub-123', 'UNPAID', [
+                'lastPaymentAt' => null,
+            ]),
             200
         ),
     ]);
@@ -556,7 +608,7 @@ it('keeps unpaid payments awaiting customer action without fulfillment', functio
         ->and($customer->fresh()->currentServicePlanId())->not->toBe($plan->id);
 });
 
-it('marks expired payments as expired without fulfillment', function () {
+it('marks expired subscription checkouts as expired without fulfillment', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -567,14 +619,14 @@ it('marks expired payments as expired without fulfillment', function () {
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-expired-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-expired-sub-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-expired-123/status') => Http::response(
-            fibFlowStatusResponse('fib-expired-123', 'DECLINED', [
-                'decliningReason' => 'PAYMENT_EXPIRATION',
-                'declinedAt' => '2026-05-01T10:08:00Z',
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-expired-sub-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-expired-sub-123', 'EXPIRED', [
+                'lastPaymentAt' => null,
+                'activeUntil' => null,
             ]),
             200
         ),
@@ -589,7 +641,7 @@ it('marks expired payments as expired without fulfillment', function () {
         ->and(CustomerStorageSubscription::query()->where('payment_id', $payment->id)->exists())->toBeFalse();
 });
 
-it('prevents one customer from accessing another customers fib payment', function () {
+it('prevents one customer from accessing another customers fib checkout', function () {
     Http::preventStrayRequests();
 
     $owner = fibFlowCustomer('owner@example.com', 'fib_owner');
@@ -601,8 +653,8 @@ it('prevents one customer from accessing another customers fib payment', functio
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-private-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-private-sub-123'),
             201
         ),
     ]);
@@ -622,7 +674,7 @@ it('prevents one customer from accessing another customers fib payment', functio
         ->assertForbidden();
 });
 
-it('polls the fib payment page until the payment becomes paid and fulfilled', function () {
+it('polls the fib checkout page until the subscription becomes paid and fulfilled', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -633,14 +685,12 @@ it('polls the fib payment page until the payment becomes paid and fulfilled', fu
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-poll-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-poll-sub-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-poll-123/status') => Http::response(
-            fibFlowStatusResponse('fib-poll-123', 'PAID', [
-                'paidAt' => '2026-05-01T10:05:00Z',
-            ]),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-poll-sub-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-poll-sub-123', 'ACTIVE'),
             200
         ),
     ]);
@@ -660,7 +710,7 @@ it('polls the fib payment page until the payment becomes paid and fulfilled', fu
         ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id);
 });
 
-it('reflects callback-confirmed fib payments on the page without another manual refresh request', function () {
+it('reflects callback-confirmed fib subscriptions on the page without another manual refresh request', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -671,14 +721,12 @@ it('reflects callback-confirmed fib payments on the page without another manual 
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-callback-page-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-callback-page-sub-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-callback-page-123/status') => Http::response(
-            fibFlowStatusResponse('fib-callback-page-123', 'PAID', [
-                'paidAt' => '2026-05-01T10:05:00Z',
-            ]),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-callback-page-sub-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-callback-page-sub-123', 'ACTIVE'),
             200
         ),
     ]);
@@ -690,8 +738,8 @@ it('reflects callback-confirmed fib payments on the page without another manual 
     $component = Livewire::test('app::pages.payments.fib-payment', ['payment' => $payment]);
 
     $this->postJson(
-        route('payments.fib.callback'),
-        ['id' => $payment->fib_payment_id, 'status' => 'PAID'],
+        route('payments.fib.subscription.callback'),
+        ['id' => $payment->fib_subscription_id, 'status' => 'ACTIVE'],
         ['x-callback-secret' => 'fib-callback-secret'],
     )->assertStatus(202);
 
@@ -706,7 +754,7 @@ it('reflects callback-confirmed fib payments on the page without another manual 
     expect($payment->fresh()->fulfilled_at)->not->toBeNull();
 });
 
-it('renders a localized app home redirect after successful payment confirmation', function () {
+it('renders a localized app home redirect after successful subscription confirmation', function () {
     Http::preventStrayRequests();
     app()->setLocale('ar');
 
@@ -718,14 +766,12 @@ it('renders a localized app home redirect after successful payment confirmation'
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-ar-home-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-ar-home-sub-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-ar-home-123/status') => Http::response(
-            fibFlowStatusResponse('fib-ar-home-123', 'PAID', [
-                'paidAt' => '2026-05-01T10:05:00Z',
-            ]),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-ar-home-sub-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-ar-home-sub-123', 'ACTIVE'),
             200
         ),
     ]);
@@ -740,7 +786,7 @@ it('renders a localized app home redirect after successful payment confirmation'
         ->assertSee('Redirecting you to your app home');
 });
 
-it('stops automatic polling once the fib payment reaches a terminal state', function () {
+it('stops automatic polling once the fib checkout reaches a terminal state', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -751,14 +797,12 @@ it('stops automatic polling once the fib payment reaches a terminal state', func
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
-        fibFlowStageUrl('/protected/v1/payments') => Http::response(
-            fibFlowCreateResponse('fib-terminal-page-123'),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-terminal-page-sub-123'),
             201
         ),
-        fibFlowStageUrl('/protected/v1/payments/fib-terminal-page-123/status') => Http::response(
-            fibFlowStatusResponse('fib-terminal-page-123', 'PAID', [
-                'paidAt' => '2026-05-01T10:05:00Z',
-            ]),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-terminal-page-sub-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-terminal-page-sub-123', 'ACTIVE'),
             200
         ),
     ]);

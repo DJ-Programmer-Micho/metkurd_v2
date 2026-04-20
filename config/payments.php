@@ -26,7 +26,7 @@ return [
             'enabled' => (bool) env('FIB_ENABLED', false),
             'supports' => [
                 'one_time' => true,
-                'recurring' => false,
+                'recurring' => true,
                 'refund' => true,
                 'cancel' => true,
             ],

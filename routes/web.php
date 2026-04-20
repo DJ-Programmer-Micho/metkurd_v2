@@ -17,6 +17,7 @@ use App\Http\Controllers\App\Services\YoutubeRenderController;
 use App\Http\Controllers\Payments\AreebaWebhookController;
 use App\Http\Controllers\Payments\FibCallbackController;
 use App\Http\Controllers\Payments\FibPaymentController;
+use App\Http\Controllers\Payments\FibSubscriptionCallbackController;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
@@ -39,6 +40,9 @@ Route::prefix('payments/webhooks')->group(function () {
     Route::post('/fib', FibCallbackController::class)
         ->withoutMiddleware(VerifyCsrfToken::class)
         ->name('payments.fib.callback');
+    Route::post('/fib/subscription', FibSubscriptionCallbackController::class)
+        ->withoutMiddleware(VerifyCsrfToken::class)
+        ->name('payments.fib.subscription.callback');
     Route::post('/areeba', AreebaWebhookController::class)
         ->withoutMiddleware(VerifyCsrfToken::class)
         ->name('payments.webhooks.areeba');
