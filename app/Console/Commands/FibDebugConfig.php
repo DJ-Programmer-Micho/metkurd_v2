@@ -30,10 +30,12 @@ class FibDebugConfig extends Command
             $this->info(strtoupper($profile) . ' PROFILE');
             $this->table(['Key', 'Value'], [
                 ['environment', $summary['environment']],
+                ['config_cached', $summary['config_cached'] ? 'yes' : 'no'],
                 ['base_url', $summary['base_url']],
                 ['base_url_source', $summary['base_url_source'] ?? 'n/a'],
                 ['token_url', $summary['token_url']],
                 ['client_id_present', $summary['client_id_present'] ? 'yes' : 'no'],
+                ['client_id', $summary['client_id'] !== '' ? $summary['client_id'] : 'n/a'],
                 ['client_id_source', $summary['client_id_source'] ?? 'n/a'],
                 ['client_secret_present', $summary['client_secret_present'] ? 'yes' : 'no'],
                 ['client_secret_source', $summary['client_secret_source'] ?? 'n/a'],

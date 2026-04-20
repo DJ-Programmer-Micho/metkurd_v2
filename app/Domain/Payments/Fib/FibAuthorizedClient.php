@@ -4,7 +4,6 @@ namespace App\Domain\Payments\Fib;
 
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Support\Facades\Log;
 
 abstract class FibAuthorizedClient
 {
@@ -12,6 +11,7 @@ abstract class FibAuthorizedClient
         protected HttpFactory $http,
         protected FibTokenService $tokens,
         protected FibConfiguration $config,
+        protected FibDiagnostics $diagnostics,
     ) {
     }
 
@@ -55,21 +55,16 @@ abstract class FibAuthorizedClient
      */
     protected function logDiagnostics(string $event, array $context = []): void
     {
-        if (! $this->config->diagnosticsEnabled()) {
-            return;
-        }
+        $this->diagnostics->debug($event, $this->tokenProfile(), $context);
+    }
 
-        $profile = $this->tokenProfile();
-        $profileConfig = $this->config->profile($profile);
-
-        Log::debug('FIB diagnostics', array_merge([
-            'event' => $event,
-            'profile' => $profile,
-            'environment' => $this->config->environment(),
-            'base_url' => $profileConfig['base_url'],
-            'base_url_source' => $profileConfig['base_url_source'],
-            'client_id_source' => $profileConfig['client_id_source'],
-        ], $context));
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $context
+     */
+    protected function reportProviderFailure(string $event, array $payload, array $context = []): void
+    {
+        $this->diagnostics->error($event, $this->tokenProfile(), $payload, $context);
     }
 
     /**

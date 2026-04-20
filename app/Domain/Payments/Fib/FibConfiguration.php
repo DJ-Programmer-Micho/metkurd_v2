@@ -102,10 +102,12 @@ class FibConfiguration
         return [
             'profile' => $profileConfig['name'],
             'environment' => $this->environment(),
+            'config_cached' => app()->configurationIsCached(),
             'base_url' => $profileConfig['base_url'],
             'base_url_source' => $profileConfig['base_url_source'],
             'token_url' => $this->url($profile, 'token'),
             'client_id_present' => $profileConfig['client_id'] !== '',
+            'client_id' => $profileConfig['client_id'],
             'client_id_source' => $profileConfig['client_id_source'],
             'client_secret_present' => $profileConfig['client_secret'] !== '',
             'client_secret_source' => $profileConfig['client_secret_source'],
@@ -134,11 +136,24 @@ class FibConfiguration
             $source = $profileConfig["{$key}_source"] ?? null;
 
             if (is_string($source) && str_starts_with($source, 'legacy:')) {
-                $warnings[] = "Using legacy {$key} fallback from {$source}.";
+                $targetKey = strtoupper("FIB_{$profile}_{$key}");
+                $targetKey = str_replace('BASE_URL', 'BASE_URL', $targetKey);
+                $targetKey = str_replace('CLIENT_ID', 'CLIENT_ID', $targetKey);
+                $targetKey = str_replace('CLIENT_SECRET', 'CLIENT_SECRET', $targetKey);
+
+                $warnings[] = "Using legacy {$key} fallback from {$source}. Set the explicit {$targetKey} key to remove this ambiguity.";
             }
 
             if ($key === 'base_url' && $source === 'default:official_docs') {
                 $warnings[] = 'Using the official-docs default host. Override the per-profile base URL if your assigned staging tenant uses a different host.';
+            }
+        }
+
+        if ($profile === 'subscription') {
+            $paymentClientId = $this->clientId('payment');
+
+            if ($profileConfig['client_id'] !== '' && $profileConfig['client_id'] === $paymentClientId) {
+                $warnings[] = 'Subscription client_id matches the payment client_id. Confirm FIB has enabled that client for subscription APIs.';
             }
         }
 

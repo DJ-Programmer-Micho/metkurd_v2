@@ -41,7 +41,9 @@ it('prints the resolved host and source for each fib profile', function () {
     $this->artisan('fib:debug-config')
         ->expectsOutputToContain('PAYMENT PROFILE')
         ->expectsOutputToContain('FIB_PAYMENT_BASE_URL_STAGING')
+        ->expectsOutputToContain('fib-payment-client')
         ->expectsOutputToContain('SUBSCRIPTION PROFILE')
+        ->expectsOutputToContain('fib-subscription-client')
         ->expectsOutputToContain('Using legacy base_url fallback from legacy:FIB_BASE_URL_STAGING.')
         ->assertExitCode(0);
 });

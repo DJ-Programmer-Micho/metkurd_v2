@@ -22,6 +22,7 @@ use App\Services\Billing\PlanSwitcher;
 use App\Services\Payments\PaymentFeeCalculator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
@@ -209,6 +210,7 @@ it('creates a plan subscription checkout and stores fib subscription details', f
 });
 
 it('marks the local subscription checkout as failed when fib subscription creation fails', function () {
+    Log::spy();
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -220,7 +222,12 @@ it('marks the local subscription checkout as failed when fib subscription creati
             'expires_in' => 60,
         ], 200),
         fibFlowStageUrl('/protected/v1/subscriptions') => Http::response([
-            'message' => 'invalid request',
+            'traceId' => 'beed4fde9ac0f37f935ff34f60694a7e',
+            'errors' => [[
+                'code' => 'CLIENT_CANNOT_BE_USED_FOR_SUBSCRIPTION',
+                'title' => 'Subscription credentials rejected',
+                'detail' => 'The configured client is not enabled for subscription APIs.',
+            ]],
         ], 400),
     ]);
 
@@ -231,11 +238,24 @@ it('marks the local subscription checkout as failed when fib subscription creati
 
     expect($payment->status)->toBe(PaymentStatus::FAILED)
         ->and($payment->fib_subscription_id)->toBeNull()
-        ->and($payment->status_reason)->toContain('invalid request')
+        ->and($payment->status_reason)->toContain('CLIENT_CANNOT_BE_USED_FOR_SUBSCRIPTION')
+        ->and($payment->status_reason)->toContain('traceId: beed4fde9ac0f37f935ff34f60694a7e')
         ->and(PaymentEvent::query()
             ->where('payment_id', $payment->id)
             ->where('event_type', 'provider_subscription_create_failed')
             ->exists())->toBeTrue();
+
+    Log::shouldHaveReceived('error')
+        ->withArgs(function (string $message, array $context): bool {
+            return $message === 'FIB provider request failed'
+                && data_get($context, 'event') === 'subscription_create_failed'
+                && data_get($context, 'profile') === 'subscription'
+                && data_get($context, 'provider_object_type') === 'subscription'
+                && data_get($context, 'client_id') === 'fib-subscription-client'
+                && data_get($context, 'trace_id') === 'beed4fde9ac0f37f935ff34f60694a7e'
+                && data_get($context, 'error_codes') === ['CLIENT_CANNOT_BE_USED_FOR_SUBSCRIPTION'];
+        })
+        ->once();
 });
 
 it('updates storage subscription state from a validated callback and fulfills it exactly once', function () {

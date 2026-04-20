@@ -3,6 +3,7 @@
 use App\Domain\Payments\Fib\FibTokenService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 beforeEach(function () {
     Cache::flush();
@@ -69,4 +70,36 @@ it('uses the subscription credential profile when requested', function () {
     $token = $service->getToken('subscription');
 
     expect($token->accessToken)->toBe('fib-subscription-access-token');
+});
+
+it('warns when the subscription profile is using legacy generic credentials', function () {
+    Log::spy();
+    Http::preventStrayRequests();
+
+    config()->set('fib.profiles.subscription.client_id', 'fib-test-client');
+    config()->set('fib.profiles.subscription.client_id_source', 'legacy:FIB_CLIENT_ID');
+    config()->set('fib.profiles.subscription.client_secret', 'fib-secret');
+    config()->set('fib.profiles.subscription.client_secret_source', 'legacy:FIB_CLIENT_SECRET');
+
+    Http::fake([
+        'https://fib-stage-subscriptions.fib.iq/auth/realms/fib-online-shop/protocol/openid-connect/token' => Http::response([
+            'access_token' => 'fib-subscription-access-token',
+            'expires_in' => 60,
+            'token_type' => 'Bearer',
+            'scope' => 'profile',
+        ], 200),
+    ]);
+
+    $token = app(FibTokenService::class)->getToken('subscription');
+
+    expect($token->accessToken)->toBe('fib-subscription-access-token');
+
+    Log::shouldHaveReceived('warning')
+        ->withArgs(function (string $message, array $context): bool {
+            return $message === 'FIB configuration warning'
+                && str_contains((string) data_get($context, 'warning'), 'FIB_SUBSCRIPTION_CLIENT_ID')
+                && data_get($context, 'profile') === 'subscription'
+                && data_get($context, 'client_id') === 'fib-test-client';
+        })
+        ->atLeast()->once();
 });
