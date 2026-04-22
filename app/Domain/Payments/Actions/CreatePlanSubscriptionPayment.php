@@ -39,11 +39,9 @@ class CreatePlanSubscriptionPayment
             ]);
         }
 
-        $billingCycle = in_array(strtolower(trim($billingCycle)), ['monthly', 'yearly'], true)
-            ? strtolower(trim($billingCycle))
-            : 'monthly';
+        $billingCycle = $this->fib->normalizeBillingCycle($billingCycle, ['monthly', 'yearly', 'hourly']);
 
-        $baseAmountIqd = $plan->priceIqdForCycle($billingCycle);
+        $baseAmountIqd = $plan->priceIqdForCycle($billingCycle === 'yearly' ? 'yearly' : 'monthly');
         $feeQuote = $this->fees->quote('fib', $baseAmountIqd);
         $grossAmountIqd = (int) ($feeQuote['gross_amount_iqd'] ?? $baseAmountIqd);
         $display = $this->currency->priceDataForBaseAmountIqd($grossAmountIqd, $customer);
@@ -71,6 +69,11 @@ class CreatePlanSubscriptionPayment
                     'display' => $display,
                     'base_display' => $baseDisplay,
                     'fee_quote' => $feeQuote,
+                    'testing_cycle' => $billingCycle === 'hourly' ? [
+                        'testing_only' => true,
+                        'provider_interval' => $this->fib->intervalForCycle('hourly'),
+                        'price_source_cycle' => 'monthly',
+                    ] : null,
                     'renewal_strategy' => PaymentRecurringStrategy::PROVIDER_SCHEDULE->value,
                 ],
                 'meta' => [

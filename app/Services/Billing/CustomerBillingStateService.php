@@ -7,6 +7,7 @@ use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
+use Illuminate\Support\Carbon;
 use Carbon\CarbonInterface;
 
 class CustomerBillingStateService
@@ -230,6 +231,12 @@ class CustomerBillingStateService
             return $subscription->ends_at;
         }
 
+        $metaPeriodEnd = $this->resolveMetaPeriodEnd((array) ($subscription->meta ?? []));
+
+        if ($metaPeriodEnd instanceof CarbonInterface) {
+            return $metaPeriodEnd;
+        }
+
         if ($subscription->cycle_ends_on instanceof CarbonInterface) {
             return $subscription->cycle_ends_on->endOfDay();
         }
@@ -241,5 +248,24 @@ class CustomerBillingStateService
         return $subscription->starts_at instanceof CarbonInterface
             ? $subscription->starts_at->copy()->addMonth()->endOfDay()
             : null;
+    }
+
+    protected function resolveMetaPeriodEnd(array $meta): ?CarbonInterface
+    {
+        foreach (['period_ends_at', 'provider_active_until'] as $key) {
+            $value = data_get($meta, $key);
+
+            if (! is_scalar($value) || trim((string) $value) === '') {
+                continue;
+            }
+
+            try {
+                return Carbon::parse((string) $value);
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return null;
     }
 }

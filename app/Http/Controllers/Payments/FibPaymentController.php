@@ -26,7 +26,16 @@ class FibPaymentController extends Controller
     {
         $this->authorize('update', $payment);
 
-        $payment = $cancel->handle($payment, 'manual_cancel');
+        try {
+            $payment = $cancel->handle($payment, 'manual_cancel');
+        } catch (\Throwable) {
+            $payment = $payment->fresh() ?? $payment;
+
+            return redirect()->route('payments.fib.show', [
+                'locale' => app()->getLocale(),
+                'payment' => $payment,
+            ])->with('payment_status_message', __('We could not confirm the cancellation right now. Please refresh the status or contact support if needed.'));
+        }
 
         return redirect()->route('payments.fib.show', [
             'locale' => app()->getLocale(),
@@ -62,10 +71,34 @@ class FibPaymentController extends Controller
     protected function cancelMessage(Payment $payment): string
     {
         $object = $payment->isProviderSubscriptionObject() ? __('subscription checkout') : __('payment');
+        $cancelResult = (string) data_get($payment->cancel_response, 'result', '');
+        $activeUntil = $payment->active_until?->timezone(config('app.timezone'))->format('Y-m-d H:i');
+
+        if ($cancelResult === 'already_scheduled') {
+            return __('Cancellation has already been scheduled. Your subscription stays active until :date.', [
+                'date' => $activeUntil ?: __('the current renewal boundary'),
+            ]);
+        }
+
+        if ($cancelResult === 'already_canceled') {
+            return __('This subscription is already canceled.');
+        }
+
+        if ($cancelResult === 'non_cancelable') {
+            return __('This subscription can no longer be canceled from checkout.');
+        }
+
+        if ($cancelResult === 'provider_error') {
+            return __('We could not confirm the cancellation right now. Please refresh the status or contact support if needed.');
+        }
 
         return $payment->status->value === 'canceled'
             ? __('Your FIB :object was canceled before completion.', ['object' => $object])
-            : __('Cancel was requested for this FIB :object. Refresh the status if the provider has not confirmed the cancellation yet.', ['object' => $object]);
+            : ($payment->isProviderSubscriptionObject() && $payment->active_until?->isFuture()
+                ? __('Cancellation was requested. Your subscription stays active until :date.', [
+                    'date' => $activeUntil ?: __('the current renewal boundary'),
+                ])
+                : __('Cancel was requested for this FIB :object. Refresh the status if the provider has not confirmed the cancellation yet.', ['object' => $object]));
     }
 
     protected function successMessage(Payment $payment): string

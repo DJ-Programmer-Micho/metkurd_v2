@@ -2,6 +2,7 @@
 <?php
 
 use App\Domain\Payments\Actions\CreatePlanSubscriptionPayment;
+use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Models\ServicePlan;
 use App\Services\Billing\BillingCurrencyService;
 use App\Services\Billing\CustomerBillingStateService;
@@ -26,6 +27,8 @@ class extends Component
     public string $displayCurrencyCode = 'IQD';
 
     public string $displayCurrencySource = 'default';
+
+    public bool $hourlyTestingEnabled = false;
 
     public bool $showConfirm = false;
 
@@ -58,11 +61,15 @@ class extends Component
         }
 
         $currency = app(BillingCurrencyService::class);
+        $fibSubscriptions = app(FibSubscriptionService::class);
         $displayContext = $currency->resolveDisplayContext($customer);
         $state = app(CustomerBillingStateService::class)->servicePlanState($customer);
 
         $this->displayCurrencyCode = (string) ($displayContext['currency_code'] ?? 'IQD');
         $this->displayCurrencySource = (string) ($displayContext['source'] ?? 'default');
+        $this->hourlyTestingEnabled = $fibSubscriptions->hourlyTestingEnabled();
+        $this->billingCycle = $this->normalizeBillingCycle($this->billingCycle);
+        $this->selectedBillingCycle = $this->normalizeBillingCycle($this->selectedBillingCycle);
         $this->syncCurrentPlanState($state);
 
         $hideFreePlan = (bool) ($state['should_hide_free_plan'] ?? false);
@@ -87,8 +94,10 @@ class extends Component
                     'is_free' => (bool) ($plan->is_free ?? false),
                     'price_iqd_monthly' => $plan->priceIqdForCycle('monthly'),
                     'price_iqd_yearly' => $plan->priceIqdForCycle('yearly'),
+                    'price_iqd_hourly' => $plan->priceIqdForCycle('monthly'),
                     'display_monthly' => $monthlyDisplay,
                     'display_yearly' => $yearlyDisplay,
+                    'display_hourly' => $monthlyDisplay,
                     'ui_features' => $ui,
                     'feature_list' => is_array($ui['features'] ?? null) ? array_values($ui['features']) : [],
                     'is_current' => $isCurrent,
@@ -270,8 +279,13 @@ class extends Component
     private function normalizeBillingCycle(?string $cycle): string
     {
         $cycle = strtolower(trim((string) $cycle));
+        $allowed = ['monthly', 'yearly'];
 
-        return in_array($cycle, ['monthly', 'yearly'], true) ? $cycle : 'monthly';
+        if ($this->hourlyTestingEnabled) {
+            $allowed[] = 'hourly';
+        }
+
+        return in_array($cycle, $allowed, true) ? $cycle : 'monthly';
     }
 
     public function resolvePlanBillingCycle(array $plan, ?string $requestedCycle = null): string
@@ -288,6 +302,7 @@ class extends Component
     public function billingCycleLabel(string $cycle): string
     {
         return match ($cycle) {
+            'hourly' => 'Hourly Test',
             'yearly' => 'Yearly',
             'lifetime' => 'Lifetime',
             default => 'Monthly',
@@ -298,6 +313,7 @@ class extends Component
     {
         return match ($cycle) {
             'yearly' => (int) ($plan['price_iqd_yearly'] ?? 0),
+            'hourly' => (int) ($plan['price_iqd_hourly'] ?? $plan['price_iqd_monthly'] ?? 0),
             default => (int) ($plan['price_iqd_monthly'] ?? 0),
         };
     }
@@ -370,6 +386,13 @@ class extends Component
                     </div>
                 @endif
 
+                @if($hourlyTestingEnabled)
+                    <div class="alert alert-info mt-3 mb-0 text-start">
+                        <div class="fw-semibold">{{ __('Hourly renewal is enabled for testing only.') }}</div>
+                        <div class="small mt-1">{{ __('This uses the existing plan price with a fast hourly provider interval so recurring renewals, cancel-at-period-end, and downgrade behavior can be verified without waiting for a monthly cycle.') }}</div>
+                    </div>
+                @endif
+
                 <div class="d-flex justify-content-center mt-4">
                     <div class="btn-group" role="group" aria-label="{{ __('Billing cycle') }}">
                         <button type="button"
@@ -384,6 +407,14 @@ class extends Component
                                 x-on:click="billingCycle = 'yearly'">
                             {{ __('Yearly') }}
                         </button>
+                        @if($hourlyTestingEnabled)
+                            <button type="button"
+                                    class="btn"
+                                    :class="billingCycle === 'hourly' ? 'btn-primary' : 'btn-outline-primary'"
+                                    x-on:click="billingCycle = 'hourly'">
+                                {{ __('Hourly Test') }}
+                            </button>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -399,10 +430,13 @@ class extends Component
                         $isLifetimePlan = $planInterval === 'lifetime';
                         $monthlyPrice = (string) data_get($p, 'display_monthly.display_label', data_get($p, 'display_monthly.iqd_label', ''));
                         $yearlyPrice = (string) data_get($p, 'display_yearly.display_label', data_get($p, 'display_yearly.iqd_label', ''));
+                        $hourlyPrice = (string) data_get($p, 'display_hourly.display_label', data_get($p, 'display_hourly.iqd_label', ''));
                         $monthlyBase = (string) data_get($p, 'display_monthly.iqd_label', '');
                         $yearlyBase = (string) data_get($p, 'display_yearly.iqd_label', '');
+                        $hourlyBase = (string) data_get($p, 'display_hourly.iqd_label', '');
                         $showMonthlyBase = (bool) data_get($p, 'display_monthly.has_localized_estimate', false);
                         $showYearlyBase = (bool) data_get($p, 'display_yearly.has_localized_estimate', false);
+                        $showHourlyBase = (bool) data_get($p, 'display_hourly.has_localized_estimate', false);
                     @endphp
 
                     <div class="col-xl-3 col-lg-4 col-md-6">
@@ -427,7 +461,7 @@ class extends Component
                                             <span class="badge bg-soft-secondary text-secondary">{{ __('Lifetime') }}</span>
                                         @else
                                             <span class="badge bg-soft-secondary text-secondary"
-                                                  x-text="billingCycle === 'yearly' ? @js(__('Yearly')) : @js(__('Monthly'))">
+                                                  x-text="billingCycle === 'yearly' ? @js(__('Yearly')) : (billingCycle === 'hourly' ? @js(__('Hourly Test')) : @js(__('Monthly')))">
                                                 {{ __('Monthly') }}
                                             </span>
                                         @endif
@@ -439,7 +473,7 @@ class extends Component
                                             <div class="text-muted fs-12">{{ __('lifetime plan') }}</div>
                                         @else
                                             <div class="text-muted fs-12"
-                                                 x-text="billingCycle === 'yearly' ? @js(__('per year plan')) : @js(__('per month'))">
+                                                 x-text="billingCycle === 'yearly' ? @js(__('per year plan')) : (billingCycle === 'hourly' ? @js(__('per test hour')) : @js(__('per month')))">
                                                 {{ __('per month') }}
                                             </div>
                                         @endif
@@ -452,12 +486,12 @@ class extends Component
                                                 @endif
                                             @else
                                                 <div class="mt-1 text-muted fs-12"
-                                                     x-text="(billingCycle === 'yearly' ? '{{ $yearlyPrice }}' : '{{ $monthlyPrice }}') + (billingCycle === 'yearly' ? '/yr' : '/mo')">
+                                                     x-text="(billingCycle === 'yearly' ? '{{ $yearlyPrice }}' : (billingCycle === 'hourly' ? '{{ $hourlyPrice }}' : '{{ $monthlyPrice }}')) + (billingCycle === 'yearly' ? '/yr' : (billingCycle === 'hourly' ? '/hr' : '/mo'))">
                                                     {{ $monthlyPrice }}/mo
                                                 </div>
-                                                @if($showMonthlyBase || $showYearlyBase)
+                                                @if($showMonthlyBase || $showYearlyBase || $showHourlyBase)
                                                     <div class="mt-1 text-muted fs-12"
-                                                         x-text="billingCycle === 'yearly' ? '{{ $yearlyBase }}' : '{{ $monthlyBase }}'">
+                                                         x-text="billingCycle === 'yearly' ? '{{ $yearlyBase }}' : (billingCycle === 'hourly' ? '{{ $hourlyBase }}' : '{{ $monthlyBase }}')">
                                                         {{ $monthlyBase }}
                                                     </div>
                                                 @endif
@@ -525,7 +559,11 @@ class extends Component
                     $selectedBillingIntervalLabel = __($this->billingCycleLabel($selectedCycle));
                     $selectedPrice = is_array($selected) ? $this->planPriceForCycle($selected, $selectedCycle) : 0;
                     $selectedDisplay = is_array($selected)
-                        ? ($selectedCycle === 'yearly' ? ($selected['display_yearly'] ?? null) : ($selected['display_monthly'] ?? null))
+                        ? match ($selectedCycle) {
+                            'yearly' => $selected['display_yearly'] ?? null,
+                            'hourly' => $selected['display_hourly'] ?? null,
+                            default => $selected['display_monthly'] ?? null,
+                        }
                         : null;
                 @endphp
 
@@ -556,6 +594,11 @@ class extends Component
                                         {{ __('Price:') }}
                                         <b>{{ data_get($selectedDisplay, 'display_label', data_get($selectedDisplay, 'iqd_label')) }}</b>
                                     </p>
+                                    @if($selectedCycle === 'hourly')
+                                        <p class="mb-2 text-info small">
+                                            {{ __('Hourly billing is a testing-only cycle and reuses the monthly plan price for fast recurring verification.') }}
+                                        </p>
+                                    @endif
                                     @if((bool) data_get($selectedDisplay, 'has_localized_estimate', false))
                                         <p class="mb-2">
                                             {{ __('Canonical base:') }}

@@ -85,9 +85,11 @@ return [
     'subscription' => [
         'expires_in' => env('FIB_SUBSCRIPTION_EXPIRES_IN', 'PT1H'),
         'trial_period' => env('FIB_SUBSCRIPTION_TRIAL_PERIOD'),
+        'hourly_testing_enabled' => (bool) env('FIB_SUBSCRIPTION_HOURLY_TESTING_ENABLED', false),
         'intervals' => [
             'monthly' => env('FIB_SUBSCRIPTION_INTERVAL_MONTHLY', 'P1M'),
             'yearly' => env('FIB_SUBSCRIPTION_INTERVAL_YEARLY', 'P1Y'),
+            'hourly' => env('FIB_SUBSCRIPTION_INTERVAL_HOURLY', 'PT1H'),
         ],
     ],
     'http' => [

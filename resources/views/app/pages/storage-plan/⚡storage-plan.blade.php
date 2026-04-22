@@ -2,6 +2,7 @@
 <?php
 
 use App\Domain\Payments\Actions\CreateStorageSubscriptionPayment;
+use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Models\StoragePlan;
 use App\Services\Billing\BillingCurrencyService;
 use App\Services\Billing\CustomerBillingStateService;
@@ -20,6 +21,10 @@ class extends Component
     public ?int $selectedPlanId = null;
 
     public string $displayCurrencyCode = 'IQD';
+
+    public string $billingCycle = 'monthly';
+
+    public bool $hourlyTestingEnabled = false;
 
     public bool $showConfirm = false;
 
@@ -68,10 +73,13 @@ class extends Component
         }
 
         $currency = app(BillingCurrencyService::class);
+        $fibSubscriptions = app(FibSubscriptionService::class);
         $displayContext = $currency->resolveDisplayContext($customer);
         $state = app(CustomerBillingStateService::class)->storageQuotaState($customer);
 
         $this->displayCurrencyCode = (string) ($displayContext['currency_code'] ?? 'IQD');
+        $this->hourlyTestingEnabled = $fibSubscriptions->hourlyTestingEnabled();
+        $this->billingCycle = $this->normalizeBillingCycle($this->billingCycle);
         $this->syncStorageState($state);
 
         $this->plans = StoragePlan::query()
@@ -226,6 +234,7 @@ class extends Component
             $payment = app(CreateStorageSubscriptionPayment::class)->handle(
                 $customer,
                 (int) $this->selectedPlanId,
+                $this->billingCycle,
             );
 
             $this->showConfirm = false;
@@ -266,6 +275,18 @@ class extends Component
         return method_exists($date, 'timezone')
             ? $date->timezone(config('app.timezone'))->format('Y-m-d H:i')
             : null;
+    }
+
+    protected function normalizeBillingCycle(?string $cycle): string
+    {
+        $cycle = strtolower(trim((string) $cycle));
+        $allowed = ['monthly'];
+
+        if ($this->hourlyTestingEnabled) {
+            $allowed[] = 'hourly';
+        }
+
+        return in_array($cycle, $allowed, true) ? $cycle : 'monthly';
     }
 };
 ?>
@@ -324,6 +345,28 @@ class extends Component
                         {{ __('Local display currency: :currency', ['currency' => $displayCurrencyCode]) }}
                     </div>
                 @endif
+
+                @if($hourlyTestingEnabled)
+                    <div class="alert alert-info mt-3 mb-0 text-start">
+                        <div class="fw-semibold">{{ __('Hourly renewal is enabled for testing only.') }}</div>
+                        <div class="small mt-1">{{ __('This keeps the existing storage plan price but uses a fast hourly recurring interval so renewals and cancel-at-period-end behavior can be verified quickly.') }}</div>
+                    </div>
+
+                    <div class="d-flex justify-content-center mt-4">
+                        <div class="btn-group" role="group" aria-label="{{ __('Billing cycle') }}">
+                            <button type="button"
+                                    class="btn {{ $billingCycle === 'monthly' ? 'btn-primary' : 'btn-outline-primary' }}"
+                                    wire:click="$set('billingCycle', 'monthly')">
+                                {{ __('Monthly') }}
+                            </button>
+                            <button type="button"
+                                    class="btn {{ $billingCycle === 'hourly' ? 'btn-primary' : 'btn-outline-primary' }}"
+                                    wire:click="$set('billingCycle', 'hourly')">
+                                {{ __('Hourly Test') }}
+                            </button>
+                        </div>
+                    </div>
+                @endif
             </div>
         </div>
     </div>
@@ -349,7 +392,7 @@ class extends Component
                                 <div class="fw-semibold">{{ number_format($p['quota_mb']) }} MB</div>
                                 <div class="text-muted fs-12">{{ __('quota') }}</div>
                                 <div class="fw-semibold mt-2">{{ data_get($p, 'price_display.iqd_label') }}</div>
-                                <div class="text-muted fs-12">{{ __('per change') }}</div>
+                                <div class="text-muted fs-12">{{ $billingCycle === 'hourly' ? __('per test hour') : __('per month') }}</div>
                                 @if($showLocalPrice)
                                     <div class="text-muted fs-12 mt-1">{{ data_get($p, 'price_display.estimated_label') }}</div>
                                 @endif
@@ -417,6 +460,10 @@ class extends Component
                                 ({{ strtoupper($selected['code']) }})
                             </p>
                             <p class="mb-2">
+                                {{ __('Billing cycle:') }}
+                                <b>{{ $billingCycle === 'hourly' ? __('Hourly Test') : __('Monthly') }}</b>
+                            </p>
+                            <p class="mb-2">
                                 {{ __('New quota:') }}
                                 <b>{{ number_format($selected['quota_mb']) }} MB</b>
                             </p>
@@ -424,6 +471,11 @@ class extends Component
                                 {{ __('Price:') }}
                                 <b>{{ data_get($selectedDisplay, 'iqd_label') }}</b>
                             </p>
+                            @if($billingCycle === 'hourly')
+                                <p class="mb-2 text-info small">
+                                    {{ __('Hourly billing is a testing-only cycle and reuses the existing storage plan price for fast recurring verification.') }}
+                                </p>
+                            @endif
                             @if((bool) data_get($selectedDisplay, 'has_localized_estimate', false))
                                 <p class="mb-2">
                                     {{ __('Estimated local display:') }}

@@ -3,6 +3,7 @@
 namespace App\Services\Billing;
 
 use App\Domain\Payments\Fib\FibSubscriptionService;
+use App\Domain\Payments\Fib\FibSubscriptionCancellationService;
 use App\Enums\PaymentRecurringStrategy;
 use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
@@ -15,6 +16,7 @@ class ScheduleServicePlanCancellation
     public function __construct(
         protected CustomerBillingStateService $billingState,
         protected FibSubscriptionService $fibSubscriptions,
+        protected FibSubscriptionCancellationService $fibSubscriptionCancellation,
     ) {
     }
 
@@ -56,7 +58,13 @@ class ScheduleServicePlanCancellation
                 && filled($payment->fib_subscription_id);
 
             if ($shouldCancelProvider) {
-                $this->fibSubscriptions->cancel($payment);
+                $providerCancellation = $this->fibSubscriptionCancellation->cancel($payment);
+
+                if ($providerCancellation['result'] === 'provider_error') {
+                    throw ValidationException::withMessages([
+                        'plan' => __('We could not confirm the provider cancellation right now. Please try again in a moment.'),
+                    ]);
+                }
             }
 
             $meta = (array) $locked->meta;
@@ -71,6 +79,8 @@ class ScheduleServicePlanCancellation
                     'provider' => 'fib',
                     'provider_ref' => $payment?->providerReference(),
                     'requested_at' => now()->toIso8601String(),
+                    'result' => $providerCancellation['result'] ?? 'cancel_requested',
+                    'provider_status' => $providerCancellation['provider_status'] ?? null,
                 ];
             }
 

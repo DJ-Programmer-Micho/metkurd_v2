@@ -28,7 +28,7 @@ class CreateStorageSubscriptionPayment
     ) {
     }
 
-    public function handle(Customer $customer, int $planId): Payment
+    public function handle(Customer $customer, int $planId, string $billingCycle = 'monthly'): Payment
     {
         $plan = StoragePlan::query()->where('is_active', true)->findOrFail($planId);
         $currentPlan = $customer->currentStoragePlan();
@@ -39,12 +39,13 @@ class CreateStorageSubscriptionPayment
             ]);
         }
 
+        $billingCycle = $this->fib->normalizeBillingCycle($billingCycle, ['monthly', 'hourly']);
         $baseAmountIqd = $plan->priceIqdAmount();
         $feeQuote = $this->fees->quote('fib', $baseAmountIqd);
         $grossAmountIqd = (int) ($feeQuote['gross_amount_iqd'] ?? $baseAmountIqd);
         $display = $this->currency->priceDataForBaseAmountIqd($grossAmountIqd, $customer);
         $baseDisplay = $this->currency->priceDataForBaseAmountIqd($baseAmountIqd, $customer);
-        $payment = DB::transaction(function () use ($customer, $plan, $baseAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay) {
+        $payment = DB::transaction(function () use ($customer, $plan, $billingCycle, $baseAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay) {
             $payment = Payment::create([
                 'uuid' => (string) Str::uuid(),
                 'customer_id' => $customer->id,
@@ -60,12 +61,18 @@ class CreateStorageSubscriptionPayment
                 'purchase_snapshot' => [
                     'code' => (string) $plan->code,
                     'name' => (string) $plan->name,
+                    'billing_cycle' => $billingCycle,
                     'quota_mb' => (int) ($plan->quota_mb ?? 0),
                     'amount_iqd' => $baseAmountIqd,
                     'gross_amount_iqd' => $grossAmountIqd,
                     'display' => $display,
                     'base_display' => $baseDisplay,
                     'fee_quote' => $feeQuote,
+                    'testing_cycle' => $billingCycle === 'hourly' ? [
+                        'testing_only' => true,
+                        'provider_interval' => $this->fib->intervalForCycle('hourly'),
+                        'price_source_cycle' => 'monthly',
+                    ] : null,
                     'renewal_strategy' => PaymentRecurringStrategy::PROVIDER_SCHEDULE->value,
                 ],
                 'meta' => [

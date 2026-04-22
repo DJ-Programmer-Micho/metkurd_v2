@@ -32,7 +32,7 @@ class FibSubscriptionClient extends FibAuthorizedClient
                 'url' => $this->config->url($this->tokenProfile(), 'subscriptions'),
             ]);
 
-            throw new FibApiException($this->errorMessage('FIB rejected the subscription creation request.', $payload));
+            throw new FibApiException($this->errorMessage('FIB rejected the subscription creation request.', $payload), $payload);
         }
 
         $data = FibCreateSubscriptionResponseData::fromArray($payload);
@@ -63,7 +63,7 @@ class FibSubscriptionClient extends FibAuthorizedClient
                 'provider_subscription_id' => $providerSubscriptionId,
             ]);
 
-            throw new FibApiException($this->errorMessage('FIB subscription status check failed.', $payload));
+            throw new FibApiException($this->errorMessage('FIB subscription status check failed.', $payload), $payload);
         }
 
         $data = FibSubscriptionStatusData::fromArray($payload);
@@ -94,7 +94,7 @@ class FibSubscriptionClient extends FibAuthorizedClient
                 'provider_subscription_id' => $providerSubscriptionId,
             ]);
 
-            throw new FibApiException($this->errorMessage('FIB subscription cancel request failed.', $payload));
+            throw new FibApiException($this->errorMessage('FIB subscription cancel request failed.', $payload), $payload);
         }
     }
 }

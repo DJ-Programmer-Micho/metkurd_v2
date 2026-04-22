@@ -215,8 +215,8 @@ new #[Layout('landing::layouts.app')] class extends Component
                         <h3 class="mb-4">{{ LandingContent::text('contact_page.form_title') }}</h3>
 
                         @if($submitted)
-                            <div class="alert alert-success bg-transparent border-success-subtle text-light mb-4">
-                                {{ LandingContent::text('common.message_sent') }}
+                            <div class="alert alert-success bg-transparent border-success-subtle text-danger mb-4">
+                                <span style="font-weight:bolder">{{ LandingContent::text('common.message_sent') }}</span>
                             </div>
                         @endif
 

@@ -71,7 +71,7 @@ class FibTokenService
                 'response_status' => $response->status(),
             ]);
 
-            throw new FibApiException($this->errorMessage('FIB authentication failed.', $payload));
+            throw new FibApiException($this->errorMessage('FIB authentication failed.', $payload), $payload);
         }
 
         $token = FibTokenData::fromArray($payload);

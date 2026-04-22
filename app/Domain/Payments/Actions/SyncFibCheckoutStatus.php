@@ -14,6 +14,7 @@ use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Domain\Payments\Support\PaymentTransitions;
 use App\Events\Payments\PaymentConfirmed;
+use App\Services\Billing\SyncProviderSubscriptionLifecycle;
 use Illuminate\Support\Facades\DB;
 
 class SyncFibCheckoutStatus
@@ -24,6 +25,7 @@ class SyncFibCheckoutStatus
         protected FibMapper $paymentMapper,
         protected FibSubscriptionMapper $subscriptionMapper,
         protected PaymentEventRecorder $events,
+        protected SyncProviderSubscriptionLifecycle $lifecycle,
     ) {
     }
 
@@ -88,6 +90,8 @@ class SyncFibCheckoutStatus
             if ($shouldDispatch) {
                 event(new PaymentConfirmed((int) $payment->id));
             }
+
+            $this->lifecycle->handle($payment);
 
             return $payment->fresh();
         }

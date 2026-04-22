@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
 use App\Models\MlJob;
 use App\Models\ServicePlan;
+use App\Services\Billing\BillingCurrencyService;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,11 @@ use Livewire\Attributes\Url;
 
 trait ManagesAdminHomePage
 {
+    use InteractsWithPaymentAdmin {
+        canonicalAmountSql as protected paymentCanonicalAmountSql;
+        effectiveCatalogAmountSql as protected paymentEffectiveCatalogAmountSql;
+    }
+
     #[Url(as: 'period', keep: true)]
     public string $periodFilter = '30';
 
@@ -62,10 +68,12 @@ trait ManagesAdminHomePage
 
     protected function paymentSourceSummary(?CarbonInterface $windowStart = null)
     {
+        $canonicalRevenueSql = $this->paymentCanonicalAmountSql('credit_orders');
         $classifiedOrders = DB::table('credit_orders')
             ->where('status', 'paid')
             ->when($windowStart, fn ($query) => $query->where('created_at', '>=', $windowStart))
-            ->select('customer_id', 'amount_usd', 'credits_amount')
+            ->select('customer_id', 'credits_amount')
+            ->selectRaw($canonicalRevenueSql . ' as amount_iqd')
             ->selectRaw($this->paymentSourceKeyExpression() . ' as source_key');
 
         return DB::query()
@@ -73,7 +81,7 @@ trait ManagesAdminHomePage
             ->select('source_key')
             ->selectRaw('COUNT(*) as orders')
             ->selectRaw('COUNT(DISTINCT customer_id) as customers')
-            ->selectRaw('COALESCE(SUM(amount_usd), 0) as revenue')
+            ->selectRaw('COALESCE(SUM(amount_iqd), 0) as revenue')
             ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits')
             ->groupBy('source_key')
             ->orderByRaw("CASE source_key
@@ -122,18 +130,18 @@ trait ManagesAdminHomePage
                 ->where('status', 'paid')
                 ->selectRaw('COUNT(*) as paid_orders')
                 ->selectRaw('COUNT(DISTINCT customer_id) as purchasing_customers')
-                ->selectRaw('COALESCE(SUM(amount_usd), 0) as revenue_total')
+                ->selectRaw('COALESCE(SUM(' . $this->paymentCanonicalAmountSql('credit_orders') . '), 0) as revenue_total')
                 ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits_sold_total');
 
             if ($windowStart) {
                 $orderSummary
                     ->selectRaw('SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as period_orders', [$windowStart])
-                    ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN amount_usd ELSE 0 END), 0) as revenue_period', [$windowStart])
+                    ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN ' . $this->paymentCanonicalAmountSql('credit_orders') . ' ELSE 0 END), 0) as revenue_period', [$windowStart])
                     ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN credits_amount ELSE 0 END), 0) as credits_sold_period', [$windowStart]);
             } else {
                 $orderSummary
                     ->selectRaw('COUNT(*) as period_orders')
-                    ->selectRaw('COALESCE(SUM(amount_usd), 0) as revenue_period')
+                    ->selectRaw('COALESCE(SUM(' . $this->paymentCanonicalAmountSql('credit_orders') . '), 0) as revenue_period')
                     ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits_sold_period');
             }
 
@@ -232,13 +240,14 @@ trait ManagesAdminHomePage
                 ->groupBy('service_plan_id')
                 ->selectRaw('service_plan_id')
                 ->selectRaw('COUNT(*) as paid_orders')
-                ->selectRaw('COALESCE(SUM(amount_usd), 0) as revenue')
+                ->selectRaw('COALESCE(SUM(' . $this->paymentCanonicalAmountSql('credit_orders') . '), 0) as revenue')
                 ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits_sold');
 
             return ServicePlan::query()
                 ->leftJoinSub($activeSubscribers, 'plan_active_subscribers', fn ($join) => $join->on('plan_active_subscribers.service_plan_id', '=', 'service_plans.id'))
                 ->leftJoinSub($planRevenue, 'plan_revenue', fn ($join) => $join->on('plan_revenue.service_plan_id', '=', 'service_plans.id'))
-                ->select('service_plans.id', 'service_plans.code', 'service_plans.name', 'service_plans.is_free', 'service_plans.monthly_credits', 'service_plans.price_usd_monthly', 'service_plans.sort_order')
+                ->select('service_plans.id', 'service_plans.code', 'service_plans.name', 'service_plans.is_free', 'service_plans.monthly_credits', 'service_plans.sort_order')
+                ->selectRaw($this->paymentEffectiveCatalogAmountSql('service_plans', 'price_iqd_monthly', 'price_usd_monthly') . ' as catalog_price_iqd')
                 ->selectRaw('COALESCE(plan_active_subscribers.active_subscribers, 0) as active_subscribers')
                 ->selectRaw('COALESCE(plan_revenue.paid_orders, 0) as paid_orders')
                 ->selectRaw('COALESCE(plan_revenue.revenue, 0) as revenue')
@@ -302,7 +311,7 @@ trait ManagesAdminHomePage
                 ->when($windowStart, fn ($query) => $query->where('created_at', '>=', $windowStart))
                 ->groupBy('customer_id')
                 ->selectRaw('customer_id')
-                ->selectRaw('COALESCE(SUM(amount_usd), 0) as revenue');
+                ->selectRaw('COALESCE(SUM(' . $this->paymentCanonicalAmountSql('credit_orders') . '), 0) as revenue');
 
             return DB::table('customers')
                 ->join('customer_profiles', 'customer_profiles.customer_id', '=', 'customers.id')
@@ -338,7 +347,7 @@ trait ManagesAdminHomePage
                 ->where('status', 'paid')
                 ->where('created_at', '>=', $timelineStart)
                 ->selectRaw('DATE(created_at) as day')
-                ->selectRaw('COALESCE(SUM(amount_usd), 0) as revenue')
+                ->selectRaw('COALESCE(SUM(' . $this->paymentCanonicalAmountSql('credit_orders') . '), 0) as revenue')
                 ->groupBy($dateExpression)
                 ->pluck('revenue', 'day');
 
@@ -387,15 +396,19 @@ trait ManagesAdminHomePage
         $planMix = $this->planMix;
 
         return [
+            'currency' => [
+                'code' => $this->displayCurrencyCode,
+                'fraction_digits' => $this->displayCurrencyCode === 'IQD' ? 0 : 2,
+            ],
             'activity' => [
                 'labels' => $activityRows->pluck('label')->values()->all(),
                 'jobs' => $activityRows->pluck('jobs')->map(fn ($value) => (int) $value)->values()->all(),
                 'customers' => $activityRows->pluck('customers')->map(fn ($value) => (int) $value)->values()->all(),
-                'revenue' => $activityRows->pluck('revenue')->map(fn ($value) => (float) $value)->values()->all(),
+                'revenue' => $activityRows->pluck('revenue')->map(fn ($value) => $this->displayMoneyValue($value))->values()->all(),
             ],
             'purchase_mix' => [
                 'labels' => $purchaseMix->map(fn ($row) => (string) __((string) ($row->label ?? $row->category ?? 'Other Orders')))->values()->all(),
-                'revenue' => $purchaseMix->map(fn ($row) => (float) ($row->revenue ?? 0))->values()->all(),
+                'revenue' => $purchaseMix->map(fn ($row) => $this->displayMoneyValue($row->revenue ?? 0))->values()->all(),
                 'orders' => $purchaseMix->map(fn ($row) => (int) ($row->orders ?? 0))->values()->all(),
                 'credits' => $purchaseMix->map(fn ($row) => (int) ($row->credits ?? 0))->values()->all(),
             ],
@@ -409,7 +422,7 @@ trait ManagesAdminHomePage
                 'labels' => $planMix->map(fn ($row) => (string) __((string) ($row->name ?? 'Unknown Plan')))->values()->all(),
                 'codes' => $planMix->map(fn ($row) => (string) ($row->code ?? 'unknown'))->values()->all(),
                 'subscribers' => $planMix->map(fn ($row) => (int) ($row->active_subscribers ?? 0))->values()->all(),
-                'revenue' => $planMix->map(fn ($row) => (float) ($row->revenue ?? 0))->values()->all(),
+                'revenue' => $planMix->map(fn ($row) => $this->displayMoneyValue($row->revenue ?? 0))->values()->all(),
             ],
         ];
     }
@@ -431,9 +444,34 @@ trait ManagesAdminHomePage
         return number_format((int) round((float) ($value ?? 0)));
     }
 
+    public function dashboardCurrencyOptions(): array
+    {
+        return [
+            'IQD' => 'IQD',
+            'USD' => 'USD',
+        ];
+    }
+
+    public function updatedDisplayCurrencyCode(string $value): void
+    {
+        $value = strtoupper(trim($value));
+        $this->displayCurrencyCode = array_key_exists($value, $this->dashboardCurrencyOptions())
+            ? $value
+            : 'IQD';
+    }
+
     public function formatMoney($value): string
     {
-        return '$' . number_format((float) ($value ?? 0), 2);
+        $service = app(BillingCurrencyService::class);
+        $amount = (int) round((float) ($value ?? 0));
+
+        if ($this->displayCurrencyCode === 'USD') {
+            $converted = $service->convertBaseAmount($amount, 'USD');
+
+            return $service->formatAmount((float) $converted['rounded_amount'], 'USD');
+        }
+
+        return $service->formatAmount($amount, 'IQD');
     }
 
     public function formatPercent($value, int $precision = 1): string
@@ -446,5 +484,18 @@ trait ManagesAdminHomePage
         $width = $max > 0 ? min(100, ((float) $value / (float) $max) * 100) : 0;
 
         return number_format($width, 2, '.', '');
+    }
+
+    protected function displayMoneyValue($value): float|int
+    {
+        $amount = (int) round((float) ($value ?? 0));
+
+        if ($this->displayCurrencyCode === 'USD') {
+            $converted = app(BillingCurrencyService::class)->convertBaseAmount($amount, 'USD');
+
+            return (float) $converted['rounded_amount'];
+        }
+
+        return $amount;
     }
 }

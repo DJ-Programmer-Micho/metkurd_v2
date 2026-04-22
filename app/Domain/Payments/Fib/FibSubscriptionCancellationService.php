@@ -1,0 +1,91 @@
+<?php
+
+namespace App\Domain\Payments\Fib;
+
+use App\Domain\Payments\Exceptions\FibApiException;
+use App\Domain\Payments\Models\Payment;
+use Illuminate\Support\Carbon;
+
+class FibSubscriptionCancellationService
+{
+    public function __construct(
+        protected FibSubscriptionService $subscriptions,
+    ) {
+    }
+
+    /**
+     * @return array{
+     *     result:string,
+     *     provider_status:?string,
+     *     active_until:?Carbon,
+     *     last_payment_at:?Carbon,
+     *     trace_id:?string,
+     *     error_codes:array<int, string>
+     * }
+     */
+    public function cancel(Payment $payment): array
+    {
+        try {
+            $status = $this->subscriptions->getStatus($payment);
+        } catch (FibApiException $exception) {
+            return [
+                'result' => 'provider_error',
+                'provider_status' => $this->subscriptions->normalizeProviderStatus($payment->providerStatusLabel()),
+                'active_until' => $payment->active_until,
+                'last_payment_at' => $payment->last_payment_at,
+                'trace_id' => $exception->traceId(),
+                'error_codes' => $exception->errorCodes(),
+            ];
+        }
+
+        $providerStatus = $this->subscriptions->normalizeProviderStatus($status->status);
+        $base = [
+            'provider_status' => $providerStatus,
+            'active_until' => $status->activeUntil,
+            'last_payment_at' => $status->lastPaymentAt,
+            'trace_id' => null,
+            'error_codes' => [],
+        ];
+
+        if (! $this->subscriptions->isCancelableProviderStatus($providerStatus)) {
+            return array_merge($base, [
+                'result' => $this->resultForClosedStatus($providerStatus, $status->activeUntil),
+            ]);
+        }
+
+        try {
+            $this->subscriptions->cancel($payment);
+        } catch (FibApiException $exception) {
+            if ($this->subscriptions->isCancelTransitionConflict($exception)) {
+                return array_merge($base, [
+                    'result' => $this->resultForClosedStatus($providerStatus, $status->activeUntil),
+                    'trace_id' => $exception->traceId(),
+                    'error_codes' => $exception->errorCodes(),
+                ]);
+            }
+
+            return array_merge($base, [
+                'result' => 'provider_error',
+                'trace_id' => $exception->traceId(),
+                'error_codes' => $exception->errorCodes(),
+            ]);
+        }
+
+        return array_merge($base, [
+            'result' => 'cancel_requested',
+        ]);
+    }
+
+    protected function resultForClosedStatus(?string $providerStatus, ?Carbon $activeUntil): string
+    {
+        if (in_array($providerStatus, ['CANCELED', 'CANCELLED'], true) && $activeUntil?->isFuture()) {
+            return 'already_scheduled';
+        }
+
+        if (in_array($providerStatus, ['CANCELED', 'CANCELLED'], true)) {
+            return 'already_canceled';
+        }
+
+        return 'non_cancelable';
+    }
+}

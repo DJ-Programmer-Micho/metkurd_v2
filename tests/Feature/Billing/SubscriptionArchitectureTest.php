@@ -118,7 +118,7 @@ it('schedules main plan cancellation for period end only and keeps paid access u
     $customer = billingArchitectureCustomer('cancel-main@example.com', 'cancel_main_user');
     $plan = grantPaidMainPlan($customer);
     $subscription = $customer->fresh()->activeServiceSubscription()->firstOrFail();
-    $expectedEnd = $subscription->cycle_ends_on?->copy()->endOfDay();
+    $expectedEnd = \Illuminate\Support\Carbon::parse((string) data_get($subscription->meta, 'period_ends_at'));
 
     $scheduled = app(ScheduleServicePlanCancellation::class)->handle($customer->fresh());
 
@@ -160,6 +160,12 @@ it('cancels the fib provider subscription when scheduling main plan cancellation
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
         ], 200),
+        'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-service-sub-123' => Http::response([
+            'id' => 'fib-service-sub-123',
+            'status' => 'ACTIVE',
+            'activeUntil' => now()->addMonth()->toIso8601String(),
+            'lastPaymentAt' => now()->toIso8601String(),
+        ], 200),
         'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-service-sub-123/cancel' => Http::response(null, 204),
     ]);
 
@@ -176,7 +182,7 @@ it('schedules storage cancellation for period end and downgrades entitlement to 
     $customer = billingArchitectureCustomer('cancel-storage@example.com', 'cancel_storage_user');
     $plan = grantPaidStoragePlan($customer);
     $subscription = $customer->fresh()->activeStorageSubscription()->firstOrFail();
-    $expectedEnd = $subscription->cycle_ends_on?->copy()->endOfDay();
+    $expectedEnd = \Illuminate\Support\Carbon::parse((string) data_get($subscription->meta, 'period_ends_at'));
 
     $scheduled = app(ScheduleStoragePlanCancellation::class)->handle($customer->fresh());
 
@@ -213,6 +219,12 @@ it('cancels the fib provider subscription when scheduling storage cancellation a
         'https://fib-stage.fib.iq/auth/realms/fib-online-shop/protocol/openid-connect/token' => Http::response([
             'access_token' => 'fib-access-token',
             'expires_in' => 60,
+        ], 200),
+        'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-storage-sub-123' => Http::response([
+            'id' => 'fib-storage-sub-123',
+            'status' => 'ACTIVE',
+            'activeUntil' => now()->addMonth()->toIso8601String(),
+            'lastPaymentAt' => now()->toIso8601String(),
         ], 200),
         'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-storage-sub-123/cancel' => Http::response(null, 204),
     ]);

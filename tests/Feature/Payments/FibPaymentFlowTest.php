@@ -19,7 +19,10 @@ use App\Models\CustomerStorageSubscription;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
 use App\Services\Billing\PlanSwitcher;
+use App\Services\Billing\ScheduleServicePlanCancellation;
+use App\Services\Billing\ScheduleStoragePlanCancellation;
 use App\Services\Payments\PaymentFeeCalculator;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -35,6 +38,10 @@ beforeEach(function () {
 
     fibFlowConfigure();
     $this->seed();
+});
+
+afterEach(function () {
+    Carbon::setTestNow();
 });
 
 function fibFlowConfigure(): void
@@ -58,8 +65,10 @@ function fibFlowConfigure(): void
     config()->set('fib.payment.refundable_for', 'PT48H');
     config()->set('fib.subscription.expires_in', 'PT1H');
     config()->set('fib.subscription.trial_period', null);
+    config()->set('fib.subscription.hourly_testing_enabled', false);
     config()->set('fib.subscription.intervals.monthly', 'P1M');
     config()->set('fib.subscription.intervals.yearly', 'P1Y');
+    config()->set('fib.subscription.intervals.hourly', 'PT1H');
     config()->set('fib.token_ttl_seconds', 60);
     config()->set('fib.http.timeout', 15);
     config()->set('fib.http.retries', 1);
@@ -71,6 +80,12 @@ function fibFlowConfigure(): void
     config()->set('fib.paths.subscriptions', '/protected/v1/subscriptions');
     config()->set('fib.paths.subscription_status', '/protected/v1/subscriptions/{subscriptionId}');
     config()->set('fib.paths.subscription_cancel', '/protected/v1/subscriptions/{subscriptionId}/cancel');
+}
+
+function fibFlowEnableHourlyTesting(): void
+{
+    config()->set('fib.subscription.hourly_testing_enabled', true);
+    config()->set('fib.subscription.intervals.hourly', 'PT1H');
 }
 
 function fibFlowCustomer(?string $email = null, ?string $username = null): Customer
@@ -206,6 +221,42 @@ it('creates a plan subscription checkout and stores fib subscription details', f
             && data_get($request->data(), 'monetaryValue.currency') === 'IQD'
             && data_get($request->data(), 'interval') === 'P1Y'
             && filled(data_get($request->data(), 'statusCallbackUrl'));
+    });
+});
+
+it('creates an hourly test plan subscription checkout when hourly billing is enabled', function () {
+    Http::preventStrayRequests();
+    fibFlowEnableHourlyTesting();
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-subscription-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-hourly-plan-sub-123'),
+            201
+        ),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly')->fresh();
+    $quote = app(PaymentFeeCalculator::class)->quote('fib', $plan->priceIqdForCycle('monthly'));
+
+    expect(data_get($payment->purchase_snapshot, 'billing_cycle'))->toBe('hourly')
+        ->and($payment->provider_interval)->toBe('PT1H')
+        ->and((int) round((float) $payment->amount))->toBe((int) $quote['gross_amount_iqd'])
+        ->and(data_get($payment->purchase_snapshot, 'testing_cycle.testing_only'))->toBeTrue();
+
+    Http::assertSent(function ($request) use ($quote) {
+        if ($request->url() !== fibFlowStageUrl('/protected/v1/subscriptions')) {
+            return true;
+        }
+
+        return data_get($request->data(), 'interval') === 'PT1H'
+            && data_get($request->data(), 'monetaryValue.amount') === (string) $quote['gross_amount_iqd'];
     });
 });
 
@@ -473,6 +524,197 @@ it('fulfills a successful plan subscription checkout', function () {
         ->assertSee('Success');
 });
 
+it('extends a fulfilled hourly subscription when fib reports a successful renewal', function () {
+    Http::preventStrayRequests();
+    fibFlowEnableHourlyTesting();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-hourly-renew-sub-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-hourly-renew-sub-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-renew-sub-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-renew-sub-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T12:00:00Z',
+                'lastPaymentAt' => '2026-05-01T11:00:00Z',
+            ]), 200),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_initial_confirmation')->fresh();
+
+    Carbon::setTestNow('2026-05-01 11:05:00');
+
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_renewal_confirmation')->fresh();
+    $subscription = CustomerServiceSubscription::query()
+        ->where('payment_id', $payment->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($payment->active_until?->toIso8601String())->toContain('2026-05-01T12:00:00')
+        ->and($subscription->status)->toBe('active')
+        ->and($subscription->auto_renew)->toBeTrue()
+        ->and(data_get($subscription->meta, 'period_ends_at'))->toContain('2026-05-01T12:00:00')
+        ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id)
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $payment->id)
+            ->where('event_type', 'service_subscription_renewed')
+            ->exists())->toBeTrue();
+});
+
+it('downgrades a fulfilled hourly service subscription to free after a failed renewal reaches the period end', function () {
+    Http::preventStrayRequests();
+    fibFlowEnableHourlyTesting();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-hourly-failed-sub-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-hourly-failed-sub-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-failed-sub-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-failed-sub-123', 'FAILED', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_initial_paid')->fresh();
+
+    Carbon::setTestNow('2026-05-01 11:05:00');
+
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_failed_renewal')->fresh();
+    $subscription = CustomerServiceSubscription::query()
+        ->where('payment_id', $payment->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($subscription->status)->toBe('ended')
+        ->and($subscription->auto_renew)->toBeFalse()
+        ->and($customer->fresh()->currentServicePlan()?->code)->toBe('free')
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $payment->id)
+            ->where('event_type', 'service_subscription_ended')
+            ->exists())->toBeTrue();
+});
+
+it('keeps hourly plan access until the exact cancellation boundary and then falls back to free', function () {
+    Http::preventStrayRequests();
+    fibFlowEnableHourlyTesting();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-hourly-cancel-plan-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-hourly-cancel-plan-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-cancel-plan-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-cancel-plan-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-hourly-cancel-plan-123/cancel') => Http::response(null, 204),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_cancel_plan_paid')->fresh();
+
+    $scheduled = app(ScheduleServicePlanCancellation::class)->handle($customer->fresh());
+
+    expect($scheduled->ends_at?->format('Y-m-d H:i:s'))->toBe('2026-05-01 11:00:00')
+        ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id);
+
+    Carbon::setTestNow('2026-05-01 10:59:00');
+    expect(Customer::query()->findOrFail($customer->id)->currentServicePlanId())->toBe($plan->id);
+
+    Carbon::setTestNow('2026-05-01 11:00:01');
+    expect(Customer::query()->findOrFail($customer->id)->currentServicePlan()?->code)->toBe('free');
+});
+
+it('keeps hourly storage access until the exact cancellation boundary and then falls back to free storage', function () {
+    Http::preventStrayRequests();
+    fibFlowEnableHourlyTesting();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $plan = StoragePlan::query()->where('code', 'pro-5120')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-hourly-cancel-storage-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-hourly-cancel-storage-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-cancel-storage-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-cancel-storage-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-hourly-cancel-storage-123/cancel') => Http::response(null, 204),
+    ]);
+
+    $payment = app(CreateStorageSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_cancel_storage_paid')->fresh();
+
+    $scheduled = app(ScheduleStoragePlanCancellation::class)->handle($customer->fresh());
+
+    expect($scheduled->ends_at?->format('Y-m-d H:i:s'))->toBe('2026-05-01 11:00:00')
+        ->and((int) ($customer->fresh()->currentStoragePlan()?->id ?? 0))->toBe($plan->id);
+
+    Carbon::setTestNow('2026-05-01 11:00:01');
+    expect(Customer::query()->findOrFail($customer->id)->currentStoragePlan()?->code)->toBe('free-512');
+});
+
 it('fulfills a successful storage subscription checkout', function () {
     Http::preventStrayRequests();
 
@@ -591,9 +833,10 @@ it('cancels a fib subscription checkout and keeps it unfulfilled', function () {
     expect($payment->status)->toBe(PaymentStatus::CANCELED)
         ->and($payment->canceled_at)->not->toBeNull()
         ->and($payment->fulfilled_at)->toBeNull()
+        ->and(data_get($payment->cancel_response, 'result'))->toBe('already_canceled')
         ->and(PaymentEvent::query()
             ->where('payment_id', $payment->id)
-            ->where('event_type', 'provider_cancel_requested')
+            ->where('event_type', 'provider_cancel_skipped')
             ->exists())->toBeTrue();
 });
 
@@ -836,4 +1079,136 @@ it('stops automatic polling once the fib checkout reaches a terminal state', fun
         ->assertSee('data-payment-status-polling="stopped"', false)
         ->assertDontSee('wire:poll.5s="pollStatus"', false)
         ->assertDontSee('Refresh Status');
+});
+
+it('hides the cancel button on the checkout page when the known subscription state is not cancelable', function () {
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    $payment = Payment::create([
+        'uuid' => (string) Str::uuid(),
+        'customer_id' => $customer->id,
+        'provider' => \App\Domain\Payments\Enums\PaymentProvider::FIB,
+        'purchase_type' => PurchaseType::PLAN_SUBSCRIPTION,
+        'payment_mode' => PaymentMode::RECURRING,
+        'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
+        'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
+        'local_reference' => 'HIDE-CANCEL-' . strtoupper(Str::random(8)),
+        'idempotency_key' => (string) Str::uuid(),
+        'fib_subscription_id' => 'fib-hide-cancel-123',
+        'amount' => $plan->priceIqdForCycle('monthly'),
+        'currency' => 'IQD',
+        'provider_subscription_status' => 'CANCELED',
+        'purchase_snapshot' => [
+            'name' => $plan->name,
+            'billing_cycle' => 'monthly',
+        ],
+        'purchasable_type' => ServicePlan::class,
+        'purchasable_id' => $plan->id,
+    ]);
+
+    $this->actingAs($customer, 'app')
+        ->get(route('payments.fib.show', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertDontSee('Cancel Subscription Checkout');
+});
+
+it('handles illegal fib subscription cancel transitions gracefully without exposing a raw exception page', function () {
+    Http::preventStrayRequests();
+    Log::spy();
+
+    $customer = fibFlowCustomer();
+    $plan = StoragePlan::query()->where('code', 'pro-5120')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-illegal-cancel-sub-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-illegal-cancel-sub-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-illegal-cancel-sub-123', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T10:15:00Z',
+                'lastPaymentAt' => '2026-05-01T10:05:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-illegal-cancel-sub-123', 'CANCELED', [
+                'activeUntil' => '2026-06-01T10:15:00Z',
+                'lastPaymentAt' => '2026-05-01T10:05:00Z',
+            ]), 200),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-illegal-cancel-sub-123/cancel') => Http::response([
+            'traceId' => '4f32622afbb5ff73bce7ac002c07db01',
+            'errors' => [[
+                'code' => 'ILLEGAL_SUBSCRIPTION_STATUS_TRANSITION',
+                'title' => 'Illegal transition',
+                'detail' => 'The current provider status can no longer be canceled.',
+            ]],
+        ], 400),
+    ]);
+
+    $payment = app(CreateStorageSubscriptionPayment::class)->handle($customer, $plan->id);
+
+    $this->actingAs($customer, 'app')
+        ->followingRedirects()
+        ->post(route('payments.fib.cancel', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertSee('Cancellation has already been scheduled.')
+        ->assertDontSee('RequestException')
+        ->assertDontSee('ILLEGAL_SUBSCRIPTION_STATUS_TRANSITION');
+
+    $payment = $payment->fresh();
+
+    expect(data_get($payment->cancel_response, 'result'))->toBe('already_scheduled')
+        ->and(data_get($payment->cancel_response, 'trace_id'))->toBe('4f32622afbb5ff73bce7ac002c07db01')
+        ->and(data_get($payment->cancel_response, 'error_codes'))->toBe(['ILLEGAL_SUBSCRIPTION_STATUS_TRANSITION']);
+
+    Log::shouldHaveReceived('error')
+        ->withArgs(function (string $message, array $context): bool {
+            return $message === 'FIB provider request failed'
+                && data_get($context, 'event') === 'subscription_cancel_failed'
+                && data_get($context, 'trace_id') === '4f32622afbb5ff73bce7ac002c07db01'
+                && data_get($context, 'error_codes') === ['ILLEGAL_SUBSCRIPTION_STATUS_TRANSITION'];
+        })
+        ->once();
+});
+
+it('treats already canceled fib subscriptions safely and does not call the provider cancel endpoint again', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-already-canceled-sub-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-already-canceled-sub-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-already-canceled-sub-123', 'CANCELED', [
+                'activeUntil' => null,
+                'lastPaymentAt' => null,
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-already-canceled-sub-123', 'CANCELED', [
+                'activeUntil' => null,
+                'lastPaymentAt' => null,
+            ]), 200),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'monthly');
+
+    $this->actingAs($customer, 'app')
+        ->followingRedirects()
+        ->post(route('payments.fib.cancel', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertSee('This subscription is already canceled.');
+
+    Http::assertNotSent(fn ($request) => $request->url() === fibFlowStageUrl('/protected/v1/subscriptions/fib-already-canceled-sub-123/cancel'));
+
+    expect(data_get($payment->fresh()->cancel_response, 'result'))->toBe('already_canceled');
 });

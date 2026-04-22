@@ -83,6 +83,7 @@ class extends Component
 
 @php
     $billing = app(\App\Services\Billing\BillingCurrencyService::class);
+    $fibSubscriptions = app(\App\Domain\Payments\Fib\FibSubscriptionService::class);
     $chargeDisplay = (array) data_get($snapshot, 'display', []);
     $baseDisplay = (array) data_get($snapshot, 'base_display', []);
     $feeQuote = (array) data_get($snapshot, 'fee_quote', data_get($payment->meta, 'fee_quote', []));
@@ -123,16 +124,18 @@ class extends Component
     }
     $homeUrl = route('app.home', ['locale' => app()->getLocale()]);
     $shouldAutoRedirectHome = $payment->isPaid() && $payment->fulfilled_at !== null;
-    $showCancel = $payment->status->value === 'awaiting_customer_action';
-    $showRefresh = in_array($payment->status->value, ['awaiting_customer_action', 'pending'], true);
     $isSubscriptionCheckout = $payment->isProviderSubscriptionObject();
     $providerObjectLabel = $isSubscriptionCheckout ? __('Subscription') : __('Payment');
     $providerObjectLabelLower = $isSubscriptionCheckout ? __('subscription checkout') : __('payment');
     $providerReferenceLabel = $isSubscriptionCheckout ? __('Subscription ID') : __('Payment ID');
     $providerReferenceValue = $payment->providerReference();
-    $intervalLabel = $payment->provider_interval ?: data_get($snapshot, 'billing_cycle');
-    $trialPeriodLabel = $payment->provider_trial_period;
     $activeUntilLabel = $payment->active_until?->timezone(config('app.timezone'))->format('Y-m-d H:i');
+    $knownProviderStatus = $fibSubscriptions->normalizeProviderStatus($payment->providerStatusLabel());
+    $cancelResult = (string) data_get($payment->cancel_response, 'result', '');
+    $showCancel = $payment->status->value === 'awaiting_customer_action'
+        && ! in_array($cancelResult, ['already_scheduled', 'already_canceled', 'non_cancelable'], true)
+        && (! $isSubscriptionCheckout || $knownProviderStatus === null || $fibSubscriptions->isCancelableProviderStatus($knownProviderStatus));
+    $showRefresh = in_array($payment->status->value, ['awaiting_customer_action', 'pending'], true);
 @endphp
 
 <div class="row justify-content-center mt-4"
@@ -168,18 +171,18 @@ class extends Component
         @endif
 
         <div class="card border-0 shadow-sm">
-            <div class="card-body p-4 p-lg-5">
+            <div class="card-body p-4">
                 <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
                     <div>
                         <div class="text-muted text-uppercase small mb-2">{{ $purchaseLabel }}</div>
-                        <h3 class="mb-2">{{ (string) ($snapshot['name'] ?? __('Payment')) }}</h3>
-                        <div class="text-muted">
+                        <h3 class="mb-1">{{ (string) ($snapshot['name'] ?? __('Payment')) }}</h3>
+                        <div class="text-muted small">
                             {{ __('Reference: :reference', ['reference' => $payment->local_reference]) }}
                         </div>
                     </div>
                     <div class="text-lg-end">
                         <span class="badge bg-{{ $statusClass }}-subtle text-{{ $statusClass }} px-3 py-2">{{ $statusText }}</span>
-                        <div class="mt-3 fw-semibold">{{ $displayPrimary }}</div>
+                        <div class="mt-3 fw-semibold fs-5">{{ $displayPrimary }}</div>
                         @if ($displayEstimate !== '' && $displayEstimate !== $displayPrimary)
                             <div class="text-muted small">{{ __('Estimated local price: :amount', ['amount' => $displayEstimate]) }}</div>
                         @endif
@@ -189,11 +192,11 @@ class extends Component
                     </div>
                 </div>
 
-                <div class="row g-4">
+                <div class="row g-3">
                     <div class="col-lg-6">
-                        <div class="border rounded-4 p-4 h-100">
-                            <div class="fw-semibold mb-3">{{ __('Payment Details') }}</div>
-                            <dl class="row mb-0">
+                        <div class="border rounded-4 p-3 p-lg-4 h-100">
+                            <div class="fw-semibold mb-2">{{ __('Payment Details') }}</div>
+                            <dl class="row mb-0 small">
                                 <dt class="col-sm-5 text-muted">{{ __('Provider') }}</dt>
                                 <dd class="col-sm-7">FIB</dd>
 
@@ -216,49 +219,33 @@ class extends Component
                                     <dd class="col-sm-7">{{ $providerFeeLabel }}</dd>
                                 @endif
 
-                                @if ($surchargeLabel !== '')
-                                    <dt class="col-sm-5 text-muted">{{ __('Customer Surcharge') }}</dt>
-                                    <dd class="col-sm-7">{{ $surchargeLabel }}</dd>
-                                @endif
-
                                 <dt class="col-sm-5 text-muted">{{ __('Readable Code') }}</dt>
                                 <dd class="col-sm-7">{{ $payment->readable_code ?: __('Pending') }}</dd>
 
-                                <dt class="col-sm-5 text-muted">{{ $providerReferenceLabel }}</dt>
-                                <dd class="col-sm-7">{{ $providerReferenceValue ?: __('Pending') }}</dd>
+                                @if (! $isSubscriptionCheckout)
+                                    <dt class="col-sm-5 text-muted">{{ $providerReferenceLabel }}</dt>
+                                    <dd class="col-sm-7">{{ $providerReferenceValue ?: __('Pending') }}</dd>
+                                @endif
 
                                 <dt class="col-sm-5 text-muted">{{ __('Valid Until') }}</dt>
                                 <dd class="col-sm-7">{{ $validUntilLabel ?: __('Not provided') }}</dd>
-
-                                @if ($isSubscriptionCheckout && $intervalLabel)
-                                    <dt class="col-sm-5 text-muted">{{ __('Interval') }}</dt>
-                                    <dd class="col-sm-7">{{ strtoupper((string) $intervalLabel) }}</dd>
-                                @endif
-
-                                @if ($isSubscriptionCheckout && $trialPeriodLabel)
-                                    <dt class="col-sm-5 text-muted">{{ __('Trial Period') }}</dt>
-                                    <dd class="col-sm-7">{{ $trialPeriodLabel }}</dd>
-                                @endif
 
                                 @if ($isSubscriptionCheckout && $activeUntilLabel)
                                     <dt class="col-sm-5 text-muted">{{ __('Active Until') }}</dt>
                                     <dd class="col-sm-7">{{ $activeUntilLabel }}</dd>
                                 @endif
-
-                                <dt class="col-sm-5 text-muted">{{ __('Status Reason') }}</dt>
-                                <dd class="col-sm-7">{{ $payment->status_reason ?: __('Waiting for FIB confirmation') }}</dd>
                             </dl>
 
                             @if ($payment->purchase_type->value === 'plan_subscription')
-                                <div class="mt-4 small text-muted">
-                                    {{ __('Plan subscriptions now use the dedicated FIB subscription API. The checkout stays separate from local entitlement fulfillment, and your app access updates only after the server confirms the subscription status.') }}
+                                <div class="mt-3 small text-muted">
+                                    {{ __('Your plan access updates automatically after the server confirms the subscription status.') }}
                                 </div>
                             @elseif ($payment->purchase_type->value === 'storage_subscription')
-                                <div class="mt-4 small text-muted">
-                                    {{ __('Storage subscriptions now use the dedicated FIB subscription API. Local downgrade and over-quota rules still stay server-side after the provider confirms the recurring subscription state.') }}
+                                <div class="mt-3 small text-muted">
+                                    {{ __('Your storage entitlement updates automatically after the server confirms the recurring subscription state.') }}
                                 </div>
                             @else
-                                <div class="mt-4 small text-muted">
+                                <div class="mt-3 small text-muted">
                                     {{ __('Add-on credits are a one-time purchase and will only be fulfilled after the payment is confirmed.') }}
                                 </div>
                             @endif
@@ -266,8 +253,8 @@ class extends Component
                     </div>
 
                     <div class="col-lg-6">
-                        <div class="border rounded-4 p-4 h-100">
-                            <div class="fw-semibold mb-3">{{ $isSubscriptionCheckout ? __('Complete Subscription In FIB') : __('Complete Payment In FIB') }}</div>
+                        <div class="border rounded-4 p-3 p-lg-4 h-100">
+                            <div class="fw-semibold mb-2">{{ $isSubscriptionCheckout ? __('Complete Subscription In FIB') : __('Complete Payment In FIB') }}</div>
 
                             @if (!empty($payment->qr_code) && $payment->status->value === 'awaiting_customer_action')
                                 <div class="text-center mb-3">

@@ -4,11 +4,13 @@ namespace App\Support\Admin;
 
 use App\Services\Billing\BillingCurrencyService;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Url;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 trait InteractsWithPaymentAdmin
 {
+    #[Url(as: 'currency', keep: true)]
     public string $displayCurrencyCode = 'IQD';
 
     protected function decodeJsonTextarea(?string $value, string $field): ?array

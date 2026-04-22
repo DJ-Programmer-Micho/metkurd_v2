@@ -47,6 +47,21 @@ class extends Component
                                 <div class="small text-white-50 mt-2">
                                     {{ __('Showing :period for revenue, purchases, and usage-heavy sections. Snapshot cache: 5 minutes.', ['period' => $this->periodLabel($periodFilter)]) }}
                                 </div>
+                                <div class="mt-3">
+                                    <label class="form-label text-uppercase fs-12 text-white-50 mb-2">{{ __('Display Currency') }}</label>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @foreach ($this->dashboardCurrencyOptions() as $currencyCode => $currencyLabel)
+                                            <button type="button"
+                                                    class="btn btn-sm {{ $displayCurrencyCode === $currencyCode ? 'btn-light text-dark' : 'btn-outline-light' }}"
+                                                    wire:click="$set('displayCurrencyCode', '{{ $currencyCode }}')">
+                                                {{ $currencyLabel }}
+                                            </button>
+                                        @endforeach
+                                    </div>
+                                    <div class="small text-white-50 mt-2">
+                                        {{ __('Revenue and plan pricing are aggregated canonically in IQD, then converted for display.') }}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -149,7 +164,7 @@ class extends Component
             <div class="card h-100 analysis-chart-card">
                 <div class="card-header border-0">
                     <h5 class="card-title mb-1">{{ __('Operational Trend') }}</h5>
-                    <p class="text-muted mb-0">{{ __('A compact 14-day view of job flow, registrations, and paid revenue.') }}</p>
+                    <p class="text-muted mb-0">{{ __('A compact 14-day view of job flow, registrations, and paid revenue in :currency.', ['currency' => $displayCurrencyCode]) }}</p>
                 </div>
                 <div class="card-body">
                     <div class="analysis-chart-wrap analysis-chart-wrap-lg">
@@ -163,7 +178,7 @@ class extends Component
             <div class="card h-100 analysis-chart-card">
                 <div class="card-header border-0">
                     <h5 class="card-title mb-1">{{ __('Revenue by Payment Source') }}</h5>
-                    <p class="text-muted mb-0">{{ __('How paid revenue is split across service plans, storage plans, and credit products.') }}</p>
+                    <p class="text-muted mb-0">{{ __('How paid revenue is split across service plans, storage plans, and credit products in :currency.', ['currency' => $displayCurrencyCode]) }}</p>
                 </div>
                 <div class="card-body">
                     <div class="analysis-chart-wrap analysis-chart-wrap-md">
@@ -242,7 +257,7 @@ class extends Component
                                         </td>
                                         <td>{{ number_format((int) ($plan->active_subscribers ?? 0)) }}</td>
                                         <td>{{ $this->formatCredits($plan->monthly_credits) }}</td>
-                                        <td>{{ $this->formatMoney($plan->price_usd_monthly) }}</td>
+                                        <td>{{ $this->formatMoney($plan->catalog_price_iqd ?? 0) }}</td>
                                         <td>{{ number_format((int) ($plan->paid_orders ?? 0)) }}</td>
                                         <td>{{ $this->formatMoney($plan->revenue) }}</td>
                                         <td>{{ $this->formatCredits($plan->credits_sold) }}</td>
@@ -502,11 +517,11 @@ class extends Component
 
                     const rootSelector = '[data-admin-home-dashboard]';
                     const numberFormatter = new Intl.NumberFormat('en-US');
-                    const moneyFormatter = new Intl.NumberFormat('en-US', {
+                    const buildMoneyFormatter = (currencyMeta = {}) => new Intl.NumberFormat('en-US', {
                         style: 'currency',
-                        currency: 'USD',
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
+                        currency: currencyMeta.code || 'USD',
+                        minimumFractionDigits: currencyMeta.fraction_digits ?? 2,
+                        maximumFractionDigits: currencyMeta.fraction_digits ?? 2,
                     });
 
                     const colorSet = {
@@ -623,6 +638,7 @@ class extends Component
                         }
 
                         const payload = chartData();
+                        const moneyFormatter = buildMoneyFormatter(payload?.currency || {});
 
                         if (!payload) {
                             return;
@@ -711,6 +727,15 @@ class extends Component
                                                 callback: (value) => moneyFormatter.format(value),
                                                 font: {
                                                     family: defaultFontFamily(),
+                                                },
+                                            },
+                                            title: {
+                                                display: true,
+                                                text: `Revenue (${payload.currency?.code || 'USD'})`,
+                                                color: '#64748b',
+                                                font: {
+                                                    family: defaultFontFamily(),
+                                                    weight: '600',
                                                 },
                                             },
                                         },

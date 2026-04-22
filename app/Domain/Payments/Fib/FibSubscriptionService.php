@@ -46,14 +46,107 @@ class FibSubscriptionService
         $this->client->cancelSubscription((string) $payment->fib_subscription_id);
     }
 
+    public function hourlyTestingEnabled(): bool
+    {
+        return (bool) config('fib.subscription.hourly_testing_enabled', false);
+    }
+
+    /**
+     * @param  array<int, string>  $allowed
+     */
+    public function normalizeBillingCycle(string $billingCycle, array $allowed = ['monthly', 'yearly', 'hourly']): string
+    {
+        $billingCycle = strtolower(trim($billingCycle));
+        $supported = array_values(array_intersect($allowed, $this->supportedBillingCycles()));
+
+        if ($supported === []) {
+            $supported = ['monthly'];
+        }
+
+        return in_array($billingCycle, $supported, true)
+            ? $billingCycle
+            : $supported[0];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function supportedBillingCycles(): array
+    {
+        $cycles = ['monthly', 'yearly'];
+
+        if ($this->hourlyTestingEnabled()) {
+            $cycles[] = 'hourly';
+        }
+
+        return $cycles;
+    }
+
     public function intervalForCycle(string $billingCycle): string
     {
-        $normalized = strtolower(trim($billingCycle));
+        $normalized = $this->normalizeBillingCycle($billingCycle);
+        $intervalKey = match ($normalized) {
+            'yearly' => 'yearly',
+            'hourly' => 'hourly',
+            default => 'monthly',
+        };
 
         return (string) config(
-            'fib.subscription.intervals.' . ($normalized === 'yearly' ? 'yearly' : 'monthly'),
-            $normalized === 'yearly' ? 'P1Y' : 'P1M'
+            'fib.subscription.intervals.' . $intervalKey,
+            match ($intervalKey) {
+                'yearly' => 'P1Y',
+                'hourly' => 'PT1H',
+                default => 'P1M',
+            }
         );
+    }
+
+    public function normalizeProviderStatus(?string $status): ?string
+    {
+        $status = is_string($status) ? strtoupper(trim($status)) : '';
+
+        return $status !== '' ? $status : null;
+    }
+
+    public function isCancelableProviderStatus(?string $status): bool
+    {
+        $normalized = $this->normalizeProviderStatus($status);
+
+        return in_array($normalized, [
+            'ACTIVE',
+            'PAID',
+            'SUBSCRIBED',
+            'UNPAID',
+            'PENDING',
+            'CREATED',
+            'INITIATED',
+        ], true);
+    }
+
+    public function isClosedProviderStatus(?string $status): bool
+    {
+        $normalized = $this->normalizeProviderStatus($status);
+
+        return in_array($normalized, [
+            'CANCELED',
+            'CANCELLED',
+            'EXPIRED',
+            'TIMED_OUT',
+            'DECLINED',
+            'REJECTED',
+            'FAILED',
+            'INACTIVE',
+            'ENDED',
+        ], true);
+    }
+
+    public function isCancelTransitionConflict(\Throwable $exception): bool
+    {
+        if ($exception instanceof \App\Domain\Payments\Exceptions\FibApiException) {
+            return $exception->hasErrorCode('ILLEGAL_SUBSCRIPTION_STATUS_TRANSITION');
+        }
+
+        return str_contains(strtoupper($exception->getMessage()), 'ILLEGAL_SUBSCRIPTION_STATUS_TRANSITION');
     }
 
     protected function title(Payment $payment): string
@@ -77,7 +170,7 @@ class FibSubscriptionService
     protected function interval(Payment $payment): string
     {
         $snapshot = $payment->snapshot();
-        $billingCycle = (string) ($snapshot['billing_cycle'] ?? 'monthly');
+        $billingCycle = $this->normalizeBillingCycle((string) ($snapshot['billing_cycle'] ?? 'monthly'));
 
         return $this->intervalForCycle($billingCycle);
     }

@@ -34,7 +34,7 @@ class FibOneTimePaymentClient extends FibAuthorizedClient implements PaymentGate
                 'url' => $this->config->url($this->tokenProfile(), 'payments'),
             ]);
 
-            throw new FibApiException($this->errorMessage('FIB rejected the payment creation request.', $payload));
+            throw new FibApiException($this->errorMessage('FIB rejected the payment creation request.', $payload), $payload);
         }
 
         $data = FibCreatePaymentResponseData::fromArray($payload);
@@ -65,7 +65,7 @@ class FibOneTimePaymentClient extends FibAuthorizedClient implements PaymentGate
                 'provider_payment_id' => $providerPaymentId,
             ]);
 
-            throw new FibApiException($this->errorMessage('FIB status check failed.', $payload));
+            throw new FibApiException($this->errorMessage('FIB status check failed.', $payload), $payload);
         }
 
         $data = FibPaymentStatusData::fromArray($payload);
@@ -96,7 +96,7 @@ class FibOneTimePaymentClient extends FibAuthorizedClient implements PaymentGate
                 'provider_payment_id' => $providerPaymentId,
             ]);
 
-            throw new FibApiException($this->errorMessage('FIB cancel request failed.', $payload));
+            throw new FibApiException($this->errorMessage('FIB cancel request failed.', $payload), $payload);
         }
     }
 }

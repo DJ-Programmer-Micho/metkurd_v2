@@ -23,9 +23,8 @@ class PlanSwitcher
     {
         return DB::transaction(function () use ($customer, $servicePlanId, $meta) {
             $plan = ServicePlan::where('is_active', true)->findOrFail($servicePlanId);
-            $billingCycle = strtolower(trim((string) ($meta['billing_cycle'] ?? 'monthly')));
-            $billingCycle = in_array($billingCycle, ['monthly', 'yearly'], true) ? $billingCycle : 'monthly';
-            $amountIqd = $plan->priceIqdForCycle($billingCycle);
+            $billingCycle = $this->normalizeBillingCycle((string) ($meta['billing_cycle'] ?? 'monthly'));
+            $amountIqd = $plan->priceIqdForCycle($billingCycle === 'yearly' ? 'yearly' : 'monthly');
             $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd($amountIqd, $customer, $meta);
             $provider = (string) ($meta['provider'] ?? 'fake');
             $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999)));
@@ -40,11 +39,8 @@ class PlanSwitcher
             $netAmount = (int) ($meta['net_amount_iqd'] ?? max(0, $grossAmount - $providerFeeAmount));
             $customerPaymentMethodId = $meta['customer_payment_method_id'] ?? null;
             $renewalStrategy = (string) ($meta['renewal_strategy'] ?? PaymentRecurringStrategy::MANUAL_RENEWAL->value);
-            $activeUntil = $this->dateString($meta['active_until'] ?? null);
-            $nextRenewalOn = $activeUntil
-                ?: ($billingCycle === 'yearly'
-                    ? now()->addYear()->toDateString()
-                    : now()->addMonth()->toDateString());
+            $periodEndsAt = $this->periodEnd($meta['active_until'] ?? null, $billingCycle);
+            $nextRenewalOn = $periodEndsAt->toDateString();
 
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
@@ -137,7 +133,8 @@ class PlanSwitcher
                     'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                     'merchant_transaction_id' => $merchantTransactionId,
                     'provider_transaction_id' => $providerTransactionId,
-                    'provider_active_until' => $meta['active_until'] ?? null,
+                    'provider_active_until' => $periodEndsAt->toIso8601String(),
+                    'period_ends_at' => $periodEndsAt->toIso8601String(),
                 ],
             ]);
 
@@ -219,6 +216,7 @@ class PlanSwitcher
     {
         return DB::transaction(function () use ($customer, $storagePlanId, $meta) {
             $plan = StoragePlan::where('is_active', true)->findOrFail($storagePlanId);
+            $billingCycle = $this->normalizeBillingCycle((string) ($meta['billing_cycle'] ?? 'monthly'), ['monthly', 'hourly']);
             $amountIqd = $plan->priceIqdAmount();
             $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd($amountIqd, $customer, $meta);
             $provider = (string) ($meta['provider'] ?? 'fake');
@@ -234,7 +232,7 @@ class PlanSwitcher
             $netAmount = (int) ($meta['net_amount_iqd'] ?? max(0, $grossAmount - $providerFeeAmount));
             $customerPaymentMethodId = $meta['customer_payment_method_id'] ?? null;
             $renewalStrategy = (string) ($meta['renewal_strategy'] ?? PaymentRecurringStrategy::MANUAL_RENEWAL->value);
-            $activeUntil = $this->dateString($meta['active_until'] ?? null);
+            $periodEndsAt = $this->periodEnd($meta['active_until'] ?? null, $billingCycle);
 
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
@@ -311,8 +309,8 @@ class PlanSwitcher
                 'source' => $provider,
                 'provider_ref' => $order->provider_ref,
                 'cycle_started_on' => now()->toDateString(),
-                'cycle_ends_on' => $activeUntil ?: now()->addMonth()->toDateString(),
-                'next_renewal_on' => $activeUntil ?: now()->addMonth()->toDateString(),
+                'cycle_ends_on' => $periodEndsAt->toDateString(),
+                'next_renewal_on' => $periodEndsAt->toDateString(),
                 'auto_renew' => $renewalStrategy === PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
                     || ($customerPaymentMethodId !== null && $renewalStrategy !== PaymentRecurringStrategy::MANUAL_RENEWAL->value),
                 'customer_payment_method_id' => $customerPaymentMethodId,
@@ -323,6 +321,7 @@ class PlanSwitcher
                     'over_quota' => $overQuota,
                     'used_bytes' => $usedBytes,
                     'quota_bytes' => $quotaBytes,
+                    'billing_cycle' => $billingCycle,
                     'display_label' => $currencySnapshot['display_label'],
                     'base_label' => $currencySnapshot['base_label'],
                     'iqd_label' => $currencySnapshot['iqd_label'],
@@ -330,10 +329,41 @@ class PlanSwitcher
                     'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                     'merchant_transaction_id' => $merchantTransactionId,
                     'provider_transaction_id' => $providerTransactionId,
-                    'provider_active_until' => $meta['active_until'] ?? null,
+                    'provider_active_until' => $periodEndsAt->toIso8601String(),
+                    'period_ends_at' => $periodEndsAt->toIso8601String(),
                 ],
             ]);
         }, 3);
+    }
+
+    /**
+     * @param  array<int, string>  $allowed
+     */
+    protected function normalizeBillingCycle(string $billingCycle, array $allowed = ['monthly', 'yearly', 'hourly']): string
+    {
+        $billingCycle = strtolower(trim($billingCycle));
+
+        return in_array($billingCycle, $allowed, true) ? $billingCycle : 'monthly';
+    }
+
+    protected function periodEnd(mixed $value, string $billingCycle = 'monthly'): Carbon
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return Carbon::instance($value);
+        }
+
+        if (is_scalar($value) && trim((string) $value) !== '') {
+            try {
+                return Carbon::parse((string) $value);
+            } catch (\Throwable) {
+            }
+        }
+
+        return match ($billingCycle) {
+            'yearly' => Carbon::now()->addYear(),
+            'hourly' => Carbon::now()->addHour(),
+            default => Carbon::now()->addMonth(),
+        };
     }
 
     protected function dateString(mixed $value): ?string
