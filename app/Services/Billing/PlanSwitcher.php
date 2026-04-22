@@ -24,7 +24,12 @@ class PlanSwitcher
         return DB::transaction(function () use ($customer, $servicePlanId, $meta) {
             $plan = ServicePlan::where('is_active', true)->findOrFail($servicePlanId);
             $billingCycle = $this->normalizeBillingCycle((string) ($meta['billing_cycle'] ?? 'monthly'));
-            $amountIqd = $plan->priceIqdForCycle($billingCycle === 'yearly' ? 'yearly' : 'monthly');
+            $catalogAmountIqd = $plan->priceIqdForCycle($billingCycle === 'yearly' ? 'yearly' : 'monthly');
+            $originalAmountIqd = (int) ($meta['original_amount_iqd'] ?? $catalogAmountIqd);
+            $amountIqd = (int) ($meta['base_amount_iqd'] ?? $meta['discounted_amount_iqd'] ?? $catalogAmountIqd);
+            $discountAmountIqd = (int) ($meta['discount_amount_iqd'] ?? max(0, $originalAmountIqd - $amountIqd));
+            $couponId = $meta['coupon_id'] ?? null;
+            $couponCode = $meta['coupon_code'] ?? null;
             $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd($amountIqd, $customer, $meta);
             $provider = (string) ($meta['provider'] ?? 'fake');
             $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999)));
@@ -44,6 +49,8 @@ class PlanSwitcher
 
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
+                'coupon_id' => $couponId,
+                'coupon_code' => $couponCode,
                 'payment_intent_id' => $paymentIntentId,
                 'payment_id' => $paymentId,
                 'order_type' => 'subscription',
@@ -57,6 +64,9 @@ class PlanSwitcher
                 'currency' => 'IQD',
                 'base_currency_code' => 'IQD',
                 'base_amount_iqd' => $amountIqd,
+                'original_amount_iqd' => $originalAmountIqd,
+                'discount_amount_iqd' => $discountAmountIqd,
+                'discounted_amount_iqd' => $amountIqd,
                 'gross_amount_iqd' => $grossAmount,
                 'surcharge_amount_iqd' => $surchargeAmount,
                 'provider_fee_amount_iqd' => $providerFeeAmount,
@@ -78,6 +88,7 @@ class PlanSwitcher
                 'meta' => array_merge([
                     'purpose' => 'service_plan_switch',
                     'billing_cycle' => $billingCycle,
+                    'coupon' => $meta['coupon'] ?? null,
                     'display_label' => $currencySnapshot['display_label'],
                     'base_label' => $currencySnapshot['base_label'],
                     'iqd_label' => $currencySnapshot['iqd_label'],
@@ -100,6 +111,7 @@ class PlanSwitcher
             $newSub = CustomerServiceSubscription::create([
                 'customer_id' => $customer->id,
                 'payment_id' => $paymentId,
+                'coupon_id' => $couponId,
                 'service_plan_id' => $plan->id,
                 'status' => 'active',
                 'starts_at' => now(),
@@ -115,6 +127,8 @@ class PlanSwitcher
                 'customer_payment_method_id' => $customerPaymentMethodId,
                 'renewal_strategy' => $renewalStrategy,
                 'price_iqd_snapshot' => $amountIqd,
+                'original_price_iqd_snapshot' => $originalAmountIqd,
+                'discount_cycles_consumed' => $couponId !== null ? 1 : 0,
                 'display_currency_code' => $currencySnapshot['display_currency_code'],
                 'display_exchange_rate' => $currencySnapshot['display_exchange_rate'],
                 'display_amount_raw' => $currencySnapshot['display_amount_raw'],
@@ -124,6 +138,7 @@ class PlanSwitcher
                 'display_country_code' => $currencySnapshot['display_country_code'],
                 'meta' => [
                     'order_id' => $order->id,
+                    'coupon' => $meta['coupon'] ?? null,
                     'provider' => $provider,
                     'billing_cycle' => $billingCycle,
                     'display_label' => $currencySnapshot['display_label'],
@@ -217,7 +232,12 @@ class PlanSwitcher
         return DB::transaction(function () use ($customer, $storagePlanId, $meta) {
             $plan = StoragePlan::where('is_active', true)->findOrFail($storagePlanId);
             $billingCycle = $this->normalizeBillingCycle((string) ($meta['billing_cycle'] ?? 'monthly'), ['monthly', 'hourly']);
-            $amountIqd = $plan->priceIqdAmount();
+            $catalogAmountIqd = $plan->priceIqdAmount();
+            $originalAmountIqd = (int) ($meta['original_amount_iqd'] ?? $catalogAmountIqd);
+            $amountIqd = (int) ($meta['base_amount_iqd'] ?? $meta['discounted_amount_iqd'] ?? $catalogAmountIqd);
+            $discountAmountIqd = (int) ($meta['discount_amount_iqd'] ?? max(0, $originalAmountIqd - $amountIqd));
+            $couponId = $meta['coupon_id'] ?? null;
+            $couponCode = $meta['coupon_code'] ?? null;
             $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd($amountIqd, $customer, $meta);
             $provider = (string) ($meta['provider'] ?? 'fake');
             $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-STORAGE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999)));
@@ -236,6 +256,8 @@ class PlanSwitcher
 
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
+                'coupon_id' => $couponId,
+                'coupon_code' => $couponCode,
                 'payment_intent_id' => $paymentIntentId,
                 'payment_id' => $paymentId,
                 'order_type' => 'adjustment',
@@ -248,6 +270,9 @@ class PlanSwitcher
                 'currency' => 'IQD',
                 'base_currency_code' => 'IQD',
                 'base_amount_iqd' => $amountIqd,
+                'original_amount_iqd' => $originalAmountIqd,
+                'discount_amount_iqd' => $discountAmountIqd,
+                'discounted_amount_iqd' => $amountIqd,
                 'gross_amount_iqd' => $grossAmount,
                 'surcharge_amount_iqd' => $surchargeAmount,
                 'provider_fee_amount_iqd' => $providerFeeAmount,
@@ -271,6 +296,7 @@ class PlanSwitcher
                     'storage_plan_id' => $plan->id,
                     'storage_plan_code' => $plan->code,
                     'storage_plan_name' => $plan->name,
+                    'coupon' => $meta['coupon'] ?? null,
                     'display_label' => $currencySnapshot['display_label'],
                     'base_label' => $currencySnapshot['base_label'],
                     'iqd_label' => $currencySnapshot['iqd_label'],
@@ -295,9 +321,11 @@ class PlanSwitcher
             return CustomerStorageSubscription::create([
                 'customer_id' => $customer->id,
                 'payment_id' => $paymentId,
+                'coupon_id' => $couponId,
                 'storage_plan_id' => $plan->id,
                 'status' => 'active',
                 'price_iqd_snapshot' => $amountIqd,
+                'original_price_iqd_snapshot' => $originalAmountIqd,
                 'display_currency_code' => $currencySnapshot['display_currency_code'],
                 'display_exchange_rate' => $currencySnapshot['display_exchange_rate'],
                 'display_amount_raw' => $currencySnapshot['display_amount_raw'],
@@ -315,8 +343,10 @@ class PlanSwitcher
                     || ($customerPaymentMethodId !== null && $renewalStrategy !== PaymentRecurringStrategy::MANUAL_RENEWAL->value),
                 'customer_payment_method_id' => $customerPaymentMethodId,
                 'renewal_strategy' => $renewalStrategy,
+                'discount_cycles_consumed' => $couponId !== null ? 1 : 0,
                 'meta' => [
                     'order_id' => $order->id,
+                    'coupon' => $meta['coupon'] ?? null,
                     'provider' => $provider,
                     'over_quota' => $overQuota,
                     'used_bytes' => $usedBytes,

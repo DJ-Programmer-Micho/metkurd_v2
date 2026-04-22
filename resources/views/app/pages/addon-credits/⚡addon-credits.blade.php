@@ -8,6 +8,8 @@ use Livewire\Attributes\On;
 use App\Domain\Payments\Actions\CreateAddonPayment;
 use App\Models\CreditProduct;
 use App\Services\Billing\BillingCurrencyService;
+use App\Services\Coupons\CouponContext;
+use App\Services\Coupons\CouponService;
 use App\Services\Payments\CheckoutAuthorizationService;
 
 new
@@ -27,6 +29,11 @@ class extends Component
 
     public bool $showConfirm = false;
     public bool $processing = false;
+
+    public string $couponCode = '';
+    public array $couponPreview = [];
+    public string $couponMessage = '';
+    public string $couponMessageType = 'info';
 
     public string $message = '';
     public string $messageType = 'success';
@@ -104,6 +111,8 @@ class extends Component
         $this->message = '';
         $this->messageType = 'success';
         $this->showConfirm = true;
+
+        $this->refreshCouponPreview();
     }
 
     public function closeConfirm(): void
@@ -114,6 +123,19 @@ class extends Component
 
         $this->showConfirm = false;
         $this->selectedProductId = null;
+    }
+
+    public function applyCoupon(): void
+    {
+        $this->refreshCouponPreview();
+    }
+
+    public function clearCoupon(): void
+    {
+        $this->couponCode = '';
+        $this->couponPreview = [];
+        $this->couponMessage = '';
+        $this->couponMessageType = 'info';
     }
 
     public function confirmPurchase()
@@ -144,6 +166,7 @@ class extends Component
             $payment = app(CreateAddonPayment::class)->handle(
                 $customer,
                 (int) $this->selectedProductId,
+                $this->couponCode !== '' ? $this->couponCode : null,
             );
 
             $this->showConfirm = false;
@@ -163,6 +186,69 @@ class extends Component
         } finally {
             $this->processing = false;
         }
+    }
+
+    protected function refreshCouponPreview(): void
+    {
+        $context = $this->selectedCouponContext();
+
+        if (! $context instanceof CouponContext) {
+            $this->couponPreview = [];
+            $this->couponMessage = '';
+            $this->couponMessageType = 'info';
+
+            return;
+        }
+
+        if (trim($this->couponCode) === '') {
+            $this->couponPreview = [];
+            $this->couponMessage = '';
+            $this->couponMessageType = 'info';
+
+            return;
+        }
+
+        try {
+            $preview = app(CouponService::class)->preview($this->couponCode, $context);
+            $this->couponCode = (string) ($preview['code'] ?? $this->couponCode);
+            $this->couponPreview = $this->decorateCouponPreview($preview, $context->customer);
+            $this->couponMessage = __('Coupon applied successfully.');
+            $this->couponMessageType = 'success';
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->couponPreview = [];
+            $this->couponMessage = collect($exception->errors())->flatten()->first() ?: __('This coupon could not be applied.');
+            $this->couponMessageType = 'danger';
+        }
+    }
+
+    protected function selectedCouponContext(): ?CouponContext
+    {
+        $customer = auth('app')->user()?->fresh(['profile']);
+        $selected = collect($this->products)->firstWhere('id', $this->selectedProductId);
+
+        if (! $customer || ! is_array($selected)) {
+            return null;
+        }
+
+        return new CouponContext(
+            customer: $customer,
+            purchaseType: \App\Domain\Payments\Enums\PurchaseType::ADDON_CREDITS,
+            provider: 'fib',
+            purchasableType: CreditProduct::class,
+            purchasableId: (int) $selected['id'],
+            itemCode: (string) $selected['code'],
+            originalAmountIqd: (int) ($selected['price_iqd'] ?? 0),
+        );
+    }
+
+    protected function decorateCouponPreview(array $preview, \App\Models\Customer $customer): array
+    {
+        $billing = app(BillingCurrencyService::class);
+        $preview['original_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['original_amount_iqd'] ?? 0), $customer);
+        $preview['discount_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['discount_amount_iqd'] ?? 0), $customer);
+        $preview['final_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['final_amount_iqd'] ?? 0), $customer);
+
+        return $preview;
     }
 
     public function render()
@@ -387,6 +473,8 @@ class extends Component
                         <div class="small text-muted">
                             {{ __('These credits will be added to your add-on credit bucket, not your monthly subscription bucket.') }}
                         </div>
+
+                        @include('app.partials.checkout-coupon-panel')
 
                         <div class="alert alert-warning mt-3 mb-0">
                             <div class="fw-semibold mb-2">{{ __('Next step: complete payment in First Iraqi Bank') }}</div>

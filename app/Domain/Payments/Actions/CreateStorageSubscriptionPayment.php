@@ -13,6 +13,9 @@ use App\Enums\PaymentRecurringStrategy;
 use App\Models\Customer;
 use App\Models\StoragePlan;
 use App\Services\Billing\BillingCurrencyService;
+use App\Services\Coupons\CouponContext;
+use App\Services\Coupons\CouponRedemptionService;
+use App\Services\Coupons\CouponService;
 use App\Services\Payments\PaymentFeeCalculator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -25,10 +28,12 @@ class CreateStorageSubscriptionPayment
         protected BillingCurrencyService $currency,
         protected PaymentFeeCalculator $fees,
         protected PaymentEventRecorder $events,
+        protected CouponService $coupons,
+        protected CouponRedemptionService $redemptions,
     ) {
     }
 
-    public function handle(Customer $customer, int $planId, string $billingCycle = 'monthly'): Payment
+    public function handle(Customer $customer, int $planId, string $billingCycle = 'monthly', ?string $couponCode = null): Payment
     {
         $plan = StoragePlan::query()->where('is_active', true)->findOrFail($planId);
         $currentPlan = $customer->currentStoragePlan();
@@ -40,15 +45,36 @@ class CreateStorageSubscriptionPayment
         }
 
         $billingCycle = $this->fib->normalizeBillingCycle($billingCycle, ['monthly', 'hourly']);
-        $baseAmountIqd = $plan->priceIqdAmount();
+        $originalBaseAmountIqd = $plan->priceIqdAmount();
+        $couponContext = new CouponContext(
+            customer: $customer,
+            purchaseType: PurchaseType::STORAGE_SUBSCRIPTION,
+            provider: 'fib',
+            purchasableType: StoragePlan::class,
+            purchasableId: (int) $plan->id,
+            itemCode: (string) $plan->code,
+            originalAmountIqd: $originalBaseAmountIqd,
+            billingCycle: $billingCycle,
+            isRecurring: true,
+        );
+        $resolvedCoupon = $this->coupons->resolveForCheckout($couponCode, $couponContext);
+        $couponPricing = $resolvedCoupon['pricing'] ?? null;
+        $baseAmountIqd = (int) ($couponPricing['final_amount_iqd'] ?? $originalBaseAmountIqd);
+        $discountAmountIqd = (int) ($couponPricing['discount_amount_iqd'] ?? 0);
         $feeQuote = $this->fees->quote('fib', $baseAmountIqd);
         $grossAmountIqd = (int) ($feeQuote['gross_amount_iqd'] ?? $baseAmountIqd);
         $display = $this->currency->priceDataForBaseAmountIqd($grossAmountIqd, $customer);
         $baseDisplay = $this->currency->priceDataForBaseAmountIqd($baseAmountIqd, $customer);
-        $payment = DB::transaction(function () use ($customer, $plan, $billingCycle, $baseAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay) {
+        $originalDisplay = $this->currency->priceDataForBaseAmountIqd($originalBaseAmountIqd, $customer);
+        $discountDisplay = $discountAmountIqd > 0
+            ? $this->currency->priceDataForBaseAmountIqd($discountAmountIqd, $customer)
+            : null;
+        $payment = DB::transaction(function () use ($customer, $plan, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay) {
             $payment = Payment::create([
                 'uuid' => (string) Str::uuid(),
                 'customer_id' => $customer->id,
+                'coupon_id' => data_get($resolvedCoupon, 'coupon.id'),
+                'coupon_code' => data_get($resolvedCoupon, 'coupon.code'),
                 'provider' => PaymentProvider::FIB,
                 'purchase_type' => PurchaseType::STORAGE_SUBSCRIPTION,
                 'payment_mode' => PaymentMode::RECURRING,
@@ -58,16 +84,28 @@ class CreateStorageSubscriptionPayment
                 'idempotency_key' => (string) Str::uuid(),
                 'amount' => $grossAmountIqd,
                 'currency' => 'IQD',
+                'original_amount_iqd' => $originalBaseAmountIqd,
+                'discount_amount_iqd' => $discountAmountIqd,
+                'discounted_amount_iqd' => $baseAmountIqd,
                 'purchase_snapshot' => [
                     'code' => (string) $plan->code,
                     'name' => (string) $plan->name,
                     'billing_cycle' => $billingCycle,
                     'quota_mb' => (int) ($plan->quota_mb ?? 0),
+                    'original_amount_iqd' => $originalBaseAmountIqd,
+                    'discount_amount_iqd' => $discountAmountIqd,
                     'amount_iqd' => $baseAmountIqd,
                     'gross_amount_iqd' => $grossAmountIqd,
                     'display' => $display,
                     'base_display' => $baseDisplay,
+                    'original_display' => $originalDisplay,
+                    'discount_display' => $discountDisplay,
                     'fee_quote' => $feeQuote,
+                    'coupon' => $couponPricing ? array_merge($couponPricing, [
+                        'original_display' => $originalDisplay,
+                        'discount_display' => $discountDisplay,
+                        'final_display' => $baseDisplay,
+                    ]) : null,
                     'testing_cycle' => $billingCycle === 'hourly' ? [
                         'testing_only' => true,
                         'provider_interval' => $this->fib->intervalForCycle('hourly'),
@@ -79,10 +117,20 @@ class CreateStorageSubscriptionPayment
                     'locale' => app()->getLocale(),
                     'fee_quote' => $feeQuote,
                     'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
+                    'coupon' => $couponPricing,
                 ],
                 'purchasable_type' => StoragePlan::class,
                 'purchasable_id' => $plan->id,
             ]);
+
+            if (is_array($resolvedCoupon) && isset($resolvedCoupon['coupon'], $couponPricing)) {
+                $this->redemptions->reserveCheckout(
+                    $payment,
+                    $resolvedCoupon['coupon'],
+                    $couponContext,
+                    $couponPricing,
+                );
+            }
 
             $this->events->record($payment, [
                 'event_type' => 'local_payment_created',
@@ -129,12 +177,16 @@ class CreateStorageSubscriptionPayment
                 ],
             ]);
 
+            $this->redemptions->markApplied($payment);
+
             return $payment->fresh();
         } catch (\Throwable $exception) {
             $payment->forceFill([
                 'status' => PaymentStatus::FAILED,
                 'status_reason' => $exception->getMessage(),
             ])->save();
+
+            $this->redemptions->releaseForPayment($payment, 'provider_create_failed');
 
             $this->events->record($payment, [
                 'event_type' => 'provider_subscription_create_failed',

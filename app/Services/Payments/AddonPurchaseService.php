@@ -25,7 +25,10 @@ class AddonPurchaseService
                 ->where('is_active', true)
                 ->findOrFail($productId);
 
-            $baseAmountIqd = $product->priceIqdAmount();
+            $catalogAmountIqd = $product->priceIqdAmount();
+            $originalAmountIqd = (int) ($meta['original_amount_iqd'] ?? $catalogAmountIqd);
+            $baseAmountIqd = (int) ($meta['base_amount_iqd'] ?? $meta['discounted_amount_iqd'] ?? $catalogAmountIqd);
+            $discountAmountIqd = (int) ($meta['discount_amount_iqd'] ?? max(0, $originalAmountIqd - $baseAmountIqd));
             $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd($baseAmountIqd, $customer);
 
             $provider = (string) ($meta['provider'] ?? 'fake');
@@ -37,6 +40,8 @@ class AddonPurchaseService
 
             $order = CreditOrder::create([
                 'customer_id' => (int) $customer->id,
+                'coupon_id' => $meta['coupon_id'] ?? null,
+                'coupon_code' => $meta['coupon_code'] ?? null,
                 'payment_intent_id' => $meta['payment_intent_id'] ?? null,
                 'payment_id' => $meta['payment_id'] ?? null,
                 'order_type' => 'addon',
@@ -47,6 +52,9 @@ class AddonPurchaseService
                 'currency' => 'IQD',
                 'base_currency_code' => 'IQD',
                 'base_amount_iqd' => $baseAmountIqd,
+                'original_amount_iqd' => $originalAmountIqd,
+                'discount_amount_iqd' => $discountAmountIqd,
+                'discounted_amount_iqd' => $baseAmountIqd,
                 'gross_amount_iqd' => $grossAmount,
                 'surcharge_amount_iqd' => $surchargeAmount,
                 'provider_fee_amount_iqd' => $providerFeeAmount,
@@ -69,6 +77,7 @@ class AddonPurchaseService
                     'ui' => 'addon-credits-page',
                     'product_code' => (string) $product->code,
                     'product_name' => (string) $product->name,
+                    'coupon' => $meta['coupon'] ?? null,
                     'display_label' => $currencySnapshot['display_label'],
                     'base_label' => $currencySnapshot['base_label'],
                     'iqd_label' => $currencySnapshot['iqd_label'],
@@ -89,6 +98,8 @@ class AddonPurchaseService
                     'product_code' => (string) $product->code,
                     'product_name' => (string) $product->name,
                     'base_amount_iqd' => (int) $baseAmountIqd,
+                    'original_amount_iqd' => (int) $originalAmountIqd,
+                    'discount_amount_iqd' => (int) $discountAmountIqd,
                     'ui' => 'addon-credits-page',
                 ]
             );

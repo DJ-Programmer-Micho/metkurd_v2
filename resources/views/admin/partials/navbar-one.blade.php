@@ -192,6 +192,12 @@
                     />
 
                     <livewire:partials.components.nav-feature-link
+                        route="admin.payments.coupons"
+                        icon="bx bxs-microphone-alt"
+                        :label="__('Coupons')"
+                    />
+
+                    <livewire:partials.components.nav-feature-link
                         route="admin.payments.currencies"
                         icon="bx bxs-microphone-alt"
                         :label="__('Currencies')"

@@ -7,6 +7,8 @@ use App\Models\StoragePlan;
 use App\Services\Billing\BillingCurrencyService;
 use App\Services\Billing\CustomerBillingStateService;
 use App\Services\Billing\ScheduleStoragePlanCancellation;
+use App\Services\Coupons\CouponContext;
+use App\Services\Coupons\CouponService;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -53,6 +55,14 @@ class extends Component
     public int $storagePct = 0;
 
     public ?string $currentPlanEndsAtLabel = null;
+
+    public string $couponCode = '';
+
+    public array $couponPreview = [];
+
+    public string $couponMessage = '';
+
+    public string $couponMessageType = 'info';
 
     public string $message = '';
 
@@ -131,6 +141,8 @@ class extends Component
         $this->message = '';
         $this->messageType = 'info';
         $this->showConfirm = true;
+
+        $this->refreshCouponPreview();
     }
 
     public function closeConfirm(): void
@@ -141,6 +153,19 @@ class extends Component
 
         $this->showConfirm = false;
         $this->selectedPlanId = null;
+    }
+
+    public function applyCoupon(): void
+    {
+        $this->refreshCouponPreview();
+    }
+
+    public function clearCoupon(): void
+    {
+        $this->couponCode = '';
+        $this->couponPreview = [];
+        $this->couponMessage = '';
+        $this->couponMessageType = 'info';
     }
 
     public function openCancelConfirm(): void
@@ -235,6 +260,7 @@ class extends Component
                 $customer,
                 (int) $this->selectedPlanId,
                 $this->billingCycle,
+                $this->couponCode !== '' ? $this->couponCode : null,
             );
 
             $this->showConfirm = false;
@@ -287,6 +313,71 @@ class extends Component
         }
 
         return in_array($cycle, $allowed, true) ? $cycle : 'monthly';
+    }
+
+    protected function refreshCouponPreview(): void
+    {
+        $context = $this->selectedCouponContext();
+
+        if (! $context instanceof CouponContext) {
+            $this->couponPreview = [];
+            $this->couponMessage = '';
+            $this->couponMessageType = 'info';
+
+            return;
+        }
+
+        if (trim($this->couponCode) === '') {
+            $this->couponPreview = [];
+            $this->couponMessage = '';
+            $this->couponMessageType = 'info';
+
+            return;
+        }
+
+        try {
+            $preview = app(CouponService::class)->preview($this->couponCode, $context);
+            $this->couponCode = (string) ($preview['code'] ?? $this->couponCode);
+            $this->couponPreview = $this->decorateCouponPreview($preview, $context->customer);
+            $this->couponMessage = __('Coupon applied successfully.');
+            $this->couponMessageType = 'success';
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->couponPreview = [];
+            $this->couponMessage = collect($exception->errors())->flatten()->first() ?: __('This coupon could not be applied.');
+            $this->couponMessageType = 'danger';
+        }
+    }
+
+    protected function selectedCouponContext(): ?CouponContext
+    {
+        $customer = auth('app')->user()?->fresh(['profile']);
+        $selected = collect($this->plans)->firstWhere('id', $this->selectedPlanId);
+
+        if (! $customer || ! is_array($selected)) {
+            return null;
+        }
+
+        return new CouponContext(
+            customer: $customer,
+            purchaseType: \App\Domain\Payments\Enums\PurchaseType::STORAGE_SUBSCRIPTION,
+            provider: 'fib',
+            purchasableType: StoragePlan::class,
+            purchasableId: (int) $selected['id'],
+            itemCode: (string) $selected['code'],
+            originalAmountIqd: (int) ($selected['price_iqd'] ?? 0),
+            billingCycle: $this->billingCycle,
+            isRecurring: true,
+        );
+    }
+
+    protected function decorateCouponPreview(array $preview, \App\Models\Customer $customer): array
+    {
+        $billing = app(BillingCurrencyService::class);
+        $preview['original_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['original_amount_iqd'] ?? 0), $customer);
+        $preview['discount_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['discount_amount_iqd'] ?? 0), $customer);
+        $preview['final_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['final_amount_iqd'] ?? 0), $customer);
+
+        return $preview;
     }
 };
 ?>
@@ -482,6 +573,8 @@ class extends Component
                                     <b>{{ data_get($selectedDisplay, 'display_label') }}</b>
                                 </p>
                             @endif
+
+                            @include('app.partials.checkout-coupon-panel')
                         @endif
 
                         <div class="small text-muted">

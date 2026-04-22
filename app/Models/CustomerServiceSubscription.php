@@ -16,6 +16,7 @@ class CustomerServiceSubscription extends Model
     protected $fillable = [
         'customer_id',
         'payment_id',
+        'coupon_id',
         'service_plan_id',
         'previous_service_plan_id',
         'status',
@@ -32,6 +33,8 @@ class CustomerServiceSubscription extends Model
         'customer_payment_method_id',
         'renewal_strategy',
         'price_iqd_snapshot',
+        'original_price_iqd_snapshot',
+        'discount_cycles_consumed',
         'display_currency_code',
         'display_exchange_rate',
         'display_amount_raw',
@@ -53,6 +56,9 @@ class CustomerServiceSubscription extends Model
         'auto_renew' => 'boolean',
         'customer_payment_method_id' => 'integer',
         'price_iqd_snapshot' => 'decimal:0',
+        'coupon_id' => 'integer',
+        'original_price_iqd_snapshot' => 'decimal:0',
+        'discount_cycles_consumed' => 'integer',
         'display_exchange_rate' => 'decimal:8',
         'display_amount_raw' => 'decimal:8',
         'display_amount_rounded' => 'decimal:4',
@@ -68,6 +74,11 @@ class CustomerServiceSubscription extends Model
     public function payment(): BelongsTo
     {
         return $this->belongsTo(\App\Domain\Payments\Models\Payment::class, 'payment_id');
+    }
+
+    public function coupon(): BelongsTo
+    {
+        return $this->belongsTo(Coupon::class, 'coupon_id');
     }
 
     public function servicePlan(): BelongsTo

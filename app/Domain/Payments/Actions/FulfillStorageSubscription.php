@@ -9,6 +9,7 @@ use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Enums\PaymentRecurringStrategy;
 use App\Services\Billing\PlanSwitcher;
+use App\Services\Coupons\CouponRedemptionService;
 use App\Support\CustomerEmailNotifier;
 use App\Support\TelegramPaymentNotifier;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,7 @@ class FulfillStorageSubscription implements RecurringPaymentHandler
     public function __construct(
         protected PaymentEventRecorder $events,
         protected PlanSwitcher $switcher,
+        protected CouponRedemptionService $redemptions,
     ) {
     }
 
@@ -45,12 +47,19 @@ class FulfillStorageSubscription implements RecurringPaymentHandler
                 'provider_ref' => $locked->providerReference(),
                 'payment_method' => $locked->provider->value,
                 'payment_id' => $locked->id,
+                'coupon_id' => $locked->coupon_id,
+                'coupon_code' => $locked->coupon_code,
                 'merchant_transaction_id' => $locked->local_reference,
+                'original_amount_iqd' => (int) round((float) ($locked->original_amount_iqd ?? data_get($snapshot, 'original_amount_iqd', 0))),
+                'discount_amount_iqd' => (int) round((float) ($locked->discount_amount_iqd ?? data_get($snapshot, 'discount_amount_iqd', 0))),
+                'base_amount_iqd' => (int) round((float) ($locked->discounted_amount_iqd ?? data_get($snapshot, 'amount_iqd', round((float) $locked->amount)))),
+                'discounted_amount_iqd' => (int) round((float) ($locked->discounted_amount_iqd ?? data_get($snapshot, 'amount_iqd', round((float) $locked->amount)))),
                 'gross_amount_iqd' => (int) ($feeQuote['gross_amount_iqd'] ?? round((float) $locked->amount)),
                 'surcharge_amount_iqd' => (int) ($feeQuote['surcharge_amount_iqd'] ?? 0),
                 'provider_fee_amount_iqd' => (int) ($feeQuote['provider_fee_amount_iqd'] ?? 0),
                 'net_amount_iqd' => (int) ($feeQuote['net_amount_iqd'] ?? data_get($snapshot, 'amount_iqd', round((float) $locked->amount))),
                 'fee_breakdown' => data_get($feeQuote, 'fee_breakdown'),
+                'coupon' => data_get($snapshot, 'coupon'),
                 'paid_at' => $locked->paid_at ?? now(),
                 'renewal_strategy' => $locked->isProviderSubscriptionObject()
                     ? PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
@@ -64,6 +73,8 @@ class FulfillStorageSubscription implements RecurringPaymentHandler
                     'fulfilled_storage_subscription_id' => $subscription->id,
                 ]),
             ])->save();
+
+            $this->redemptions->consumeForPayment($locked);
 
             TelegramPaymentNotifier::send(
                 $customer->fresh(['profile']),

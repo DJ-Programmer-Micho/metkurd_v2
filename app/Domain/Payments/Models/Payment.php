@@ -7,6 +7,7 @@ use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
+use App\Models\Coupon;
 use App\Models\Customer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -18,6 +19,8 @@ class Payment extends Model
     protected $fillable = [
         'uuid',
         'customer_id',
+        'coupon_id',
+        'coupon_code',
         'provider',
         'purchase_type',
         'payment_mode',
@@ -32,6 +35,9 @@ class Payment extends Model
         'provider_links',
         'amount',
         'currency',
+        'original_amount_iqd',
+        'discount_amount_iqd',
+        'discounted_amount_iqd',
         'status_reason',
         'declining_reason',
         'provider_status',
@@ -65,6 +71,7 @@ class Payment extends Model
         'payment_mode' => PaymentMode::class,
         'provider_object_type' => PaymentProviderObjectType::class,
         'status' => PaymentStatus::class,
+        'coupon_id' => 'integer',
         'provider_links' => 'array',
         'callback_payload' => 'array',
         'create_payload' => 'array',
@@ -74,6 +81,9 @@ class Payment extends Model
         'purchase_snapshot' => 'array',
         'meta' => 'array',
         'amount' => 'decimal:0',
+        'original_amount_iqd' => 'decimal:0',
+        'discount_amount_iqd' => 'decimal:0',
+        'discounted_amount_iqd' => 'decimal:0',
         'valid_until' => 'datetime',
         'active_until' => 'datetime',
         'last_payment_at' => 'datetime',
@@ -93,6 +103,11 @@ class Payment extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class, 'customer_id');
+    }
+
+    public function coupon(): BelongsTo
+    {
+        return $this->belongsTo(Coupon::class, 'coupon_id');
     }
 
     public function purchasable(): MorphTo

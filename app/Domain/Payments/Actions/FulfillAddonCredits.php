@@ -7,6 +7,7 @@ use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
+use App\Services\Coupons\CouponRedemptionService;
 use App\Services\Payments\AddonPurchaseService;
 use App\Support\CustomerEmailNotifier;
 use App\Support\TelegramPaymentNotifier;
@@ -17,6 +18,7 @@ class FulfillAddonCredits implements OneTimePaymentHandler
     public function __construct(
         protected PaymentEventRecorder $events,
         protected AddonPurchaseService $addons,
+        protected CouponRedemptionService $redemptions,
     ) {
     }
 
@@ -44,12 +46,19 @@ class FulfillAddonCredits implements OneTimePaymentHandler
                 'provider_ref' => $locked->fib_payment_id ?: $locked->local_reference,
                 'payment_method' => $locked->provider->value,
                 'payment_id' => $locked->id,
+                'coupon_id' => $locked->coupon_id,
+                'coupon_code' => $locked->coupon_code,
                 'merchant_transaction_id' => $locked->local_reference,
+                'original_amount_iqd' => (int) round((float) ($locked->original_amount_iqd ?? data_get($snapshot, 'original_amount_iqd', 0))),
+                'discount_amount_iqd' => (int) round((float) ($locked->discount_amount_iqd ?? data_get($snapshot, 'discount_amount_iqd', 0))),
+                'base_amount_iqd' => (int) round((float) ($locked->discounted_amount_iqd ?? data_get($snapshot, 'amount_iqd', round((float) $locked->amount)))),
+                'discounted_amount_iqd' => (int) round((float) ($locked->discounted_amount_iqd ?? data_get($snapshot, 'amount_iqd', round((float) $locked->amount)))),
                 'gross_amount_iqd' => (int) ($feeQuote['gross_amount_iqd'] ?? round((float) $locked->amount)),
                 'surcharge_amount_iqd' => (int) ($feeQuote['surcharge_amount_iqd'] ?? 0),
                 'provider_fee_amount_iqd' => (int) ($feeQuote['provider_fee_amount_iqd'] ?? 0),
                 'net_amount_iqd' => (int) ($feeQuote['net_amount_iqd'] ?? data_get($snapshot, 'amount_iqd', round((float) $locked->amount))),
                 'fee_breakdown' => data_get($feeQuote, 'fee_breakdown'),
+                'coupon' => data_get($snapshot, 'coupon'),
                 'paid_at' => $locked->paid_at ?? now(),
             ]);
 
@@ -59,6 +68,8 @@ class FulfillAddonCredits implements OneTimePaymentHandler
                     'fulfilled_order_id' => $order->id,
                 ]),
             ])->save();
+
+            $this->redemptions->consumeForPayment($locked);
 
             TelegramPaymentNotifier::send(
                 $customer->fresh(['profile']),

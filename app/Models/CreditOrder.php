@@ -14,6 +14,8 @@ class CreditOrder extends Model
 
     protected $fillable = [
         'customer_id',
+        'coupon_id',
+        'coupon_code',
         'payment_intent_id',
         'payment_id',
         'order_type',
@@ -27,6 +29,9 @@ class CreditOrder extends Model
         'currency',
         'base_currency_code',
         'base_amount_iqd',
+        'original_amount_iqd',
+        'discount_amount_iqd',
+        'discounted_amount_iqd',
         'gross_amount_iqd',
         'surcharge_amount_iqd',
         'provider_fee_amount_iqd',
@@ -53,8 +58,12 @@ class CreditOrder extends Model
 
     protected $casts = [
         'credits_amount' => 'integer',
+        'coupon_id' => 'integer',
         'amount_usd' => 'decimal:2',
         'base_amount_iqd' => 'decimal:0',
+        'original_amount_iqd' => 'decimal:0',
+        'discount_amount_iqd' => 'decimal:0',
+        'discounted_amount_iqd' => 'decimal:0',
         'gross_amount_iqd' => 'decimal:0',
         'surcharge_amount_iqd' => 'decimal:0',
         'provider_fee_amount_iqd' => 'decimal:0',
@@ -73,6 +82,11 @@ class CreditOrder extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class, 'customer_id');
+    }
+
+    public function coupon(): BelongsTo
+    {
+        return $this->belongsTo(Coupon::class, 'coupon_id');
     }
 
     public function paymentIntent(): BelongsTo

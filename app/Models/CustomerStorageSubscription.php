@@ -3,17 +3,21 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CustomerStorageSubscription extends Model
 {
     protected $fillable = [
         'customer_id',
         'payment_id',
+        'coupon_id',
         'storage_plan_id',
         'status',
         'source',
         'provider_ref',
         'price_iqd_snapshot',
+        'original_price_iqd_snapshot',
+        'discount_cycles_consumed',
         'display_currency_code',
         'display_exchange_rate',
         'display_amount_raw',
@@ -35,6 +39,9 @@ class CustomerStorageSubscription extends Model
 
     protected $casts = [
         'price_iqd_snapshot' => 'decimal:0',
+        'coupon_id' => 'integer',
+        'original_price_iqd_snapshot' => 'decimal:0',
+        'discount_cycles_consumed' => 'integer',
         'display_exchange_rate' => 'decimal:8',
         'display_amount_raw' => 'decimal:8',
         'display_amount_rounded' => 'decimal:4',
@@ -50,22 +57,27 @@ class CustomerStorageSubscription extends Model
         'meta' => 'array',
     ];
 
-    public function plan()
+    public function coupon(): BelongsTo
+    {
+        return $this->belongsTo(Coupon::class, 'coupon_id');
+    }
+
+    public function plan(): BelongsTo
     {
         return $this->belongsTo(StoragePlan::class, 'storage_plan_id');
     }
 
-    public function payment()
+    public function payment(): BelongsTo
     {
         return $this->belongsTo(\App\Domain\Payments\Models\Payment::class, 'payment_id');
     }
 
-    public function storagePlan()
+    public function storagePlan(): BelongsTo
     {
         return $this->belongsTo(StoragePlan::class, 'storage_plan_id');
     }
 
-    public function customerPaymentMethod()
+    public function customerPaymentMethod(): BelongsTo
     {
         return $this->belongsTo(CustomerPaymentMethod::class, 'customer_payment_method_id');
     }

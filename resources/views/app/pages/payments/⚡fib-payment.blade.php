@@ -86,6 +86,7 @@ class extends Component
     $fibSubscriptions = app(\App\Domain\Payments\Fib\FibSubscriptionService::class);
     $chargeDisplay = (array) data_get($snapshot, 'display', []);
     $baseDisplay = (array) data_get($snapshot, 'base_display', []);
+    $couponSummary = data_get($snapshot, 'coupon');
     $feeQuote = (array) data_get($snapshot, 'fee_quote', data_get($payment->meta, 'fee_quote', []));
     $baghdadTimezone = 'Asia/Baghdad';
     $baghdadTimezoneLabel = __('Baghdad Time (GMT+3)');
@@ -104,6 +105,29 @@ class extends Component
         : '';
     $surchargeLabel = (int) data_get($feeQuote, 'surcharge_amount_iqd', 0) > 0
         ? $billing->formatAmount((int) data_get($feeQuote, 'surcharge_amount_iqd', 0), 'IQD')
+        : '';
+    $hasCoupon = is_array($couponSummary) && (string) data_get($couponSummary, 'code', '') !== '';
+    $couponCode = $hasCoupon ? (string) data_get($couponSummary, 'code') : '';
+    $couponOriginalLabel = $hasCoupon
+        ? (string) data_get(
+            $couponSummary,
+            'original_display.iqd_label',
+            $billing->formatAmount((int) data_get($couponSummary, 'original_amount_iqd', (int) round((float) ($payment->original_amount_iqd ?? 0))), 'IQD')
+        )
+        : '';
+    $couponDiscountLabel = $hasCoupon
+        ? (string) data_get(
+            $couponSummary,
+            'discount_display.iqd_label',
+            $billing->formatAmount((int) data_get($couponSummary, 'discount_amount_iqd', (int) round((float) ($payment->discount_amount_iqd ?? 0))), 'IQD')
+        )
+        : '';
+    $couponFinalLabel = $hasCoupon
+        ? (string) data_get(
+            $couponSummary,
+            'final_display.iqd_label',
+            $billing->formatAmount((int) data_get($couponSummary, 'final_amount_iqd', (int) round((float) ($payment->discounted_amount_iqd ?? 0))), 'IQD')
+        )
         : '';
     $statusText = match ($payment->status->value) {
         'paid' => __('Success'),
@@ -210,6 +234,20 @@ class extends Component
 
                                 <dt class="col-sm-5 text-muted">{{ __('Amount To Pay') }}</dt>
                                 <dd class="col-sm-7">{{ $displayPrimary }}</dd>
+
+                                @if ($hasCoupon)
+                                    <dt class="col-sm-5 text-muted">{{ __('Coupon') }}</dt>
+                                    <dd class="col-sm-7">{{ $couponCode }}</dd>
+
+                                    <dt class="col-sm-5 text-muted">{{ __('Original Amount') }}</dt>
+                                    <dd class="col-sm-7">{{ $couponOriginalLabel }}</dd>
+
+                                    <dt class="col-sm-5 text-muted">{{ __('Discount') }}</dt>
+                                    <dd class="col-sm-7 text-success">-{{ $couponDiscountLabel }}</dd>
+
+                                    <dt class="col-sm-5 text-muted">{{ __('Discounted Amount') }}</dt>
+                                    <dd class="col-sm-7">{{ $couponFinalLabel }}</dd>
+                                @endif
 
                                 @if ($displayCanonical !== '' && $displayCanonical !== $displayPrimary)
                                     <dt class="col-sm-5 text-muted">{{ __('Net Product Amount') }}</dt>

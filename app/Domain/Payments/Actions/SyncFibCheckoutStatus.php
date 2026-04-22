@@ -15,6 +15,7 @@ use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Domain\Payments\Support\PaymentTransitions;
 use App\Events\Payments\PaymentConfirmed;
 use App\Services\Billing\SyncProviderSubscriptionLifecycle;
+use App\Services\Coupons\CouponRedemptionService;
 use Illuminate\Support\Facades\DB;
 
 class SyncFibCheckoutStatus
@@ -26,6 +27,7 @@ class SyncFibCheckoutStatus
         protected FibSubscriptionMapper $subscriptionMapper,
         protected PaymentEventRecorder $events,
         protected SyncProviderSubscriptionLifecycle $lifecycle,
+        protected CouponRedemptionService $redemptions,
     ) {
     }
 
@@ -89,6 +91,12 @@ class SyncFibCheckoutStatus
 
             if ($shouldDispatch) {
                 event(new PaymentConfirmed((int) $payment->id));
+            } elseif ($payment->fulfilled_at === null && in_array($payment->status, [
+                PaymentStatus::FAILED,
+                PaymentStatus::CANCELED,
+                PaymentStatus::EXPIRED,
+            ], true)) {
+                $this->redemptions->releaseForPayment($payment, 'subscription_checkout_terminal');
             }
 
             $this->lifecycle->handle($payment);
@@ -149,6 +157,12 @@ class SyncFibCheckoutStatus
 
         if ($shouldDispatch) {
             event(new PaymentConfirmed((int) $payment->id));
+        } elseif ($payment->fulfilled_at === null && in_array($payment->status, [
+            PaymentStatus::FAILED,
+            PaymentStatus::CANCELED,
+            PaymentStatus::EXPIRED,
+        ], true)) {
+            $this->redemptions->releaseForPayment($payment, 'payment_checkout_terminal');
         }
 
         return $payment->fresh();

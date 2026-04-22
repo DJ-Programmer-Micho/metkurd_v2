@@ -6,8 +6,10 @@ use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
+use App\Models\Coupon;
 use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
+use App\Services\Coupons\CouponLifecycleService;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -18,6 +20,7 @@ class SyncProviderSubscriptionLifecycle
     public function __construct(
         protected FibSubscriptionService $fibSubscriptions,
         protected PaymentEventRecorder $events,
+        protected CouponLifecycleService $couponLifecycle,
     ) {
     }
 
@@ -89,6 +92,11 @@ class SyncProviderSubscriptionLifecycle
         $wasAutoRenewing = (bool) ($subscription->auto_renew ?? false);
         $previousStatus = (string) ($subscription->status ?? 'active');
         $effectiveEndsAt = $shouldAutoRenew ? null : $periodEndsAt;
+        $discountCyclesConsumed = $this->nextDiscountCycleCount(
+            $subscription,
+            (int) ($subscription->discount_cycles_consumed ?? 0),
+            $renewalDetected,
+        );
         $meta = (array) ($subscription->meta ?? []);
         $meta['billing_cycle'] = $billingCycle;
         $meta['provider_active_until'] = $periodEndsAt?->toIso8601String();
@@ -96,6 +104,7 @@ class SyncProviderSubscriptionLifecycle
         $meta['provider_last_payment_at'] = $payment->last_payment_at?->toIso8601String();
         $meta['provider_status'] = $providerStatus;
         $meta['provider_lifecycle_synced_at'] = now()->toIso8601String();
+        $meta['discount_cycles_consumed'] = $discountCyclesConsumed;
 
         $subscription->forceFill([
             'status' => $shouldEndNow ? 'ended' : 'active',
@@ -103,6 +112,7 @@ class SyncProviderSubscriptionLifecycle
             'next_renewal_on' => $periodEndsAt?->toDateString(),
             'auto_renew' => $shouldAutoRenew,
             'ends_at' => $effectiveEndsAt,
+            'discount_cycles_consumed' => $discountCyclesConsumed,
             'canceled_at' => $shouldAutoRenew
                 ? null
                 : ($subscription->canceled_at ?? now()),
@@ -219,5 +229,29 @@ class SyncProviderSubscriptionLifecycle
         }
 
         return false;
+    }
+
+    protected function nextDiscountCycleCount(
+        CustomerServiceSubscription|CustomerStorageSubscription $subscription,
+        int $currentCount,
+        bool $renewalDetected,
+    ): int {
+        $currentCount = max(0, $currentCount);
+
+        if (! $renewalDetected || ! $subscription->coupon_id) {
+            return $currentCount;
+        }
+
+        $coupon = Coupon::query()->find($subscription->coupon_id);
+
+        if (! $coupon instanceof Coupon) {
+            return $currentCount;
+        }
+
+        $nextCycleIndex = $currentCount + 1;
+
+        return $this->couponLifecycle->appliesToCycle($coupon, $nextCycleIndex)
+            ? $nextCycleIndex
+            : $currentCount;
     }
 }
