@@ -100,6 +100,28 @@ class CouponService
         return $this->lifecycle->appliesToCycle($coupon, $cycleIndex);
     }
 
+    public function recurringDurationCompatibilityMessage(
+        CouponDurationType|string|null $durationType,
+        string $provider = 'fib',
+        ?int $durationCycles = null,
+    ): ?string {
+        if (strtolower(trim($provider)) !== 'fib') {
+            return null;
+        }
+
+        $durationType = $durationType instanceof CouponDurationType
+            ? $durationType
+            : (CouponDurationType::tryFrom((string) $durationType) ?? CouponDurationType::ONCE);
+
+        return match ($durationType) {
+            CouponDurationType::FOREVER => null,
+            CouponDurationType::ONCE, CouponDurationType::FIRST_CYCLE => __('This coupon is configured to discount only the first subscription cycle, but the current FIB recurring integration creates one fixed recurring amount and cannot switch later renewals back to full price automatically. Use a forever recurring discount for plan or storage subscriptions instead.'),
+            CouponDurationType::FIRST_N_CYCLES => __('This coupon is configured to discount only the first :count subscription cycles, but the current FIB recurring integration creates one fixed recurring amount and cannot switch later renewals back to full price automatically. Use a forever recurring discount for plan or storage subscriptions instead.', [
+                'count' => number_format(max(1, (int) ($durationCycles ?? 1))),
+            ]),
+        };
+    }
+
     public function firstTimeSubscriber(Customer $customer): bool
     {
         $hasPaidPlanPayment = Payment::query()
@@ -199,10 +221,14 @@ class CouponService
         }
 
         if ($context->isRecurring && strtolower($context->provider) === 'fib') {
-            $durationType = $coupon->duration_type ?? CouponDurationType::ONCE;
+            $message = $this->recurringDurationCompatibilityMessage(
+                $coupon->duration_type ?? CouponDurationType::ONCE,
+                (string) $context->provider,
+                $coupon->duration_cycles,
+            );
 
-            if ($durationType !== CouponDurationType::FOREVER) {
-                $this->invalid(__('This recurring coupon duration is not supported by the current FIB subscription API.'));
+            if ($message !== null) {
+                $this->invalid($message);
             }
         }
 

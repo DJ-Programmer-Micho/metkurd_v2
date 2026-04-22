@@ -389,8 +389,16 @@ it('rejects limited-duration recurring coupons for the current fib subscription 
         'duration_type' => CouponDurationType::FIRST_CYCLE,
     ]);
 
-    expect(fn () => app(CouponService::class)->preview($coupon->code, couponFeaturePlanContext($customer, $plan)))
-        ->toThrow(ValidationException::class, 'not supported');
+    try {
+        app(CouponService::class)->preview($coupon->code, couponFeaturePlanContext($customer, $plan));
+        $this->fail('Expected recurring coupon compatibility validation failure.');
+    } catch (ValidationException $exception) {
+        $message = collect($exception->errors())->flatten()->implode(' ');
+
+        expect($message)
+            ->toContain('fixed recurring amount')
+            ->toContain('forever recurring discount');
+    }
 });
 
 it('enforces total usage limits across customers', function () {

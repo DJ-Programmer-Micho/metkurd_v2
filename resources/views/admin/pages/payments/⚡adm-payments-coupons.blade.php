@@ -41,7 +41,7 @@ class extends Component
 
     <div class="alert alert-warning">
         <div class="fw-semibold mb-1">{{ __('Recurring FIB limitation') }}</div>
-        <div>{{ __('The current FIB recurring API supports a fixed subscription amount. Coupons with first-cycle or first-N-cycle discount duration are stored and managed here, but live FIB recurring checkout currently only accepts forever-priced recurring discounts.') }}</div>
+        <div>{{ __('The current FIB recurring API supports one fixed subscription amount per checkout. New recurring coupons therefore use forever-priced discounts only, and any older first-cycle or first-N-cycle recurring coupons are shown here as legacy unsupported configurations until they are updated.') }}</div>
         <div class="small mt-1">{{ __('Coupon date windows on this page are entered and displayed in :timezone.', ['timezone' => config('app.timezone')]) }}</div>
     </div>
 
@@ -105,7 +105,7 @@ class extends Component
                 <div class="col-xl-2 col-md-4">
                     <label class="form-label text-muted text-uppercase fs-12">{{ __('Target') }}</label>
                     <select class="form-select" wire:model.live="targetFilter">
-                        @foreach ($this->targetOptions() as $targetCode => $targetLabel)
+                        @foreach ($this->targetFilterOptions() as $targetCode => $targetLabel)
                             <option value="{{ $targetCode }}">{{ $targetLabel }}</option>
                         @endforeach
                     </select>
@@ -184,12 +184,12 @@ class extends Component
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold">{{ $this->describeCouponDiscount($coupon) }}</span>
                                         <span class="text-muted small">{{ $this->describeCouponDuration($coupon) }}</span>
-                                        <span class="text-muted small">{{ $this->targetOptions()[$coupon->target_type?->value ?? 'all'] ?? __('All Checkout Types') }}</span>
+                                        <span class="text-muted small">{{ $this->targetLabel($coupon->target_type?->value) }}</span>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $this->targetOptions()[$coupon->target_type?->value ?? 'all'] ?? __('All Checkout Types') }}</span>
+                                        <span class="fw-semibold">{{ $this->targetLabel($coupon->target_type?->value) }}</span>
                                         <span class="text-muted small">{{ __('Currency: :currency', ['currency' => strtoupper((string) ($coupon->currency ?? 'IQD'))]) }}</span>
                                     </div>
                                 </td>
@@ -328,148 +328,328 @@ class extends Component
     </div>
 
     <div wire:ignore.self class="modal fade" id="paymentCouponModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-dialog modal-xl modal-fullscreen-lg-down modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
                         <h5 class="modal-title mb-1">{{ $editingCouponId ? __('Edit Coupon') : __('Create Coupon') }}</h5>
-                        <p class="text-muted mb-0">{{ __('Define discount value, checkout scope, duration, limits, and activation windows in one place.') }}</p>
+                        <p class="text-muted mb-0">{{ __('Build one clear coupon rule at a time. The form adapts to the selected checkout target so recurring-only rules do not appear on one-time add-ons.') }}</p>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetCouponForm"></button>
                 </div>
                 <form wire:submit="saveCoupon">
                     @csrf
-                    <div class="modal-body">
-                        <div class="row g-3">
-                            <div class="col-md-4">
-                                <label class="form-label">{{ __('Coupon Code') }}</label>
-                                <input type="text" class="form-control @error('code') is-invalid @enderror" wire:model.defer="code" placeholder="{{ __('WELCOME50') }}">
-                                @error('code') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                    <div class="modal-body" style="max-height: calc(100vh - 210px); overflow-y: auto;">
+                        <div class="row g-4">
+                            <div class="col-12">
+                                <div class="card border h-100 mb-0">
+                                    <div class="card-header bg-light-subtle">
+                                        <h6 class="card-title mb-1">{{ __('Basic Info') }}</h6>
+                                        <p class="text-muted small mb-0">{{ __('Set the coupon identity and whether it is active or public.') }}</p>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row g-3">
+                                            <div class="col-md-4">
+                                                <label class="form-label">{{ __('Coupon Code') }}</label>
+                                                <input type="text" class="form-control @error('code') is-invalid @enderror" wire:model.defer="code" placeholder="{{ __('WELCOME50') }}">
+                                                @error('code') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">{{ __('Name') }}</label>
+                                                <input type="text" class="form-control @error('name') is-invalid @enderror" wire:model.defer="name" placeholder="{{ __('Welcome Offer') }}">
+                                                @error('name') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">{{ __('Target Type') }}</label>
+                                                <select class="form-select @error('targetType') is-invalid @enderror" wire:model.live="targetType">
+                                                    @foreach ($this->targetOptions() as $targetCode => $targetLabel)
+                                                        <option value="{{ $targetCode }}">{{ $targetLabel }}</option>
+                                                    @endforeach
+                                                </select>
+                                                @error('targetType') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+
+                                            <div class="col-12">
+                                                <label class="form-label">{{ __('Description') }}</label>
+                                                <textarea class="form-control @error('description') is-invalid @enderror" rows="2" wire:model.defer="description" placeholder="{{ __('Optional internal or customer-facing description') }}"></textarea>
+                                                @error('description') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+
+                                            <div class="col-md-4">
+                                                <div class="form-check form-switch pt-2">
+                                                    <input class="form-check-input" type="checkbox" role="switch" wire:model.defer="isActive" id="couponIsActive">
+                                                    <label class="form-check-label" for="couponIsActive">{{ __('Active') }}</label>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <div class="form-check form-switch pt-2">
+                                                    <input class="form-check-input" type="checkbox" role="switch" wire:model.defer="isPublic" id="couponIsPublic">
+                                                    <label class="form-check-label" for="couponIsPublic">{{ __('Public') }}</label>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <div class="form-check form-switch pt-2">
+                                                    <input class="form-check-input" type="checkbox" role="switch" wire:model.defer="isStackable" id="couponIsStackable">
+                                                    <label class="form-check-label" for="couponIsStackable">{{ __('Stackable') }}</label>
+                                                </div>
+                                                <div class="form-text">{{ __('Kept off by default until stacked pricing rules are introduced.') }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label">{{ __('Name') }}</label>
-                                <input type="text" class="form-control @error('name') is-invalid @enderror" wire:model.defer="name" placeholder="{{ __('Welcome Offer') }}">
-                                @error('name') <div class="invalid-feedback">{{ $message }}</div> @enderror
+
+                            <div class="col-lg-7">
+                                <div class="card border h-100 mb-0">
+                                    <div class="card-header bg-light-subtle">
+                                        <h6 class="card-title mb-1">{{ __('Target & Applicability') }}</h6>
+                                        <p class="text-muted small mb-0">{{ __('Choose which checkout type this coupon can be used with and optionally narrow it to specific plans or packs.') }}</p>
+                                    </div>
+                                    <div class="card-body">
+                                        @if ($this->isPlanTarget())
+                                            <div class="mb-3">
+                                                <label class="form-label">{{ __('Eligible Service Plans') }}</label>
+                                                <div class="form-text mb-2">{{ __('Leave all unchecked to allow every paid service plan.') }}</div>
+                                                <div class="row g-2">
+                                                    @foreach ($this->servicePlanChoices as $plan)
+                                                        <div class="col-md-6">
+                                                            <label class="border rounded-3 p-3 d-flex gap-2 align-items-start h-100 cursor-pointer">
+                                                                <input class="form-check-input mt-1" type="checkbox" value="{{ $plan['code'] }}" wire:model.defer="selectedServicePlanCodes">
+                                                                <span>
+                                                                    <span class="fw-semibold d-block">{{ $plan['name'] }}</span>
+                                                                    <span class="text-muted small d-block">{{ strtoupper($plan['code']) }} · {{ __(':credits credits/month', ['credits' => number_format($plan['credits'])]) }}</span>
+                                                                    <span class="text-muted small d-block">{{ __(':monthly monthly | :yearly yearly', ['monthly' => $plan['monthly_price'], 'yearly' => $plan['yearly_price']]) }}</span>
+                                                                </span>
+                                                            </label>
+                                                        </div>
+                                                    @endforeach
+                                                </div>
+                                                @error('selectedServicePlanCodes') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+                                                @error('selectedServicePlanCodes.*') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+                                            </div>
+                                        @elseif ($this->isStorageTarget())
+                                            <div class="mb-3">
+                                                <label class="form-label">{{ __('Eligible Storage Plans') }}</label>
+                                                <div class="form-text mb-2">{{ __('Leave all unchecked to allow every paid storage plan.') }}</div>
+                                                <div class="row g-2">
+                                                    @foreach ($this->storagePlanChoices as $plan)
+                                                        <div class="col-md-6">
+                                                            <label class="border rounded-3 p-3 d-flex gap-2 align-items-start h-100 cursor-pointer">
+                                                                <input class="form-check-input mt-1" type="checkbox" value="{{ $plan['code'] }}" wire:model.defer="selectedStoragePlanCodes">
+                                                                <span>
+                                                                    <span class="fw-semibold d-block">{{ $plan['name'] }}</span>
+                                                                    <span class="text-muted small d-block">{{ strtoupper($plan['code']) }} · {{ $plan['quota'] }}</span>
+                                                                    <span class="text-muted small d-block">{{ $plan['price'] }}</span>
+                                                                </span>
+                                                            </label>
+                                                        </div>
+                                                    @endforeach
+                                                </div>
+                                                @error('selectedStoragePlanCodes') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+                                                @error('selectedStoragePlanCodes.*') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+                                            </div>
+                                        @elseif ($this->isAddonTarget())
+                                            <div class="mb-3">
+                                                <label class="form-label">{{ __('Eligible Add-on Packs') }}</label>
+                                                <div class="form-text mb-2">{{ __('Leave all unchecked to allow every active add-on pack.') }}</div>
+                                                <div class="row g-2">
+                                                    @foreach ($this->addonChoices as $addon)
+                                                        <div class="col-md-6">
+                                                            <label class="border rounded-3 p-3 d-flex gap-2 align-items-start h-100 cursor-pointer">
+                                                                <input class="form-check-input mt-1" type="checkbox" value="{{ $addon['code'] }}" wire:model.defer="selectedAddonCodes">
+                                                                <span>
+                                                                    <span class="fw-semibold d-block">{{ $addon['name'] }}</span>
+                                                                    <span class="text-muted small d-block">{{ strtoupper($addon['code']) }} · {{ __(':credits credits', ['credits' => $addon['credits']]) }}</span>
+                                                                    <span class="text-muted small d-block">{{ $addon['price'] }}</span>
+                                                                </span>
+                                                            </label>
+                                                        </div>
+                                                    @endforeach
+                                                </div>
+                                                @error('selectedAddonCodes') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+                                                @error('selectedAddonCodes.*') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+                                            </div>
+                                        @endif
+
+                                        @if ($this->showBillingCycleRestrictions())
+                                            <div class="border-top pt-3">
+                                                <label class="form-label">{{ __('Billing Cycle Restriction') }}</label>
+                                                <div class="form-text mb-2">{{ __('Leave all unchecked to allow every supported billing cycle for this target.') }}</div>
+                                                <div class="d-flex flex-wrap gap-3">
+                                                    @foreach ($this->billingCycleOptions() as $cycleCode => $cycleLabel)
+                                                        <label class="form-check">
+                                                            <input class="form-check-input" type="checkbox" value="{{ $cycleCode }}" wire:model.defer="selectedBillingCycles">
+                                                            <span class="form-check-label">{{ $cycleLabel }}</span>
+                                                        </label>
+                                                    @endforeach
+                                                </div>
+                                                @error('selectedBillingCycles') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+                                                @error('selectedBillingCycles.*') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+                                            </div>
+                                        @else
+                                            <div class="alert alert-info mb-0">
+                                                <div class="fw-semibold mb-1">{{ __('One-time add-on coupon') }}</div>
+                                                <div class="small">{{ __('Add-on coupons apply once to a single one-time checkout, so recurring cycle restrictions and recurring duration settings are not used here.') }}</div>
+                                            </div>
+                                        @endif
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label">{{ __('Target Type') }}</label>
-                                <select class="form-select @error('targetType') is-invalid @enderror" wire:model.defer="targetType">
-                                    @foreach ($this->targetOptions() as $targetCode => $targetLabel)
-                                        <option value="{{ $targetCode }}">{{ $targetLabel }}</option>
-                                    @endforeach
-                                </select>
-                                @error('targetType') <div class="invalid-feedback">{{ $message }}</div> @enderror
+
+                            <div class="col-lg-5">
+                                <div class="card border h-100 mb-0">
+                                    <div class="card-header bg-light-subtle">
+                                        <h6 class="card-title mb-1">{{ __('Discount') }}</h6>
+                                        <p class="text-muted small mb-0">{{ __('All discounts are calculated server-side from the canonical IQD checkout amount before the FIB request is sent.') }}</p>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row g-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label">{{ __('Discount Type') }}</label>
+                                                <select class="form-select @error('discountType') is-invalid @enderror" wire:model.defer="discountType">
+                                                    @foreach ($this->discountTypeOptions() as $discountCode => $discountLabel)
+                                                        <option value="{{ $discountCode }}">{{ $discountLabel }}</option>
+                                                    @endforeach
+                                                </select>
+                                                @error('discountType') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">{{ __('Discount Value') }}</label>
+                                                <input type="number" min="0.01" step="0.01" class="form-control @error('discountValue') is-invalid @enderror" wire:model.defer="discountValue">
+                                                @error('discountValue') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">{{ __('Minimum Amount (IQD)') }}</label>
+                                                <input type="number" min="1" step="250" class="form-control @error('minimumAmountIqd') is-invalid @enderror" wire:model.defer="minimumAmountIqd">
+                                                @error('minimumAmountIqd') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">{{ __('Billing Currency') }}</label>
+                                                <div class="form-control bg-light-subtle">IQD</div>
+                                                <div class="form-text">{{ __('Coupons are stored against the app’s canonical billing currency.') }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
+
+                            <div class="col-lg-6">
+                                <div class="card border h-100 mb-0">
+                                    <div class="card-header bg-light-subtle">
+                                        <h6 class="card-title mb-1">{{ __('Usage Limits & Eligibility') }}</h6>
+                                        <p class="text-muted small mb-0">{{ __('Use these rules to cap availability and narrow who can redeem the coupon.') }}</p>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row g-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label">{{ __('Max Total Uses') }}</label>
+                                                <input type="number" min="1" class="form-control @error('maxTotalUses') is-invalid @enderror" wire:model.defer="maxTotalUses">
+                                                @error('maxTotalUses') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">{{ __('Max Uses Per Customer') }}</label>
+                                                <input type="number" min="1" class="form-control @error('maxUsesPerCustomer') is-invalid @enderror" wire:model.defer="maxUsesPerCustomer">
+                                                @error('maxUsesPerCustomer') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+
+                                            @if ($this->showFirstTimeSubscriberRule())
+                                                <div class="col-12">
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" role="switch" wire:model.defer="firstTimeSubscribersOnly" id="couponFirstTimeOnly">
+                                                        <label class="form-check-label" for="couponFirstTimeOnly">{{ __('First-time paid plan subscribers only') }}</label>
+                                                    </div>
+                                                    <div class="form-text">{{ __('This means the customer has never had a successful paid plan subscription before.') }}</div>
+                                                </div>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-lg-6">
+                                <div class="card border h-100 mb-0">
+                                    <div class="card-header bg-light-subtle">
+                                        <h6 class="card-title mb-1">{{ __('Schedule') }}</h6>
+                                        <p class="text-muted small mb-0">{{ __('These date windows use the app timezone: :timezone.', ['timezone' => config('app.timezone')]) }}</p>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row g-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label">{{ __('Starts At') }}</label>
+                                                <input type="datetime-local" class="form-control @error('startsAtLocal') is-invalid @enderror" wire:model.defer="startsAtLocal">
+                                                @error('startsAtLocal') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">{{ __('Ends At') }}</label>
+                                                <input type="datetime-local" class="form-control @error('endsAtLocal') is-invalid @enderror" wire:model.defer="endsAtLocal">
+                                                @error('endsAtLocal') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @if ($this->isRecurringTarget())
+                                <div class="col-12">
+                                    <div class="card border-warning mb-0">
+                                        <div class="card-header bg-warning-subtle">
+                                            <h6 class="card-title mb-1">{{ __('Recurring Behavior') }}</h6>
+                                            <p class="text-muted small mb-0">{{ __('Only provider-compatible recurring coupon modes are available for plan and storage subscriptions.') }}</p>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="alert alert-warning mb-3">
+                                                <div class="fw-semibold mb-1">{{ __('Current FIB recurring support') }}</div>
+                                                <div class="small">{{ $this->recurringDurationHelpText() }}</div>
+                                            </div>
+
+                                            @if ($this->selectedRecurringDurationCompatibilityMessage())
+                                                <div class="alert alert-danger mb-3">
+                                                    <div class="fw-semibold mb-1">{{ __('This coupon uses a legacy recurring duration') }}</div>
+                                                    <div class="small">{{ $this->selectedRecurringDurationCompatibilityMessage() }}</div>
+                                                    <div class="small mt-2">{{ __('Select the supported forever recurring option below before saving changes.') }}</div>
+                                                </div>
+                                            @endif
+
+                                            <label class="form-label">{{ __('Supported recurring duration') }}</label>
+                                            <div class="vstack gap-2">
+                                                @foreach ($this->durationOptions() as $durationCode => $durationLabel)
+                                                    <label class="border rounded-3 p-3 d-flex gap-2 align-items-start">
+                                                        <input class="form-check-input mt-1" type="radio" value="{{ $durationCode }}" wire:model.defer="durationType">
+                                                        <span>
+                                                            <span class="fw-semibold d-block">{{ $durationLabel }}</span>
+                                                            <span class="text-muted small d-block">{{ __('Use one discounted recurring amount for every eligible renewal cycle.') }}</span>
+                                                        </span>
+                                                    </label>
+                                                @endforeach
+                                            </div>
+                                            @error('durationType') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+
+                                            <div class="mt-3 small text-muted">
+                                                <div class="fw-semibold text-body mb-1">{{ __('Not supported yet') }}</div>
+                                                <div>{{ $this->recurringUnsupportedHelpText() }}</div>
+                                                <div class="d-flex flex-wrap gap-2 mt-2">
+                                                    @foreach ($this->unsupportedRecurringDurationOptions() as $unsupportedDuration)
+                                                        <span class="badge bg-body text-body border">{{ $unsupportedDuration }}</span>
+                                                    @endforeach
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endif
 
                             <div class="col-12">
-                                <label class="form-label">{{ __('Description') }}</label>
-                                <textarea class="form-control @error('description') is-invalid @enderror" rows="2" wire:model.defer="description" placeholder="{{ __('Optional internal or customer-facing description') }}"></textarea>
-                                @error('description') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-
-                            <div class="col-md-3">
-                                <label class="form-label">{{ __('Discount Type') }}</label>
-                                <select class="form-select @error('discountType') is-invalid @enderror" wire:model.defer="discountType">
-                                    @foreach ($this->discountTypeOptions() as $discountCode => $discountLabel)
-                                        <option value="{{ $discountCode }}">{{ $discountLabel }}</option>
-                                    @endforeach
-                                </select>
-                                @error('discountType') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">{{ __('Discount Value') }}</label>
-                                <input type="number" min="0.01" step="0.01" class="form-control @error('discountValue') is-invalid @enderror" wire:model.defer="discountValue">
-                                @error('discountValue') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">{{ __('Duration') }}</label>
-                                <select class="form-select @error('durationType') is-invalid @enderror" wire:model.live="durationType">
-                                    @foreach ($this->durationOptions() as $durationCode => $durationLabel)
-                                        <option value="{{ $durationCode }}">{{ $durationLabel }}</option>
-                                    @endforeach
-                                </select>
-                                @error('durationType') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">{{ __('Duration Cycles') }}</label>
-                                <input type="number" min="1" class="form-control @error('durationCycles') is-invalid @enderror" wire:model.defer="durationCycles" @disabled($durationType !== 'first_n_cycles')>
-                                <div class="form-text">{{ __('Used only for first N cycles.') }}</div>
-                                @error('durationCycles') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-
-                            <div class="col-md-4">
-                                <label class="form-label">{{ __('Allowed Item Codes') }}</label>
-                                <input type="text" class="form-control @error('appliesToCodesCsv') is-invalid @enderror" wire:model.defer="appliesToCodesCsv" placeholder="{{ __('student, pro, premium-10240') }}">
-                                <div class="form-text">{{ __('Comma-separated plan, storage, or add-on codes. Leave blank for all eligible items.') }}</div>
-                                @error('appliesToCodesCsv') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">{{ __('Allowed Billing Cycles') }}</label>
-                                <input type="text" class="form-control @error('appliesToBillingCyclesCsv') is-invalid @enderror" wire:model.defer="appliesToBillingCyclesCsv" placeholder="{{ __('monthly, yearly') }}">
-                                <div class="form-text">{{ __('Allowed values: monthly, yearly, hourly.') }}</div>
-                                @error('appliesToBillingCyclesCsv') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">{{ __('Minimum Amount (IQD)') }}</label>
-                                <input type="number" min="1" step="250" class="form-control @error('minimumAmountIqd') is-invalid @enderror" wire:model.defer="minimumAmountIqd">
-                                @error('minimumAmountIqd') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-
-                            <div class="col-md-3">
-                                <label class="form-label">{{ __('Max Total Uses') }}</label>
-                                <input type="number" min="1" class="form-control @error('maxTotalUses') is-invalid @enderror" wire:model.defer="maxTotalUses">
-                                @error('maxTotalUses') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">{{ __('Max Uses Per Customer') }}</label>
-                                <input type="number" min="1" class="form-control @error('maxUsesPerCustomer') is-invalid @enderror" wire:model.defer="maxUsesPerCustomer">
-                                @error('maxUsesPerCustomer') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">{{ __('Starts At') }}</label>
-                                <input type="datetime-local" class="form-control @error('startsAtLocal') is-invalid @enderror" wire:model.defer="startsAtLocal">
-                                @error('startsAtLocal') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">{{ __('Ends At') }}</label>
-                                <input type="datetime-local" class="form-control @error('endsAtLocal') is-invalid @enderror" wire:model.defer="endsAtLocal">
-                                @error('endsAtLocal') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-
-                            <div class="col-md-3">
-                                <div class="form-check form-switch mt-4 pt-2">
-                                    <input class="form-check-input" type="checkbox" role="switch" wire:model.defer="isActive" id="couponIsActive">
-                                    <label class="form-check-label" for="couponIsActive">{{ __('Active') }}</label>
+                                <div class="card border mb-0">
+                                    <div class="card-header bg-light-subtle">
+                                        <h6 class="card-title mb-1">{{ __('Advanced Notes') }}</h6>
+                                        <p class="text-muted small mb-0">{{ __('Optional internal metadata for later automation or reporting.') }}</p>
+                                    </div>
+                                    <div class="card-body">
+                                        <label class="form-label">{{ __('Metadata JSON') }}</label>
+                                        <textarea class="form-control @error('metadataJson') is-invalid @enderror" rows="4" wire:model.defer="metadataJson" placeholder='{"notes":"Internal campaign"}'></textarea>
+                                        @error('metadataJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-check form-switch mt-4 pt-2">
-                                    <input class="form-check-input" type="checkbox" role="switch" wire:model.defer="isPublic" id="couponIsPublic">
-                                    <label class="form-check-label" for="couponIsPublic">{{ __('Public') }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-check form-switch mt-4 pt-2">
-                                    <input class="form-check-input" type="checkbox" role="switch" wire:model.defer="isStackable" id="couponIsStackable">
-                                    <label class="form-check-label" for="couponIsStackable">{{ __('Stackable') }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-check form-switch mt-4 pt-2">
-                                    <input class="form-check-input" type="checkbox" role="switch" wire:model.defer="firstTimeSubscribersOnly" id="couponFirstTimeOnly">
-                                    <label class="form-check-label" for="couponFirstTimeOnly">{{ __('First-time plan subscribers only') }}</label>
-                                </div>
-                            </div>
-
-                            <div class="col-md-3">
-                                <label class="form-label">{{ __('Currency') }}</label>
-                                <input type="text" class="form-control @error('currency') is-invalid @enderror" wire:model.defer="currency" maxlength="3">
-                                @error('currency') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="col-md-9">
-                                <label class="form-label">{{ __('Metadata JSON') }}</label>
-                                <textarea class="form-control @error('metadataJson') is-invalid @enderror" rows="4" wire:model.defer="metadataJson" placeholder='{"notes":"Internal campaign"}'></textarea>
-                                @error('metadataJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                         </div>
                     </div>

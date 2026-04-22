@@ -2,12 +2,17 @@
 
 namespace App\Support\Admin;
 
+use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Enums\CouponDiscountType;
 use App\Enums\CouponDurationType;
 use App\Enums\CouponRedemptionStatus;
 use App\Enums\CouponTargetType;
 use App\Models\Coupon;
 use App\Models\CouponRedemption;
+use App\Models\CreditProduct;
+use App\Models\ServicePlan;
+use App\Models\StoragePlan;
+use App\Services\Coupons\CouponService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
@@ -45,16 +50,17 @@ trait ManagesPaymentCouponsPage
     public bool $isStackable = false;
     public string $discountType = 'percent';
     public $discountValue = '';
-    public string $targetType = 'all';
-    public string $appliesToCodesCsv = '';
-    public string $appliesToBillingCyclesCsv = '';
+    public string $targetType = 'plan_subscription';
+    public array $selectedServicePlanCodes = [];
+    public array $selectedStoragePlanCodes = [];
+    public array $selectedAddonCodes = [];
+    public array $selectedBillingCycles = [];
     public bool $firstTimeSubscribersOnly = false;
-    public string $durationType = 'once';
+    public string $durationType = 'forever';
     public $durationCycles = '';
     public $maxTotalUses = '';
     public $maxUsesPerCustomer = '';
     public $minimumAmountIqd = '';
-    public string $currency = 'IQD';
     public string $startsAtLocal = '';
     public string $endsAtLocal = '';
     public string $metadataJson = '';
@@ -75,6 +81,11 @@ trait ManagesPaymentCouponsPage
     public function updatedTargetFilter(): void
     {
         $this->resetPage();
+    }
+
+    public function updatedTargetType(string $value): void
+    {
+        $this->applyTargetMatrix($value);
     }
 
     public function updatedDurationType(string $value): void
@@ -121,14 +132,19 @@ trait ManagesPaymentCouponsPage
             'discountType' => 'required|string|in:percent,fixed',
             'discountValue' => 'required|numeric|min:0.01',
             'targetType' => 'required|string|in:all,plan_subscription,storage_subscription,addon_credits',
-            'appliesToCodesCsv' => 'nullable|string',
-            'appliesToBillingCyclesCsv' => 'nullable|string',
-            'durationType' => 'required|string|in:once,first_cycle,first_n_cycles,forever',
+            'selectedServicePlanCodes' => 'array',
+            'selectedServicePlanCodes.*' => 'string|exists:service_plans,code',
+            'selectedStoragePlanCodes' => 'array',
+            'selectedStoragePlanCodes.*' => 'string|exists:storage_plans,code',
+            'selectedAddonCodes' => 'array',
+            'selectedAddonCodes.*' => 'string|exists:credit_products,code',
+            'selectedBillingCycles' => 'array',
+            'selectedBillingCycles.*' => 'string',
+            'durationType' => 'nullable|string|in:once,first_cycle,first_n_cycles,forever',
             'durationCycles' => 'nullable|integer|min:1|max:365',
             'maxTotalUses' => 'nullable|integer|min:1',
             'maxUsesPerCustomer' => 'nullable|integer|min:1',
             'minimumAmountIqd' => 'nullable|integer|min:1',
-            'currency' => 'required|string|size:3',
             'startsAtLocal' => 'nullable|string',
             'endsAtLocal' => 'nullable|string',
             'metadataJson' => 'nullable|string',
@@ -226,6 +242,60 @@ trait ManagesPaymentCouponsPage
             ->get();
     }
 
+    #[Computed]
+    public function servicePlanChoices(): array
+    {
+        return ServicePlan::query()
+            ->where('is_active', true)
+            ->where('is_free', false)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(fn (ServicePlan $plan) => [
+                'code' => (string) $plan->code,
+                'name' => (string) $plan->name,
+                'credits' => (int) ($plan->monthly_credits ?? 0),
+                'monthly_price' => $this->formatCanonicalMoneyWithOptionalDisplay($plan->priceIqdForCycle('monthly')),
+                'yearly_price' => $this->formatCanonicalMoneyWithOptionalDisplay($plan->priceIqdForCycle('yearly')),
+            ])
+            ->values()
+            ->all();
+    }
+
+    #[Computed]
+    public function storagePlanChoices(): array
+    {
+        return StoragePlan::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->filter(fn (StoragePlan $plan) => $plan->priceIqdAmount() > 0)
+            ->map(fn (StoragePlan $plan) => [
+                'code' => (string) $plan->code,
+                'name' => (string) $plan->name,
+                'quota' => $this->formatStorageQuota($plan->quota_mb),
+                'price' => $this->formatCanonicalMoneyWithOptionalDisplay($plan->priceIqdAmount()),
+            ])
+            ->values()
+            ->all();
+    }
+
+    #[Computed]
+    public function addonChoices(): array
+    {
+        return CreditProduct::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(fn (CreditProduct $product) => [
+                'code' => (string) $product->code,
+                'name' => (string) $product->name,
+                'credits' => $this->formatCredits($product->credits_amount),
+                'price' => $this->formatCanonicalMoneyWithOptionalDisplay($product->priceIqdAmount()),
+            ])
+            ->values()
+            ->all();
+    }
+
     public function openCreateCouponModal(): void
     {
         $this->resetCouponForm();
@@ -245,19 +315,25 @@ trait ManagesPaymentCouponsPage
         $this->isStackable = (bool) $coupon->is_stackable;
         $this->discountType = (string) ($coupon->discount_type?->value ?? CouponDiscountType::PERCENT->value);
         $this->discountValue = (string) ($coupon->discount_value ?? '');
-        $this->targetType = (string) ($coupon->target_type?->value ?? CouponTargetType::ALL->value);
-        $this->appliesToCodesCsv = implode(', ', (array) ($coupon->applies_to_codes ?? []));
-        $this->appliesToBillingCyclesCsv = implode(', ', (array) ($coupon->applies_to_billing_cycles ?? []));
+        $this->targetType = (string) ($coupon->target_type?->value ?? CouponTargetType::PLAN_SUBSCRIPTION->value);
+        $this->selectedServicePlanCodes = $this->selectionValuesFromStoredCodes($coupon->applies_to_codes);
+        $this->selectedStoragePlanCodes = $this->selectionValuesFromStoredCodes($coupon->applies_to_codes);
+        $this->selectedAddonCodes = $this->selectionValuesFromStoredCodes($coupon->applies_to_codes);
+        $this->selectedBillingCycles = collect($coupon->applies_to_billing_cycles ?? [])
+            ->map(fn (mixed $value) => strtolower(trim((string) $value)))
+            ->filter()
+            ->values()
+            ->all();
         $this->firstTimeSubscribersOnly = (bool) $coupon->first_time_subscribers_only;
-        $this->durationType = (string) ($coupon->duration_type?->value ?? CouponDurationType::ONCE->value);
+        $this->durationType = (string) ($coupon->duration_type?->value ?? CouponDurationType::FOREVER->value);
         $this->durationCycles = $coupon->duration_cycles !== null ? (string) $coupon->duration_cycles : '';
         $this->maxTotalUses = $coupon->max_total_uses !== null ? (string) $coupon->max_total_uses : '';
         $this->maxUsesPerCustomer = $coupon->max_uses_per_customer !== null ? (string) $coupon->max_uses_per_customer : '';
         $this->minimumAmountIqd = $coupon->minimum_amount_iqd !== null ? (string) ((int) round((float) $coupon->minimum_amount_iqd)) : '';
-        $this->currency = strtoupper((string) ($coupon->currency ?? 'IQD'));
         $this->startsAtLocal = $coupon->starts_at?->timezone(config('app.timezone'))->format('Y-m-d\TH:i') ?? '';
         $this->endsAtLocal = $coupon->ends_at?->timezone(config('app.timezone'))->format('Y-m-d\TH:i') ?? '';
         $this->metadataJson = $this->encodeJsonTextarea($coupon->metadata);
+        $this->applyTargetMatrix($this->targetType, preserveExistingDuration: true);
         $this->resetErrorBag();
         $this->resetValidation();
 
@@ -270,6 +346,13 @@ trait ManagesPaymentCouponsPage
         $metadata = $this->decodeJsonTextarea($validated['metadataJson'] ?? '', 'metadataJson');
         $discountValue = (float) $validated['discountValue'];
         $discountType = $validated['discountType'];
+        $targetType = (string) $validated['targetType'];
+
+        if ($targetType === CouponTargetType::ALL->value) {
+            throw ValidationException::withMessages([
+                'targetType' => __('Choose a specific coupon target. One-time add-ons and recurring subscriptions do not share the same duration capabilities in the current billing flow.'),
+            ]);
+        }
 
         if ($discountType === CouponDiscountType::PERCENT->value && ($discountValue <= 0 || $discountValue > 100)) {
             throw ValidationException::withMessages([
@@ -277,8 +360,6 @@ trait ManagesPaymentCouponsPage
             ]);
         }
 
-        $allowedCodes = $this->normalizeCodeList($validated['appliesToCodesCsv'] ?? '');
-        $allowedCycles = $this->normalizeCycleList($validated['appliesToBillingCyclesCsv'] ?? '');
         $startsAt = $this->parseLocalDateTime($validated['startsAtLocal'] ?? '', 'startsAtLocal');
         $endsAt = $this->parseLocalDateTime($validated['endsAtLocal'] ?? '', 'endsAtLocal');
 
@@ -288,16 +369,19 @@ trait ManagesPaymentCouponsPage
             ]);
         }
 
-        $durationType = $validated['durationType'];
+        $allowedCodes = $this->selectedItemCodesForTarget($targetType);
+        $allowedCycles = $this->selectedBillingCyclesForTarget($targetType);
+        $durationType = $this->resolvedDurationTypeForTarget(
+            $targetType,
+            $validated['durationType'] ?? null,
+            $validated['durationCycles'] ?? null,
+        );
         $durationCycles = $durationType === CouponDurationType::FIRST_N_CYCLES->value
-            ? (int) ($validated['durationCycles'] ?: 0)
+            ? (int) ($validated['durationCycles'] ?? 0)
             : null;
-
-        if ($durationType === CouponDurationType::FIRST_N_CYCLES->value && $durationCycles < 1) {
-            throw ValidationException::withMessages([
-                'durationCycles' => __('Enter how many discounted cycles should be allowed.'),
-            ]);
-        }
+        $firstTimeSubscribersOnly = $targetType === CouponTargetType::PLAN_SUBSCRIPTION->value
+            ? (bool) $this->firstTimeSubscribersOnly
+            : false;
 
         $coupon = $this->editingCouponId
             ? Coupon::query()->findOrFail($this->editingCouponId)
@@ -312,16 +396,16 @@ trait ManagesPaymentCouponsPage
             'is_stackable' => (bool) $this->isStackable,
             'discount_type' => $discountType,
             'discount_value' => $discountValue,
-            'target_type' => $validated['targetType'],
+            'target_type' => $targetType,
             'applies_to_codes' => $allowedCodes !== [] ? $allowedCodes : null,
             'applies_to_billing_cycles' => $allowedCycles !== [] ? $allowedCycles : null,
-            'first_time_subscribers_only' => (bool) $this->firstTimeSubscribersOnly,
+            'first_time_subscribers_only' => $firstTimeSubscribersOnly,
             'duration_type' => $durationType,
             'duration_cycles' => $durationCycles,
             'max_total_uses' => $this->nullableInt($validated['maxTotalUses'] ?? null),
             'max_uses_per_customer' => $this->nullableInt($validated['maxUsesPerCustomer'] ?? null),
             'minimum_amount_iqd' => $this->nullableInt($validated['minimumAmountIqd'] ?? null),
-            'currency' => strtoupper($validated['currency']),
+            'currency' => 'IQD',
             'starts_at' => $startsAt,
             'ends_at' => $endsAt,
             'metadata' => $metadata,
@@ -388,23 +472,59 @@ trait ManagesPaymentCouponsPage
         $this->dispatch('payments-coupons:modal-hide', id: 'paymentCouponDeleteModal');
     }
 
-    public function targetOptions(): array
+    public function targetFilterOptions(): array
     {
         return [
-            CouponTargetType::ALL->value => __('All Checkout Types'),
+            'all' => __('All Targets'),
             CouponTargetType::PLAN_SUBSCRIPTION->value => __('Plan Subscription'),
             CouponTargetType::STORAGE_SUBSCRIPTION->value => __('Storage Subscription'),
             CouponTargetType::ADDON_CREDITS->value => __('Add-on Payment'),
         ];
     }
 
+    public function targetOptions(): array
+    {
+        $options = [
+            CouponTargetType::PLAN_SUBSCRIPTION->value => __('Plan Subscription'),
+            CouponTargetType::STORAGE_SUBSCRIPTION->value => __('Storage Subscription'),
+            CouponTargetType::ADDON_CREDITS->value => __('Add-on Payment'),
+        ];
+
+        if ($this->targetType === CouponTargetType::ALL->value) {
+            $options = [CouponTargetType::ALL->value => __('All Checkout Types (legacy)')] + $options;
+        }
+
+        return $options;
+    }
+
+    public function targetLabel(?string $targetType): string
+    {
+        return match ($targetType) {
+            CouponTargetType::PLAN_SUBSCRIPTION->value => __('Plan Subscription'),
+            CouponTargetType::STORAGE_SUBSCRIPTION->value => __('Storage Subscription'),
+            CouponTargetType::ADDON_CREDITS->value => __('Add-on Payment'),
+            default => __('All Checkout Types (legacy)'),
+        };
+    }
+
     public function durationOptions(): array
     {
+        if ($this->isRecurringTarget()) {
+            return [
+                CouponDurationType::FOREVER->value => __('Discount every recurring cycle'),
+            ];
+        }
+
         return [
-            CouponDurationType::ONCE->value => __('One-Time Checkout'),
-            CouponDurationType::FIRST_CYCLE->value => __('First Cycle Only'),
-            CouponDurationType::FIRST_N_CYCLES->value => __('First N Cycles'),
-            CouponDurationType::FOREVER->value => __('Forever'),
+            CouponDurationType::ONCE->value => __('Apply once to this one-time checkout'),
+        ];
+    }
+
+    public function unsupportedRecurringDurationOptions(): array
+    {
+        return [
+            __('First cycle only'),
+            __('First N cycles'),
         ];
     }
 
@@ -414,6 +534,67 @@ trait ManagesPaymentCouponsPage
             CouponDiscountType::PERCENT->value => __('Percentage'),
             CouponDiscountType::FIXED->value => __('Fixed Amount (IQD)'),
         ];
+    }
+
+    public function billingCycleOptions(): array
+    {
+        return $this->billingCycleOptionsForTarget($this->targetType);
+    }
+
+    public function isRecurringTarget(?string $targetType = null): bool
+    {
+        return in_array($targetType ?? $this->targetType, [
+            CouponTargetType::PLAN_SUBSCRIPTION->value,
+            CouponTargetType::STORAGE_SUBSCRIPTION->value,
+        ], true);
+    }
+
+    public function isPlanTarget(?string $targetType = null): bool
+    {
+        return ($targetType ?? $this->targetType) === CouponTargetType::PLAN_SUBSCRIPTION->value;
+    }
+
+    public function isStorageTarget(?string $targetType = null): bool
+    {
+        return ($targetType ?? $this->targetType) === CouponTargetType::STORAGE_SUBSCRIPTION->value;
+    }
+
+    public function isAddonTarget(?string $targetType = null): bool
+    {
+        return ($targetType ?? $this->targetType) === CouponTargetType::ADDON_CREDITS->value;
+    }
+
+    public function showBillingCycleRestrictions(): bool
+    {
+        return $this->isRecurringTarget();
+    }
+
+    public function showFirstTimeSubscriberRule(): bool
+    {
+        return $this->isPlanTarget();
+    }
+
+    public function recurringDurationHelpText(): string
+    {
+        return __('The current FIB subscription checkout creates one fixed recurring amount. That means a recurring coupon can safely discount every cycle, but it cannot automatically switch from discounted early cycles to full-price later renewals.');
+    }
+
+    public function recurringUnsupportedHelpText(): string
+    {
+        return __('Not supported with the current FIB recurring flow: first-cycle-only recurring discounts and first-N-cycle recurring discounts.');
+    }
+
+    public function selectedRecurringDurationCompatibilityMessage(): ?string
+    {
+        if (! $this->isRecurringTarget()) {
+            return null;
+        }
+
+        return app(CouponService::class)->recurringDurationCompatibilityMessage(
+            $this->durationType,
+            'fib',
+            $this->durationCycles !== '' ? (int) $this->durationCycles : null,
+        );
     }
 
     public function describeCouponWindow(Coupon $coupon): string
@@ -441,12 +622,18 @@ trait ManagesPaymentCouponsPage
 
     public function describeCouponDuration(Coupon $coupon): string
     {
-        return match ($coupon->duration_type) {
+        $label = match ($coupon->duration_type) {
             CouponDurationType::FIRST_CYCLE => __('First cycle only'),
             CouponDurationType::FIRST_N_CYCLES => __('First :count cycles', ['count' => number_format((int) ($coupon->duration_cycles ?? 1))]),
             CouponDurationType::FOREVER => __('Every eligible cycle'),
             default => __('One checkout only'),
         };
+
+        if ($this->couponHasUnsupportedRecurringDuration($coupon)) {
+            return __('Unsupported for the current FIB recurring flow: :duration', ['duration' => $label]);
+        }
+
+        return $label;
     }
 
     public function describeCouponRestrictions(Coupon $coupon): string
@@ -472,6 +659,12 @@ trait ManagesPaymentCouponsPage
         return $parts === [] ? __('No extra restrictions') : implode(' | ', $parts);
     }
 
+    public function couponHasUnsupportedRecurringDuration(Coupon $coupon): bool
+    {
+        return $this->isRecurringTarget($coupon->target_type?->value)
+            && ($coupon->duration_type ?? CouponDurationType::ONCE) !== CouponDurationType::FOREVER;
+    }
+
     public function resetCouponForm(): void
     {
         $this->editingCouponId = null;
@@ -483,48 +676,216 @@ trait ManagesPaymentCouponsPage
         $this->isStackable = false;
         $this->discountType = CouponDiscountType::PERCENT->value;
         $this->discountValue = '';
-        $this->targetType = CouponTargetType::ALL->value;
-        $this->appliesToCodesCsv = '';
-        $this->appliesToBillingCyclesCsv = '';
+        $this->targetType = CouponTargetType::PLAN_SUBSCRIPTION->value;
+        $this->selectedServicePlanCodes = [];
+        $this->selectedStoragePlanCodes = [];
+        $this->selectedAddonCodes = [];
+        $this->selectedBillingCycles = [];
         $this->firstTimeSubscribersOnly = false;
-        $this->durationType = CouponDurationType::ONCE->value;
+        $this->durationType = CouponDurationType::FOREVER->value;
         $this->durationCycles = '';
         $this->maxTotalUses = '';
         $this->maxUsesPerCustomer = '';
         $this->minimumAmountIqd = '';
-        $this->currency = 'IQD';
         $this->startsAtLocal = '';
         $this->endsAtLocal = '';
         $this->metadataJson = '';
+        $this->applyTargetMatrix($this->targetType);
         $this->resetErrorBag();
         $this->resetValidation();
     }
 
-    protected function normalizeCodeList(string $value): array
+    protected function applyTargetMatrix(?string $targetType = null, bool $preserveExistingDuration = false): void
     {
-        return collect(preg_split('/[\r\n,]+/', $value) ?: [])
-            ->map(fn (string $item) => strtoupper(trim($item)))
+        $targetType = (string) ($targetType ?? $this->targetType);
+        $this->targetType = $targetType;
+
+        if ($this->isPlanTarget($targetType)) {
+            $this->selectedStoragePlanCodes = [];
+            $this->selectedAddonCodes = [];
+            $this->selectedBillingCycles = array_values(array_intersect(
+                $this->selectedBillingCycles,
+                array_keys($this->billingCycleOptionsForTarget($targetType))
+            ));
+            $this->normalizeRecurringDurationState($preserveExistingDuration);
+
+            return;
+        }
+
+        if ($this->isStorageTarget($targetType)) {
+            $this->selectedServicePlanCodes = [];
+            $this->selectedAddonCodes = [];
+            $this->selectedBillingCycles = array_values(array_intersect(
+                $this->selectedBillingCycles,
+                array_keys($this->billingCycleOptionsForTarget($targetType))
+            ));
+            $this->firstTimeSubscribersOnly = false;
+            $this->normalizeRecurringDurationState($preserveExistingDuration);
+
+            return;
+        }
+
+        if ($this->isAddonTarget($targetType)) {
+            $this->selectedServicePlanCodes = [];
+            $this->selectedStoragePlanCodes = [];
+            $this->selectedBillingCycles = [];
+            $this->firstTimeSubscribersOnly = false;
+            $this->durationType = CouponDurationType::ONCE->value;
+            $this->durationCycles = '';
+
+            return;
+        }
+
+        $this->selectedServicePlanCodes = [];
+        $this->selectedStoragePlanCodes = [];
+        $this->selectedAddonCodes = [];
+        $this->selectedBillingCycles = [];
+        $this->firstTimeSubscribersOnly = false;
+        $this->durationType = CouponDurationType::ONCE->value;
+        $this->durationCycles = '';
+    }
+
+    protected function normalizeRecurringDurationState(bool $preserveExistingDuration = false): void
+    {
+        if (! $preserveExistingDuration) {
+            $this->durationType = CouponDurationType::FOREVER->value;
+            $this->durationCycles = '';
+
+            return;
+        }
+
+        $durationType = CouponDurationType::tryFrom((string) $this->durationType);
+
+        if (! $durationType) {
+            $this->durationType = CouponDurationType::FOREVER->value;
+            $this->durationCycles = '';
+
+            return;
+        }
+
+        if ($durationType !== CouponDurationType::FIRST_N_CYCLES) {
+            $this->durationCycles = '';
+        }
+    }
+
+    protected function selectionValuesFromStoredCodes(?array $codes): array
+    {
+        return collect($codes ?? [])
+            ->map(fn (mixed $value) => strtolower(trim((string) $value)))
             ->filter()
             ->values()
             ->all();
     }
 
-    protected function normalizeCycleList(string $value): array
+    protected function selectedItemCodesForTarget(string $targetType): array
     {
-        $cycles = collect(preg_split('/[\r\n,]+/', $value) ?: [])
-            ->map(fn (string $item) => strtolower(trim($item)))
-            ->filter()
-            ->values();
+        $selected = match ($targetType) {
+            CouponTargetType::PLAN_SUBSCRIPTION->value => $this->selectedServicePlanCodes,
+            CouponTargetType::STORAGE_SUBSCRIPTION->value => $this->selectedStoragePlanCodes,
+            CouponTargetType::ADDON_CREDITS->value => $this->selectedAddonCodes,
+            default => [],
+        };
 
-        $invalid = $cycles->reject(fn (string $item) => in_array($item, ['monthly', 'yearly', 'hourly'], true))->values();
+        return $this->normalizeCodeSelection($selected);
+    }
 
-        if ($invalid->isNotEmpty()) {
-            throw ValidationException::withMessages([
-                'appliesToBillingCyclesCsv' => __('Unsupported billing cycles: :cycles', ['cycles' => $invalid->implode(', ')]),
-            ]);
+    protected function selectedBillingCyclesForTarget(string $targetType): array
+    {
+        if (! $this->isRecurringTarget($targetType)) {
+            return [];
         }
 
-        return $cycles->all();
+        $allowed = array_keys($this->billingCycleOptionsForTarget($targetType));
+
+        return collect($this->selectedBillingCycles)
+            ->map(fn (mixed $value) => strtolower(trim((string) $value)))
+            ->filter()
+            ->when(
+                collect($this->selectedBillingCycles)
+                    ->map(fn (mixed $value) => strtolower(trim((string) $value)))
+                    ->reject(fn (string $value) => in_array($value, $allowed, true))
+                    ->isNotEmpty(),
+                function ($cycles) use ($allowed) {
+                    $invalid = collect($this->selectedBillingCycles)
+                        ->map(fn (mixed $value) => strtolower(trim((string) $value)))
+                        ->reject(fn (string $value) => in_array($value, $allowed, true))
+                        ->implode(', ');
+
+                    throw ValidationException::withMessages([
+                        'selectedBillingCycles' => __('Unsupported billing cycles for the selected target: :cycles', ['cycles' => $invalid]),
+                    ]);
+                }
+            )
+            ->values()
+            ->all();
+    }
+
+    protected function resolvedDurationTypeForTarget(string $targetType, mixed $durationType, mixed $durationCycles): string
+    {
+        if ($this->isAddonTarget($targetType)) {
+            return CouponDurationType::ONCE->value;
+        }
+
+        $durationType = CouponDurationType::tryFrom((string) $durationType) ?? CouponDurationType::ONCE;
+        $durationCycles = $durationCycles !== '' && $durationCycles !== null ? (int) $durationCycles : null;
+
+        if ($this->isRecurringTarget($targetType)) {
+            $message = app(CouponService::class)->recurringDurationCompatibilityMessage($durationType, 'fib', $durationCycles);
+
+            if ($message !== null) {
+                throw ValidationException::withMessages([
+                    'durationType' => $message,
+                ]);
+            }
+
+            return CouponDurationType::FOREVER->value;
+        }
+
+        return $durationType->value;
+    }
+
+    protected function normalizeCodeSelection(array $values): array
+    {
+        return collect($values)
+            ->map(fn (mixed $value) => strtoupper(trim((string) $value)))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function billingCycleOptionsForTarget(string $targetType): array
+    {
+        if ($this->isPlanTarget($targetType)) {
+            $options = [
+                'monthly' => __('Monthly'),
+                'yearly' => __('Yearly'),
+            ];
+
+            if ($this->hourlyTestingEnabled()) {
+                $options['hourly'] = __('Hourly Test');
+            }
+
+            return $options;
+        }
+
+        if ($this->isStorageTarget($targetType)) {
+            $options = [
+                'monthly' => __('Monthly'),
+            ];
+
+            if ($this->hourlyTestingEnabled()) {
+                $options['hourly'] = __('Hourly Test');
+            }
+
+            return $options;
+        }
+
+        return [];
+    }
+
+    protected function hourlyTestingEnabled(): bool
+    {
+        return app(FibSubscriptionService::class)->hourlyTestingEnabled();
     }
 
     protected function parseLocalDateTime(?string $value, string $field): ?Carbon
