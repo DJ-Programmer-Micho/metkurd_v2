@@ -87,7 +87,9 @@ class extends Component
     $chargeDisplay = (array) data_get($snapshot, 'display', []);
     $baseDisplay = (array) data_get($snapshot, 'base_display', []);
     $feeQuote = (array) data_get($snapshot, 'fee_quote', data_get($payment->meta, 'fee_quote', []));
-    $validUntilLabel = $payment->valid_until?->timezone(config('app.timezone'))->format('Y-m-d H:i');
+    $baghdadTimezone = 'Asia/Baghdad';
+    $baghdadTimezoneLabel = __('Baghdad Time (GMT+3)');
+    $validUntilLabel = $payment->valid_until?->timezone($baghdadTimezone)->format('Y-m-d H:i');
     $displayPrimary = (string) data_get($chargeDisplay, 'iqd_label', $billing->formatAmount((int) round((float) $payment->amount), 'IQD'));
     $displayEstimate = (string) data_get($chargeDisplay, 'display_label', '');
     $displayCanonical = (string) data_get(
@@ -129,7 +131,7 @@ class extends Component
     $providerObjectLabelLower = $isSubscriptionCheckout ? __('subscription checkout') : __('payment');
     $providerReferenceLabel = $isSubscriptionCheckout ? __('Subscription ID') : __('Payment ID');
     $providerReferenceValue = $payment->providerReference();
-    $activeUntilLabel = $payment->active_until?->timezone(config('app.timezone'))->format('Y-m-d H:i');
+    $activeUntilLabel = $payment->active_until?->timezone($baghdadTimezone)->format('Y-m-d H:i');
     $knownProviderStatus = $fibSubscriptions->normalizeProviderStatus($payment->providerStatusLabel());
     $cancelResult = (string) data_get($payment->cancel_response, 'result', '');
     $showCancel = $payment->status->value === 'awaiting_customer_action'
@@ -228,11 +230,21 @@ class extends Component
                                 @endif
 
                                 <dt class="col-sm-5 text-muted">{{ __('Valid Until') }}</dt>
-                                <dd class="col-sm-7">{{ $validUntilLabel ?: __('Not provided') }}</dd>
+                                <dd class="col-sm-7">
+                                    @if ($validUntilLabel)
+                                        <span>{{ $validUntilLabel }}</span>
+                                        <span class="d-block text-muted">{{ $baghdadTimezoneLabel }}</span>
+                                    @else
+                                        {{ __('Not provided') }}
+                                    @endif
+                                </dd>
 
                                 @if ($isSubscriptionCheckout && $activeUntilLabel)
                                     <dt class="col-sm-5 text-muted">{{ __('Active Until') }}</dt>
-                                    <dd class="col-sm-7">{{ $activeUntilLabel }}</dd>
+                                    <dd class="col-sm-7">
+                                        <span>{{ $activeUntilLabel }}</span>
+                                        <span class="d-block text-muted">{{ $baghdadTimezoneLabel }}</span>
+                                    </dd>
                                 @endif
                             </dl>
 
