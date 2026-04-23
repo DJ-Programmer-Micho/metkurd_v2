@@ -40,8 +40,8 @@ class extends Component
     </div>
 
     <div class="alert alert-warning">
-        <div class="fw-semibold mb-1">{{ __('Recurring FIB limitation') }}</div>
-        <div>{{ __('The current FIB recurring API supports one fixed subscription amount per checkout. New recurring coupons therefore use forever-priced discounts only, and any older first-cycle or first-N-cycle recurring coupons are shown here as legacy unsupported configurations until they are updated.') }}</div>
+        <div class="fw-semibold mb-1">{{ __('Recurring provider limitation') }}</div>
+        <div>{{ __('Recurring coupon duration compatibility depends on the selected payment method. Methods that only support one fixed recurring amount per checkout can safely use forever discounts, while limited-cycle recurring discounts stay disabled until provider support is available.') }}</div>
         <div class="small mt-1">{{ __('Coupon date windows on this page are entered and displayed in :timezone.', ['timezone' => config('app.timezone')]) }}</div>
     </div>
 
@@ -406,6 +406,22 @@ class extends Component
                                         <p class="text-muted small mb-0">{{ __('Choose which checkout type this coupon can be used with and optionally narrow it to specific plans or packs.') }}</p>
                                     </div>
                                     <div class="card-body">
+                                        <div class="mb-3">
+                                            <label class="form-label">{{ __('Allowed Payment Methods') }}</label>
+                                            <div class="form-text mb-2">{{ __('Choose where this coupon can be redeemed. Checkout pages only show coupon input when the selected payment method is eligible.') }}</div>
+                                            <div class="d-flex flex-wrap gap-2">
+                                                @foreach ($this->paymentMethodOptions() as $methodCode => $methodLabel)
+                                                    <label class="border rounded-3 px-3 py-2 d-inline-flex align-items-center gap-2 cursor-pointer">
+                                                        <input class="form-check-input mt-0" type="checkbox" value="{{ $methodCode }}" wire:model.defer="selectedPaymentMethods">
+                                                        <span class="small fw-semibold">{{ $methodLabel }}</span>
+                                                    </label>
+                                                @endforeach
+                                            </div>
+                                            @error('selectedPaymentMethods') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+                                            @error('selectedPaymentMethods.*') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
+                                        </div>
+
+                                        <div class="border-top pt-3">
                                         @if ($this->isPlanTarget())
                                             <div class="mb-3">
                                                 <label class="form-label">{{ __('Eligible Service Plans') }}</label>
@@ -492,6 +508,7 @@ class extends Component
                                                 <div class="small">{{ __('Add-on coupons apply once to a single one-time checkout, so recurring cycle restrictions and recurring duration settings are not used here.') }}</div>
                                             </div>
                                         @endif
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -500,7 +517,7 @@ class extends Component
                                 <div class="card border h-100 mb-0">
                                     <div class="card-header bg-light-subtle">
                                         <h6 class="card-title mb-1">{{ __('Discount') }}</h6>
-                                        <p class="text-muted small mb-0">{{ __('All discounts are calculated server-side from the canonical IQD checkout amount before the FIB request is sent.') }}</p>
+                                        <p class="text-muted small mb-0">{{ __('All discounts are calculated server-side from the canonical IQD checkout amount before the provider checkout request is sent.') }}</p>
                                     </div>
                                     <div class="card-body">
                                         <div class="row g-3">
@@ -598,7 +615,7 @@ class extends Component
                                         </div>
                                         <div class="card-body">
                                             <div class="alert alert-warning mb-3">
-                                                <div class="fw-semibold mb-1">{{ __('Current FIB recurring support') }}</div>
+                                                <div class="fw-semibold mb-1">{{ __('Current recurring support') }}</div>
                                                 <div class="small">{{ $this->recurringDurationHelpText() }}</div>
                                             </div>
 
@@ -606,7 +623,7 @@ class extends Component
                                                 <div class="alert alert-danger mb-3">
                                                     <div class="fw-semibold mb-1">{{ __('This coupon uses a legacy recurring duration') }}</div>
                                                     <div class="small">{{ $this->selectedRecurringDurationCompatibilityMessage() }}</div>
-                                                    <div class="small mt-2">{{ __('Select the supported forever recurring option below before saving changes.') }}</div>
+                                                    <div class="small mt-2">{{ __('Select a duration that is compatible with the currently selected payment methods before saving changes.') }}</div>
                                                 </div>
                                             @endif
 
@@ -624,15 +641,29 @@ class extends Component
                                             </div>
                                             @error('durationType') <div class="text-danger small mt-2">{{ $message }}</div> @enderror
 
-                                            <div class="mt-3 small text-muted">
-                                                <div class="fw-semibold text-body mb-1">{{ __('Not supported yet') }}</div>
-                                                <div>{{ $this->recurringUnsupportedHelpText() }}</div>
-                                                <div class="d-flex flex-wrap gap-2 mt-2">
-                                                    @foreach ($this->unsupportedRecurringDurationOptions() as $unsupportedDuration)
-                                                        <span class="badge bg-body text-body border">{{ $unsupportedDuration }}</span>
-                                                    @endforeach
+                                            @if ($durationType === 'first_n_cycles')
+                                                <div class="mt-3">
+                                                    <label class="form-label">{{ __('Discounted Cycles Count') }}</label>
+                                                    <input type="number"
+                                                           min="1"
+                                                           max="365"
+                                                           class="form-control @error('durationCycles') is-invalid @enderror"
+                                                           wire:model.defer="durationCycles">
+                                                    @error('durationCycles') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                                 </div>
-                                            </div>
+                                            @endif
+
+                                            @if ($this->unsupportedRecurringDurationOptions() !== [])
+                                                <div class="mt-3 small text-muted">
+                                                    <div class="fw-semibold text-body mb-1">{{ __('Not supported yet') }}</div>
+                                                    <div>{{ $this->recurringUnsupportedHelpText() }}</div>
+                                                    <div class="d-flex flex-wrap gap-2 mt-2">
+                                                        @foreach ($this->unsupportedRecurringDurationOptions() as $unsupportedDuration)
+                                                            <span class="badge bg-body text-body border">{{ $unsupportedDuration }}</span>
+                                                        @endforeach
+                                                    </div>
+                                                </div>
+                                            @endif
                                         </div>
                                     </div>
                                 </div>

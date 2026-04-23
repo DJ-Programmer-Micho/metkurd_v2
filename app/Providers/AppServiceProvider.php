@@ -99,16 +99,19 @@ class AppServiceProvider extends ServiceProvider
             return $this->hetzner_S3_domain.'web-setting/users/user.png';
         });
         $this->app->singleton('whatsapp-logo', function () {
-            return $this->hetzner_S3_domain.'web-setting/social-icons/whats.png';
+            return asset('app/images/icons/whats.png');
         });
         $this->app->singleton('telegram-logo', function () {
-            return $this->hetzner_S3_domain.'web-setting/social-icons/tele.png';
+            return asset('app/images/icons/tele.png');
         });
         $this->app->singleton('sms-logo', function () {
-            return $this->hetzner_S3_domain.'web-setting/social-icons/sms.png';
+            return asset('app/images/icons/sms.png');
         });
         $this->app->singleton('glocales', function () {
             return config('app.locales'); 
+        });
+        $this->app->singleton('g_review', function () {
+            return asset('app/logo/google_review.png'); 
         });
 
         $this->app->singleton('aurl', function () {

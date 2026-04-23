@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class CustomerProfile extends Model
@@ -36,9 +37,47 @@ class CustomerProfile extends Model
 
     public function getAvatarUrlAttribute(): ?string
     {
-        if (!$this->avatar) return null;
-        return Str::startsWith($this->avatar, ['http://','https://'])
-            ? $this->avatar
-            : app('cloudfront').$this->avatar;
+        $avatar = trim((string) ($this->avatar ?? ''));
+
+        if ($avatar === '') {
+            return null;
+        }
+
+        if (Str::startsWith($avatar, ['http://', 'https://', 'data:'])) {
+            return $avatar;
+        }
+
+        if (Str::startsWith($avatar, ['/storage/', 'storage/'])) {
+            return url('/' . ltrim($avatar, '/'));
+        }
+
+        $normalized = ltrim($avatar, '/');
+
+        if ($normalized !== '' && Storage::disk('public')->exists($normalized)) {
+            return Storage::disk('public')->url($normalized);
+        }
+
+        return $this->s3AvatarUrl($normalized);
+    }
+
+    protected function s3AvatarUrl(string $path): string
+    {
+        $path = ltrim($path, '/');
+
+        if ($path === '') {
+            return '';
+        }
+
+        $configuredUrl = trim((string) config('filesystems.disks.s3.url'));
+
+        if ($configuredUrl !== '') {
+            return rtrim($configuredUrl, '/') . '/' . $path;
+        }
+
+        try {
+            return Storage::disk('s3')->url($path);
+        } catch (\Throwable) {
+            return rtrim((string) app('cloudfront'), '/') . '/' . $path;
+        }
     }
 }

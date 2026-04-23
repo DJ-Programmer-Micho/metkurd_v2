@@ -124,8 +124,7 @@
 
 @once
     @push('scripts')
-        <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/js/intlTelInput.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/js/utils.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@26.9.1/build/js/intlTelInputWithUtils.min.js"></script>
         <script>
             (() => {
                 if (window.MetIntlTelInput) {

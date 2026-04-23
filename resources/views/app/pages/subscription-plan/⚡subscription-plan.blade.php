@@ -6,8 +6,6 @@ use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Models\ServicePlan;
 use App\Services\Billing\BillingCurrencyService;
 use App\Services\Billing\CustomerBillingStateService;
-use App\Services\Coupons\CouponContext;
-use App\Services\Coupons\CouponService;
 use App\Services\Billing\ScheduleServicePlanCancellation;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -43,14 +41,6 @@ class extends Component
     public bool $currentPlanCancellationScheduled = false;
 
     public ?string $currentPlanEndsAtLabel = null;
-
-    public string $couponCode = '';
-
-    public array $couponPreview = [];
-
-    public string $couponMessage = '';
-
-    public string $couponMessageType = 'info';
 
     public string $message = '';
 
@@ -136,8 +126,6 @@ class extends Component
         $this->message = '';
         $this->messageType = 'info';
         $this->showConfirm = true;
-
-        $this->refreshCouponPreview();
     }
 
     public function closeConfirm(): void
@@ -149,19 +137,6 @@ class extends Component
         $this->showConfirm = false;
         $this->selectedPlanId = null;
         $this->selectedBillingCycle = $this->normalizeBillingCycle($this->billingCycle);
-    }
-
-    public function applyCoupon(): void
-    {
-        $this->refreshCouponPreview();
-    }
-
-    public function clearCoupon(): void
-    {
-        $this->couponCode = '';
-        $this->couponPreview = [];
-        $this->couponMessage = '';
-        $this->couponMessageType = 'info';
     }
 
     public function openCancelConfirm(): void
@@ -254,7 +229,6 @@ class extends Component
                 $customer,
                 (int) $this->selectedPlanId,
                 $billingCycle,
-                $this->couponCode !== '' ? $this->couponCode : null,
             );
 
             $this->showConfirm = false;
@@ -351,73 +325,6 @@ class extends Component
             : null;
     }
 
-    protected function refreshCouponPreview(): void
-    {
-        $context = $this->selectedCouponContext();
-
-        if (! $context instanceof CouponContext) {
-            $this->couponPreview = [];
-            $this->couponMessage = '';
-            $this->couponMessageType = 'info';
-
-            return;
-        }
-
-        if (trim($this->couponCode) === '') {
-            $this->couponPreview = [];
-            $this->couponMessage = '';
-            $this->couponMessageType = 'info';
-
-            return;
-        }
-
-        try {
-            $preview = app(CouponService::class)->preview($this->couponCode, $context);
-            $this->couponCode = (string) ($preview['code'] ?? $this->couponCode);
-            $this->couponPreview = $this->decorateCouponPreview($preview, $context->customer);
-            $this->couponMessage = __('Coupon applied successfully.');
-            $this->couponMessageType = 'success';
-        } catch (\Illuminate\Validation\ValidationException $exception) {
-            $this->couponPreview = [];
-            $this->couponMessage = collect($exception->errors())->flatten()->first() ?: __('This coupon could not be applied.');
-            $this->couponMessageType = 'danger';
-        }
-    }
-
-    protected function selectedCouponContext(): ?CouponContext
-    {
-        $customer = auth('app')->user()?->fresh(['profile']);
-        $selected = collect($this->plans)->firstWhere('id', $this->selectedPlanId);
-
-        if (! $customer || ! is_array($selected)) {
-            return null;
-        }
-
-        $selectedCycle = $this->resolvePlanBillingCycle($selected, $this->selectedBillingCycle);
-        $originalAmountIqd = $this->planPriceForCycle($selected, $selectedCycle);
-
-        return new CouponContext(
-            customer: $customer,
-            purchaseType: \App\Domain\Payments\Enums\PurchaseType::PLAN_SUBSCRIPTION,
-            provider: 'fib',
-            purchasableType: ServicePlan::class,
-            purchasableId: (int) $selected['id'],
-            itemCode: (string) $selected['code'],
-            originalAmountIqd: $originalAmountIqd,
-            billingCycle: $selectedCycle,
-            isRecurring: true,
-        );
-    }
-
-    protected function decorateCouponPreview(array $preview, \App\Models\Customer $customer): array
-    {
-        $billing = app(BillingCurrencyService::class);
-        $preview['original_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['original_amount_iqd'] ?? 0), $customer);
-        $preview['discount_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['discount_amount_iqd'] ?? 0), $customer);
-        $preview['final_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['final_amount_iqd'] ?? 0), $customer);
-
-        return $preview;
-    }
 };
 ?>
 
@@ -700,7 +607,6 @@ class extends Component
                                     </p>
                                 @endif
 
-                                @include('app.partials.checkout-coupon-panel')
                                 @endif
 
                                 <div class="small text-muted">

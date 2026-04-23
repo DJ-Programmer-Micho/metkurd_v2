@@ -17,6 +17,7 @@ use App\Services\Coupons\CouponContext;
 use App\Services\Coupons\CouponRedemptionService;
 use App\Services\Coupons\CouponService;
 use App\Services\Payments\PaymentFeeCalculator;
+use App\Support\TelegramSubscriptionLifecycleNotifier;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -30,6 +31,7 @@ class CreateStorageSubscriptionPayment
         protected PaymentEventRecorder $events,
         protected CouponService $coupons,
         protected CouponRedemptionService $redemptions,
+        protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
     ) {
     }
 
@@ -165,9 +167,10 @@ class CreateStorageSubscriptionPayment
                 'create_response' => $response->raw,
             ])->save();
 
-            $this->events->record($payment, [
+            $event = $this->events->record($payment, [
                 'event_type' => 'provider_subscription_created',
                 'source' => 'customer_checkout',
+                'event_key' => 'provider-subscription-created:' . $payment->id,
                 'before_status' => PaymentStatus::PENDING->value,
                 'after_status' => PaymentStatus::AWAITING_CUSTOMER_ACTION->value,
                 'payload' => $response->raw,
@@ -176,6 +179,25 @@ class CreateStorageSubscriptionPayment
                     'create_payload' => $request->toArray(),
                 ],
             ]);
+
+            if ($event->wasRecentlyCreated) {
+                $snapshot = $payment->snapshot();
+                $this->telegramLifecycleNotifier->send(
+                    __('FIB recurring checkout created'),
+                    [
+                        'Type' => 'storage_subscription',
+                        'Customer ID' => $payment->customer_id,
+                        'Username' => $payment->customer?->username,
+                        'Storage plan' => (string) data_get($snapshot, 'name', ''),
+                        'Storage code' => (string) data_get($snapshot, 'code', ''),
+                        'Billing cycle' => (string) data_get($snapshot, 'billing_cycle', ''),
+                        'Gross amount' => (string) data_get($snapshot, 'display.iqd_label', ''),
+                        'Provider ref' => $payment->providerReference(),
+                        'Payment UUID' => (string) $payment->uuid,
+                    ],
+                    'FIB storage checkout'
+                );
+            }
 
             $this->redemptions->markApplied($payment);
 

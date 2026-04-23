@@ -53,6 +53,27 @@ class CouponService
         ];
     }
 
+    public function hasEligibleCouponSupport(CouponContext $context): bool
+    {
+        return Coupon::query()
+            ->where('is_active', true)
+            ->whereIn('target_type', [
+                $context->purchaseType->value,
+                'all',
+            ])
+            ->orderBy('id')
+            ->get()
+            ->contains(function (Coupon $coupon) use ($context): bool {
+                try {
+                    $this->assertEligible($coupon, $context, checkUsageLimits: true);
+
+                    return true;
+                } catch (ValidationException) {
+                    return false;
+                }
+            });
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -75,6 +96,7 @@ class CouponService
             'discount_type' => ($coupon->discount_type ?? CouponDiscountType::FIXED)->value,
             'discount_value' => (float) ($coupon->discount_value ?? 0),
             'target_type' => ($coupon->target_type?->value ?? 'all'),
+            'provider' => strtolower(trim((string) $context->provider)),
             'duration_type' => ($coupon->duration_type ?? CouponDurationType::ONCE)->value,
             'duration_cycles' => $coupon->duration_cycles,
             'maximum_discounted_cycles' => $this->lifecycle->maximumDiscountedCycles($coupon),
@@ -105,20 +127,31 @@ class CouponService
         string $provider = 'fib',
         ?int $durationCycles = null,
     ): ?string {
-        if (strtolower(trim($provider)) !== 'fib') {
-            return null;
-        }
+        $provider = strtolower(trim($provider));
 
         $durationType = $durationType instanceof CouponDurationType
             ? $durationType
             : (CouponDurationType::tryFrom((string) $durationType) ?? CouponDurationType::ONCE);
 
+        if ($durationType === CouponDurationType::FOREVER) {
+            return null;
+        }
+
+        if ($this->supportsDynamicRecurringDiscounts($provider)) {
+            return null;
+        }
+
+        $providerLabel = strtoupper($provider ?: 'provider');
+
         return match ($durationType) {
-            CouponDurationType::FOREVER => null,
-            CouponDurationType::ONCE, CouponDurationType::FIRST_CYCLE => __('This coupon is configured to discount only the first subscription cycle, but the current FIB recurring integration creates one fixed recurring amount and cannot switch later renewals back to full price automatically. Use a forever recurring discount for plan or storage subscriptions instead.'),
-            CouponDurationType::FIRST_N_CYCLES => __('This coupon is configured to discount only the first :count subscription cycles, but the current FIB recurring integration creates one fixed recurring amount and cannot switch later renewals back to full price automatically. Use a forever recurring discount for plan or storage subscriptions instead.', [
-                'count' => number_format(max(1, (int) ($durationCycles ?? 1))),
+            CouponDurationType::ONCE, CouponDurationType::FIRST_CYCLE => __('This coupon is configured to discount only the first subscription cycle, but the current :provider recurring integration creates one fixed recurring amount and cannot switch later renewals back to full price automatically. Use a forever recurring discount for plan or storage subscriptions instead.', [
+                'provider' => $providerLabel,
             ]),
+            CouponDurationType::FIRST_N_CYCLES => __('This coupon is configured to discount only the first :count subscription cycles, but the current :provider recurring integration creates one fixed recurring amount and cannot switch later renewals back to full price automatically. Use a forever recurring discount for plan or storage subscriptions instead.', [
+                'count' => number_format(max(1, (int) ($durationCycles ?? 1))),
+                'provider' => $providerLabel,
+            ]),
+            CouponDurationType::FOREVER => null,
         };
     }
 
@@ -174,6 +207,10 @@ class CouponService
             $this->invalid(__('This coupon has expired.'));
         }
 
+        if (! $this->supportsPaymentMethod($coupon, $context->provider)) {
+            $this->invalid(__('This coupon is not available for the selected payment method.'));
+        }
+
         if (! ($coupon->target_type?->supports($context->purchaseType) ?? false)) {
             $this->invalid(__('This coupon is not valid for this checkout.'));
         }
@@ -220,7 +257,7 @@ class CouponService
             }
         }
 
-        if ($context->isRecurring && strtolower($context->provider) === 'fib') {
+        if ($context->isRecurring) {
             $message = $this->recurringDurationCompatibilityMessage(
                 $coupon->duration_type ?? CouponDurationType::ONCE,
                 (string) $context->provider,
@@ -298,5 +335,49 @@ class CouponService
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function normalizedPaymentMethods(Coupon $coupon): array
+    {
+        $normalized = collect($coupon->supported_payment_methods ?? [])
+            ->map(fn (mixed $value) => strtolower(trim((string) $value)))
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($normalized === []) {
+            return ['fib'];
+        }
+
+        if (in_array('all', $normalized, true)) {
+            return ['all'];
+        }
+
+        return array_values(array_unique($normalized));
+    }
+
+    public function supportsPaymentMethod(Coupon $coupon, string $provider): bool
+    {
+        $provider = strtolower(trim($provider));
+
+        if ($provider === '') {
+            return true;
+        }
+
+        $supported = $this->normalizedPaymentMethods($coupon);
+
+        return in_array('all', $supported, true) || in_array($provider, $supported, true);
+    }
+
+    protected function supportsDynamicRecurringDiscounts(string $provider): bool
+    {
+        return match (strtolower(trim($provider))) {
+            'fib' => false,
+            'areeba' => (bool) config('payments.providers.areeba.supports.dynamic_recurring_amounts', false),
+            default => false,
+        };
     }
 }

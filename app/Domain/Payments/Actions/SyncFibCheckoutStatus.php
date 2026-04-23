@@ -99,7 +99,7 @@ class SyncFibCheckoutStatus
                 $this->redemptions->releaseForPayment($payment, 'subscription_checkout_terminal');
             }
 
-            $this->lifecycle->handle($payment);
+            $this->lifecycle->handle($payment, $source);
 
             return $payment->fresh();
         }

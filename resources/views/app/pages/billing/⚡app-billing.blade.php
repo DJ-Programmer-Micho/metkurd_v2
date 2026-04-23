@@ -6,8 +6,11 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
+use App\Domain\Payments\Enums\PaymentMode;
+use App\Domain\Payments\Models\Payment;
 use App\Services\Billing\BillingCurrencyService;
 use App\Models\CreditOrder;
+use App\Models\Customer;
 use App\Models\CreditWallet;
 use App\Models\CustomerUsage;
 use App\Models\MlJob;
@@ -207,6 +210,60 @@ class extends Component
     protected function customerId(): int
     {
         return (int) auth('app')->id();
+    }
+
+    #[Computed]
+    public function customer(): ?Customer
+    {
+        $customerId = $this->customerId();
+
+        if ($customerId <= 0) {
+            return null;
+        }
+
+        return Customer::query()
+            ->with([
+                'profile',
+                'usage',
+                'wallet',
+                'activeServiceSubscription.servicePlan',
+                'activeStorageSubscription.storagePlan',
+            ])
+            ->find($customerId);
+    }
+
+    #[Computed]
+    public function serviceState(): array
+    {
+        $customer = $this->customer();
+
+        return $customer ? $customer->servicePlanState() : [];
+    }
+
+    #[Computed]
+    public function storageState(): array
+    {
+        $customer = $this->customer();
+
+        return $customer ? $customer->storageQuotaState() : [];
+    }
+
+    #[Computed]
+    public function latestCheckout(): ?Payment
+    {
+        return Payment::query()
+            ->where('customer_id', $this->customerId())
+            ->latest('id')
+            ->first();
+    }
+
+    #[Computed]
+    public function openCheckoutCount(): int
+    {
+        return Payment::query()
+            ->where('customer_id', $this->customerId())
+            ->whereIn('status', ['pending', 'awaiting_customer_action'])
+            ->count();
     }
 
     protected function jobsBaseQuery()
@@ -418,31 +475,103 @@ class extends Component
         $from = $this->rangeStart();
         $to = $this->rangeEnd();
 
+        $checkouts = Payment::query()
+            ->where('customer_id', $customerId)
+            ->whereBetween('created_at', [$from, $to])
+            ->where(function ($query) {
+                $query
+                    ->whereNull('fulfilled_at')
+                    ->orWhereIn('status', ['pending', 'awaiting_customer_action', 'failed', 'canceled', 'expired']);
+            })
+            ->latest('created_at')
+            ->get()
+            ->map(function (Payment $payment) {
+                $snapshot = $payment->snapshot();
+                $baseDisplay = (array) data_get($snapshot, 'base_display', []);
+                $originalDisplay = (array) data_get($snapshot, 'original_display', []);
+                $discountDisplay = (array) data_get($snapshot, 'discount_display', []);
+                $billingCycle = (string) data_get($snapshot, 'billing_cycle', '');
+                $flowLabel = $this->flowLabel($payment->payment_mode?->value, $billingCycle);
+                $status = (string) ($payment->status?->value ?? $payment->status ?? 'pending');
+                $providerStatus = trim((string) ($payment->providerStatusLabel() ?? ''));
+
+                return [
+                    'row_type' => 'checkout',
+                    'timestamp' => $payment->created_at,
+                    'category' => $this->paymentActivityCategory($payment),
+                    'reference' => $payment->providerReference() ?: ('CHECKOUT-' . $payment->id),
+                    'support_label' => $flowLabel,
+                    'support_badge_class' => $this->flowBadgeClass($flowLabel),
+                    'description' => (string) (data_get($snapshot, 'name') ?: data_get($snapshot, 'code') ?: $payment->local_reference),
+                    'details_hint' => $this->checkoutStatusHint($payment),
+                    'lifecycle_details' => $this->checkoutLifecycleDetails($payment, $providerStatus !== '' ? $providerStatus : null),
+                    'credits_delta' => null,
+                    'base_amount_iqd' => (int) round((float) ($payment->discounted_amount_iqd ?? data_get($snapshot, 'amount_iqd', round((float) $payment->amount)))),
+                    'display_amount' => data_get($baseDisplay, 'display_amount_rounded'),
+                    'display_currency_code' => (string) data_get($baseDisplay, 'display_currency_code', ''),
+                    'original_amount_iqd' => (int) round((float) ($payment->original_amount_iqd ?? data_get($snapshot, 'original_amount_iqd', 0))),
+                    'original_display_amount' => data_get($originalDisplay, 'display_amount_rounded'),
+                    'original_display_currency_code' => (string) data_get($originalDisplay, 'display_currency_code', ''),
+                    'discount_amount_iqd' => (int) round((float) ($payment->discount_amount_iqd ?? data_get($snapshot, 'discount_amount_iqd', 0))),
+                    'discount_display_amount' => data_get($discountDisplay, 'display_amount_rounded'),
+                    'discount_display_currency_code' => (string) data_get($discountDisplay, 'display_currency_code', ''),
+                    'status' => $status,
+                    'status_label' => $providerStatus !== '' ? $providerStatus : $status,
+                    'coupon_code' => (string) ($payment->coupon_code ?? ''),
+                    'action_url' => route('payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $payment]),
+                ];
+            });
+
         $orders = CreditOrder::query()
+            ->with(['servicePlan', 'creditProduct', 'payment'])
             ->where('customer_id', $customerId)
             ->whereBetween('created_at', [$from, $to])
             ->get()
             ->map(function (CreditOrder $order) {
                 $category = match (true) {
-                    $order->source_type === 'service_plan' || $order->order_type === 'subscription' => __('Subscription Payment'),
-                    $order->source_type === 'storage_plan' => __('Storage Payment'),
-                    in_array($order->source_type, ['credit_product', 'addon'], true) || in_array($order->order_type, ['addon', 'addon_purchase', 'credit'], true) => __('Addon Payment'),
+                    $order->source_type === 'service_plan' || $order->order_type === 'subscription' => __('Plan Charge'),
+                    $order->source_type === 'storage_plan' => __('Storage Charge'),
+                    in_array($order->source_type, ['credit_product', 'addon'], true) || in_array($order->order_type, ['addon', 'addon_purchase', 'credit'], true) => __('Add-on Charge'),
                     default => __('Payment'),
                 };
+                $billingCycle = (string) data_get($order->meta, 'billing_cycle', '');
+                $flowLabel = $order->source_type === 'service_plan' || $order->source_type === 'storage_plan'
+                    ? $this->flowLabel('recurring', $billingCycle)
+                    : $this->flowLabel('one_time');
 
                 return [
-                    'row_type' => 'payment',
+                    'row_type' => 'order',
                     'timestamp' => $order->created_at,
                     'category' => $category,
                     'reference' => $order->provider_ref ?: ('ORDER-' . $order->id),
-                    'tool' => null,
-                    'description' => $order->meta['purpose'] ?? $order->source_type ?? $order->order_type,
+                    'support_label' => $flowLabel,
+                    'support_badge_class' => $this->flowBadgeClass($flowLabel),
+                    'description' => (string) (
+                        data_get($order->meta, 'storage_plan_name')
+                        ?: $order->servicePlan?->name
+                        ?: $order->creditProduct?->name
+                        ?: data_get($order->meta, 'plan_code')
+                        ?: data_get($order->meta, 'storage_plan_code')
+                        ?: data_get($order->meta, 'purpose')
+                        ?: $order->source_type
+                        ?: $order->order_type
+                    ),
+                    'details_hint' => $this->paidOrderHint($order),
+                    'lifecycle_details' => [],
                     'credits_delta' => (int) ($order->credits_amount ?? 0),
                     'base_amount_iqd' => $this->orderBaseAmountIqd($order),
                     'display_amount' => $order->display_amount_rounded !== null ? (float) $order->display_amount_rounded : null,
                     'display_currency_code' => (string) ($order->display_currency_code ?? ''),
+                    'original_amount_iqd' => (int) round((float) ($order->original_amount_iqd ?? $this->orderBaseAmountIqd($order))),
+                    'original_display_amount' => data_get(data_get($order->meta, 'coupon', []), 'original_display.display_amount_rounded', $order->display_amount_rounded),
+                    'original_display_currency_code' => (string) data_get(data_get($order->meta, 'coupon', []), 'original_display.display_currency_code', $order->display_currency_code ?? ''),
+                    'discount_amount_iqd' => (int) round((float) ($order->discount_amount_iqd ?? 0)),
+                    'discount_display_amount' => data_get(data_get($order->meta, 'coupon', []), 'discount_display.display_amount_rounded'),
+                    'discount_display_currency_code' => (string) data_get(data_get($order->meta, 'coupon', []), 'discount_display.display_currency_code', $order->display_currency_code ?? ''),
                     'status' => (string) ($order->status ?? 'paid'),
-                    'bucket' => null,
+                    'status_label' => (string) ($order->status ?? 'paid'),
+                    'coupon_code' => (string) ($order->coupon_code ?? ''),
+                    'action_url' => $order->payment ? route('payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $order->payment]) : null,
                 ];
             });
 
@@ -459,18 +588,30 @@ class extends Component
                     'timestamp' => Carbon::parse($row->created_at),
                     'category' => __(Str::headline(str_replace('_', ' ', (string) $row->type))),
                     'reference' => $row->reference_code ?: ('LEDGER-' . $row->id),
-                    'tool' => $meta['tool'] ?? $meta['tool_code'] ?? $meta['job_kind'] ?? null,
+                    'support_label' => $meta['tool'] ?? $meta['tool_code'] ?? $meta['job_kind'] ?? $row->bucket ?? null,
+                    'support_badge_class' => $this->toolBadgeClass($meta['tool'] ?? $meta['tool_code'] ?? $meta['job_kind'] ?? null),
                     'description' => $meta['purpose'] ?? $meta['plan_code'] ?? $meta['bucket_spent'] ?? $row->type,
+                    'details_hint' => null,
+                    'lifecycle_details' => [],
                     'credits_delta' => (int) ($row->credits_delta ?? 0),
                     'base_amount_iqd' => null,
                     'display_amount' => null,
                     'display_currency_code' => null,
+                    'original_amount_iqd' => null,
+                    'original_display_amount' => null,
+                    'original_display_currency_code' => null,
+                    'discount_amount_iqd' => 0,
+                    'discount_display_amount' => null,
+                    'discount_display_currency_code' => null,
                     'status' => $row->credits_delta >= 0 ? __('credit') : __('debit'),
-                    'bucket' => $row->bucket ?? null,
+                    'status_label' => $row->credits_delta >= 0 ? __('credit') : __('debit'),
+                    'coupon_code' => '',
+                    'action_url' => null,
                 ];
             });
 
-        $items = $orders
+        $items = $checkouts
+            ->concat($orders)
             ->concat($ledgers)
             ->sortByDesc(fn ($row) => $row['timestamp'])
             ->values();
@@ -533,12 +674,118 @@ class extends Component
         return number_format($bytes, $i === 0 ? 0 : 2) . ' ' . $units[$i];
     }
 
+    public function formatTimestamp(mixed $value): string
+    {
+        if (! $value) {
+            return __('Unknown');
+        }
+
+        try {
+            $timestamp = $value instanceof Carbon ? $value : Carbon::parse((string) $value);
+
+            return $timestamp->timezone(config('app.timezone'))->format('d M Y, h:i A');
+        } catch (\Throwable) {
+            return __('Unknown');
+        }
+    }
+
+    public function checkoutStatusHint(Payment $payment): ?string
+    {
+        $status = strtolower((string) ($payment->status?->value ?? $payment->status ?? 'pending'));
+
+        return match ($status) {
+            'awaiting_customer_action', 'pending' => $payment->valid_until
+                ? __('Complete checkout before :date', ['date' => $this->formatTimestamp($payment->valid_until)])
+                : __('Waiting for provider confirmation.'),
+            'paid' => $payment->active_until
+                ? __('Active until :date', ['date' => $this->formatTimestamp($payment->active_until)])
+                : __('Payment was confirmed successfully.'),
+            'canceled' => $payment->active_until
+                ? __('Cancellation is scheduled. Access remains until :date', ['date' => $this->formatTimestamp($payment->active_until)])
+                : __('This checkout was canceled.'),
+            'expired' => $payment->expired_at
+                ? __('Expired on :date', ['date' => $this->formatTimestamp($payment->expired_at)])
+                : __('This checkout expired before completion.'),
+            'failed' => trim((string) ($payment->status_reason ?? '')) !== ''
+                ? trim((string) $payment->status_reason)
+                : __('Provider confirmation did not complete.'),
+            default => null,
+        };
+    }
+
+    public function checkoutLifecycleDetails(Payment $payment, ?string $providerStatus = null): array
+    {
+        if ($payment->payment_mode !== PaymentMode::RECURRING) {
+            return [];
+        }
+
+        $meta = (array) ($payment->meta ?? []);
+        $lifecycle = (array) data_get($meta, 'subscription_lifecycle', []);
+        $cancelSource = trim((string) data_get($lifecycle, 'cancel_source', ''));
+        $syncSource = trim((string) data_get($lifecycle, 'sync_source', ''));
+        $facts = [];
+
+        if ($providerStatus !== null && trim($providerStatus) !== '') {
+            $facts[] = __('Provider status: :status', ['status' => $providerStatus]);
+        }
+
+        $facts[] = __('Local status: :status', [
+            'status' => Str::headline((string) ($payment->status?->value ?? $payment->status ?? 'pending')),
+        ]);
+
+        if ($payment->last_payment_at) {
+            $facts[] = __('Last payment at: :date', ['date' => $this->formatTimestamp($payment->last_payment_at)]);
+        }
+
+        if ($payment->active_until) {
+            $facts[] = __('Active until: :date', ['date' => $this->formatTimestamp($payment->active_until)]);
+        }
+
+        if ($payment->last_status_checked_at) {
+            $facts[] = __('Last sync: :date', ['date' => $this->formatTimestamp($payment->last_status_checked_at)]);
+        }
+
+        if ($syncSource !== '') {
+            $facts[] = __('Sync source: :source', ['source' => Str::headline(str_replace('_', ' ', $syncSource))]);
+        }
+
+        if ($cancelSource !== '') {
+            $facts[] = __('Cancellation source: :source', ['source' => Str::headline(str_replace('_', ' ', $cancelSource))]);
+        }
+
+        return $facts;
+    }
+
+    public function paidOrderHint(CreditOrder $order): ?string
+    {
+        $couponCode = trim((string) ($order->coupon_code ?? ''));
+        $billingCycle = $this->billingCycleLabel((string) data_get($order->meta, 'billing_cycle', ''));
+
+        if ($couponCode !== '' && $billingCycle !== null) {
+            return __('Coupon :code applied on :cycle billing.', [
+                'code' => $couponCode,
+                'cycle' => strtolower($billingCycle),
+            ]);
+        }
+
+        if ($couponCode !== '') {
+            return __('Coupon :code applied.', ['code' => $couponCode]);
+        }
+
+        if ($billingCycle !== null) {
+            return __('Charged on the :cycle cycle.', ['cycle' => strtolower($billingCycle)]);
+        }
+
+        return null;
+    }
+
     public function statusBadgeClass(?string $status): string
     {
         return match (strtolower((string) $status)) {
-            'done', 'paid', 'success', 'credit' => 'success',
+            'done', 'paid', 'success', 'credit', 'fulfilled' => 'success',
             'failed', 'debit' => 'danger',
-            'queued', 'running', 'saving', 'processing' => 'warning',
+            'queued', 'running', 'saving', 'processing', 'pending', 'awaiting_customer_action', 'awaiting customer action' => 'warning',
+            'canceled', 'cancelled', 'expired' => 'secondary',
             default => 'secondary',
         };
     }
@@ -556,6 +803,53 @@ class extends Component
             'ocr' => 'danger',
             default => 'secondary',
         };
+    }
+
+    public function billingCycleLabel(?string $billingCycle): ?string
+    {
+        return match (strtolower(trim((string) $billingCycle))) {
+            'monthly' => __('Monthly'),
+            'yearly' => __('Yearly'),
+            'hourly' => __('Hourly Test'),
+            default => null,
+        };
+    }
+
+    public function paymentActivityCategory(Payment $payment): string
+    {
+        return match ($payment->purchase_type?->value) {
+            'plan_subscription' => __('Plan Subscription Checkout'),
+            'storage_subscription' => __('Storage Subscription Checkout'),
+            'addon_credits' => __('Add-on Checkout'),
+            default => __('Checkout'),
+        };
+    }
+
+    public function flowLabel(?string $paymentMode = null, ?string $billingCycle = null): string
+    {
+        $paymentMode = strtolower(trim((string) $paymentMode));
+        $cycleLabel = $this->billingCycleLabel($billingCycle);
+
+        if ($paymentMode === 'recurring') {
+            return $cycleLabel ? __('Recurring - :cycle', ['cycle' => $cycleLabel]) : __('Recurring');
+        }
+
+        return __('One-time');
+    }
+
+    public function flowBadgeClass(?string $label): string
+    {
+        $label = strtolower(trim((string) $label));
+
+        if (str_contains($label, 'recurring')) {
+            return 'primary';
+        }
+
+        if (str_contains($label, 'bucket')) {
+            return 'secondary';
+        }
+
+        return 'info';
     }
 
     public function render()
@@ -597,6 +891,24 @@ class extends Component
         .mini-stat {
             font-size: .825rem;
             color: var(--vz-secondary-color, var(--bs-secondary-color));
+        }
+
+        .billing-state-card {
+            border: 1px solid var(--vz-border-color, var(--bs-border-color));
+            border-radius: 1rem;
+            height: 100%;
+        }
+
+        .billing-amount-breakdown {
+            font-size: .75rem;
+            line-height: 1.55;
+        }
+
+        .billing-divider {
+            width: 100%;
+            height: 1px;
+            background: var(--vz-border-color, var(--bs-border-color));
+            opacity: .7;
         }
     </style>
 
@@ -787,6 +1099,120 @@ class extends Component
                 </div>
             </div>
 
+            @php
+                $serviceState = $this->serviceState();
+                $storageState = $this->storageState();
+                $latestCheckout = $this->latestCheckout();
+                $latestCheckoutSnapshot = $latestCheckout?->snapshot() ?? [];
+                $latestCheckoutFlow = $latestCheckout
+                    ? $this->flowLabel($latestCheckout->payment_mode?->value, (string) data_get($latestCheckoutSnapshot, 'billing_cycle', ''))
+                    : null;
+            @endphp
+
+            <div class="row mt-1">
+                <div class="col-xl-4">
+                    <div class="card billing-state-card">
+                        <div class="card-body">
+                            <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                                <div>
+                                    <div class="text-muted text-uppercase small fw-semibold">{{ __('Main Subscription') }}</div>
+                                    <h5 class="mb-1">{{ data_get($serviceState, 'current_plan.name', __('Free')) }}</h5>
+                                </div>
+                                @if (data_get($serviceState, 'cancellation_scheduled'))
+                                    <span class="badge bg-warning-subtle text-warning">{{ __('Cancel at period end') }}</span>
+                                @elseif (data_get($serviceState, 'has_active_paid_main_plan'))
+                                    <span class="badge bg-success-subtle text-success">{{ __('Recurring active') }}</span>
+                                @else
+                                    <span class="badge bg-secondary-subtle text-secondary">{{ __('Free plan') }}</span>
+                                @endif
+                            </div>
+
+                            <div class="mini-stat">
+                                @if (data_get($serviceState, 'period_ends_at'))
+                                    {{ data_get($serviceState, 'cancellation_scheduled')
+                                        ? __('Access remains until :date', ['date' => $this->formatTimestamp(data_get($serviceState, 'period_ends_at'))])
+                                        : __('Current cycle ends on :date', ['date' => $this->formatTimestamp(data_get($serviceState, 'period_ends_at'))]) }}
+                                @else
+                                    {{ __('No paid service renewal is currently active.') }}
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-4">
+                    <div class="card billing-state-card">
+                        <div class="card-body">
+                            <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                                <div>
+                                    <div class="text-muted text-uppercase small fw-semibold">{{ __('Storage Subscription') }}</div>
+                                    <h5 class="mb-1">{{ data_get($storageState, 'current_plan.name', __('Free Storage')) }}</h5>
+                                </div>
+                                @if (data_get($storageState, 'cancellation_scheduled'))
+                                    <span class="badge bg-warning-subtle text-warning">{{ __('Cancel at period end') }}</span>
+                                @elseif (data_get($storageState, 'has_paid_storage_plan'))
+                                    <span class="badge bg-info-subtle text-info">{{ __('Recurring active') }}</span>
+                                @else
+                                    <span class="badge bg-secondary-subtle text-secondary">{{ __('Default storage') }}</span>
+                                @endif
+                            </div>
+
+                            <div class="mini-stat">
+                                @if (data_get($storageState, 'period_ends_at'))
+                                    {{ data_get($storageState, 'cancellation_scheduled')
+                                        ? __('Storage remains active until :date', ['date' => $this->formatTimestamp(data_get($storageState, 'period_ends_at'))])
+                                        : __('Current storage cycle ends on :date', ['date' => $this->formatTimestamp(data_get($storageState, 'period_ends_at'))]) }}
+                                @else
+                                    {{ __('No paid storage renewal is currently active.') }}
+                                @endif
+                                <br>
+                                {{ __('Used: :used of :total', [
+                                    'used' => $this->formatBytes((int) data_get($storageState, 'used_bytes', 0)),
+                                    'total' => $this->formatBytes((int) data_get($storageState, 'current_limit_bytes', 512 * 1024 * 1024)),
+                                ]) }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-4">
+                    <div class="card billing-state-card">
+                        <div class="card-body">
+                            <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                                <div>
+                                    <div class="text-muted text-uppercase small fw-semibold">{{ __('Latest Checkout') }}</div>
+                                    <h5 class="mb-1">{{ $latestCheckout ? (data_get($latestCheckoutSnapshot, 'name') ?: data_get($latestCheckoutSnapshot, 'code') ?: __('Checkout')) : __('No recent checkout') }}</h5>
+                                </div>
+                                <span class="badge bg-primary-subtle text-primary">{{ __('Open: :count', ['count' => $this->openCheckoutCount()]) }}</span>
+                            </div>
+
+                            @if ($latestCheckout)
+                                <div class="mini-stat">
+                                    <div class="mb-1">
+                                        <span class="badge bg-{{ $this->flowBadgeClass($latestCheckoutFlow) }}-subtle text-{{ $this->flowBadgeClass($latestCheckoutFlow) }}">
+                                            {{ $latestCheckoutFlow }}
+                                        </span>
+                                        <span class="badge bg-{{ $this->statusBadgeClass($latestCheckout->status?->value ?? $latestCheckout->status) }}-subtle text-{{ $this->statusBadgeClass($latestCheckout->status?->value ?? $latestCheckout->status) }}">
+                                            {{ __(Str::headline((string) ($latestCheckout->status?->value ?? $latestCheckout->status))) }}
+                                        </span>
+                                    </div>
+
+                                    {{ $this->checkoutStatusHint($latestCheckout) ?: __('Review the checkout page for the latest provider status.') }}
+                                </div>
+
+                                <div class="billing-divider my-3"></div>
+
+                                <a href="{{ route('payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $latestCheckout]) }}" class="btn btn-soft-primary btn-sm">
+                                    {{ __('Open Checkout') }}
+                                </a>
+                            @else
+                                <div class="mini-stat">{{ __('Your recent payment and subscription activity will appear here once you start a checkout.') }}</div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="row mt-1">
                 <div class="col-xl-6">
                     <div class="card billing-table-card">
@@ -861,9 +1287,8 @@ class extends Component
                                                 <td>{{ $this->formatBytes($row['storage_in']) }}</td>
                                                 <td>{{ $this->formatBytes($row['storage_out']) }}</td>
                                                 <td>
-                                                    <span class="text-success">✔ {{ $row['success'] }}</span>
-                                                    <span class="mx-1 text-muted">/</span>
-                                                    <span class="text-danger">✖ {{ $row['failed'] }}</span>
+                                                    <span class="badge bg-success-subtle text-success">{{ __('Success: :count', ['count' => $row['success']]) }}</span>
+                                                    <span class="badge bg-danger-subtle text-danger">{{ __('Failed: :count', ['count' => $row['failed']]) }}</span>
                                                 </td>
                                             </tr>
                                         @empty
@@ -912,7 +1337,7 @@ class extends Component
                             <tbody>
                                 @forelse($this->jobsPaginator() as $job)
                                     <tr wire:key="job-row-{{ $job->id }}">
-                                        <td>{{ optional($job->created_at)->format('d M Y, h:i A') }}</td>
+                                        <td>{{ $this->formatTimestamp($job->created_at) }}</td>
                                         <td>
                                             <span class="badge bg-{{ $this->toolBadgeClass($job->job_kind) }}-subtle text-{{ $this->toolBadgeClass($job->job_kind) }}">
                                                 {{ __($toolOptions[$job->job_kind] ?? Str::headline(str_replace('_', ' ', (string) $job->job_kind))) }}
@@ -955,7 +1380,7 @@ class extends Component
                         </div>
                         <div class="col-md-6 text-md-end">
                             <span class="text-muted">
-                                {{ __('Orders, grants, charges, refunds, and add-on activity') }}
+                                {{ __('Checkouts, recurring charges, add-ons, credits, and billing adjustments') }}
                             </span>
                         </div>
                     </div>
@@ -969,7 +1394,7 @@ class extends Component
                                     <th>{{ __('Timestamp') }}</th>
                                     <th>{{ __('Category') }}</th>
                                     <th>{{ __('Reference') }}</th>
-                                    <th>{{ __('Tool / Bucket') }}</th>
+                                    <th>{{ __('Flow / Source') }}</th>
                                     <th>{{ __('Details') }}</th>
                                     <th>{{ __('Credits') }}</th>
                                     <th>{{ __('Amount') }}</th>
@@ -979,42 +1404,75 @@ class extends Component
                             <tbody>
                                 @forelse($this->billingActivityPaginator() as $row)
                                     <tr>
-                                        <td>{{ optional($row['timestamp'])->format('d M Y, h:i A') }}</td>
+                                        <td>{{ $this->formatTimestamp($row['timestamp']) }}</td>
                                         <td class="fw-semibold">{{ $row['category'] }}</td>
                                         <td>{{ $row['reference'] }}</td>
                                         <td>
-                                            @if($row['tool'])
-                                                <span class="badge bg-{{ $this->toolBadgeClass($row['tool']) }}-subtle text-{{ $this->toolBadgeClass($row['tool']) }}">
-                                                    {{ __($toolOptions[$row['tool']] ?? Str::headline(str_replace('_', ' ', (string) $row['tool']))) }}
-                                                </span>
-                                            @elseif($row['bucket'])
-                                                <span class="badge bg-secondary-subtle text-secondary">
-                                                    {{ __(Str::headline((string) $row['bucket'])) }}
+                                            @if(!empty($row['support_label']))
+                                                <span class="badge bg-{{ $row['support_badge_class'] ?? 'secondary' }}-subtle text-{{ $row['support_badge_class'] ?? 'secondary' }}">
+                                                    {{ array_key_exists((string) $row['support_label'], $toolOptions)
+                                                        ? __($toolOptions[(string) $row['support_label']])
+                                                        : (string) $row['support_label'] }}
                                                 </span>
                                             @else
-                                                <span class="text-muted">—</span>
+                                                <span class="text-muted">{{ __('Not applicable') }}</span>
                                             @endif
                                         </td>
-                                        <td>{{ __(Str::headline(str_replace('_', ' ', (string) $row['description']))) }}</td>
+                                        <td>
+                                            <div class="fw-semibold">{{ __(Str::headline(str_replace('_', ' ', (string) $row['description']))) }}</div>
+
+                                            @if(!empty($row['details_hint']))
+                                                <div class="text-muted small mt-1">{{ $row['details_hint'] }}</div>
+                                            @endif
+
+                                            @if(!empty($row['lifecycle_details']))
+                                                <div class="text-muted small mt-1">
+                                                    @foreach($row['lifecycle_details'] as $detailLine)
+                                                        <div>{{ $detailLine }}</div>
+                                                    @endforeach
+                                                </div>
+                                            @endif
+
+                                            @if(!empty($row['coupon_code']))
+                                                <div class="text-primary small mt-1">{{ __('Coupon: :code', ['code' => $row['coupon_code']]) }}</div>
+                                            @endif
+
+                                            @if(!empty($row['action_url']))
+                                                <div class="mt-2">
+                                                    <a href="{{ $row['action_url'] }}" class="btn btn-sm btn-soft-primary">
+                                                        {{ __('Open Checkout') }}
+                                                    </a>
+                                                </div>
+                                            @endif
+                                        </td>
                                         <td>
                                             @if($row['credits_delta'] !== null)
                                                 <span class="{{ $row['credits_delta'] >= 0 ? 'text-success' : 'text-danger' }}">
                                                     {{ $row['credits_delta'] > 0 ? '+' : '' }}{{ number_format($row['credits_delta']) }}
                                                 </span>
                                             @else
-                                                —
+                                                <span class="text-muted">{{ __('Not applicable') }}</span>
                                             @endif
                                         </td>
                                         <td>
                                             @if($row['base_amount_iqd'] !== null)
-                                                {{ $this->moneyWithDisplay($row['base_amount_iqd'], $row['display_amount'] ?? null, $row['display_currency_code'] ?? null) }}
+                                                <div class="fw-semibold">
+                                                    {{ $this->moneyWithDisplay($row['base_amount_iqd'], $row['display_amount'] ?? null, $row['display_currency_code'] ?? null) }}
+                                                </div>
+
+                                                @if(($row['discount_amount_iqd'] ?? 0) > 0)
+                                                    <div class="billing-amount-breakdown text-muted mt-1">
+                                                        <div>{{ __('Original: :amount', ['amount' => $this->moneyWithDisplay($row['original_amount_iqd'] ?? 0, $row['original_display_amount'] ?? null, $row['original_display_currency_code'] ?? null)]) }}</div>
+                                                        <div>{{ __('Discount: -:amount', ['amount' => $this->moneyWithDisplay($row['discount_amount_iqd'] ?? 0, $row['discount_display_amount'] ?? null, $row['discount_display_currency_code'] ?? null)]) }}</div>
+                                                    </div>
+                                                @endif
                                             @else
-                                                —
+                                                <span class="text-muted">{{ __('Not applicable') }}</span>
                                             @endif
                                         </td>
                                         <td>
                                             <span class="badge bg-{{ $this->statusBadgeClass($row['status']) }}-subtle text-{{ $this->statusBadgeClass($row['status']) }}">
-                                                {{ __(Str::headline((string) $row['status'])) }}
+                                                {{ __(Str::headline((string) ($row['status_label'] ?? $row['status']))) }}
                                             </span>
                                         </td>
                                     </tr>

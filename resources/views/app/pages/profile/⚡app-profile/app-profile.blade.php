@@ -1,558 +1,704 @@
+@include('app.auth.partials.intl-tel-input-shared')
+
 <div>
     <x-slot:title>{{ __('Profile') }} | {{ __('MET KURD') }}</x-slot:title>
+
+    @php
+        $serviceState = $this->serviceState;
+        $storageState = $this->storageState;
+        $servicePlan = data_get($serviceState, 'current_plan');
+        $storagePlan = data_get($storageState, 'current_plan');
+        $servicePeriodEnd = $this->formatDateTime(data_get($serviceState, 'period_ends_at'));
+        $storagePeriodEnd = $this->formatDateTime(data_get($storageState, 'period_ends_at'));
+        $joinedAt = $this->formatDateTime($user?->created_at);
+        $fallbackAvatarUrl = app(\App\Support\AvatarFallbackUrl::class)->customer();
+    @endphp
 
     @push('styles')
         <style>
             .profile-wid-bg::before {
                 content: "";
                 position: absolute;
-                left: 0;
-                right: 0;
-                top: 0;
-                bottom: 0;
-                opacity: .7;
-                background: #cc0022;
-                background: linear-gradient(to top, #cc0022, #000);
+                inset: 0;
+                opacity: .78;
+                background: linear-gradient(180deg, rgba(204, 0, 34, .74), rgba(12, 18, 34, .92));
             }
-            .otp-input { font-size: 1.5rem; font-weight: bold; height: 50px; }
+
+            .profile-summary-card {
+                margin-top: 0px;
+                position: relative;
+                z-index: 2;
+            }
+
+            .profile-avatar-preview {
+                width: 96px;
+                height: 96px;
+                object-fit: cover;
+                border-radius: 999px;
+                border: 4px solid rgba(255, 255, 255, .08);
+                box-shadow: 0 20px 35px rgba(0, 0, 0, .28);
+            }
+
+            .profile-sidebar-label {
+                font-size: .76rem;
+                letter-spacing: .08em;
+                text-transform: uppercase;
+                color: rgba(255, 255, 255, .56);
+            }
+
+            .profile-helper-card {
+                border: 1px solid rgba(255, 255, 255, .06);
+                background: rgba(255, 255, 255, .02);
+            }
+
+            .profile-form-card .card-header,
+            .password-form-card .card-header {
+                background: rgba(255, 255, 255, .03);
+                border-bottom: 1px solid rgba(255, 255, 255, .06);
+            }
+
+            .password-rule-list p.valid {
+                color: #22c55e;
+            }
+
+            .password-rule-list p.invalid {
+                color: #f87171;
+            }
+
+            .readonly-field {
+                background: rgba(255, 255, 255, .03) !important;
+                border-color: rgba(255, 255, 255, .07) !important;
+                color: rgba(255, 255, 255, .7) !important;
+            }
         </style>
     @endpush
 
     <div class="container-fluid">
-        {{-- Header background --}}
         <div class="profile-foreground position-relative mx-n4 mt-n4">
             <div class="profile-wid-bg">
-                <img src="https://images.pexels.com/photos/3389614/pexels-photo-3389614.jpeg"
-                     alt="" class="profile-wid-img" />
+                <img
+                    src="https://images.pexels.com/photos/3389614/pexels-photo-3389614.jpeg"
+                    alt=""
+                    class="profile-wid-img"
+                />
             </div>
         </div>
 
-        {{-- Top section --}}
-        <div class="pt-4 mb-4 mb-lg-3 pb-lg-4 profile-wrapper">
-            <div class="row g-4">
-                <div class="col-auto">
-                    <div class="avatar-lg">
+        <div class="row g-4 pb-4">
+            <div class="col-xxl-3">
+                <div class="card profile-summary-card overflow-hidden">
+                    <div class="card-body text-center p-4">
                         <img
                             src="{{ $this->currentAvatarUrl() }}"
-                            alt="{{ ($profile?->first_name ?? '').' '.($profile?->last_name ?? '') }}"
-                            class="img-thumbnail rounded-circle"
-                        />
-                    </div>
-                </div>
+                            alt="{{ $this->displayName }}"
+                            class="profile-avatar-preview mb-3"
+                            onerror="this.onerror=null;this.src='{{ e($fallbackAvatarUrl) }}';"
+                        >
 
-                <div class="col">
-                    <div class="p-2">
-                        <h3 class="text-white mb-1">
-                            {{ ($profile?->first_name ?? '').' '.($profile?->last_name ?? '') }}
-                        </h3>
-                        <p class="text-white text-opacity-75">
-                            {{ $profile?->job_title }}
+                        <h3 class="mb-1">{{ $this->displayName }}</h3>
+
+                        <p class="text-muted mb-3">
+                            {{ $jobTitle !== '' ? $jobTitle : __('No job title added yet') }}
                         </p>
-                    </div>
-                </div>
-            </div>
-        </div>
 
-        {{-- Content --}}
-        <div class="row">
-            <div class="col-xxl-3">
-                {{-- Info --}}
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title mb-3">{{ __('Info') }}</h5>
-                        <div class="table-responsive">
-                            <table class="table table-borderless mb-0">
-                                <tbody>
-                                <tr>
-                                    <th class="ps-0" scope="row">{{ __('Full Name :') }}</th>
-                                    <td class="text-muted">
-                                        {{ ($profile?->first_name ?? '').' '.($profile?->last_name ?? '') }}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th class="ps-0" scope="row">{{ __('Mobile :') }}</th>
-                                    <td class="text-muted">{{ $profile?->phone_number }}</td>
-                                </tr>
-                                <tr>
-                                    <th class="ps-0" scope="row">{{ __('E-mail :') }}</th>
-                                    <td class="text-muted">{{ $user?->email }}</td>
-                                </tr>
-                                <tr>
-                                    <th class="ps-0" scope="row">{{ __('Joining Date :') }}</th>
-                                    <td class="text-muted">{{ $user?->created_at }}</td>
-                                </tr>
-                                </tbody>
-                            </table>
+                        <div class="d-flex justify-content-center flex-wrap gap-2 mb-3">
+                            <span class="badge bg-{{ $user?->email_verify ? 'success' : 'warning' }}-subtle text-{{ $user?->email_verify ? 'success' : 'warning' }}">
+                                {{ $user?->email_verify ? __('Email Verified') : __('Email Pending') }}
+                            </span>
+                            <span class="badge bg-{{ $user?->phone_verify ? 'success' : 'warning' }}-subtle text-{{ $user?->phone_verify ? 'success' : 'warning' }}">
+                                {{ $user?->phone_verify ? __('Phone Verified') : __('Phone Pending') }}
+                            </span>
+                        </div>
+
+                        <div class="border-top border-secondary-subtle pt-3 text-start">
+                            <div class="mb-3">
+                                <div class="profile-sidebar-label">{{ __('Username') }}</div>
+                                <div class="fw-semibold">{{ $user?->username ?? __('Not set') }}</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="profile-sidebar-label">{{ __('Email') }}</div>
+                                <div class="fw-semibold text-break">{{ $user?->email ?? __('Not set') }}</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="profile-sidebar-label">{{ __('Phone') }}</div>
+                                <div class="fw-semibold">{{ $profile?->phone_number ?: __('Not set') }}</div>
+                            </div>
+
+                            <div>
+                                <div class="profile-sidebar-label">{{ __('Joined') }}</div>
+                                <div class="fw-semibold">{{ $joinedAt ?: __('Unknown') }}</div>
+                                <div class="text-muted small">{{ __('Baghdad Time (GMT+3)') }}</div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                {{-- Subscription (placeholder) --}}
-                <div class="card">
+                <div class="card profile-helper-card">
                     <div class="card-body">
-                        <h5 class="card-title mb-3">{{ __('Subscription') }}</h5>
-                        <div class="table-responsive">
-                            <table class="table table-borderless mb-0">
-                                <tbody>
-                                <tr>
-                                    <th class="ps-0" scope="row">{{ __('Type :') }}</th>
-                                    <td class="text-muted">{{ __('Premium') }}</td>
-                                </tr>
-                                <tr>
-                                    <th class="ps-0" scope="row">{{ __('Started Date :') }}</th>
-                                    <td class="text-muted">—</td>
-                                </tr>
-                                <tr>
-                                    <th class="ps-0" scope="row">{{ __('Expire Date :') }}</th>
-                                    <td class="text-muted">—</td>
-                                </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+                        <h5 class="card-title mb-3">{{ __('Current Billing') }}</h5>
 
-                {{-- Features (placeholder) --}}
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title mb-4">{{ __('Features To Use :') }}</h5>
-                        <ul class="p-1">
-                            <li class="mb-1 badge bg-primary-subtle text-primary" style="font-size: 0.90em">{{ __('TEXT-TO-SPEECH') }}</li>
-                            <li class="mb-1 badge bg-info-subtle text-info" style="font-size: 0.90em">{{ __('SPEECH-TO-TEXT / ASR') }}</li>
-                            <li class="mb-1 badge bg-danger-subtle text-danger" style="font-size: 0.90em">{{ __('AUDIO SPLITTER') }}</li>
-                            <li class="mb-1 badge bg-success-subtle text-success" style="font-size: 0.90em">{{ __('Stem Separation') }}</li>
-                            <li class="mb-1 badge bg-warning-subtle text-warning" style="font-size: 0.90em">{{ __('Optical Character Recognition') }}</li>
-                        </ul>
+                        <div class="mb-3">
+                            <div class="profile-sidebar-label">{{ __('Main Plan') }}</div>
+                            <div class="d-flex align-items-center justify-content-between gap-2">
+                                <span class="fw-semibold">{{ data_get($servicePlan, 'name', __('Free')) }}</span>
+                                @if (data_get($serviceState, 'cancellation_scheduled'))
+                                    <span class="badge bg-warning-subtle text-warning">{{ __('Scheduled') }}</span>
+                                @elseif (data_get($serviceState, 'has_active_paid_main_plan'))
+                                    <span class="badge bg-success-subtle text-success">{{ __('Active') }}</span>
+                                @else
+                                    <span class="badge bg-secondary-subtle text-secondary">{{ __('Free') }}</span>
+                                @endif
+                            </div>
+                            <div class="text-muted small mt-1">
+                                @if ($servicePeriodEnd)
+                                    {{ data_get($serviceState, 'cancellation_scheduled')
+                                        ? __('Access remains until :date', ['date' => $servicePeriodEnd])
+                                        : __('Current cycle ends on :date', ['date' => $servicePeriodEnd]) }}
+                                @else
+                                    {{ __('No paid plan renewal is scheduled right now.') }}
+                                @endif
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="profile-sidebar-label">{{ __('Storage Plan') }}</div>
+                            <div class="d-flex align-items-center justify-content-between gap-2">
+                                <span class="fw-semibold">{{ data_get($storagePlan, 'name', __('Free Storage')) }}</span>
+                                @if (data_get($storageState, 'cancellation_scheduled'))
+                                    <span class="badge bg-warning-subtle text-warning">{{ __('Scheduled') }}</span>
+                                @elseif (data_get($storageState, 'has_paid_storage_plan'))
+                                    <span class="badge bg-info-subtle text-info">{{ __('Active') }}</span>
+                                @else
+                                    <span class="badge bg-secondary-subtle text-secondary">{{ __('Default') }}</span>
+                                @endif
+                            </div>
+                            <div class="text-muted small mt-1">
+                                @if ($storagePeriodEnd)
+                                    {{ data_get($storageState, 'cancellation_scheduled')
+                                        ? __('Storage stays active until :date', ['date' => $storagePeriodEnd])
+                                        : __('Current storage cycle ends on :date', ['date' => $storagePeriodEnd]) }}
+                                @else
+                                    {{ __('No storage renewal boundary is scheduled right now.') }}
+                                @endif
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="profile-sidebar-label">{{ __('Usage') }}</div>
+                            <div class="fw-semibold">
+                                {{ __(':used / :total', [
+                                    'used' => number_format((int) data_get($storageState, 'used_mb', 0)) . ' MB',
+                                    'total' => number_format((int) data_get($storageState, 'current_limit_mb', 512)) . ' MB',
+                                ]) }}
+                            </div>
+                            <div class="text-muted small mt-1">
+                                {{ __('Credits balance and detailed payment activity are available on the billing page.') }}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {{-- Right side --}}
-            <div class="col-xxl-9 mt-5">
-                <div class="card mt-xxl-n5">
-                    <div class="card-header">
-                        <ul class="nav nav-tabs-custom rounded card-header-tabs border-bottom-0" role="tablist">
-                            <li class="nav-item" wire:ignore>
-                                <a class="nav-link text-body active" data-bs-toggle="tab" href="#personalDetails" role="tab">
-                                    <i class="fas fa-home"></i> {{ __('Personal Details') }}
-                                </a>
-                            </li>
-                            <li class="nav-item" wire:ignore>
-                                <a class="nav-link text-body" data-bs-toggle="tab" href="#changePassword" role="tab">
-                                    <i class="far fa-user"></i> {{ __('Change Password') }}
-                                </a>
-                            </li>
-                        </ul>
+            <div class="col-xxl-9">
+                <div class="card profile-form-card mb-4">
+                    <div class="card-header p-4">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                            <div>
+                                <h4 class="card-title mb-1">{{ __('Personal Details') }}</h4>
+                                <p class="text-muted mb-0">
+                                    {{ __('Update your account details here. Email stays locked, and changing your phone number will require a fresh verification.') }}
+                                </p>
+                            </div>
+                            <span class="badge bg-primary-subtle text-primary">{{ __('Server-side validated') }}</span>
+                        </div>
                     </div>
 
                     <div class="card-body p-4">
-                        <div class="tab-content">
-
-                            {{-- Personal details --}}
-                            <div wire:ignore.self class="tab-pane active" id="personalDetails" role="tabpanel">
-                                <div class="row">
-                                    <div class="col-lg-6 mb-3">
-                                        <label class="form-label">{{ __('First Name') }}</label>
-                                        <input type="text" class="form-control" value="{{ $profile?->first_name }}" disabled>
-                                    </div>
-
-                                    <div class="col-lg-6 mb-3">
-                                        <label class="form-label">{{ __('Last Name') }}</label>
-                                        <input type="text" class="form-control" value="{{ $profile?->last_name }}" disabled>
-                                    </div>
-
-                                    <div class="col-lg-6 mb-3">
-                                        <label class="form-label">{{ __('Username') }}</label>
-                                        <input type="text" class="form-control" value="{{ $user?->username }}" disabled>
-                                    </div>
-
-                                    <div class="col-lg-6 mb-3">
-                                        <label class="form-label">{{ __('Job Title') }}</label>
-                                        <input type="text" class="form-control" value="{{ $profile?->job_title }}" disabled>
-                                    </div>
-
-                                    <div class="col-lg-6 mb-3">
-                                        <label class="form-label">{{ __('Phone Number') }}</label>
-                                        <input type="text" class="form-control" value="{{ $profile?->phone_number }}" disabled>
-                                    </div>
-
-                                    <div class="col-lg-6 mb-3">
-                                        <label class="form-label">{{ __('Email Address') }}</label>
-                                        <input type="email" class="form-control" value="{{ $user?->email }}" disabled>
-                                    </div>
-
-                                    <div class="col-lg-12">
-                                        <div class="hstack gap-2 justify-content-end">
-                                            {{-- Instant open (JS), then Livewire prepares fields in background --}}
-                                            <button type="button" class="btn btn-primary" onclick="window.ProfilePage.openEditModal()">
-                                                {{ __('Edit') }}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {{-- Change password (inline) --}}
-                            <div wire:ignore.self class="tab-pane" id="changePassword" role="tabpanel">
-                                <form wire:submit.prevent="updatePassword">
-                                    <div class="row g-2">
-                                        <div class="col-lg-4">
-                                            <label class="form-label">{{ __('Old Password') }}*</label>
-                                            <input type="password" wire:model.defer="old_password" class="form-control" placeholder="{{ __('Enter current password') }}">
-                                            @error('old_password') <span class="text-danger">{{ $message }}</span> @enderror
-                                            <div class="mt-2">
-                                                {{ __('Forgot Password?') }} <a href="{{ route('app.password.email') }}" class="text-danger">{{ __('Send reset link to my email') }}</a>
-                                            </div>
-                                        </div>
-
-                                        <div class="col-lg-4">
-                                            <label class="form-label">{{ __('New Password') }}*</label>
-                                            <input type="password" wire:model.defer="new_password" id="newpasswordInput" class="form-control" placeholder="{{ __('Enter new password') }}">
-                                            @error('new_password') <span class="text-danger">{{ $message }}</span> @enderror
-                                        </div>
-
-                                        <div class="col-lg-4">
-                                            <label class="form-label">{{ __('Confirm Password') }}*</label>
-                                            <input type="password" wire:model.defer="new_password_confirmation" class="form-control" placeholder="{{ __('Confirm password') }}">
-                                            @error('new_password_confirmation') <span class="text-danger">{{ $message }}</span> @enderror
-                                        </div>
-
-                                        <div class="col-lg-12">
-                                            <div id="password-contain" class="p-3 bg-light mb-3 rounded">
-                                                <h5 class="fs-13">{{ __('Password must contain:') }}</h5>
-                                                <p id="pass-lower"   class="invalid fs-12 mb-2">{{ __('At least one lowercase letter') }}</p>
-                                                <p id="pass-upper"   class="invalid fs-12 mb-2">{{ __('At least one uppercase letter') }}</p>
-                                                <p id="pass-number"  class="invalid fs-12 mb-2">{{ __('At least one number') }}</p>
-                                                <p id="pass-special" class="invalid fs-12 mb-2">{{ __('At least one special character') }}</p>
-                                                <p id="pass-length"  class="invalid fs-12 mb-0">{{ __('At least 8 characters') }}</p>
-                                            </div>
-                                        </div>
-
-                                        <div class="col-lg-12">
-                                            <div class="text-end">
-                                                <button type="submit" class="btn btn-success">{{ __('Change Password') }}</button>
+                        <form wire:submit.prevent="saveProfile" id="profile-details-form">
+                            @if ($this->phoneRequiresVerification)
+                                <div class="alert alert-warning d-flex flex-column flex-md-row gap-3 align-items-md-start">
+                                    <div class="d-flex gap-2 align-items-start flex-grow-1">
+                                        <i class="ri-alert-line fs-5"></i>
+                                        <div>
+                                            <div class="fw-semibold">{{ __('Phone verification required') }}</div>
+                                            <div class="small mb-0">
+                                                {{ __('Save these changes and we will take you straight to the phone OTP verification screen for the new number.') }}
                                             </div>
                                         </div>
                                     </div>
-                                </form>
-                            </div>
-
-                        </div> {{-- tab-content --}}
-                    </div>
-                </div>
-            </div>
-
-        </div> {{-- row --}}
-    </div> {{-- container --}}
-
-    {{-- Edit user modal --}}
-    <div wire:ignore.self class="modal fade overflow-auto" id="updateUserModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog text-white mx-1 mx-lg-auto">
-            <div class="modal-content bg-dark">
-                <form wire:submit.prevent="updateUser">
-                    <div class="modal-body">
-                        <div class="modal-header mb-3">
-                            <h5 class="modal-title">{{ __('Edit User') }}</h5>
-                            <button type="button" class="btn btn-danger" onclick="window.ProfilePage.closeModal('updateUserModal')" aria-label="{{ __('Close') }}">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-
-                        <hr class="bg-white">
-
-                        <div class="row">
-                            <div class="col-6 mb-3">
-                                <label class="form-label">{{ __('First Name') }}</label>
-                                <input type="text" class="form-control @error('fNameEdit') is-invalid @enderror" wire:model.defer="fNameEdit">
-                                @error('fNameEdit') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
-                            </div>
-
-                            <div class="col-6 mb-3">
-                                <label class="form-label">{{ __('Last Name') }}</label>
-                                <input type="text" class="form-control @error('lNameEdit') is-invalid @enderror" wire:model.defer="lNameEdit">
-                                @error('lNameEdit') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
-                            </div>
-
-                            <div class="col-6 mb-3">
-                                <label class="form-label">{{ __('Username') }}</label>
-                                <input type="text" class="form-control @error('usernameEdit') is-invalid @enderror" wire:model.defer="usernameEdit">
-                                @error('usernameEdit') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
-                            </div>
-
-                            <div class="col-6 mb-3">
-                                <label class="form-label">{{ __('Phone') }}</label>
-                                <div class="input-group">
-                                    <input type="text"
-                                           class="form-control @error('phoneEdit') is-invalid @enderror"
-                                           wire:model.lazy="phoneEdit"
-                                           oninput="this.value = this.value.replace(/[^0-9+]/g, '');"
+                                    <button
+                                        type="submit"
+                                        class="btn btn-warning btn-sm align-self-md-center"
+                                        wire:loading.attr="disabled"
+                                        wire:target="saveProfile"
                                     >
-
-                                    @if($phoneChanged && !$phoneVerified)
-                                        <button type="button" class="btn btn-warning" wire:click="openPhoneOtpProviders">
-                                            <i class="ri-shield-check-line"></i> {{ __('Verify') }}
-                                        </button>
-                                    @endif
-
-                                    @if($phoneVerified)
-                                        <span class="input-group-text bg-success text-white">
-                                            <i class="ri-checkbox-circle-fill"></i> {{ __('Verified') }}
+                                        <span wire:loading.remove wire:target="saveProfile">{{ __('Save & Continue to Verify Phone') }}</span>
+                                        <span
+                                            class="d-none align-items-center gap-2"
+                                            wire:loading.class.remove="d-none"
+                                            wire:loading.class="d-inline-flex"
+                                            wire:target="saveProfile"
+                                        >
+                                            <span class="spinner-border spinner-border-sm"></span>
+                                            {{ __('Saving...') }}
                                         </span>
-                                    @endif
+                                    </button>
+                                </div>
+                            @endif
+
+                            <div class="row g-4">
+                                <div class="col-lg-6">
+                                    <label class="form-label">{{ __('First Name') }}</label>
+                                    <input
+                                        type="text"
+                                        class="form-control @error('firstName') is-invalid @enderror"
+                                        wire:model.defer="firstName"
+                                        autocomplete="given-name"
+                                    >
+                                    @error('firstName') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                 </div>
 
-                                @if($phoneChanged && !$phoneVerified)
-                                    <small class="text-warning">
-                                        <i class="ri-alert-line"></i> {{ __('Phone number changed. Please verify before saving.') }}
-                                    </small>
-                                @endif
+                                <div class="col-lg-6">
+                                    <label class="form-label">{{ __('Last Name') }}</label>
+                                    <input
+                                        type="text"
+                                        class="form-control @error('lastName') is-invalid @enderror"
+                                        wire:model.defer="lastName"
+                                        autocomplete="family-name"
+                                    >
+                                    @error('lastName') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                </div>
 
-                                @error('phoneEdit') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
-                            </div>
+                                <div class="col-lg-6">
+                                    <label class="form-label">{{ __('Username') }}</label>
+                                    <input
+                                        type="text"
+                                        class="form-control @error('username') is-invalid @enderror"
+                                        wire:model.defer="username"
+                                        autocomplete="username"
+                                    >
+                                    <div class="form-text">{{ __('Letters, numbers, dashes, and underscores only.') }}</div>
+                                    @error('username') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                </div>
 
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">{{ __('Job Title') }}</label>
-                                <select class="form-select @error('jobTitleEdit') is-invalid @enderror" wire:model.defer="jobTitleEdit">
-                                    @foreach($jobTitleOptions as $value => $label)
-                                        <option value="{{ $value }}">{{ __($label) }}</option>
-                                    @endforeach
-                                </select>
-                                @error('jobTitleEdit') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
-                            </div>
+                                <div class="col-lg-6">
+                                    <label class="form-label">{{ __('Job Title') }}</label>
+                                    <input
+                                        type="text"
+                                        class="form-control @error('jobTitle') is-invalid @enderror"
+                                        wire:model.defer="jobTitle"
+                                        placeholder="{{ __('Student, Teacher, Developer...') }}"
+                                    >
+                                    @error('jobTitle') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                </div>
 
-                            <div class="col-12 mb-3">
-                                <label class="form-label">{{ __('Email Address') }}</label>
-                                <input type="email" class="form-control bg-dark text-muted" wire:model.defer="emailEdit" readonly disabled>
-                                <small class="text-muted">
-                                    <i class="ri-lock-line"></i> {{ __('Email cannot be changed for security reasons.') }}
-                                </small>
-                            </div>
+                                <div class="col-lg-6">
+                                    <label class="form-label">{{ __('Phone Number') }}</label>
 
-                            <div class="col-12 mb-3">
-                                <div class="d-flex align-items-center gap-3">
-                                    <img src="{{ $this->currentAvatarUrl() }}"
-                                         class="rounded-circle"
-                                         style="width:60px;height:60px;object-fit:cover;border:1px solid #444;">
-                                    <div class="flex-grow-1">
-                                        <label class="form-label mb-1">{{ __('Avatar') }}</label>
-                                        <input type="file" class="form-control" wire:model="avatar" accept="image/*">
-                                        @error('avatar') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
+                                    <input type="hidden" id="profile_phone_number_hidden" wire:model.live.debounce.400ms="phoneNumber">
+                                    <input type="hidden" id="profile_phone_country_hidden" wire:model.defer="phoneCountry">
+                                    <input type="hidden" id="profile_phone_dial_code_hidden" wire:model.defer="phoneDialCode">
+
+                                    <div wire:ignore>
+                                        <input
+                                            id="profile_phone_number"
+                                            type="tel"
+                                            class="form-control @error('phoneNumber') is-invalid @enderror"
+                                            placeholder="{{ __('Phone Number') }}"
+                                            dir="ltr"
+                                            autocomplete="tel"
+                                            inputmode="tel"
+                                        >
+                                    </div>
+
+                                    <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                                        <span class="badge bg-{{ $user?->phone_verify ? 'success' : 'warning' }}-subtle text-{{ $user?->phone_verify ? 'success' : 'warning' }}">
+                                            {{ $user?->phone_verify ? __('Currently verified') : __('Verification pending') }}
+                                        </span>
+                                        <span class="text-muted small">{{ __('Use your international phone number format.') }}</span>
+                                        @if (! $user?->phone_verify && ! $this->phoneRequiresVerification)
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-soft-warning"
+                                                wire:click="redirectToPhoneVerification"
+                                                wire:loading.attr="disabled"
+                                                wire:target="redirectToPhoneVerification"
+                                            >
+                                                <span wire:loading.remove wire:target="redirectToPhoneVerification">{{ __('Verify Phone') }}</span>
+                                                <span
+                                                    class="d-none align-items-center gap-2"
+                                                    wire:loading.class.remove="d-none"
+                                                    wire:loading.class="d-inline-flex"
+                                                    wire:target="redirectToPhoneVerification"
+                                                >
+                                                    <span class="spinner-border spinner-border-sm"></span>
+                                                    {{ __('Opening...') }}
+                                                </span>
+                                            </button>
+                                        @endif
+                                    </div>
+
+                                    @error('phoneNumber') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                                    @error('phoneCountry') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                                    @error('phoneDialCode') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                                    <div id="profile_phone_number_client_error" class="invalid-feedback d-block" style="display:none;"></div>
+                                </div>
+
+                                <div class="col-lg-6">
+                                    <label class="form-label">{{ __('Email Address') }}</label>
+                                    <input
+                                        type="email"
+                                        class="form-control readonly-field"
+                                        value="{{ $emailAddress }}"
+                                        readonly
+                                        disabled
+                                    >
+                                    <div class="form-text">{{ __('Email changes are locked here for account security.') }}</div>
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="border rounded-4 p-3 d-flex flex-column flex-md-row align-items-md-center gap-3">
+                                        <img
+                                            src="{{ $this->currentAvatarUrl() }}"
+                                            alt="{{ $this->displayName }}"
+                                            class="rounded-circle"
+                                            style="width:72px;height:72px;object-fit:cover;"
+                                            onerror="this.onerror=null;this.src='{{ e($fallbackAvatarUrl) }}';"
+                                        >
+
+                                        <div class="flex-grow-1">
+                                            <label class="form-label mb-1">{{ __('Profile Photo') }}</label>
+                                            <input
+                                                type="file"
+                                                class="form-control @error('avatar') is-invalid @enderror"
+                                                wire:model="avatar"
+                                                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                                            >
+                                            <div class="form-text">{{ __('PNG, JPG, or WEBP up to 2 MB. Stored securely in your cloud profile storage.') }}</div>
+                                            @error('avatar') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                                            <div
+                                                class="text-muted small mt-2 d-none"
+                                                wire:loading.class.remove="d-none"
+                                                wire:loading.class="d-flex"
+                                                wire:target="avatar"
+                                            >
+                                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                                {{ __('Preparing image preview...') }}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
-                        </div> {{-- row --}}
-                    </div>
+                            <div class="d-flex flex-wrap justify-content-end gap-2 mt-4">
+                                <button
+                                    type="button"
+                                    class="btn btn-light"
+                                    wire:click="syncProfileFormFromUser"
+                                    wire:loading.attr="disabled"
+                                    wire:target="syncProfileFormFromUser"
+                                >
+                                    {{ __('Reset Changes') }}
+                                </button>
 
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" onclick="window.ProfilePage.closeModal('updateUserModal')">{{ __('Close') }}</button>
-                        <button type="submit" class="btn btn-primary">{{ __('Update') }}</button>
+                                <button
+                                    type="submit"
+                                    class="btn btn-primary"
+                                    wire:loading.attr="disabled"
+                                    wire:target="saveProfile"
+                                >
+                                    <span wire:loading.remove wire:target="saveProfile">
+                                        {{ $this->phoneRequiresVerification ? __('Save & Continue to Verify Phone') : __('Save Personal Details') }}
+                                    </span>
+                                    <span
+                                        class="d-none align-items-center gap-2"
+                                        wire:loading.class.remove="d-none"
+                                        wire:loading.class="d-inline-flex"
+                                        wire:target="saveProfile"
+                                    >
+                                        <span class="spinner-border spinner-border-sm"></span>
+                                        {{ $this->phoneRequiresVerification ? __('Saving and preparing verification...') : __('Saving...') }}
+                                    </span>
+                                </button>
+                            </div>
+                        </form>
                     </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    {{-- Phone OTP modal --}}
-    <div wire:ignore.self class="modal fade" id="phoneOtpModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="ri-shield-check-line text-primary"></i> {{ __('Verify Phone Number') }}
-                    </h5>
-                    <button type="button" class="btn-close" wire:click="closePhoneOtpModal" aria-label="{{ __('Close') }}"></button>
                 </div>
 
-                <div class="modal-body">
-                    <div class="text-center mb-3">
-                        <p class="text-muted">{{ __('We\'ll send a verification code to:') }}</p>
-                        <h6 class="text-primary">{{ $phoneEdit }}</h6>
+                <div class="card password-form-card">
+                    <div class="card-header p-4">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                            <div>
+                                <h4 class="card-title mb-1">{{ __('Change Password') }}</h4>
+                                <p class="text-muted mb-0">
+                                    {{ __('Use a strong password with mixed case, numbers, and symbols, just like the account signup flow.') }}
+                                </p>
+                            </div>
+                            <a href="{{ route('app.password.email') }}" class="btn btn-soft-secondary">
+                                {{ __('Send Reset Link') }}
+                            </a>
+                        </div>
                     </div>
 
-                    @if($otpStep === 0)
-                        <div class="d-grid gap-2">
-                            <button type="button" class="btn btn-outline-success" wire:click="sendPhoneOtp('sms')">
-                                <i class="ri-message-2-line"></i> {{ __('Send via SMS') }}
-                            </button>
-                            <button type="button" class="btn btn-outline-primary" wire:click="sendPhoneOtp('whatsapp')">
-                                <i class="ri-whatsapp-line"></i> {{ __('Send via WhatsApp') }}
-                            </button>
-                            <button type="button" class="btn btn-outline-info" wire:click="sendPhoneOtp('telegram')">
-                                <i class="ri-telegram-line"></i> {{ __('Send via Telegram') }}
-                            </button>
-                        </div>
-                    @endif
-
-                    @if($otpStep === 1)
-                        <p class="text-center text-muted mb-3">
-                            {{ __('Enter the 6-digit code sent via') }} <strong>{{ __(ucfirst($channel)) }}</strong>
-                        </p>
-
-                        <div class="row justify-content-center mb-3">
-                            @foreach([1,2,3,4,5,6] as $i)
-                                <div class="col-2 px-1">
-                                    <input type="text"
-                                           class="form-control text-center otp-input"
-                                           maxlength="1"
-                                           wire:model.defer="digit{{ $i }}"
-                                           id="otp{{ $i }}">
+                    <div class="card-body p-4">
+                        <form wire:submit.prevent="updatePassword">
+                            <div class="row g-4">
+                                <div class="col-xl-4">
+                                    <label class="form-label">{{ __('Current Password') }}</label>
+                                    <div class="input-group">
+                                        <input
+                                            type="password"
+                                            id="profile_current_password"
+                                            class="form-control @error('currentPassword') is-invalid @enderror"
+                                            wire:model.defer="currentPassword"
+                                            autocomplete="current-password"
+                                        >
+                                        <button class="btn btn-outline-secondary password-addon" type="button" data-target="#profile_current_password" aria-label="{{ __('Toggle password') }}">
+                                            <i class="ri-eye-fill align-middle"></i>
+                                        </button>
+                                    </div>
+                                    @error('currentPassword') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
                                 </div>
-                            @endforeach
-                        </div>
 
-                        <div class="d-grid gap-2">
-                            <button type="button" class="btn btn-success" wire:click="verifyPhoneOtp">
-                                <i class="ri-check-line"></i> {{ __('Verify Code') }}
-                            </button>
-                            <button type="button" class="btn btn-link text-muted" wire:click="resendPhoneOtp">
-                                <i class="ri-refresh-line"></i> {{ __('Resend Code') }}
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="backToProviders">
-                                <i class="ri-arrow-left-line"></i> {{ __('Back to providers') }}
-                            </button>
-                        </div>
-                    @endif
+                                <div class="col-xl-4">
+                                    <label class="form-label">{{ __('New Password') }}</label>
+                                    <div class="input-group">
+                                        <input
+                                            type="password"
+                                            id="profile_new_password"
+                                            class="form-control @error('newPassword') is-invalid @enderror"
+                                            wire:model.defer="newPassword"
+                                            autocomplete="new-password"
+                                        >
+                                        <button class="btn btn-outline-secondary password-addon" type="button" data-target="#profile_new_password" aria-label="{{ __('Toggle password') }}">
+                                            <i class="ri-eye-fill align-middle"></i>
+                                        </button>
+                                    </div>
+                                    @error('newPassword') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                                </div>
+
+                                <div class="col-xl-4">
+                                    <label class="form-label">{{ __('Confirm New Password') }}</label>
+                                    <div class="input-group">
+                                        <input
+                                            type="password"
+                                            id="profile_new_password_confirmation"
+                                            class="form-control @error('newPasswordConfirmation') is-invalid @enderror"
+                                            wire:model.defer="newPasswordConfirmation"
+                                            autocomplete="new-password"
+                                        >
+                                        <button class="btn btn-outline-secondary password-addon" type="button" data-target="#profile_new_password_confirmation" aria-label="{{ __('Toggle password') }}">
+                                            <i class="ri-eye-fill align-middle"></i>
+                                        </button>
+                                    </div>
+                                    @error('newPasswordConfirmation') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                                </div>
+
+                                <div class="col-12">
+                                    <div id="profile-password-contain" class="password-rule-list p-3 bg-light rounded">
+                                        <h5 class="fs-13">{{ __('Password must contain:') }}</h5>
+                                        <p id="profile-pass-lower" class="invalid fs-12 mb-2">{{ __('At least one lowercase letter') }}</p>
+                                        <p id="profile-pass-upper" class="invalid fs-12 mb-2">{{ __('At least one uppercase letter') }}</p>
+                                        <p id="profile-pass-number" class="invalid fs-12 mb-2">{{ __('At least one number') }}</p>
+                                        <p id="profile-pass-special" class="invalid fs-12 mb-2">{{ __('At least one special character') }}</p>
+                                        <p id="profile-pass-length" class="invalid fs-12 mb-2">{{ __('At least 8 characters') }}</p>
+                                        <p id="profile-pass-match" class="invalid fs-12 mb-0">{{ __('Passwords match') }}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex justify-content-end mt-4">
+                                <button
+                                    type="submit"
+                                    class="btn btn-success"
+                                    wire:loading.attr="disabled"
+                                    wire:target="updatePassword"
+                                >
+                                    <span wire:loading.remove wire:target="updatePassword">{{ __('Change Password') }}</span>
+                                    <span
+                                        class="d-none align-items-center gap-2"
+                                        wire:loading.class.remove="d-none"
+                                        wire:loading.class="d-inline-flex"
+                                        wire:target="updatePassword"
+                                    >
+                                        <span class="spinner-border spinner-border-sm"></span>
+                                        {{ __('Updating...') }}
+                                    </span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     @push('scripts')
-    @once
-    <script>
-        document.addEventListener('livewire:init', () => {
+        @php
+            $profilePhoneConfig = [
+                'invalidPhoneMessage' => __('Please enter a valid phone number.'),
+                'assetErrorMessage' => __('Phone input failed to load. Please refresh and try again.'),
+                'allowedCountries' => $allowedPhoneCountries ?? [],
+                'preferredCountries' => $preferredPhoneCountries ?? [],
+            ];
+        @endphp
 
-            // -------------------------------
-            // Bootstrap modal helpers
-            // -------------------------------
-            function showModal(id, opts = {}) {
-                const el = document.getElementById(id);
-                if (!el) return;
-                bootstrap.Modal.getOrCreateInstance(el, opts).show();
-            }
+        <script>
+            window.profilePhoneConfig = @json($profilePhoneConfig);
+        </script>
 
-            function hideModal(id) {
-                const el = document.getElementById(id);
-                if (!el) return;
-                const inst = bootstrap.Modal.getInstance(el) || bootstrap.Modal.getOrCreateInstance(el);
-                inst.hide();
+        @once
+            <script>
+                (() => {
+                    const config = window.profilePhoneConfig || {};
+                    const invalidPhoneMessage = typeof config.invalidPhoneMessage === 'string' && config.invalidPhoneMessage.trim() !== ''
+                        ? config.invalidPhoneMessage
+                        : 'Please enter a valid phone number.';
+                    const assetErrorMessage = typeof config.assetErrorMessage === 'string' && config.assetErrorMessage.trim() !== ''
+                        ? config.assetErrorMessage
+                        : 'Phone input failed to load. Please refresh and try again.';
+                    const allowedCountries = Array.isArray(config.allowedCountries) ? config.allowedCountries : [];
+                    const preferredCountries = Array.isArray(config.preferredCountries) ? config.preferredCountries : [];
 
-                // Cleanup leftover backdrop
-                setTimeout(() => {
-                    document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
-                    document.body.classList.remove('modal-open');
-                    document.body.style.removeProperty('padding-right');
-                }, 150);
-            }
+                    let profileInitQueued = false;
 
-            // Server-driven show/hide
-            Livewire.on('bs:modal:show', ({ id }) => {
-                if (!id) return;
-                // If you want static for OTP only, keep default here and pass opts from server if needed.
-                showModal(id);
-            });
+                    function setRuleState(elementId, ok) {
+                        const element = document.getElementById(elementId);
 
-            Livewire.on('bs:modal:hide', ({ id }) => {
-                if (!id) return;
-                hideModal(id);
-            });
-
-            // Client-driven instant open (no network roundtrip)
-            window.ProfilePage = {
-                openEditModal() {
-                    showModal('updateUserModal');
-
-                    // Prepare values in background (safe in Volt/LW3/4)
-                    try {
-                        @this.call('prepareEditForm');
-                    } catch (e) {}
-                },
-                closeModal(id) {
-                    hideModal(id);
-                }
-            };
-
-            // -------------------------------
-            // OTP auto-advance + paste
-            // -------------------------------
-            function initOtpInputs() {
-                const otpInputs = document.querySelectorAll('.otp-input');
-                if (!otpInputs.length) return;
-
-                otpInputs.forEach((input, index) => {
-                    input.addEventListener('input', function () {
-                        this.value = this.value.replace(/[^0-9]/g, '');
-                        if (this.value.length === 1 && index < otpInputs.length - 1) {
-                            otpInputs[index + 1].focus();
+                        if (!element) {
+                            return;
                         }
-                    });
 
-                    input.addEventListener('keydown', function (e) {
-                        if (e.key === 'Backspace' && !this.value && index > 0) {
-                            otpInputs[index - 1].focus();
+                        element.classList.toggle('valid', ok);
+                        element.classList.toggle('invalid', !ok);
+                    }
+
+                    function updatePasswordRules() {
+                        const password = document.getElementById('profile_new_password');
+                        const confirmation = document.getElementById('profile_new_password_confirmation');
+                        const value = password?.value || '';
+
+                        setRuleState('profile-pass-length', value.length >= 8);
+                        setRuleState('profile-pass-lower', /[a-z]/.test(value));
+                        setRuleState('profile-pass-upper', /[A-Z]/.test(value));
+                        setRuleState('profile-pass-number', /\d/.test(value));
+                        setRuleState('profile-pass-special', /[^A-Za-z0-9]/.test(value));
+
+                        const passwordsMatch = value.length > 0
+                            && (confirmation?.value || '').length > 0
+                            && value === confirmation.value;
+
+                        setRuleState('profile-pass-match', passwordsMatch);
+                    }
+
+                    async function initProfilePhoneInput() {
+                        if (!window.MetIntlTelInput) {
+                            return;
                         }
-                    });
 
-                    input.addEventListener('paste', function (e) {
-                        e.preventDefault();
-                        const pasteData = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '');
-                        for (let i = 0; i < Math.min(pasteData.length, otpInputs.length); i++) {
-                            otpInputs[i].value = pasteData[i];
-                            otpInputs[i].dispatchEvent(new Event('input'));
+                        const initialCountry = document.getElementById('profile_phone_country_hidden')?.value
+                            || preferredCountries[0]
+                            || allowedCountries[0]
+                            || 'iq';
+
+                        await window.MetIntlTelInput.init({
+                            key: 'profile-phone-number',
+                            inputSelector: '#profile_phone_number',
+                            hiddenPhoneSelector: '#profile_phone_number_hidden',
+                            hiddenCountrySelector: '#profile_phone_country_hidden',
+                            hiddenDialCodeSelector: '#profile_phone_dial_code_hidden',
+                            formSelector: '#profile-details-form',
+                            errorSelector: '#profile_phone_number_client_error',
+                            invalidMessage: invalidPhoneMessage,
+                            assetErrorMessage,
+                            initialCountry,
+                            onlyCountries: allowedCountries,
+                            preferredCountries,
+                        });
+                    }
+
+                    function initPasswordToggles() {
+                        if (window.__PROFILE_PASSWORD_TOGGLES_BOUND__) {
+                            return;
                         }
-                        const lastIndex = Math.min(pasteData.length, otpInputs.length) - 1;
-                        otpInputs[lastIndex]?.focus();
-                    });
-                });
-            }
 
-            // -------------------------------
-            // Password checklist
-            // -------------------------------
-            function initPasswordChecklist() {
-                const input = document.getElementById('newpasswordInput');
-                if (!input) return;
+                        window.__PROFILE_PASSWORD_TOGGLES_BOUND__ = true;
 
-                const rules = {
-                    lower: /[a-z]/,
-                    upper: /[A-Z]/,
-                    number: /\d/,
-                    special: /[^A-Za-z0-9]/,
-                    length: /.{8,}/
-                };
+                        document.addEventListener('click', (event) => {
+                            const button = event.target.closest('.password-addon');
 
-                function toggle(id, ok) {
-                    const el = document.getElementById(id);
-                    if (!el) return;
-                    el.classList.toggle('invalid', !ok);
-                    el.classList.toggle('text-success', ok);
-                    el.classList.toggle('text-danger', !ok);
-                }
+                            if (!button) {
+                                return;
+                            }
 
-                const update = () => {
-                    const v = input.value || '';
-                    toggle('pass-lower', rules.lower.test(v));
-                    toggle('pass-upper', rules.upper.test(v));
-                    toggle('pass-number', rules.number.test(v));
-                    toggle('pass-special', rules.special.test(v));
-                    toggle('pass-length', rules.length.test(v));
-                };
+                            const selector = button.getAttribute('data-target');
+                            const input = selector ? document.querySelector(selector) : button.closest('.input-group')?.querySelector('input');
+                            const icon = button.querySelector('i');
 
-                input.addEventListener('input', update);
-                update();
-            }
+                            if (!input) {
+                                return;
+                            }
 
-            function initAll() {
-                initOtpInputs();
-                initPasswordChecklist();
-            }
+                            const showText = input.type === 'password';
+                            input.type = showText ? 'text' : 'password';
 
-            // Init now + after navigate swaps content
-            initAll();
-            document.addEventListener('livewire:navigated', initAll);
-        });
-    </script>
-    @endonce
+                            if (icon) {
+                                icon.classList.toggle('ri-eye-fill', !showText);
+                                icon.classList.toggle('ri-eye-off-fill', showText);
+                            }
+                        });
+                    }
+
+                    function queueProfileInit() {
+                        if (profileInitQueued) {
+                            return;
+                        }
+
+                        profileInitQueued = true;
+
+                        requestAnimationFrame(() => {
+                            profileInitQueued = false;
+                            updatePasswordRules();
+                            initProfilePhoneInput();
+                        });
+                    }
+
+                    initPasswordToggles();
+
+                    document.addEventListener('input', (event) => {
+                        if (event.target?.id === 'profile_new_password' || event.target?.id === 'profile_new_password_confirmation') {
+                            updatePasswordRules();
+                        }
+                    }, true);
+
+                    document.addEventListener('DOMContentLoaded', queueProfileInit);
+                    document.addEventListener('met:intl-tel-input-ready', queueProfileInit);
+                    document.addEventListener('livewire:navigated', queueProfileInit);
+                    document.addEventListener('livewire:initialized', queueProfileInit);
+
+                    if (window.Livewire && typeof window.Livewire.hook === 'function' && !window.__PROFILE_PHONE_MORPH_HOOK_BOUND__) {
+                        window.__PROFILE_PHONE_MORPH_HOOK_BOUND__ = true;
+
+                        window.Livewire.hook('morphed', ({ component, el }) => {
+                            const target = component?.el || el;
+
+                            if (!target || typeof target.querySelector !== 'function') {
+                                return;
+                            }
+
+                            if (!target.querySelector('#profile-details-form')) {
+                                return;
+                            }
+
+                            queueProfileInit();
+                        });
+                    }
+
+                    queueProfileInit();
+                })();
+            </script>
+        @endonce
     @endpush
 </div>

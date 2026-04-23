@@ -5,11 +5,13 @@ namespace App\Services\Billing;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Domain\Payments\Models\Payment;
+use App\Domain\Payments\Models\PaymentEvent;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Models\Coupon;
 use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
 use App\Services\Coupons\CouponLifecycleService;
+use App\Support\TelegramSubscriptionLifecycleNotifier;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -21,10 +23,11 @@ class SyncProviderSubscriptionLifecycle
         protected FibSubscriptionService $fibSubscriptions,
         protected PaymentEventRecorder $events,
         protected CouponLifecycleService $couponLifecycle,
+        protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
     ) {
     }
 
-    public function handle(Payment $payment): void
+    public function handle(Payment $payment, string $source = 'provider_status_sync'): void
     {
         $payment = $payment->fresh() ?? $payment;
 
@@ -33,15 +36,15 @@ class SyncProviderSubscriptionLifecycle
         }
 
         match ($payment->purchase_type) {
-            PurchaseType::PLAN_SUBSCRIPTION => $this->syncServiceSubscription($payment),
-            PurchaseType::STORAGE_SUBSCRIPTION => $this->syncStorageSubscription($payment),
+            PurchaseType::PLAN_SUBSCRIPTION => $this->syncServiceSubscription($payment, $source),
+            PurchaseType::STORAGE_SUBSCRIPTION => $this->syncStorageSubscription($payment, $source),
             default => null,
         };
     }
 
-    protected function syncServiceSubscription(Payment $payment): void
+    protected function syncServiceSubscription(Payment $payment, string $source): void
     {
-        DB::transaction(function () use ($payment) {
+        DB::transaction(function () use ($payment, $source) {
             /** @var CustomerServiceSubscription|null $subscription */
             $subscription = CustomerServiceSubscription::query()
                 ->lockForUpdate()
@@ -53,13 +56,13 @@ class SyncProviderSubscriptionLifecycle
                 return;
             }
 
-            $this->applyLifecycleState($subscription, $payment, 'service_subscription');
+            $this->applyLifecycleState($subscription, $payment, 'service_subscription', $source);
         }, 3);
     }
 
-    protected function syncStorageSubscription(Payment $payment): void
+    protected function syncStorageSubscription(Payment $payment, string $source): void
     {
-        DB::transaction(function () use ($payment) {
+        DB::transaction(function () use ($payment, $source) {
             /** @var CustomerStorageSubscription|null $subscription */
             $subscription = CustomerStorageSubscription::query()
                 ->lockForUpdate()
@@ -71,15 +74,22 @@ class SyncProviderSubscriptionLifecycle
                 return;
             }
 
-            $this->applyLifecycleState($subscription, $payment, 'storage_subscription');
+            $this->applyLifecycleState($subscription, $payment, 'storage_subscription', $source);
         }, 3);
     }
 
-    protected function applyLifecycleState(CustomerServiceSubscription|CustomerStorageSubscription $subscription, Payment $payment, string $eventPrefix): void
+    protected function applyLifecycleState(
+        CustomerServiceSubscription|CustomerStorageSubscription $subscription,
+        Payment $payment,
+        string $eventPrefix,
+        string $source,
+    ): void
     {
         $providerStatus = $this->fibSubscriptions->normalizeProviderStatus(
             $payment->provider_subscription_status ?: $payment->provider_status
         );
+        $previousProviderStatus = (string) data_get($subscription->meta, 'provider_status', '');
+        $previousPeriodEndsAt = data_get($subscription->meta, 'period_ends_at');
         $billingCycle = strtolower((string) data_get(
             $payment->purchase_snapshot,
             'billing_cycle',
@@ -104,7 +114,23 @@ class SyncProviderSubscriptionLifecycle
         $meta['provider_last_payment_at'] = $payment->last_payment_at?->toIso8601String();
         $meta['provider_status'] = $providerStatus;
         $meta['provider_lifecycle_synced_at'] = now()->toIso8601String();
+        $meta['provider_lifecycle_sync_source'] = $source;
         $meta['discount_cycles_consumed'] = $discountCyclesConsumed;
+        $cancelSource = $this->resolveCancelSource(
+            $subscription,
+            $payment,
+            $source,
+            $providerStatus,
+            $shouldAutoRenew,
+            $shouldEndNow,
+            $wasAutoRenewing,
+        );
+
+        if ($cancelSource !== null) {
+            $meta['cancel_source'] = $cancelSource;
+        } else {
+            unset($meta['cancel_source']);
+        }
 
         $subscription->forceFill([
             'status' => $shouldEndNow ? 'ended' : 'active',
@@ -119,43 +145,129 @@ class SyncProviderSubscriptionLifecycle
             'meta' => $meta,
         ])->save();
 
+        $paymentMeta = (array) ($payment->meta ?? []);
+        $paymentMeta['subscription_lifecycle'] = array_filter([
+            'status' => $subscription->status,
+            'auto_renew' => (bool) $subscription->auto_renew,
+            'period_ends_at' => $periodEndsAt?->toIso8601String(),
+            'provider_status' => $providerStatus,
+            'provider_last_payment_at' => $payment->last_payment_at?->toIso8601String(),
+            'cancel_source' => $cancelSource,
+            'synced_at' => now()->toIso8601String(),
+            'sync_source' => $source,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+        $payment->forceFill(['meta' => $paymentMeta])->save();
+
         if ($renewalDetected) {
-            $this->events->record($payment, [
+            $renewalEvent = $this->events->record($payment, [
                 'event_type' => $eventPrefix . '_renewed',
-                'source' => 'provider_status_sync',
+                'source' => $source,
+                'event_key' => $this->lifecycleEventKey(
+                    $payment,
+                    $eventPrefix . '_renewed',
+                    [
+                        $payment->last_payment_at?->toIso8601String(),
+                        $periodEndsAt?->toIso8601String(),
+                    ]
+                ),
                 'before_status' => $payment->status->value,
                 'after_status' => $payment->status->value,
                 'meta' => [
                     'provider_status' => $providerStatus,
+                    'previous_provider_status' => $previousProviderStatus !== '' ? $previousProviderStatus : null,
+                    'previous_period_ends_at' => $previousPeriodEndsAt,
                     'period_ends_at' => $periodEndsAt?->toIso8601String(),
+                    'sync_source' => $source,
                 ],
             ]);
+
+            $this->notifyLifecycleEvent(
+                $renewalEvent,
+                $payment,
+                __('FIB subscription renewed'),
+                [
+                    'Event' => 'renewed',
+                    'Provider status' => $providerStatus,
+                    'Previous period end' => $this->valueOrDash($previousPeriodEndsAt),
+                    'New period end' => $this->valueOrDash($periodEndsAt?->toIso8601String()),
+                    'Last payment at' => $this->valueOrDash($payment->last_payment_at?->toIso8601String()),
+                    'Sync source' => $source,
+                ],
+            );
         }
 
         if ($wasAutoRenewing && ! $shouldAutoRenew && ! $shouldEndNow) {
-            $this->events->record($payment, [
+            $cancelAtPeriodEndEvent = $this->events->record($payment, [
                 'event_type' => $eventPrefix . '_cancel_at_period_end',
-                'source' => 'provider_status_sync',
+                'source' => $source,
+                'event_key' => $this->lifecycleEventKey(
+                    $payment,
+                    $eventPrefix . '_cancel_at_period_end',
+                    [
+                        $providerStatus,
+                        $periodEndsAt?->toIso8601String(),
+                        $cancelSource,
+                    ]
+                ),
                 'before_status' => $payment->status->value,
                 'after_status' => $payment->status->value,
                 'meta' => [
                     'provider_status' => $providerStatus,
                     'period_ends_at' => $periodEndsAt?->toIso8601String(),
+                    'cancel_source' => $cancelSource,
+                    'sync_source' => $source,
                 ],
             ]);
+
+            $this->notifyLifecycleEvent(
+                $cancelAtPeriodEndEvent,
+                $payment,
+                __('FIB subscription cancellation scheduled'),
+                [
+                    'Event' => 'cancel_at_period_end',
+                    'Provider status' => $providerStatus,
+                    'Cancel source' => $this->valueOrDash($cancelSource),
+                    'Service until' => $this->valueOrDash($periodEndsAt?->toIso8601String()),
+                    'Sync source' => $source,
+                ],
+            );
         }
 
         if ($previousStatus !== 'ended' && $shouldEndNow) {
-            $this->events->record($payment, [
+            $endedEvent = $this->events->record($payment, [
                 'event_type' => $eventPrefix . '_ended',
-                'source' => 'provider_status_sync',
+                'source' => $source,
+                'event_key' => $this->lifecycleEventKey(
+                    $payment,
+                    $eventPrefix . '_ended',
+                    [
+                        $providerStatus,
+                        $periodEndsAt?->toIso8601String(),
+                        $cancelSource,
+                    ]
+                ),
                 'before_status' => $payment->status->value,
                 'after_status' => $payment->status->value,
                 'meta' => [
                     'provider_status' => $providerStatus,
                     'period_ends_at' => $periodEndsAt?->toIso8601String(),
+                    'cancel_source' => $cancelSource,
+                    'sync_source' => $source,
                 ],
             ]);
+
+            $this->notifyLifecycleEvent(
+                $endedEvent,
+                $payment,
+                __('FIB subscription ended'),
+                [
+                    'Event' => 'ended',
+                    'Provider status' => $providerStatus,
+                    'Cancel source' => $this->valueOrDash($cancelSource),
+                    'Ended at period end' => $this->valueOrDash($periodEndsAt?->toIso8601String()),
+                    'Sync source' => $source,
+                ],
+            );
         }
     }
 
@@ -253,5 +365,90 @@ class SyncProviderSubscriptionLifecycle
         return $this->couponLifecycle->appliesToCycle($coupon, $nextCycleIndex)
             ? $nextCycleIndex
             : $currentCount;
+    }
+
+    protected function resolveCancelSource(
+        CustomerServiceSubscription|CustomerStorageSubscription $subscription,
+        Payment $payment,
+        string $source,
+        ?string $providerStatus,
+        bool $shouldAutoRenew,
+        bool $shouldEndNow,
+        bool $wasAutoRenewing,
+    ): ?string {
+        $existing = trim((string) data_get($subscription->meta, 'cancel_source', ''));
+
+        if ($shouldAutoRenew) {
+            return null;
+        }
+
+        if ($existing !== '' && ! $wasAutoRenewing) {
+            return $existing;
+        }
+
+        $providerCancellationRequested = (bool) data_get($subscription->meta, 'provider_cancellation.requested_at');
+
+        if ($providerCancellationRequested || $source === 'cancel_confirmation') {
+            return 'customer_web';
+        }
+
+        if ($shouldEndNow && in_array($providerStatus, ['FAILED', 'UNPAID', 'DECLINED', 'REJECTED', 'EXPIRED', 'INACTIVE', 'ENDED'], true)) {
+            return 'renewal_failed';
+        }
+
+        if ($payment->status->value === 'canceled') {
+            return 'customer_web';
+        }
+
+        return 'provider_app';
+    }
+
+    /**
+     * @param  array<int, string|null>  $parts
+     */
+    protected function lifecycleEventKey(Payment $payment, string $eventType, array $parts = []): string
+    {
+        $fingerprint = collect($parts)
+            ->map(static fn (mixed $value): string => trim((string) ($value ?? '')))
+            ->filter(static fn (string $value): bool => $value !== '')
+            ->values()
+            ->implode('|');
+
+        return 'subscription-lifecycle:' . $eventType . ':' . $payment->id . ':' . sha1($fingerprint);
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     */
+    protected function notifyLifecycleEvent(PaymentEvent $event, Payment $payment, string $title, array $details): void
+    {
+        if (! $event->wasRecentlyCreated) {
+            return;
+        }
+
+        $customer = $payment->customer()->first();
+        $eventDetails = [
+            'Type' => $payment->purchase_type === PurchaseType::STORAGE_SUBSCRIPTION
+                ? 'storage_subscription'
+                : 'service_subscription',
+            'Customer ID' => $payment->customer_id,
+            'Username' => $customer?->username,
+            'Local status' => $payment->status->value,
+            'Provider ref' => $payment->providerReference(),
+            'Payment UUID' => $payment->uuid,
+        ];
+
+        $this->telegramLifecycleNotifier->send(
+            $title,
+            array_merge($eventDetails, $details),
+            'Subscription lifecycle'
+        );
+    }
+
+    protected function valueOrDash(?string $value): string
+    {
+        $value = trim((string) $value);
+
+        return $value !== '' ? $value : 'N/A';
     }
 }

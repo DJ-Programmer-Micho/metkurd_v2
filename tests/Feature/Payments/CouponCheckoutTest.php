@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 
 beforeEach(function () {
     Cache::flush();
@@ -152,23 +153,42 @@ function couponFeatureCreateCoupon(array $overrides = []): Coupon
         'discount_type' => CouponDiscountType::PERCENT,
         'discount_value' => 50,
         'target_type' => CouponTargetType::PLAN_SUBSCRIPTION,
+        'supported_payment_methods' => ['fib'],
         'duration_type' => CouponDurationType::FOREVER,
         'currency' => 'IQD',
     ], $overrides));
 }
 
-function couponFeaturePlanContext(Customer $customer, ServicePlan $plan, string $cycle = 'monthly'): CouponContext
+function couponFeaturePlanContext(
+    Customer $customer,
+    ServicePlan $plan,
+    string $cycle = 'monthly',
+    string $provider = 'fib',
+): CouponContext
 {
     return new CouponContext(
         customer: $customer,
         purchaseType: PurchaseType::PLAN_SUBSCRIPTION,
-        provider: 'fib',
+        provider: $provider,
         purchasableType: ServicePlan::class,
         purchasableId: (int) $plan->id,
         itemCode: (string) $plan->code,
         originalAmountIqd: $plan->priceIqdForCycle($cycle === 'yearly' ? 'yearly' : 'monthly'),
         billingCycle: $cycle,
         isRecurring: true,
+    );
+}
+
+function couponFeatureAddonContext(Customer $customer, CreditProduct $product, string $provider = 'fib'): CouponContext
+{
+    return new CouponContext(
+        customer: $customer,
+        purchaseType: PurchaseType::ADDON_CREDITS,
+        provider: $provider,
+        purchasableType: CreditProduct::class,
+        purchasableId: (int) $product->id,
+        itemCode: (string) $product->code,
+        originalAmountIqd: $product->priceIqdAmount(),
     );
 }
 
@@ -475,4 +495,162 @@ it('renders the applied coupon summary on the fib payment page', function () {
         ->assertSee('Coupon')
         ->assertSee('SHOWSAVE')
         ->assertSee('Discounted Amount');
+});
+
+it('hides coupon input on fib checkout when only areeba coupons are eligible', function () {
+    Http::preventStrayRequests();
+
+    $customer = couponFeatureCustomer();
+    couponFeatureGrantPaidPlan($customer);
+    $product = CreditProduct::query()->where('is_active', true)->firstOrFail();
+    couponFeatureCreateCoupon([
+        'code' => 'AREEBAONLY',
+        'target_type' => CouponTargetType::ADDON_CREDITS,
+        'duration_type' => CouponDurationType::ONCE,
+        'supported_payment_methods' => ['areeba'],
+        'applies_to_codes' => [strtoupper($product->code)],
+    ]);
+
+    couponFeatureFakeAddonPayment('fib-addon-areeba-only');
+    $payment = app(CreateAddonPayment::class)->handle($customer, $product->id);
+
+    $this->actingAs($customer, 'app')
+        ->get(route('payments.fib.show', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertDontSee('Apply Coupon')
+        ->assertDontSee('Coupons are validated server-side');
+});
+
+it('shows coupon input on fib checkout when a fib-eligible coupon exists', function () {
+    Http::preventStrayRequests();
+
+    $customer = couponFeatureCustomer();
+    couponFeatureGrantPaidPlan($customer);
+    $product = CreditProduct::query()->where('is_active', true)->firstOrFail();
+    couponFeatureCreateCoupon([
+        'code' => 'FIBONLY',
+        'target_type' => CouponTargetType::ADDON_CREDITS,
+        'duration_type' => CouponDurationType::ONCE,
+        'supported_payment_methods' => ['fib'],
+        'applies_to_codes' => [strtoupper($product->code)],
+    ]);
+
+    couponFeatureFakeAddonPayment('fib-addon-fib-only');
+    $payment = app(CreateAddonPayment::class)->handle($customer, $product->id);
+
+    $this->actingAs($customer, 'app')
+        ->get(route('payments.fib.show', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertSee('Coupon Code')
+        ->assertSee('Apply Coupon');
+});
+
+it('accepts coupons configured for both fib and areeba contexts', function () {
+    $customer = couponFeatureCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+    $coupon = couponFeatureCreateCoupon([
+        'code' => 'BOTHWAYS',
+        'target_type' => CouponTargetType::PLAN_SUBSCRIPTION,
+        'duration_type' => CouponDurationType::FOREVER,
+        'supported_payment_methods' => ['fib', 'areeba'],
+        'applies_to_codes' => [strtoupper($plan->code)],
+    ]);
+
+    $fibPreview = app(CouponService::class)->preview($coupon->code, couponFeaturePlanContext($customer, $plan, 'monthly', 'fib'));
+    $areebaPreview = app(CouponService::class)->preview($coupon->code, couponFeaturePlanContext($customer, $plan, 'monthly', 'areeba'));
+
+    expect($fibPreview['code'])->toBe('BOTHWAYS')
+        ->and($areebaPreview['code'])->toBe('BOTHWAYS');
+});
+
+it('rejects coupons when the selected payment method is not eligible', function () {
+    $customer = couponFeatureCustomer();
+    $product = CreditProduct::query()->where('is_active', true)->firstOrFail();
+    $coupon = couponFeatureCreateCoupon([
+        'code' => 'FIBMETHOD',
+        'target_type' => CouponTargetType::ADDON_CREDITS,
+        'duration_type' => CouponDurationType::ONCE,
+        'supported_payment_methods' => ['fib'],
+        'applies_to_codes' => [strtoupper($product->code)],
+    ]);
+
+    expect(fn () => app(CouponService::class)->preview($coupon->code, couponFeatureAddonContext($customer, $product, 'areeba')))
+        ->toThrow(ValidationException::class, 'payment method');
+});
+
+it('removes coupon input from the old pre-checkout plan and storage modals', function () {
+    $customer = couponFeatureCustomer();
+    couponFeatureGrantPaidPlan($customer);
+
+    $this->actingAs($customer, 'app')
+        ->get(route('subscription-plan', ['locale' => 'en']))
+        ->assertOk()
+        ->assertDontSee('Enter coupon code')
+        ->assertDontSee('Coupon Code');
+
+    $this->actingAs($customer, 'app')
+        ->get(route('storage-plan', ['locale' => 'en']))
+        ->assertOk()
+        ->assertDontSee('Enter coupon code')
+        ->assertDontSee('Coupon Code');
+});
+
+it('applies coupon from the fib payment page by creating a new checkout with updated totals', function () {
+    Http::preventStrayRequests();
+
+    $customer = couponFeatureCustomer();
+    couponFeatureGrantPaidPlan($customer);
+    $product = CreditProduct::query()->where('is_active', true)->firstOrFail();
+    $coupon = couponFeatureCreateCoupon([
+        'code' => 'PAGE10',
+        'target_type' => CouponTargetType::ADDON_CREDITS,
+        'duration_type' => CouponDurationType::ONCE,
+        'discount_type' => CouponDiscountType::PERCENT,
+        'discount_value' => 10,
+        'supported_payment_methods' => ['fib'],
+        'applies_to_codes' => [strtoupper($product->code)],
+    ]);
+
+    couponFeatureFakeAddonPayment('fib-addon-page-base');
+    $payment = app(CreateAddonPayment::class)->handle($customer, $product->id)->fresh();
+    $initialCount = Payment::query()->count();
+
+    couponFeatureFakeAddonPayment('fib-addon-page-updated');
+
+    Livewire::actingAs($customer, 'app')
+        ->test('app::pages.payments.fib-payment', ['payment' => $payment])
+        ->set('couponCode', $coupon->code)
+        ->call('applyCoupon');
+
+    $newPayment = Payment::query()->latest('id')->first();
+
+    expect($newPayment)->not->toBeNull()
+        ->and($newPayment->id)->not->toBe($payment->id)
+        ->and(Payment::query()->count())->toBe($initialCount + 1)
+        ->and($newPayment->coupon_code)->toBe('PAGE10')
+        ->and((int) round((float) $newPayment->discount_amount_iqd))->toBeGreaterThan(0)
+        ->and((int) round((float) $newPayment->discounted_amount_iqd))->toBeLessThan((int) round((float) $newPayment->original_amount_iqd));
+});
+
+it('hides fib recurring coupon input when available recurring coupons are provider-incompatible', function () {
+    Http::preventStrayRequests();
+
+    $customer = couponFeatureCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+    couponFeatureCreateCoupon([
+        'code' => 'FIRSTONLYFIB',
+        'target_type' => CouponTargetType::PLAN_SUBSCRIPTION,
+        'duration_type' => CouponDurationType::FIRST_CYCLE,
+        'supported_payment_methods' => ['fib'],
+        'applies_to_codes' => [strtoupper($plan->code)],
+    ]);
+
+    couponFeatureFakePlanSubscription('fib-sub-plan-incompatible');
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'monthly');
+
+    $this->actingAs($customer, 'app')
+        ->get(route('payments.fib.show', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertDontSee('Apply Coupon')
+        ->assertDontSee('Coupons are validated server-side');
 });

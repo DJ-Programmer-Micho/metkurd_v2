@@ -98,7 +98,28 @@ new class extends Component
                 </div>
 
                 <div class="col-lg-5 icon-chip tool-square-chip" style="width: 256px; height: 256px;">
-                    <img src="{{ asset('/app/logo/qr_tele.png') }}" alt="https://t.me/metkurd_ai" width="100%">
+                    <a href="https://t.me/metkurd_ai">
+                        <img src="{{ asset('/app/logo/qr_tele.png') }}" alt="metkurd_ai-telegram_channel" width="100%">
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="newsletter glass-card mb-5 reveal">
+            <div class="row align-items-center justify-content-between g-4">
+                <div class="col-lg-7">
+                    <span class="section-badge mb-3">
+                        <i class="bi bi-google"></i>
+                        {{ LandingContent::text('google_review.g_badge') }}
+                    </span>
+                    <h3 class="fw-bold mb-2">{{ LandingContent::text('google_review.g_title') }}</h3>
+                    <p class="text-muted-soft mb-0">{{ LandingContent::text('google_review.g_copy') }}</p>
+                </div>
+
+                <div class="col-lg-5 icon-chip tool-square-chip" style="width: 132px; height: 132px;">
+                    <a href="https://g.page/r/CZCtbaL1YK6FEAI/review">
+                        <img src="{{ app('g_review') }}" alt="https://t.me/metkurd_ai" width="100%">
+                    </a>
                 </div>
             </div>
         </div>

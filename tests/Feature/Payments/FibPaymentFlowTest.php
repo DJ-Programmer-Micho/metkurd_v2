@@ -16,6 +16,7 @@ use App\Models\CreditProduct;
 use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
+use App\Notifications\Payments\TelegramSubscriptionLifecycleAlert;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
 use App\Services\Billing\PlanSwitcher;
@@ -28,6 +29,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 
@@ -573,6 +575,205 @@ it('extends a fulfilled hourly subscription when fib reports a successful renewa
         ->and(PaymentEvent::query()
             ->where('payment_id', $payment->id)
             ->where('event_type', 'service_subscription_renewed')
+            ->exists())->toBeTrue();
+
+    Notification::assertSentOnDemand(
+        TelegramSubscriptionLifecycleAlert::class,
+        function (TelegramSubscriptionLifecycleAlert $notification, ...$args): bool {
+            $title = strtolower((string) data_get($notification->toArray(new AnonymousNotifiable()), 'title', ''));
+
+            return str_contains($title, 'renewed');
+        }
+    );
+});
+
+it('detects recurring renewal through scheduled reconciliation and records sync evidence', function () {
+    Http::preventStrayRequests();
+    fibFlowEnableHourlyTesting();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-hourly-reconcile-sub-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-hourly-reconcile-sub-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-reconcile-sub-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-reconcile-sub-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T12:00:00Z',
+                'lastPaymentAt' => '2026-05-01T11:00:00Z',
+            ]), 200),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_reconcile_initial')->fresh();
+
+    Carbon::setTestNow('2026-05-01 11:05:00');
+
+    $this->artisan('payments:reconcile-fib-subscriptions', [
+        '--customer-id' => $customer->id,
+        '--chunk' => 25,
+        '--stale-minutes' => 0,
+    ])->assertSuccessful();
+
+    $payment = $payment->fresh();
+    $subscription = CustomerServiceSubscription::query()
+        ->where('payment_id', $payment->id)
+        ->latest('id')
+        ->firstOrFail();
+    $renewalEvents = PaymentEvent::query()
+        ->where('payment_id', $payment->id)
+        ->where('event_type', 'service_subscription_renewed')
+        ->get();
+
+    expect($payment->active_until?->toIso8601String())->toContain('2026-05-01T12:00:00')
+        ->and($payment->last_payment_at?->toIso8601String())->toContain('2026-05-01T11:00:00')
+        ->and(data_get($payment->meta, 'subscription_lifecycle.sync_source'))->toBe('scheduled_reconciliation')
+        ->and(data_get($subscription->meta, 'provider_lifecycle_sync_source'))->toBe('scheduled_reconciliation')
+        ->and($renewalEvents->contains(function (PaymentEvent $event): bool {
+            return str_contains((string) data_get($event->meta, 'period_ends_at', ''), '2026-05-01T12:00:00');
+        }))->toBeTrue();
+});
+
+it('keeps reconciliation renewal events and notifications idempotent across repeated sync runs', function () {
+    Http::preventStrayRequests();
+    fibFlowEnableHourlyTesting();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-hourly-reconcile-dedupe-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-hourly-reconcile-dedupe-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-reconcile-dedupe-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-reconcile-dedupe-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T12:00:00Z',
+                'lastPaymentAt' => '2026-05-01T11:00:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-reconcile-dedupe-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T12:00:00Z',
+                'lastPaymentAt' => '2026-05-01T11:00:00Z',
+            ]), 200),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_reconcile_dedupe_initial')->fresh();
+
+    Carbon::setTestNow('2026-05-01 11:05:00');
+
+    $this->artisan('payments:reconcile-fib-subscriptions', [
+        '--customer-id' => $customer->id,
+        '--chunk' => 25,
+        '--stale-minutes' => 0,
+    ])->assertSuccessful();
+
+    $this->artisan('payments:reconcile-fib-subscriptions', [
+        '--customer-id' => $customer->id,
+        '--chunk' => 25,
+        '--stale-minutes' => 0,
+    ])->assertSuccessful();
+
+    $renewalEvents = PaymentEvent::query()
+        ->where('payment_id', $payment->id)
+        ->where('event_type', 'service_subscription_renewed')
+        ->get();
+
+    expect($renewalEvents->count())->toBe(2)
+        ->and($renewalEvents->filter(function (PaymentEvent $event): bool {
+            return str_contains((string) data_get($event->meta, 'period_ends_at', ''), '2026-05-01T12:00:00');
+        })->count())->toBe(1);
+
+    $renewalAlerts = Notification::sent(
+        new AnonymousNotifiable(),
+        TelegramSubscriptionLifecycleAlert::class,
+        function (TelegramSubscriptionLifecycleAlert $notification, ...$args): bool {
+            $title = strtolower((string) data_get($notification->toArray(new AnonymousNotifiable()), 'title', ''));
+
+            return str_contains($title, 'renewed');
+        }
+    );
+
+    expect($renewalAlerts->count())->toBeGreaterThanOrEqual(1);
+});
+
+it('syncs provider-side cancellation changes into local recurring entitlement state', function () {
+    Http::preventStrayRequests();
+    fibFlowEnableHourlyTesting();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-provider-cancel-sync-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-provider-cancel-sync-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-provider-cancel-sync-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-provider-cancel-sync-123', 'CANCELED', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'provider_cancel_sync_initial')->fresh();
+
+    $this->postJson(
+        route('payments.fib.subscription.callback'),
+        ['id' => $payment->fib_subscription_id, 'status' => 'CANCELED'],
+        ['x-callback-secret' => 'fib-callback-secret'],
+    )->assertStatus(202);
+
+    $payment = $payment->fresh();
+    $subscription = CustomerServiceSubscription::query()
+        ->where('payment_id', $payment->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($subscription->status)->toBe('active')
+        ->and($subscription->auto_renew)->toBeFalse()
+        ->and($subscription->ends_at)->not->toBeNull()
+        ->and(data_get($subscription->meta, 'cancel_source'))->toBe('provider_app')
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $payment->id)
+            ->where('event_type', 'service_subscription_cancel_at_period_end')
             ->exists())->toBeTrue();
 });
 

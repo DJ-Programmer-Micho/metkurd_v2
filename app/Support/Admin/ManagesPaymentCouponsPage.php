@@ -13,6 +13,7 @@ use App\Models\CreditProduct;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
 use App\Services\Coupons\CouponService;
+use App\Services\Payments\PaymentProviderManager;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
@@ -51,6 +52,7 @@ trait ManagesPaymentCouponsPage
     public string $discountType = 'percent';
     public $discountValue = '';
     public string $targetType = 'plan_subscription';
+    public array $selectedPaymentMethods = ['fib'];
     public array $selectedServicePlanCodes = [];
     public array $selectedStoragePlanCodes = [];
     public array $selectedAddonCodes = [];
@@ -95,6 +97,26 @@ trait ManagesPaymentCouponsPage
         }
     }
 
+    public function updatedSelectedPaymentMethods(): void
+    {
+        if (! $this->isRecurringTarget()) {
+            return;
+        }
+
+        if ($this->supportsLimitedRecurringDurations()) {
+            return;
+        }
+
+        if (in_array($this->durationType, [
+            CouponDurationType::ONCE->value,
+            CouponDurationType::FIRST_CYCLE->value,
+            CouponDurationType::FIRST_N_CYCLES->value,
+        ], true)) {
+            $this->durationType = CouponDurationType::FOREVER->value;
+            $this->durationCycles = '';
+        }
+    }
+
     public function resetFilters(): void
     {
         $this->search = '';
@@ -132,6 +154,8 @@ trait ManagesPaymentCouponsPage
             'discountType' => 'required|string|in:percent,fixed',
             'discountValue' => 'required|numeric|min:0.01',
             'targetType' => 'required|string|in:all,plan_subscription,storage_subscription,addon_credits',
+            'selectedPaymentMethods' => 'required|array|min:1',
+            'selectedPaymentMethods.*' => 'string',
             'selectedServicePlanCodes' => 'array',
             'selectedServicePlanCodes.*' => 'string|exists:service_plans,code',
             'selectedStoragePlanCodes' => 'array',
@@ -316,6 +340,7 @@ trait ManagesPaymentCouponsPage
         $this->discountType = (string) ($coupon->discount_type?->value ?? CouponDiscountType::PERCENT->value);
         $this->discountValue = (string) ($coupon->discount_value ?? '');
         $this->targetType = (string) ($coupon->target_type?->value ?? CouponTargetType::PLAN_SUBSCRIPTION->value);
+        $this->selectedPaymentMethods = $this->normalizedStoredPaymentMethods($coupon->supported_payment_methods);
         $this->selectedServicePlanCodes = $this->selectionValuesFromStoredCodes($coupon->applies_to_codes);
         $this->selectedStoragePlanCodes = $this->selectionValuesFromStoredCodes($coupon->applies_to_codes);
         $this->selectedAddonCodes = $this->selectionValuesFromStoredCodes($coupon->applies_to_codes);
@@ -371,10 +396,12 @@ trait ManagesPaymentCouponsPage
 
         $allowedCodes = $this->selectedItemCodesForTarget($targetType);
         $allowedCycles = $this->selectedBillingCyclesForTarget($targetType);
+        $selectedPaymentMethods = $this->normalizePaymentMethodSelection($validated['selectedPaymentMethods'] ?? []);
         $durationType = $this->resolvedDurationTypeForTarget(
             $targetType,
             $validated['durationType'] ?? null,
             $validated['durationCycles'] ?? null,
+            $selectedPaymentMethods,
         );
         $durationCycles = $durationType === CouponDurationType::FIRST_N_CYCLES->value
             ? (int) ($validated['durationCycles'] ?? 0)
@@ -397,6 +424,7 @@ trait ManagesPaymentCouponsPage
             'discount_type' => $discountType,
             'discount_value' => $discountValue,
             'target_type' => $targetType,
+            'supported_payment_methods' => $selectedPaymentMethods,
             'applies_to_codes' => $allowedCodes !== [] ? $allowedCodes : null,
             'applies_to_billing_cycles' => $allowedCycles !== [] ? $allowedCycles : null,
             'first_time_subscribers_only' => $firstTimeSubscribersOnly,
@@ -507,9 +535,36 @@ trait ManagesPaymentCouponsPage
         };
     }
 
+    public function paymentMethodOptions(): array
+    {
+        $drivers = app(PaymentProviderManager::class)->driverOptions();
+
+        $options = ['all' => __('All Methods')];
+
+        foreach ($drivers as $code => $label) {
+            $normalized = strtolower(trim((string) $code));
+
+            if ($normalized === '') {
+                continue;
+            }
+
+            $options[$normalized] = (string) $label;
+        }
+
+        return $options;
+    }
+
     public function durationOptions(): array
     {
         if ($this->isRecurringTarget()) {
+            if ($this->supportsLimitedRecurringDurations()) {
+                return [
+                    CouponDurationType::FOREVER->value => __('Discount every recurring cycle'),
+                    CouponDurationType::FIRST_CYCLE->value => __('First cycle only'),
+                    CouponDurationType::FIRST_N_CYCLES->value => __('First N cycles'),
+                ];
+            }
+
             return [
                 CouponDurationType::FOREVER->value => __('Discount every recurring cycle'),
             ];
@@ -522,6 +577,10 @@ trait ManagesPaymentCouponsPage
 
     public function unsupportedRecurringDurationOptions(): array
     {
+        if ($this->supportsLimitedRecurringDurations()) {
+            return [];
+        }
+
         return [
             __('First cycle only'),
             __('First N cycles'),
@@ -576,12 +635,41 @@ trait ManagesPaymentCouponsPage
 
     public function recurringDurationHelpText(): string
     {
-        return __('The current FIB subscription checkout creates one fixed recurring amount. That means a recurring coupon can safely discount every cycle, but it cannot automatically switch from discounted early cycles to full-price later renewals.');
+        if ($this->supportsLimitedRecurringDurations()) {
+            return __('Selected payment methods support dynamic recurring pricing changes, so first-cycle and first-N-cycle recurring discounts can be configured.');
+        }
+
+        return __('Selected payment methods currently create one fixed recurring amount per checkout. That means a recurring coupon can safely discount every cycle, but it cannot automatically switch from discounted early cycles to full-price later renewals.');
     }
 
     public function recurringUnsupportedHelpText(): string
     {
-        return __('Not supported with the current FIB recurring flow: first-cycle-only recurring discounts and first-N-cycle recurring discounts.');
+        if ($this->supportsLimitedRecurringDurations()) {
+            return __('All recurring duration modes are currently available for the selected payment methods.');
+        }
+
+        return __('Not supported with the current recurring flow for the selected payment methods: first-cycle-only recurring discounts and first-N-cycle recurring discounts.');
+    }
+
+    public function supportsLimitedRecurringDurations(): bool
+    {
+        if (! $this->isRecurringTarget()) {
+            return false;
+        }
+
+        foreach ($this->recurringValidationPaymentMethods() as $paymentMethod) {
+            $message = app(CouponService::class)->recurringDurationCompatibilityMessage(
+                CouponDurationType::FIRST_CYCLE,
+                $paymentMethod,
+                1,
+            );
+
+            if ($message !== null) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function selectedRecurringDurationCompatibilityMessage(): ?string
@@ -590,11 +678,19 @@ trait ManagesPaymentCouponsPage
             return null;
         }
 
-        return app(CouponService::class)->recurringDurationCompatibilityMessage(
-            $this->durationType,
-            'fib',
-            $this->durationCycles !== '' ? (int) $this->durationCycles : null,
-        );
+        foreach ($this->recurringValidationPaymentMethods() as $paymentMethod) {
+            $message = app(CouponService::class)->recurringDurationCompatibilityMessage(
+                $this->durationType,
+                $paymentMethod,
+                $this->durationCycles !== '' ? (int) $this->durationCycles : null,
+            );
+
+            if ($message !== null) {
+                return $message;
+            }
+        }
+
+        return null;
     }
 
     public function describeCouponWindow(Coupon $coupon): string
@@ -639,6 +735,15 @@ trait ManagesPaymentCouponsPage
     public function describeCouponRestrictions(Coupon $coupon): string
     {
         $parts = [];
+        $paymentMethods = $this->normalizedStoredPaymentMethods($coupon->supported_payment_methods);
+
+        if (in_array('all', $paymentMethods, true)) {
+            $parts[] = __('Methods: all configured methods');
+        } else {
+            $parts[] = __('Methods: :methods', [
+                'methods' => implode(', ', array_map('strtoupper', $paymentMethods)),
+            ]);
+        }
 
         if (! empty($coupon->applies_to_codes)) {
             $parts[] = __('Items: :items', ['items' => implode(', ', (array) $coupon->applies_to_codes)]);
@@ -661,8 +766,46 @@ trait ManagesPaymentCouponsPage
 
     public function couponHasUnsupportedRecurringDuration(Coupon $coupon): bool
     {
-        return $this->isRecurringTarget($coupon->target_type?->value)
-            && ($coupon->duration_type ?? CouponDurationType::ONCE) !== CouponDurationType::FOREVER;
+        if (! $this->isRecurringTarget($coupon->target_type?->value)) {
+            return false;
+        }
+
+        $durationType = $coupon->duration_type ?? CouponDurationType::ONCE;
+
+        if ($durationType === CouponDurationType::FOREVER) {
+            return false;
+        }
+
+        $allowed = array_keys($this->paymentMethodOptions());
+        $methods = collect($this->normalizedStoredPaymentMethods($coupon->supported_payment_methods))
+            ->filter(fn (string $method) => in_array($method, $allowed, true))
+            ->values()
+            ->all();
+
+        if ($methods === []) {
+            $methods = ['fib'];
+        }
+
+        if (in_array('all', $methods, true)) {
+            $methods = collect($allowed)
+                ->reject(fn (string $method) => $method === 'all')
+                ->values()
+                ->all();
+        }
+
+        foreach ($methods as $paymentMethod) {
+            $message = app(CouponService::class)->recurringDurationCompatibilityMessage(
+                $durationType,
+                $paymentMethod,
+                $coupon->duration_cycles,
+            );
+
+            if ($message !== null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function resetCouponForm(): void
@@ -677,6 +820,7 @@ trait ManagesPaymentCouponsPage
         $this->discountType = CouponDiscountType::PERCENT->value;
         $this->discountValue = '';
         $this->targetType = CouponTargetType::PLAN_SUBSCRIPTION->value;
+        $this->selectedPaymentMethods = ['fib'];
         $this->selectedServicePlanCodes = [];
         $this->selectedStoragePlanCodes = [];
         $this->selectedAddonCodes = [];
@@ -777,6 +921,25 @@ trait ManagesPaymentCouponsPage
             ->all();
     }
 
+    protected function normalizedStoredPaymentMethods(?array $methods): array
+    {
+        $normalized = collect($methods ?? [])
+            ->map(fn (mixed $value) => strtolower(trim((string) $value)))
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($normalized === []) {
+            return ['fib'];
+        }
+
+        if (in_array('all', $normalized, true)) {
+            return ['all'];
+        }
+
+        return array_values(array_unique($normalized));
+    }
+
     protected function selectedItemCodesForTarget(string $targetType): array
     {
         $selected = match ($targetType) {
@@ -820,7 +983,12 @@ trait ManagesPaymentCouponsPage
             ->all();
     }
 
-    protected function resolvedDurationTypeForTarget(string $targetType, mixed $durationType, mixed $durationCycles): string
+    protected function resolvedDurationTypeForTarget(
+        string $targetType,
+        mixed $durationType,
+        mixed $durationCycles,
+        array $selectedPaymentMethods = ['fib'],
+    ): string
     {
         if ($this->isAddonTarget($targetType)) {
             return CouponDurationType::ONCE->value;
@@ -830,15 +998,21 @@ trait ManagesPaymentCouponsPage
         $durationCycles = $durationCycles !== '' && $durationCycles !== null ? (int) $durationCycles : null;
 
         if ($this->isRecurringTarget($targetType)) {
-            $message = app(CouponService::class)->recurringDurationCompatibilityMessage($durationType, 'fib', $durationCycles);
-
-            if ($message !== null) {
-                throw ValidationException::withMessages([
-                    'durationType' => $message,
-                ]);
+            if ($durationType === CouponDurationType::ONCE) {
+                $durationType = CouponDurationType::FIRST_CYCLE;
             }
 
-            return CouponDurationType::FOREVER->value;
+            foreach ($this->normalizePaymentMethodSelection($selectedPaymentMethods) as $paymentMethod) {
+                $message = app(CouponService::class)->recurringDurationCompatibilityMessage($durationType, $paymentMethod, $durationCycles);
+
+                if ($message !== null) {
+                    throw ValidationException::withMessages([
+                        'durationType' => $message,
+                    ]);
+                }
+            }
+
+            return $durationType->value;
         }
 
         return $durationType->value;
@@ -851,6 +1025,71 @@ trait ManagesPaymentCouponsPage
             ->filter()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<int, mixed>  $values
+     * @return array<int, string>
+     */
+    protected function normalizePaymentMethodSelection(array $values): array
+    {
+        $allowed = array_keys($this->paymentMethodOptions());
+
+        $normalized = collect($values)
+            ->map(fn (mixed $value) => strtolower(trim((string) $value)))
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($normalized === []) {
+            throw ValidationException::withMessages([
+                'selectedPaymentMethods' => __('Select at least one payment method.'),
+            ]);
+        }
+
+        $invalid = collect($normalized)
+            ->reject(fn (string $value) => in_array($value, $allowed, true))
+            ->values();
+
+        if ($invalid->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'selectedPaymentMethods' => __('Unsupported payment methods: :methods', [
+                    'methods' => $invalid->implode(', '),
+                ]),
+            ]);
+        }
+
+        if (in_array('all', $normalized, true)) {
+            return ['all'];
+        }
+
+        return array_values(array_unique($normalized));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function recurringValidationPaymentMethods(): array
+    {
+        $allowed = array_keys($this->paymentMethodOptions());
+        $methods = collect($this->selectedPaymentMethods)
+            ->map(fn (mixed $value) => strtolower(trim((string) $value)))
+            ->filter(fn (string $value) => in_array($value, $allowed, true))
+            ->values()
+            ->all();
+
+        if ($methods === []) {
+            return ['fib'];
+        }
+
+        if (in_array('all', $methods, true)) {
+            return collect($allowed)
+                ->reject(fn (string $method) => $method === 'all')
+                ->values()
+                ->all();
+        }
+
+        return array_values(array_unique($methods));
     }
 
     protected function billingCycleOptionsForTarget(string $targetType): array

@@ -27,7 +27,7 @@ it('renders the admin coupon management page', function () {
 
     Livewire::test('admin::pages.payments.adm-payments-coupons')
         ->assertSee('Checkout Coupons')
-        ->assertSee('Recurring FIB limitation');
+        ->assertSee('Recurring provider limitation');
 });
 
 it('allows an admin to create and update coupons', function () {
@@ -43,6 +43,7 @@ it('allows an admin to create and update coupons', function () {
         ->set('discountType', 'percent')
         ->set('discountValue', '50')
         ->set('targetType', 'plan_subscription')
+        ->set('selectedPaymentMethods', ['fib', 'areeba'])
         ->set('selectedServicePlanCodes', ['pro', 'student'])
         ->set('selectedBillingCycles', ['monthly', 'yearly'])
         ->set('durationType', 'forever')
@@ -58,6 +59,7 @@ it('allows an admin to create and update coupons', function () {
 
     expect($coupon->name)->toBe('Welcome 50')
         ->and($coupon->target_type)->toBe(CouponTargetType::PLAN_SUBSCRIPTION)
+        ->and($coupon->supported_payment_methods)->toBe(['fib', 'areeba'])
         ->and($coupon->applies_to_codes)->toBe(['PRO', 'STUDENT'])
         ->and($coupon->applies_to_billing_cycles)->toBe(['monthly', 'yearly'])
         ->and((int) ($coupon->max_total_uses ?? 0))->toBe(100)
@@ -69,6 +71,7 @@ it('allows an admin to create and update coupons', function () {
         ->set('name', 'Welcome 55')
         ->set('discountValue', '55')
         ->set('isActive', false)
+        ->set('selectedPaymentMethods', ['fib'])
         ->set('selectedBillingCycles', ['monthly'])
         ->call('saveCoupon')
         ->assertHasNoErrors();
@@ -78,6 +81,7 @@ it('allows an admin to create and update coupons', function () {
     expect($coupon->name)->toBe('Welcome 55')
         ->and((string) $coupon->discount_value)->toStartWith('55')
         ->and($coupon->is_active)->toBeFalse()
+        ->and($coupon->supported_payment_methods)->toBe(['fib'])
         ->and($coupon->duration_type?->value)->toBe('forever')
         ->and($coupon->applies_to_billing_cycles)->toBe(['monthly']);
 });
@@ -135,6 +139,7 @@ it('keeps add-on coupons one-time and hides recurring-only behavior', function (
         ->set('name', 'Addon 25')
         ->set('discountType', 'percent')
         ->set('discountValue', '25')
+        ->set('selectedPaymentMethods', ['fib'])
         ->set('selectedAddonCodes', [$product->code])
         ->set('durationType', 'first_n_cycles')
         ->set('durationCycles', '3')

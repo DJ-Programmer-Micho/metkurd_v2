@@ -22,6 +22,8 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     public array $allowedPhoneCountries = [];
     public array $preferredPhoneCountries = [];
 
+    public ?string $returnAfterVerifyUrl = null;
+
     public string $digit1 = '';
     public string $digit2 = '';
     public string $digit3 = '';
@@ -67,7 +69,14 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             ? $profileCountry
             : ($this->preferredPhoneCountries[0] ?? $this->allowedPhoneCountries[0] ?? 'iq');
 
+        $this->returnAfterVerifyUrl = $this->resolveReturnAfterVerifyUrl();
         $this->syncState();
+
+        $statusMessage = trim((string) session()->pull('phone_verification_notice', ''));
+
+        if ($statusMessage !== '') {
+            $this->dispatch('alert', type: 'info', message: $statusMessage);
+        }
     }
 
     public function tick(): void
@@ -268,6 +277,12 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                 return redirect()->to(route($nextVerificationRoute));
             }
 
+            if ($redirectUrl = $this->consumeReturnAfterVerifyUrl()) {
+                session()->flash('profile_status_message', __('Your phone number is now verified.'));
+
+                return redirect()->to($redirectUrl);
+            }
+
             return redirect()->to(route('app.home',['locale' => app()->getLocale()]));
         }
 
@@ -458,6 +473,41 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     private function cooldownKey(): string
     {
         return 'phone_otp_cooldown_' . Auth::guard('app')->id();
+    }
+
+    private function resolveReturnAfterVerifyUrl(): ?string
+    {
+        $candidate = trim((string) session('phone_verification_return_url', ''));
+
+        return $this->sanitizeLocalRedirect($candidate);
+    }
+
+    private function consumeReturnAfterVerifyUrl(): ?string
+    {
+        $candidate = trim((string) session()->pull('phone_verification_return_url', ''));
+
+        return $this->sanitizeLocalRedirect($candidate);
+    }
+
+    private function sanitizeLocalRedirect(?string $candidate): ?string
+    {
+        $candidate = trim((string) $candidate);
+
+        if ($candidate === '') {
+            return null;
+        }
+
+        $appUrl = rtrim((string) config('app.url'), '/');
+
+        if ($appUrl !== '' && str_starts_with($candidate, $appUrl)) {
+            return $candidate;
+        }
+
+        if (str_starts_with($candidate, '/')) {
+            return url($candidate);
+        }
+
+        return null;
     }
 };
 

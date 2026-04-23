@@ -1,286 +1,422 @@
 <?php
 
-use Livewire\Component;
-use Livewire\WithFileUploads;
-use Livewire\Attributes\Layout;
+use App\Models\Customer;
+use App\Models\CustomerProfile;
+use App\Support\AvatarFallbackUrl;
+use App\Support\RegistrationPhoneCountryManager;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Layout;
+use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new #[Layout('app::layouts.app')]
 class extends Component
 {
     use WithFileUploads;
 
-    // ---------------------------------------------------------------------
-    // Page data (keep in-memory to reduce repeated auth() calls in the view)
-    // ---------------------------------------------------------------------
-    public $user;
-    public $profile;
+    public ?Customer $user = null;
 
-    // ---------------------------------------------------------------------
-    // Edit modal fields
-    // ---------------------------------------------------------------------
+    public ?CustomerProfile $profile = null;
+
     public int $avatarVersion = 1;
 
-    public string $fNameEdit = '';
-    public string $lNameEdit = '';
-    public string $usernameEdit = '';
-    public string $functionEdit = '';
-    public string $jobTitleEdit = '';
-    public string $phoneEdit  = '';
-    public string $emailEdit = '';
+    public array $allowedPhoneCountries = [];
 
-    public array $jobTitleOptions = [
-        'developer' => 'Developer',
-        'designer'  => 'Designer',
-        'manager'   => 'Manager',
-        'other'     => 'Other',
-    ];
+    public array $preferredPhoneCountries = [];
 
-    // Avatar upload
-    public $avatar = null; // TemporaryUploadedFile|null
+    public string $firstName = '';
 
-    // Phone verification flags
-    public bool $phoneChanged = false;
-    public bool $phoneVerified = true;
+    public string $lastName = '';
 
-    // OTP modal
-    public int $otpStep = 0; // 0 provider, 1 code
-    public string $channel = 'sms';
+    public string $username = '';
 
-    public string $digit1 = '';
-    public string $digit2 = '';
-    public string $digit3 = '';
-    public string $digit4 = '';
-    public string $digit5 = '';
-    public string $digit6 = '';
+    public string $jobTitle = '';
 
-    // Password tab
-    public string $old_password = '';
-    public string $new_password = '';
-    public string $new_password_confirmation = '';
+    public string $phoneNumber = '';
 
-    // ---------------------------------------------------------------------
-    // Lifecycle
-    // ---------------------------------------------------------------------
+    public string $phoneCountry = '';
+
+    public string $phoneDialCode = '';
+
+    public string $emailAddress = '';
+
+    public mixed $avatar = null;
+
+    public ?string $avatarPreviewUrl = null;
+
+    public string $currentPassword = '';
+
+    public string $newPassword = '';
+
+    public string $newPasswordConfirmation = '';
+
     public function mount(): void
     {
+        $this->allowedPhoneCountries = RegistrationPhoneCountryManager::enabledCountryCodes();
+
+        if ($this->allowedPhoneCountries === []) {
+            $this->allowedPhoneCountries = RegistrationPhoneCountryManager::defaultEnabledCountryCodes();
+        }
+
+        $this->preferredPhoneCountries = array_slice(
+            $this->allowedPhoneCountries,
+            0,
+            min(3, count($this->allowedPhoneCountries))
+        );
+
         $this->hydrateUser();
-        $this->syncEditFieldsFromUser();
+        $this->syncProfileFormFromUser();
+
+        $statusMessage = trim((string) session()->pull('profile_status_message', ''));
+
+        if ($statusMessage !== '') {
+            $this->dispatch('alert', type: 'success', message: $statusMessage);
+        }
     }
 
-    // Volt-safe (public) helpers
     public function hydrateUser(): void
     {
-        // One loadMissing instead of many auth() calls in the Blade
-        $this->user = auth('app')->user()?->loadMissing('profile');
+        $this->user = auth('app')->user()?->loadMissing([
+            'profile',
+            'usage',
+            'wallet',
+            'activeServiceSubscription.servicePlan',
+            'activeStorageSubscription.storagePlan',
+        ]);
+
         $this->profile = $this->user?->profile;
     }
 
-    public function syncEditFieldsFromUser(): void
+    public function syncProfileFormFromUser(): void
     {
-        $u = $this->user ?: auth('app')->user();
-        $p = $u?->profile;
+        $user = $this->user ?: auth('app')->user();
+        $profile = $user?->profile;
 
-        $this->fNameEdit     = (string) ($p?->first_name ?? '');
-        $this->lNameEdit     = (string) ($p?->last_name ?? '');
-        $this->usernameEdit  = (string) ($u?->username ?? '');
-        $this->phoneEdit     = (string) ($p?->phone_number ?? '');
-        $this->jobTitleEdit  = (string) ($p?->job_title ?? 'other');
-        $this->emailEdit     = (string) ($u?->email ?? '');
-
-        $this->phoneChanged  = false;
-        $this->phoneVerified = true;
+        $this->firstName = trim((string) ($profile?->first_name ?? ''));
+        $this->lastName = trim((string) ($profile?->last_name ?? ''));
+        $this->username = trim((string) ($user?->username ?? ''));
+        $this->jobTitle = trim((string) ($profile?->job_title ?? ''));
+        $this->phoneNumber = trim((string) ($profile?->phone_number ?? ''));
+        $this->phoneCountry = RegistrationPhoneCountryManager::normalizeIso2(
+            (string) ($profile?->country ?? '')
+        ) ?: ($this->preferredPhoneCountries[0] ?? $this->allowedPhoneCountries[0] ?? 'iq');
+        $this->phoneDialCode = '';
+        $this->emailAddress = trim((string) ($user?->email ?? ''));
 
         $this->resetValidation();
+        $this->resetErrorBag();
         $this->reset('avatar');
+        $this->avatarPreviewUrl = null;
     }
 
-    // Called from JS after modal is already opened (instant modal)
-    public function prepareEditForm(): void
+    #[Computed]
+    public function displayName(): string
     {
-        $this->hydrateUser();
-        $this->syncEditFieldsFromUser();
+        $displayName = trim($this->firstName . ' ' . $this->lastName);
+
+        return $displayName !== '' ? $displayName : (string) ($this->user?->username ?? __('Customer'));
     }
 
-    public function customerFolderSlug(): string
+    #[Computed]
+    public function serviceState(): array
     {
-        $u = $this->user ?: auth('app')->user();
-        $p = $u?->profile;
+        return $this->user instanceof Customer ? $this->user->servicePlanState() : [];
+    }
 
-        $name = trim(($p?->first_name ?? '') . ' ' . ($p?->last_name ?? ''));
-        $nameSlug = Str::slug($name, '_');
+    #[Computed]
+    public function storageState(): array
+    {
+        return $this->user instanceof Customer ? $this->user->storageQuotaState() : [];
+    }
 
-        // rule: customer_id + first_name + last_name (via CustomerFolder slug)
-        return $u->customer_id . '_' . $nameSlug;
+    #[Computed]
+    public function phoneRequiresVerification(): bool
+    {
+        $current = $this->normalizePhone((string) ($this->profile?->phone_number ?? ''));
+        $pending = $this->normalizePhone($this->phoneNumber);
+
+        return $pending !== '' && $pending !== $current;
     }
 
     public function currentAvatarUrl(): string
     {
-        if ($this->avatar) {
-            return $this->avatar->temporaryUrl();
+        if (is_string($this->avatarPreviewUrl) && trim($this->avatarPreviewUrl) !== '') {
+            return $this->avatarPreviewUrl;
         }
 
-        $p = $this->profile ?: auth('app')->user()?->profile;
+        $url = (string) ($this->profile?->avatar_url ?: app(AvatarFallbackUrl::class)->customer());
 
-        $url = $p?->avatar_url ?: app('userImg');
-
-        // cache bust
         return $url . (str_contains($url, '?') ? '&' : '?') . 'v=' . $this->avatarVersion;
     }
 
-    // ---------------------------------------------------------------------
-    // Edit modal actions (NOTE: modal open is handled instantly in JS)
-    // ---------------------------------------------------------------------
-    public function updatedPhoneEdit($value): void
+    public function updatedAvatar(): void
     {
-        $current = (string) (($this->profile?->phone_number) ?? '');
-        $new = trim((string) $value);
-
-        $this->phoneChanged  = ($new !== '' && $new !== $current);
-        $this->phoneVerified = !$this->phoneChanged;
+        try {
+            $this->avatarPreviewUrl = $this->avatar?->temporaryUrl();
+        } catch (\Throwable) {
+            // Keep existing avatar UI stable when the uploaded file is invalid/non-previewable.
+            $this->avatarPreviewUrl = null;
+        }
     }
 
-    public function updateUser(): void
+    public function saveProfile()
     {
-        $u = $this->user ?: auth('app')->user();
-        $p = $u->profile;
-
-        $this->validate([
-            'fNameEdit'    => ['required', 'string', 'min:2', 'max:50'],
-            'lNameEdit'    => ['required', 'string', 'min:2', 'max:50'],
-            'usernameEdit' => [
-                'required', 'string', 'min:3', 'max:30',
-                Rule::unique('users', 'username')->ignore($u->id),
-            ],
-            'phoneEdit'    => ['nullable', 'string', 'max:30'],
-            'jobTitleEdit' => ['required', 'string'],
-            'avatar'       => ['nullable', 'image', 'max:2048'],
-        ]);
-
-        if ($this->phoneChanged && !$this->phoneVerified) {
-            $this->dispatch('alert', type: 'error', message: __('Phone changed. Please verify before saving.'));
-            return;
-        }
-
-        $u->username = $this->usernameEdit;
-        $u->save();
-
-        $p->first_name   = $this->fNameEdit;
-        $p->last_name    = $this->lNameEdit;
-        $p->phone_number = $this->phoneEdit;
-        $p->job_title    = $this->jobTitleEdit;
-
-        if ($this->avatar) {
-            $folder = 'customers/' . $this->customerFolderSlug() . '/avatars';
-
-            // Best-effort delete old avatar if stored under /storage/ (public disk)
-            if ($p->avatar_url && str_contains($p->avatar_url, '/storage/')) {
-                $oldPath = Str::after($p->avatar_url, '/storage/');
-                if ($oldPath) {
-                    Storage::disk('public')->delete($oldPath);
-                }
-            }
-
-            $path = $this->avatar->store($folder, 'public');
-            $p->avatar_url = Storage::disk('public')->url($path);
-        }
-
-        $p->save();
-
-        // Refresh local state
         $this->hydrateUser();
 
-        // Reset upload + force browser refresh (cache-bust)
-        $this->reset('avatar');
+        $user = $this->user ?: auth('app')->user();
+
+        if (! $user instanceof Customer) {
+            abort(403);
+        }
+
+        $profile = $this->profileRecord($user);
+        $originalPhone = $this->normalizePhone((string) ($profile->phone_number ?? ''));
+
+        $this->firstName = trim($this->firstName);
+        $this->lastName = trim($this->lastName);
+        $this->username = trim($this->username);
+        $this->jobTitle = trim($this->jobTitle);
+        $this->phoneNumber = $this->normalizePhone($this->phoneNumber);
+        $this->phoneCountry = $this->normalizePhoneCountry($this->phoneCountry);
+        $this->phoneDialCode = $this->normalizeDialCode($this->phoneDialCode);
+
+        $this->validate($this->profileRules($user, $profile), [
+            'phoneCountry.required' => __('Please choose your phone country.'),
+            'phoneCountry.size' => __('Please choose a valid phone country.'),
+            'phoneDialCode.required' => __('Please choose your phone country code.'),
+            'phoneDialCode.regex' => __('Please choose a valid phone country code.'),
+        ]);
+
+        if (! RegistrationPhoneCountryManager::isCountryAllowed($this->phoneCountry)) {
+            throw ValidationException::withMessages([
+                'phoneNumber' => __('Please select a valid phone country.'),
+            ]);
+        }
+
+        if (! RegistrationPhoneCountryManager::matchesDialCode($this->phoneNumber, $this->phoneDialCode)) {
+            throw ValidationException::withMessages([
+                'phoneNumber' => __('Phone country code and number do not match.'),
+            ]);
+        }
+
+        $phoneChanged = $this->phoneNumber !== '' && $this->phoneNumber !== $originalPhone;
+        $oldAvatar = (string) ($profile->avatar ?? '');
+
+        $user->username = $this->username;
+        $user->save();
+
+        $profile->fill([
+            'first_name' => $this->firstName,
+            'last_name' => $this->lastName,
+            'job_title' => $this->jobTitle !== '' ? $this->jobTitle : null,
+            'phone_number' => $this->phoneNumber,
+            'country' => strtoupper($this->phoneCountry),
+        ]);
+
+        if ($this->avatar) {
+            $folder = 'customers/' . $this->customerFolderSlug($user) . '/avatars';
+            $this->deleteStoredAvatar($oldAvatar);
+            $profile->avatar = $this->avatar->storePublicly($folder, 's3');
+        }
+
+        $profile->save();
+
+        if (! $user->relationLoaded('profile')) {
+            $user->setRelation('profile', $profile);
+        }
+
+        if ($phoneChanged) {
+            $user->forceFill([
+                'phone_verify' => false,
+                'phone_verified_at' => null,
+                'phone_otp_number' => null,
+            ])->save();
+
+            $this->hydrateUser();
+            $this->syncProfileFormFromUser();
+            $this->avatarVersion++;
+
+            return $this->redirectToPhoneVerification(__('Your new phone number was saved. Please verify it to continue.'));
+        }
+
+        $this->hydrateUser();
+        $this->syncProfileFormFromUser();
         $this->avatarVersion++;
 
-        $this->dispatch('alert', type: 'success', message: __('Profile updated successfully.'));
-        $this->dispatch('bs:modal:hide', id: 'updateUserModal');
+        $this->dispatch('alert', type: 'success', message: __('Your profile details were updated successfully.'));
+
+        return null;
     }
 
-    // ---------------------------------------------------------------------
-    // OTP modal actions (stub hooks - plug your provider logic)
-    // ---------------------------------------------------------------------
-    public function openPhoneOtpProviders(): void
+    public function redirectToPhoneVerification(?string $message = null)
     {
-        $this->otpStep = 0;
-        $this->reset(['digit1','digit2','digit3','digit4','digit5','digit6']);
-        $this->dispatch('bs:modal:show', id: 'phoneOtpModal');
-    }
+        $this->hydrateUser();
 
-    public function closePhoneOtpModal(): void
-    {
-        $this->dispatch('bs:modal:hide', id: 'phoneOtpModal');
-    }
+        $user = $this->user ?: auth('app')->user();
 
-    public function sendPhoneOtp(string $channel): void
-    {
-        $this->channel = $channel;
-        // TODO: send OTP via your provider
-        $this->otpStep = 1;
-
-        $this->dispatch('alert', type: 'info', message: __('Verification code sent via :channel.', ['channel' => __(ucfirst($channel))]));
-    }
-
-    public function backToProviders(): void
-    {
-        $this->otpStep = 0;
-    }
-
-    public function resendPhoneOtp(): void
-    {
-        // TODO: resend OTP via chosen channel
-        $this->dispatch('alert', type: 'info', message: __('Code resent via :channel.', ['channel' => __(ucfirst($this->channel))]));
-    }
-
-    public function verifyPhoneOtp(): void
-    {
-        $code = $this->digit1.$this->digit2.$this->digit3.$this->digit4.$this->digit5.$this->digit6;
-
-        if (strlen($code) !== 6) {
-            $this->dispatch('alert', type: 'error', message: __('Please enter the 6-digit code.'));
-            return;
+        if (! $user instanceof Customer) {
+            abort(403);
         }
 
-        // TODO: verify OTP with provider
-        $ok = true;
+        session()->put('phone_verification_return_url', route('app.profile', ['locale' => app()->getLocale()]));
 
-        if (!$ok) {
-            $this->dispatch('alert', type: 'error', message: __('Invalid code. Try again.'));
-            return;
+        if ($message !== null && trim($message) !== '') {
+            session()->flash('phone_verification_notice', $message);
         }
 
-        $this->phoneVerified = true;
-        $this->phoneChanged = true;
-
-        $this->dispatch('alert', type: 'success', message: __('Phone verified successfully.'));
-        $this->dispatch('bs:modal:hide', id: 'phoneOtpModal');
+        return redirect()->to(route('app.phone.otp'));
     }
 
-    // ---------------------------------------------------------------------
-    // Password update (inline)
-    // ---------------------------------------------------------------------
     public function updatePassword(): void
     {
         $this->validate([
-            'old_password' => ['required','string'],
-            'new_password' => ['required','string','min:8','confirmed'],
+            'currentPassword' => ['required', 'string'],
+            'newPassword' => ['required', 'string', 'same:newPasswordConfirmation', Password::min(8)->mixedCase()->numbers()->symbols()],
+            'newPasswordConfirmation' => ['required', 'string'],
         ]);
 
-        $u = auth('app')->user();
+        $user = auth('app')->user();
 
-        if (!\Illuminate\Support\Facades\Hash::check($this->old_password, $u->password)) {
-            $this->addError('old_password', __('Old password is incorrect.'));
+        if (! $user instanceof Customer) {
+            abort(403);
+        }
+
+        if (! Hash::check($this->currentPassword, (string) $user->password)) {
+            $this->addError('currentPassword', __('Current password is incorrect.'));
+
             return;
         }
 
-        $u->password = \Illuminate\Support\Facades\Hash::make($this->new_password);
-        $u->save();
+        if (Hash::check($this->newPassword, (string) $user->password)) {
+            $this->addError('newPassword', __('Choose a password different from your current password.'));
 
-        $this->reset(['old_password','new_password','new_password_confirmation']);
+            return;
+        }
 
-        $this->dispatch('alert', type: 'success', message: __('Password changed successfully.'));
+        $user->password = $this->newPassword;
+        $user->save();
+
+        $this->reset([
+            'currentPassword',
+            'newPassword',
+            'newPasswordConfirmation',
+        ]);
+
+        $this->resetValidation([
+            'currentPassword',
+            'newPassword',
+            'newPasswordConfirmation',
+        ]);
+
+        $this->dispatch('alert', type: 'success', message: __('Your password was changed successfully.'));
+    }
+
+    public function formatDateTime(mixed $value, string $format = 'Y-m-d H:i'): ?string
+    {
+        if (! $value) {
+            return null;
+        }
+
+        try {
+            $date = $value instanceof Carbon ? $value : Carbon::parse((string) $value);
+
+            return $date->timezone(config('app.timezone'))->format($format);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    protected function profileRules(Customer $user, CustomerProfile $profile): array
+    {
+        return [
+            'firstName' => ['required', 'string', 'max:60'],
+            'lastName' => ['required', 'string', 'max:60'],
+            'username' => [
+                'required',
+                'string',
+                'max:50',
+                'alpha_dash',
+                Rule::unique('customers', 'username')->ignore($user->id),
+            ],
+            'jobTitle' => ['nullable', 'string', 'max:60'],
+            'phoneNumber' => [
+                'required',
+                'string',
+                'max:30',
+                'regex:/^\+\d{10,15}$/',
+                Rule::unique('customer_profiles', 'phone_number')->ignore($profile->id),
+            ],
+            'phoneCountry' => ['required', 'string', 'size:2'],
+            'phoneDialCode' => ['required', 'string', 'max:4', 'regex:/^\d{1,4}$/'],
+            'avatar' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+        ];
+    }
+
+    protected function profileRecord(Customer $user): CustomerProfile
+    {
+        if ($user->profile instanceof CustomerProfile) {
+            return $user->profile;
+        }
+
+        return CustomerProfile::firstOrNew([
+            'customer_id' => $user->id,
+        ]);
+    }
+
+    protected function customerFolderSlug(Customer $user): string
+    {
+        $nameSlug = Str::slug(trim($this->displayName), '_');
+
+        return $user->id . ($nameSlug !== '' ? '_' . $nameSlug : '');
+    }
+
+    protected function deleteStoredAvatar(?string $storedAvatar): void
+    {
+        $storedAvatar = trim((string) $storedAvatar);
+
+        if ($storedAvatar === '' || Str::startsWith($storedAvatar, ['http://', 'https://', 'data:'])) {
+            return;
+        }
+
+        $path = $storedAvatar;
+
+        if (Str::startsWith($path, ['/storage/', 'storage/'])) {
+            $path = Str::after(ltrim($path, '/'), 'storage/');
+        }
+
+        $path = ltrim($path, '/');
+
+        if ($path !== '') {
+            Storage::disk('s3')->delete($path);
+            Storage::disk('public')->delete($path);
+        }
+    }
+
+    protected function normalizePhone(?string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $phone);
+
+        if (str_starts_with((string) $digits, '00')) {
+            $digits = substr((string) $digits, 2);
+        }
+
+        return $digits ? '+' . $digits : '';
+    }
+
+    protected function normalizePhoneCountry(?string $country): string
+    {
+        return RegistrationPhoneCountryManager::normalizeIso2($country);
+    }
+
+    protected function normalizeDialCode(?string $dialCode): string
+    {
+        return RegistrationPhoneCountryManager::normalizeDialCode($dialCode);
     }
 };

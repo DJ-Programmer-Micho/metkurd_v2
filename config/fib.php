@@ -77,6 +77,11 @@ return [
         'delay_seconds' => (int) env('FIB_STATUS_SYNC_DELAY_SECONDS', 15),
         'max_attempts' => (int) env('FIB_STATUS_SYNC_MAX_ATTEMPTS', 5),
     ],
+    'reconciliation' => [
+        'enabled' => (bool) env('FIB_RECONCILIATION_ENABLED', true),
+        'chunk_size' => (int) env('FIB_RECONCILIATION_CHUNK_SIZE', 100),
+        'stale_minutes' => (int) env('FIB_RECONCILIATION_STALE_MINUTES', 5),
+    ],
     'payment' => [
         'category' => env('FIB_PAYMENT_CATEGORY', 'ECOMMERCE'),
         'expires_in' => env('FIB_PAYMENT_EXPIRES_IN', 'PT1H'),

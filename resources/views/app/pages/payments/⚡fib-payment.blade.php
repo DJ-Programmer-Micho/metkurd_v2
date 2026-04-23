@@ -1,7 +1,19 @@
 <?php
 
+use App\Domain\Payments\Actions\CancelFibPayment;
 use App\Domain\Payments\Actions\ConfirmFibPayment;
+use App\Domain\Payments\Actions\CreateAddonPayment;
+use App\Domain\Payments\Actions\CreatePlanSubscriptionPayment;
+use App\Domain\Payments\Actions\CreateStorageSubscriptionPayment;
+use App\Domain\Payments\Enums\PaymentMode;
+use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
+use App\Models\CreditProduct;
+use App\Models\ServicePlan;
+use App\Models\StoragePlan;
+use App\Services\Billing\BillingCurrencyService;
+use App\Services\Coupons\CouponContext;
+use App\Services\Coupons\CouponService;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -10,12 +22,18 @@ new
 class extends Component
 {
     public Payment $payment;
+    public string $couponCode = '';
+    public array $couponPreview = [];
+    public string $couponMessage = '';
+    public string $couponMessageType = 'info';
+    public bool $showCouponInput = false;
 
     public function mount(Payment $payment): void
     {
         abort_unless((int) auth('app')->id() === (int) $payment->customer_id, 403);
 
         $this->payment = $payment->fresh(['customer.profile']) ?? $payment;
+        $this->refreshCouponAvailability();
     }
 
     public function pollStatus(): void
@@ -41,6 +59,241 @@ class extends Component
         }
 
         $this->payment = $payment->fresh(['customer.profile']) ?? $payment;
+        $this->refreshCouponAvailability();
+    }
+
+    public function clearCoupon(): void
+    {
+        $this->couponCode = '';
+        $this->couponPreview = [];
+        $this->couponMessage = '';
+        $this->couponMessageType = 'info';
+    }
+
+    public function applyCoupon()
+    {
+        if (! $this->showCouponInput) {
+            $this->couponMessage = __('Coupons are not available for this checkout and payment method.');
+            $this->couponMessageType = 'warning';
+
+            return;
+        }
+
+        $couponCode = strtoupper(trim($this->couponCode));
+
+        if ($couponCode === '') {
+            $this->couponMessage = __('Enter a coupon code first.');
+            $this->couponMessageType = 'warning';
+            $this->couponPreview = [];
+
+            return;
+        }
+
+        $context = $this->checkoutCouponContext();
+
+        if (! $context instanceof CouponContext) {
+            $this->couponMessage = __('This checkout cannot be repriced with a coupon.');
+            $this->couponMessageType = 'danger';
+
+            return;
+        }
+
+        $latestPayment = $this->payment->fresh(['customer.profile']) ?? $this->payment;
+
+        if (! $this->canEditCouponForPayment($latestPayment)) {
+            $this->payment = $latestPayment;
+            $this->refreshCouponAvailability();
+            $this->couponMessage = __('This checkout can no longer be updated with a coupon.');
+            $this->couponMessageType = 'warning';
+
+            return;
+        }
+
+        try {
+            $preview = app(CouponService::class)->preview($couponCode, $context);
+            $this->couponCode = (string) ($preview['code'] ?? $couponCode);
+            $this->couponPreview = $this->decorateCouponPreview($preview, $context->customer);
+
+            try {
+                app(CancelFibPayment::class)->handle($latestPayment, 'coupon_reprice');
+            } catch (\Throwable) {
+                // Keep going. Some provider states are non-cancelable and already handled safely.
+            }
+
+            $newPayment = $this->replaceCheckoutWithCoupon($context, $this->couponCode);
+
+            session()->flash('payment_status_message', __('Coupon :code applied. A new checkout was created with the updated total.', [
+                'code' => $this->couponCode,
+            ]));
+
+            return $this->redirectRoute('payments.fib.show', [
+                'locale' => app()->getLocale(),
+                'payment' => $newPayment,
+            ], navigate: true);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->couponPreview = [];
+            $this->couponMessage = collect($exception->errors())->flatten()->first() ?: __('This coupon could not be applied.');
+            $this->couponMessageType = 'danger';
+        } catch (\Throwable) {
+            $this->couponMessage = __('Failed to apply coupon right now. Please try again.');
+            $this->couponMessageType = 'danger';
+        }
+    }
+
+    protected function refreshCouponAvailability(): void
+    {
+        $payment = $this->payment->fresh(['customer.profile']) ?? $this->payment;
+        $this->payment = $payment;
+
+        if (! $this->canEditCouponForPayment($payment)) {
+            $this->showCouponInput = false;
+            $this->couponCode = '';
+            $this->couponPreview = [];
+            $this->couponMessage = '';
+            $this->couponMessageType = 'info';
+
+            return;
+        }
+
+        $context = $this->checkoutCouponContext();
+
+        if (! $context instanceof CouponContext) {
+            $this->showCouponInput = false;
+            $this->couponCode = '';
+            $this->couponPreview = [];
+            $this->couponMessage = '';
+            $this->couponMessageType = 'info';
+
+            return;
+        }
+
+        $this->showCouponInput = app(CouponService::class)->hasEligibleCouponSupport($context);
+
+        if (! $this->showCouponInput) {
+            $this->couponCode = '';
+            $this->couponPreview = [];
+            $this->couponMessage = '';
+            $this->couponMessageType = 'info';
+        }
+    }
+
+    protected function canEditCouponForPayment(Payment $payment): bool
+    {
+        if ((string) ($payment->coupon_code ?? '') !== '') {
+            return false;
+        }
+
+        return in_array($payment->status->value, ['pending', 'awaiting_customer_action'], true);
+    }
+
+    protected function checkoutCouponContext(): ?CouponContext
+    {
+        $payment = $this->payment->fresh(['customer.profile']) ?? $this->payment;
+        $customer = auth('app')->user()?->fresh(['profile']);
+
+        if (! $customer) {
+            return null;
+        }
+
+        $purchaseType = $payment->purchase_type ?? null;
+
+        if (! $purchaseType instanceof PurchaseType) {
+            return null;
+        }
+
+        $snapshot = $payment->snapshot();
+        $purchasableType = (string) ($payment->purchasable_type ?? '');
+        $purchasableId = (int) ($payment->purchasable_id ?? 0);
+        $itemCode = strtoupper(trim((string) data_get($snapshot, 'code', '')));
+
+        if ($purchasableType === '') {
+            $purchasableType = match ($purchaseType) {
+                PurchaseType::PLAN_SUBSCRIPTION => ServicePlan::class,
+                PurchaseType::STORAGE_SUBSCRIPTION => StoragePlan::class,
+                PurchaseType::ADDON_CREDITS => CreditProduct::class,
+            };
+        }
+
+        if ($purchasableId <= 0) {
+            return null;
+        }
+
+        if ($itemCode === '') {
+            $itemCode = match ($purchaseType) {
+                PurchaseType::PLAN_SUBSCRIPTION => strtoupper((string) (ServicePlan::query()->find($purchasableId)?->code ?? '')),
+                PurchaseType::STORAGE_SUBSCRIPTION => strtoupper((string) (StoragePlan::query()->find($purchasableId)?->code ?? '')),
+                PurchaseType::ADDON_CREDITS => strtoupper((string) (CreditProduct::query()->find($purchasableId)?->code ?? '')),
+            };
+        }
+
+        if ($itemCode === '') {
+            return null;
+        }
+
+        $originalAmountIqd = (int) data_get(
+            $snapshot,
+            'original_amount_iqd',
+            (int) round((float) ($payment->original_amount_iqd ?? 0))
+        );
+
+        if ($originalAmountIqd <= 0) {
+            $originalAmountIqd = (int) data_get(
+                $snapshot,
+                'amount_iqd',
+                (int) round((float) ($payment->discounted_amount_iqd ?? $payment->amount ?? 0))
+            );
+        }
+
+        $isRecurring = ($payment->payment_mode ?? PaymentMode::ONE_TIME) === PaymentMode::RECURRING;
+        $billingCycle = $isRecurring
+            ? strtolower((string) data_get($snapshot, 'billing_cycle', 'monthly'))
+            : null;
+        $provider = strtolower(trim((string) ($payment->provider?->value ?? $payment->provider ?? 'fib')));
+
+        return new CouponContext(
+            customer: $customer,
+            purchaseType: $purchaseType,
+            provider: $provider,
+            purchasableType: $purchasableType,
+            purchasableId: $purchasableId,
+            itemCode: $itemCode,
+            originalAmountIqd: $originalAmountIqd,
+            billingCycle: $billingCycle,
+            isRecurring: $isRecurring,
+        );
+    }
+
+    protected function replaceCheckoutWithCoupon(CouponContext $context, string $couponCode): Payment
+    {
+        return match ($context->purchaseType) {
+            PurchaseType::PLAN_SUBSCRIPTION => app(CreatePlanSubscriptionPayment::class)->handle(
+                $context->customer,
+                $context->purchasableId,
+                $context->billingCycle ?? 'monthly',
+                $couponCode,
+            ),
+            PurchaseType::STORAGE_SUBSCRIPTION => app(CreateStorageSubscriptionPayment::class)->handle(
+                $context->customer,
+                $context->purchasableId,
+                $context->billingCycle ?? 'monthly',
+                $couponCode,
+            ),
+            PurchaseType::ADDON_CREDITS => app(CreateAddonPayment::class)->handle(
+                $context->customer,
+                $context->purchasableId,
+                $couponCode,
+            ),
+        };
+    }
+
+    protected function decorateCouponPreview(array $preview, \App\Models\Customer $customer): array
+    {
+        $billing = app(BillingCurrencyService::class);
+        $preview['original_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['original_amount_iqd'] ?? 0), $customer);
+        $preview['discount_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['discount_amount_iqd'] ?? 0), $customer);
+        $preview['final_display'] = $billing->priceDataForBaseAmountIqd((int) ($preview['final_amount_iqd'] ?? 0), $customer);
+
+        return $preview;
     }
 
     public function render()
@@ -107,22 +360,22 @@ class extends Component
         ? $billing->formatAmount((int) data_get($feeQuote, 'surcharge_amount_iqd', 0), 'IQD')
         : '';
     $hasCoupon = is_array($couponSummary) && (string) data_get($couponSummary, 'code', '') !== '';
-    $couponCode = $hasCoupon ? (string) data_get($couponSummary, 'code') : '';
-    $couponOriginalLabel = $hasCoupon
+    $appliedCouponCode = $hasCoupon ? (string) data_get($couponSummary, 'code') : '';
+    $appliedCouponOriginalLabel = $hasCoupon
         ? (string) data_get(
             $couponSummary,
             'original_display.iqd_label',
             $billing->formatAmount((int) data_get($couponSummary, 'original_amount_iqd', (int) round((float) ($payment->original_amount_iqd ?? 0))), 'IQD')
         )
         : '';
-    $couponDiscountLabel = $hasCoupon
+    $appliedCouponDiscountLabel = $hasCoupon
         ? (string) data_get(
             $couponSummary,
             'discount_display.iqd_label',
             $billing->formatAmount((int) data_get($couponSummary, 'discount_amount_iqd', (int) round((float) ($payment->discount_amount_iqd ?? 0))), 'IQD')
         )
         : '';
-    $couponFinalLabel = $hasCoupon
+    $appliedCouponFinalLabel = $hasCoupon
         ? (string) data_get(
             $couponSummary,
             'final_display.iqd_label',
@@ -222,6 +475,62 @@ class extends Component
                     <div class="col-lg-6">
                         <div class="border rounded-4 p-3 p-lg-4 h-100">
                             <div class="fw-semibold mb-2">{{ __('Payment Details') }}</div>
+                            @if ($showCouponInput && ! $hasCoupon)
+                                <div class="border rounded-3 p-3 mb-3 bg-light-subtle">
+                                    <div class="fw-semibold mb-2">{{ __('Coupon Code') }}</div>
+                                    <div class="input-group">
+                                        <input type="text"
+                                               class="form-control"
+                                               wire:model.defer="couponCode"
+                                               maxlength="80"
+                                               placeholder="{{ __('Enter coupon code') }}">
+                                        <button type="button"
+                                                class="btn btn-outline-primary"
+                                                wire:click="applyCoupon"
+                                                wire:loading.attr="disabled"
+                                                wire:target="applyCoupon">
+                                            <span wire:loading.remove wire:target="applyCoupon">{{ __('Apply Coupon') }}</span>
+                                            <span wire:loading wire:target="applyCoupon">{{ __('Applying...') }}</span>
+                                        </button>
+                                        @if ($couponCode !== '' || $couponPreview !== [])
+                                            <button type="button"
+                                                    class="btn btn-outline-secondary"
+                                                    wire:click="clearCoupon"
+                                                    wire:loading.attr="disabled"
+                                                    wire:target="clearCoupon,applyCoupon">
+                                                {{ __('Clear') }}
+                                            </button>
+                                        @endif
+                                    </div>
+                                    <div class="small text-muted mt-2">
+                                        {{ __('Coupons are validated server-side. Applying a valid coupon creates a new checkout with the updated total.') }}
+                                    </div>
+
+                                    @if ($couponMessage !== '')
+                                        <div class="alert alert-{{ $couponMessageType }} mt-2 mb-0 py-2">
+                                            {{ $couponMessage }}
+                                        </div>
+                                    @endif
+
+                                    @if ($couponPreview !== [])
+                                        <div class="mt-2 small">
+                                            <div class="d-flex justify-content-between gap-3 mt-1">
+                                                <span class="text-muted">{{ __('Original Amount') }}</span>
+                                                <span>{{ data_get($couponPreview, 'original_display.iqd_label', data_get($couponPreview, 'original_amount_iqd')) }}</span>
+                                            </div>
+                                            <div class="d-flex justify-content-between gap-3 mt-1">
+                                                <span class="text-muted">{{ __('Discount') }}</span>
+                                                <span class="text-success">-{{ data_get($couponPreview, 'discount_display.iqd_label', data_get($couponPreview, 'discount_amount_iqd')) }}</span>
+                                            </div>
+                                            <div class="d-flex justify-content-between gap-3 mt-1 pt-2 border-top">
+                                                <span class="fw-semibold">{{ __('Final Amount') }}</span>
+                                                <span class="fw-semibold">{{ data_get($couponPreview, 'final_display.iqd_label', data_get($couponPreview, 'final_amount_iqd')) }}</span>
+                                            </div>
+                                        </div>
+                                    @endif
+                                </div>
+                            @endif
+
                             <dl class="row mb-0 small">
                                 <dt class="col-sm-5 text-muted">{{ __('Provider') }}</dt>
                                 <dd class="col-sm-7">FIB</dd>
@@ -237,16 +546,16 @@ class extends Component
 
                                 @if ($hasCoupon)
                                     <dt class="col-sm-5 text-muted">{{ __('Coupon') }}</dt>
-                                    <dd class="col-sm-7">{{ $couponCode }}</dd>
+                                    <dd class="col-sm-7">{{ $appliedCouponCode }}</dd>
 
                                     <dt class="col-sm-5 text-muted">{{ __('Original Amount') }}</dt>
-                                    <dd class="col-sm-7">{{ $couponOriginalLabel }}</dd>
+                                    <dd class="col-sm-7">{{ $appliedCouponOriginalLabel }}</dd>
 
                                     <dt class="col-sm-5 text-muted">{{ __('Discount') }}</dt>
-                                    <dd class="col-sm-7 text-success">-{{ $couponDiscountLabel }}</dd>
+                                    <dd class="col-sm-7 text-success">-{{ $appliedCouponDiscountLabel }}</dd>
 
                                     <dt class="col-sm-5 text-muted">{{ __('Discounted Amount') }}</dt>
-                                    <dd class="col-sm-7">{{ $couponFinalLabel }}</dd>
+                                    <dd class="col-sm-7">{{ $appliedCouponFinalLabel }}</dd>
                                 @endif
 
                                 @if ($displayCanonical !== '' && $displayCanonical !== $displayPrimary)

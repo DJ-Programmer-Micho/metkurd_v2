@@ -62,6 +62,11 @@ class LandingContent
             'status_secure' => 'Cloud secured',
             'status_accessible' => 'WCAG-friendly UI',
         ],
+        'google_review' => [
+            'g_badge' => 'Your Feedback Fuels Our Innovation',
+            'g_title' => 'Love using METKURD? Share your experience on Google and help us build better AI for the community.',
+            'g_copy' => 'Rate Us on Google ❤',
+        ],
         'common' => [
             'learn_more' => 'Learn more',
             'open_page' => 'Open page',

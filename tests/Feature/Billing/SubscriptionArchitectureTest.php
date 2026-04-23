@@ -6,6 +6,7 @@ use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
+use App\Domain\Payments\Models\PaymentEvent;
 use App\Models\Customer;
 use App\Models\CustomerFile;
 use App\Models\CustomerUsage;
@@ -175,7 +176,12 @@ it('cancels the fib provider subscription when scheduling main plan cancellation
 
     expect(data_get($scheduled->meta, 'provider_cancellation.provider'))->toBe('fib')
         ->and(data_get($scheduled->meta, 'provider_cancellation.provider_ref'))->toBe($payment->providerReference())
-        ->and($scheduled->auto_renew)->toBeFalse();
+        ->and(data_get($scheduled->meta, 'cancel_source'))->toBe('customer_web')
+        ->and($scheduled->auto_renew)->toBeFalse()
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $payment->id)
+            ->where('event_type', 'service_subscription_cancel_requested')
+            ->exists())->toBeTrue();
 });
 
 it('schedules storage cancellation for period end and downgrades entitlement to the free storage plan afterwards', function () {
@@ -235,7 +241,12 @@ it('cancels the fib provider subscription when scheduling storage cancellation a
 
     expect(data_get($scheduled->meta, 'provider_cancellation.provider'))->toBe('fib')
         ->and(data_get($scheduled->meta, 'provider_cancellation.provider_ref'))->toBe($payment->providerReference())
-        ->and($scheduled->auto_renew)->toBeFalse();
+        ->and(data_get($scheduled->meta, 'cancel_source'))->toBe('customer_web')
+        ->and($scheduled->auto_renew)->toBeFalse()
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $payment->id)
+            ->where('event_type', 'storage_subscription_cancel_requested')
+            ->exists())->toBeTrue();
 });
 
 it('keeps existing files intact after a storage downgrade makes the account over quota', function () {
