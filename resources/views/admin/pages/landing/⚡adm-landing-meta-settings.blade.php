@@ -79,7 +79,7 @@ class extends Component
             <div class="card-header"><h5 class="card-title mb-0">{{ __('Public Meta Assets') }}</h5></div>
             <div class="card-body">
                 <div class="alert alert-info py-2 px-3">
-                    <small class="mb-0 d-block">{{ __('These files are saved on the public storage disk to guarantee access for browsers and social/SEO crawlers.') }}</small>
+                    <small class="mb-0 d-block">{{ __('These files are saved on the configured landing media disk to guarantee access across all app nodes and social/SEO crawlers.') }}</small>
                 </div>
                 <div class="row g-4">
                     <div class="col-md-6">

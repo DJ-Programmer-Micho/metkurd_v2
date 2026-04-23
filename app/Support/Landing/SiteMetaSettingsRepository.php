@@ -5,11 +5,10 @@ namespace App\Support\Landing;
 use App\Models\SiteMetaSetting;
 use App\Support\LandingContent;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Storage;
 
 class SiteMetaSettingsRepository
 {
-    protected const STORAGE_DIR = 'site-meta';
+    protected const STORAGE_DIR = 'web-setting/site-meta';
     /** @var array<string, mixed>|null */
     protected ?array $settingsCache = null;
     protected ?bool $hasTableCache = null;
@@ -123,17 +122,7 @@ class SiteMetaSettingsRepository
 
     public function publicUrl(?string $path): ?string
     {
-        $path = trim((string) $path);
-
-        if ($path === '') {
-            return null;
-        }
-
-        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
-            return $path;
-        }
-
-        return Storage::disk('public')->url($path);
+        return $this->mediaStorage()->publicUrl($path);
     }
 
     protected function hasTable(): bool
@@ -195,24 +184,27 @@ class SiteMetaSettingsRepository
             return;
         }
 
-        $currentPath = $this->getPath($key);
+        $currentPath = $this->mediaStorage()->normalizeStoredPath($this->getPath($key));
         $extension = strtolower((string) (method_exists($uploadedFile, 'getClientOriginalExtension')
             ? $uploadedFile->getClientOriginalExtension()
             : 'png'));
         $extension = $extension !== '' ? $extension : 'png';
 
         $filename = $basename . '-' . now()->format('YmdHis') . '.' . $extension;
-        $storedPath = $uploadedFile->storeAs(self::STORAGE_DIR, $filename, 'public');
+        $storedPath = $uploadedFile->storeAs(self::STORAGE_DIR, $filename, $this->mediaStorage()->diskName());
 
         if (! is_string($storedPath) || trim($storedPath) === '') {
             return;
         }
 
-        if ($currentPath && ! str_starts_with($currentPath, 'http://') && ! str_starts_with($currentPath, 'https://')) {
-            Storage::disk('public')->delete($currentPath);
-        }
+        $this->mediaStorage()->delete($currentPath);
 
         $this->setString($key, $storedPath);
+    }
+
+    protected function mediaStorage(): LandingMediaStorage
+    {
+        return app(LandingMediaStorage::class);
     }
 
     /**

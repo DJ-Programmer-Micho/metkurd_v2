@@ -20,6 +20,10 @@ class extends Component
 
 <x-slot:title>{{ __('Landing Tools CMS') }} | {{ __('MET KURD') }}</x-slot:title>
 
+@php
+    $landingMedia = app(\App\Support\Landing\LandingMediaStorage::class);
+@endphp
+
 <div class="container-fluid">
     <div class="row mb-3">
         <div class="col-12 d-flex justify-content-between align-items-center">
@@ -75,12 +79,19 @@ class extends Component
                                 <td>{{ data_get($toolPage->content, 'en.title', $toolPage->slug) }}</td>
                                 <td>
                                     @if($toolPage->square_image_path)
-                                        <img
-                                            src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($toolPage->square_image_path) }}"
-                                            alt="{{ data_get($toolPage->content, 'en.title', $toolPage->slug) }}"
-                                            class="rounded"
-                                            style="width:40px; height:40px; object-fit:cover;"
-                                        >
+                                        @php($squareThumbUrl = $landingMedia->publicUrl($toolPage->square_image_path))
+                                        @if($squareThumbUrl)
+                                            <img
+                                                src="{{ $squareThumbUrl }}"
+                                                alt="{{ data_get($toolPage->content, 'en.title', $toolPage->slug) }}"
+                                                class="rounded"
+                                                style="width:40px; height:40px; object-fit:cover;"
+                                            >
+                                        @else
+                                            <span class="badge bg-secondary-subtle text-secondary">
+                                                {{ strtoupper(\Illuminate\Support\Str::substr((string) data_get($toolPage->content, 'en.title', $toolPage->slug), 0, 1)) }}
+                                            </span>
+                                        @endif
                                     @else
                                         <span class="badge bg-secondary-subtle text-secondary">
                                             {{ strtoupper(\Illuminate\Support\Str::substr((string) data_get($toolPage->content, 'en.title', $toolPage->slug), 0, 1)) }}
@@ -139,8 +150,11 @@ class extends Component
                                     <img src="{{ $squareImageUpload->temporaryUrl() }}" alt="tool square image preview" class="rounded mt-2" style="width:88px; height:88px; object-fit:cover;">
                                 @endif
                                 @if($squareImagePath)
+                                    @php($squarePreviewUrl = $landingMedia->publicUrl($squareImagePath))
                                     <small class="text-muted d-block mt-2">{{ __('Current: :path', ['path' => $squareImagePath]) }}</small>
-                                    <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($squareImagePath) }}" alt="tool square image" class="rounded mt-2" style="width:88px; height:88px; object-fit:cover;">
+                                    @if($squarePreviewUrl)
+                                        <img src="{{ $squarePreviewUrl }}" alt="tool square image" class="rounded mt-2" style="width:88px; height:88px; object-fit:cover;">
+                                    @endif
                                 @endif
                             </div>
                             <div class="col-md-2">
@@ -163,8 +177,11 @@ class extends Component
                                 <div class="form-text">{{ __('Shown in the right visual panel on /tools/{slug}.') }}</div>
                                 @error('heroImageUpload') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                 @if($heroImagePath)
+                                    @php($heroPreviewUrl = $landingMedia->publicUrl($heroImagePath))
                                     <small class="text-muted d-block mt-2">{{ __('Current: :path', ['path' => $heroImagePath]) }}</small>
-                                    <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($heroImagePath) }}" alt="tool detail visual" class="img-fluid rounded mt-2" style="max-height:120px;">
+                                    @if($heroPreviewUrl)
+                                        <img src="{{ $heroPreviewUrl }}" alt="tool detail visual" class="img-fluid rounded mt-2" style="max-height:120px;">
+                                    @endif
                                 @endif
                             </div>
 
@@ -174,8 +191,11 @@ class extends Component
                                 <div class="form-text">{{ __('Shown on /tools card when provided. If empty, the square badge image (or fallback letter) is used.') }}</div>
                                 @error('cardImageUpload') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                 @if($cardImagePath)
+                                    @php($cardPreviewUrl = $landingMedia->publicUrl($cardImagePath))
                                     <small class="text-muted d-block mt-2">{{ __('Current: :path', ['path' => $cardImagePath]) }}</small>
-                                    <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($cardImagePath) }}" alt="tool card image" class="img-fluid rounded mt-2" style="max-height:120px;">
+                                    @if($cardPreviewUrl)
+                                        <img src="{{ $cardPreviewUrl }}" alt="tool card image" class="img-fluid rounded mt-2" style="max-height:120px;">
+                                    @endif
                                 @endif
                             </div>
                         </div>

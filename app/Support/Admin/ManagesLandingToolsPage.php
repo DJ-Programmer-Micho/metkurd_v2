@@ -3,8 +3,8 @@
 namespace App\Support\Admin;
 
 use App\Models\LandingToolPage;
+use App\Support\Landing\LandingMediaStorage;
 use App\Support\Landing\LandingToolPageCatalog;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -292,20 +292,27 @@ trait ManagesLandingToolsPage
         $toolPage->sort_order = (int) $this->sortOrder;
         $toolPage->is_active = $this->toolStatus === 'active';
         $toolPage->content = $this->buildLocalizedContentPayload();
+        $mediaDisk = $this->landingMediaStorage()->diskName();
 
         if ($this->squareImageUpload) {
             $this->deletePublicAsset($toolPage->square_image_path);
-            $toolPage->square_image_path = $this->squareImageUpload->store('landing/tools/square', 'public');
+            $toolPage->square_image_path = $this->squareImageUpload->store('web-setting/tools/square', $mediaDisk);
+        } else {
+            $toolPage->square_image_path = $this->landingMediaStorage()->normalizeStoredPath($toolPage->square_image_path);
         }
 
         if ($this->heroImageUpload) {
             $this->deletePublicAsset($toolPage->hero_image_path);
-            $toolPage->hero_image_path = $this->heroImageUpload->store('landing/tools', 'public');
+            $toolPage->hero_image_path = $this->heroImageUpload->store('web-setting/tools', $mediaDisk);
+        } else {
+            $toolPage->hero_image_path = $this->landingMediaStorage()->normalizeStoredPath($toolPage->hero_image_path);
         }
 
         if ($this->cardImageUpload) {
             $this->deletePublicAsset($toolPage->card_image_path);
-            $toolPage->card_image_path = $this->cardImageUpload->store('landing/tools', 'public');
+            $toolPage->card_image_path = $this->cardImageUpload->store('web-setting/tools', $mediaDisk);
+        } else {
+            $toolPage->card_image_path = $this->landingMediaStorage()->normalizeStoredPath($toolPage->card_image_path);
         }
 
         $toolPage->save();
@@ -812,17 +819,16 @@ trait ManagesLandingToolsPage
 
     protected function deletePublicAsset(?string $path): void
     {
-        $path = trim((string) $path);
-
-        if ($path === '' || str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
-            return;
-        }
-
-        Storage::disk('public')->delete($path);
+        $this->landingMediaStorage()->delete($path);
     }
 
     protected function toolCatalog(): LandingToolPageCatalog
     {
         return app(LandingToolPageCatalog::class);
+    }
+
+    protected function landingMediaStorage(): LandingMediaStorage
+    {
+        return app(LandingMediaStorage::class);
     }
 }

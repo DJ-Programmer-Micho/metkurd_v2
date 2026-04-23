@@ -6,7 +6,6 @@ use App\Models\LandingToolPage;
 use App\Support\LandingContent;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class LandingToolPageCatalog
@@ -418,17 +417,12 @@ class LandingToolPageCatalog
 
     protected function publicAssetUrl(?string $path): ?string
     {
-        $path = trim((string) $path);
+        return $this->mediaStorage()->publicUrl($path);
+    }
 
-        if ($path === '') {
-            return null;
-        }
-
-        if (Str::startsWith($path, ['http://', 'https://'])) {
-            return $path;
-        }
-
-        return Storage::disk('public')->url($path);
+    protected function mediaStorage(): LandingMediaStorage
+    {
+        return app(LandingMediaStorage::class);
     }
 
     /**

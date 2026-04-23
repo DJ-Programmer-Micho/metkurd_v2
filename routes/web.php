@@ -18,6 +18,7 @@ use App\Http\Controllers\Payments\AreebaWebhookController;
 use App\Http\Controllers\Payments\FibCallbackController;
 use App\Http\Controllers\Payments\FibPaymentController;
 use App\Http\Controllers\Payments\FibSubscriptionCallbackController;
+use App\Http\Controllers\Landing\PublicLandingMediaController;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
@@ -35,6 +36,9 @@ use Illuminate\Support\Facades\Route;
 // Route::get('/sitemap_ku.xml', fn () => response()->file(public_path('sitemap_ku.xml')));
 Route::get("sitemap.xml" , function () { return \Illuminate\Support\Facades\Redirect::to('sitemap.xml'); });
 Route::post('/set-locale', [LocalizationMainMiddleware::class, 'setLocale'])->name('setLocale');
+Route::get('/media/web/{path}', PublicLandingMediaController::class)
+    ->where('path', '.*')
+    ->name('landing.media.web');
 
 Route::prefix('payments/webhooks')->group(function () {
     Route::post('/fib', FibCallbackController::class)
