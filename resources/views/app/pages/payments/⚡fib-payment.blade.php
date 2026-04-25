@@ -429,7 +429,7 @@ class extends Component
         && (! $isSubscriptionCheckout || $knownProviderStatus === null || $fibSubscriptions->isCancelableProviderStatus($knownProviderStatus));
     $showRefresh = in_array($payment->status->value, ['awaiting_customer_action', 'pending'], true);
 @endphp
-
+<script src="https://cdn.lordicon.com/lordicon.js"></script>
 <div class="row justify-content-center mt-4"
      data-payment-status-polling="{{ $shouldPoll ? 'active' : 'stopped' }}"
      @if ($shouldPoll) wire:poll.5s="pollStatus" @endif>
@@ -445,9 +445,23 @@ class extends Component
                     <div class="small mt-1">{{ __('This page checks your :object status automatically every 5 seconds while it remains pending.', ['object' => $providerObjectLabelLower]) }}</div>
                 </div>
                 <div class="small text-muted" wire:loading.remove wire:target="pollStatus">
+<lord-icon
+    src="https://cdn.lordicon.com/euaablbm.json"
+    trigger="loop"
+    state="loop-cycle"
+    colors="primary:#b4b4b4,secondary:#6c16c7"
+    style="width:24px;height:24px">
+</lord-icon>
                     {{ __('Automatic check is active.') }}
                 </div>
                 <div class="small text-muted" wire:loading.delay wire:target="pollStatus">
+<lord-icon 
+    src="https://cdn.lordicon.com/euaablbm.json"
+    trigger="loop"
+    delay="2000"
+    colors="primary:#b4b4b4,secondary:#6c16c7"
+    style="width:24px;height:24px">
+</lord-icon>
                     {{ __('Checking now...') }}
                 </div>
             </div>
