@@ -103,7 +103,6 @@ class AsrJobSyncService
 
             $base   = $this->storage->renderBaseDir($fresh, 'wasr');
             $txtKey = "{$base}/transcription.txt";
-            $jsonKey = "{$base}/transcription.json";
 
             $savedTxt = $this->storage->saveTextToS3(
                 (int) $fresh->customer_id,
@@ -117,32 +116,9 @@ class AsrJobSyncService
                 ]
             );
 
-            $jsonPayload = json_encode([
-                'text' => $transcriptionText,
-                'chunks' => array_values($chunks),
-                'word_count' => $this->unicodeWordCount($transcriptionText),
-                'char_count' => mb_strlen($transcriptionText),
-                'provider_output' => data_get($providerPayload, 'output', []),
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-            if (!is_string($jsonPayload) || $jsonPayload === '') {
-                throw new \RuntimeException('Failed to encode transcription JSON output.');
-            }
-
-            $savedJson = $this->storage->saveTextToS3(
-                (int) $fresh->customer_id,
-                $jsonKey,
-                $jsonPayload,
-                [
-                    'job_id'  => (string) $fresh->id,
-                    'tool'    => (string) ($tool->code ?: 'wasr'),
-                    'purpose' => 'transcription',
-                    'mime'    => 'application/json',
-                ]
-            );
-
             $charCount = mb_strlen($transcriptionText);
             $wordCount = $this->unicodeWordCount($transcriptionText);
+            $providerOutput = data_get($providerPayload, 'output', []);
 
             $fresh->status = 'done';
             $fresh->output = [
@@ -150,15 +126,13 @@ class AsrJobSyncService
                 'path'       => $savedTxt['path'],
                 'bytes'      => $savedTxt['bytes'],
                 'mime'       => $savedTxt['mime'],
-                'json_path'  => $savedJson['path'],
-                'json_bytes' => $savedJson['bytes'],
-                'json_mime'  => $savedJson['mime'],
                 'text'       => $transcriptionText,
                 'chunks'     => $chunks,
                 'char_count' => $charCount,
                 'word_count' => $wordCount,
+                'provider_output' => $providerOutput,
             ];
-            $fresh->storage_out_bytes = (int) $savedTxt['bytes'] + (int) $savedJson['bytes'];
+            $fresh->storage_out_bytes = (int) $savedTxt['bytes'];
             $fresh->finished_at = now();
             $fresh->error = null;
             $fresh->save();

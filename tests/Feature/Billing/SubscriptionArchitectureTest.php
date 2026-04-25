@@ -9,6 +9,8 @@ use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Models\PaymentEvent;
 use App\Models\Customer;
 use App\Models\CustomerFile;
+use App\Models\CustomerServiceSubscription;
+use App\Models\CustomerStorageSubscription;
 use App\Models\CustomerUsage;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
@@ -113,6 +115,32 @@ it('hides the free plan card when the customer already has an active paid main p
     Livewire::test('app::pages.subscription-plan.subscription-plan')
         ->assertSee('PRO')
         ->assertDontSee('FREE');
+});
+
+it('renders the subscription plan page when the current period end is missing', function () {
+    $customer = billingArchitectureCustomer('subscription-null-period@example.com', 'subscription_null_period_user');
+
+    CustomerServiceSubscription::query()
+        ->where('customer_id', $customer->id)
+        ->delete();
+
+    $this->actingAs($customer->fresh(), 'app');
+
+    Livewire::test('app::pages.subscription-plan.subscription-plan')
+        ->assertSee('Subscription (Service Credits)');
+});
+
+it('renders the storage plan page when the current period end is missing', function () {
+    $customer = billingArchitectureCustomer('storage-null-period@example.com', 'storage_null_period_user');
+
+    CustomerStorageSubscription::query()
+        ->where('customer_id', $customer->id)
+        ->delete();
+
+    $this->actingAs($customer->fresh(), 'app');
+
+    Livewire::test('app::pages.storage-plan.storage-plan')
+        ->assertSee('Storage Plans');
 });
 
 it('schedules main plan cancellation for period end only and keeps paid access until then', function () {

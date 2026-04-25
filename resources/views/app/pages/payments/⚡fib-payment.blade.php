@@ -265,18 +265,31 @@ class extends Component
 
     protected function replaceCheckoutWithCoupon(CouponContext $context, string $couponCode): Payment
     {
+        $payment = $this->payment->fresh() ?? $this->payment;
+        $methodCode = strtolower(trim((string) data_get($payment->meta, 'payment_method_code', '')));
+
+        if ($methodCode === '') {
+            $methodCode = strtolower(trim((string) (
+                $payment->provider?->value
+                ?? $payment->provider
+                ?? 'fib'
+            )));
+        }
+
         return match ($context->purchaseType) {
             PurchaseType::PLAN_SUBSCRIPTION => app(CreatePlanSubscriptionPayment::class)->handle(
                 $context->customer,
                 $context->purchasableId,
                 $context->billingCycle ?? 'monthly',
                 $couponCode,
+                $methodCode,
             ),
             PurchaseType::STORAGE_SUBSCRIPTION => app(CreateStorageSubscriptionPayment::class)->handle(
                 $context->customer,
                 $context->purchasableId,
                 $context->billingCycle ?? 'monthly',
                 $couponCode,
+                $methodCode,
             ),
             PurchaseType::ADDON_CREDITS => app(CreateAddonPayment::class)->handle(
                 $context->customer,

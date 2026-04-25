@@ -7,6 +7,7 @@ use App\Models\StoragePlan;
 use App\Services\Billing\BillingCurrencyService;
 use App\Services\Billing\CustomerBillingStateService;
 use App\Services\Billing\ScheduleStoragePlanCancellation;
+use Illuminate\Support\Carbon;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -272,9 +273,21 @@ class extends Component
 
     protected function formatDateLabel(mixed $date): ?string
     {
-        return method_exists($date, 'timezone')
-            ? $date->timezone(config('app.timezone'))->format('Y-m-d H:i')
-            : null;
+        if ($date instanceof \DateTimeInterface) {
+            return Carbon::instance($date)->timezone(config('app.timezone'))->format('Y-m-d H:i');
+        }
+
+        if (is_scalar($date) && trim((string) $date) !== '') {
+            try {
+                return Carbon::parse((string) $date)
+                    ->timezone(config('app.timezone'))
+                    ->format('Y-m-d H:i');
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     protected function normalizeBillingCycle(?string $cycle): string

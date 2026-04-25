@@ -9,13 +9,17 @@ use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
+use App\Enums\PaymentPurposeType;
 use App\Enums\PaymentRecurringStrategy;
 use App\Models\Customer;
+use App\Models\PaymentMethod;
 use App\Models\ServicePlan;
 use App\Services\Billing\BillingCurrencyService;
 use App\Services\Coupons\CouponContext;
 use App\Services\Coupons\CouponRedemptionService;
 use App\Services\Coupons\CouponService;
+use App\Services\Payments\CheckoutAuthorizationService;
+use App\Services\Payments\PaymentMethodCatalog;
 use App\Services\Payments\PaymentFeeCalculator;
 use App\Support\TelegramSubscriptionLifecycleNotifier;
 use Illuminate\Support\Facades\DB;
@@ -31,11 +35,19 @@ class CreatePlanSubscriptionPayment
         protected PaymentEventRecorder $events,
         protected CouponService $coupons,
         protected CouponRedemptionService $redemptions,
+        protected CheckoutAuthorizationService $checkoutAuthorization,
+        protected PaymentMethodCatalog $paymentMethods,
         protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
     ) {
     }
 
-    public function handle(Customer $customer, int $planId, string $billingCycle = 'monthly', ?string $couponCode = null): Payment
+    public function handle(
+        Customer $customer,
+        int $planId,
+        string $billingCycle = 'monthly',
+        ?string $couponCode = null,
+        ?string $paymentMethodCode = null,
+    ): Payment
     {
         $plan = ServicePlan::query()->where('is_active', true)->findOrFail($planId);
         $currentPlanId = $customer->currentServicePlanId();
@@ -46,12 +58,42 @@ class CreatePlanSubscriptionPayment
             ]);
         }
 
+        $requestedMethodCode = strtolower(trim((string) ($paymentMethodCode ?? '')));
+        $paymentMethod = $requestedMethodCode !== ''
+            ? $this->checkoutAuthorization->assertPaymentMethodAvailable(
+                $requestedMethodCode,
+                PaymentPurposeType::SERVICE_PLAN,
+                'IQD',
+            )
+            : $this->resolveDefaultRecurringMethod();
+
+        if (! (bool) ($paymentMethod->supports_recurring ?? false)) {
+            throw ValidationException::withMessages([
+                'payment_method' => __('The selected payment method does not support recurring subscriptions.'),
+            ]);
+        }
+
+        $providerDriver = strtolower(trim((string) $paymentMethod->driver));
+        $provider = PaymentProvider::tryFrom($providerDriver);
+
+        if (! $provider instanceof PaymentProvider) {
+            throw ValidationException::withMessages([
+                'payment_method' => __('The selected payment method is not supported by this checkout flow yet.'),
+            ]);
+        }
+
+        if ($provider !== PaymentProvider::FIB) {
+            throw ValidationException::withMessages([
+                'payment_method' => __('The selected payment method is not enabled yet for recurring subscriptions. Please use FIB for now.'),
+            ]);
+        }
+
         $billingCycle = $this->fib->normalizeBillingCycle($billingCycle, ['monthly', 'yearly', 'hourly']);
         $originalBaseAmountIqd = $plan->priceIqdForCycle($billingCycle === 'yearly' ? 'yearly' : 'monthly');
         $couponContext = new CouponContext(
             customer: $customer,
             purchaseType: PurchaseType::PLAN_SUBSCRIPTION,
-            provider: 'fib',
+            provider: $provider->value,
             purchasableType: ServicePlan::class,
             purchasableId: (int) $plan->id,
             itemCode: (string) $plan->code,
@@ -63,7 +105,7 @@ class CreatePlanSubscriptionPayment
         $couponPricing = $resolvedCoupon['pricing'] ?? null;
         $baseAmountIqd = (int) ($couponPricing['final_amount_iqd'] ?? $originalBaseAmountIqd);
         $discountAmountIqd = (int) ($couponPricing['discount_amount_iqd'] ?? 0);
-        $feeQuote = $this->fees->quote('fib', $baseAmountIqd);
+        $feeQuote = $this->fees->quote($paymentMethod, $baseAmountIqd);
         $grossAmountIqd = (int) ($feeQuote['gross_amount_iqd'] ?? $baseAmountIqd);
         $display = $this->currency->priceDataForBaseAmountIqd($grossAmountIqd, $customer);
         $baseDisplay = $this->currency->priceDataForBaseAmountIqd($baseAmountIqd, $customer);
@@ -71,13 +113,13 @@ class CreatePlanSubscriptionPayment
         $discountDisplay = $discountAmountIqd > 0
             ? $this->currency->priceDataForBaseAmountIqd($discountAmountIqd, $customer)
             : null;
-        $payment = DB::transaction(function () use ($customer, $plan, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay) {
+        $payment = DB::transaction(function () use ($customer, $plan, $provider, $paymentMethod, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay) {
             $payment = Payment::create([
                 'uuid' => (string) Str::uuid(),
                 'customer_id' => $customer->id,
                 'coupon_id' => data_get($resolvedCoupon, 'coupon.id'),
                 'coupon_code' => data_get($resolvedCoupon, 'coupon.code'),
-                'provider' => PaymentProvider::FIB,
+                'provider' => $provider,
                 'purchase_type' => PurchaseType::PLAN_SUBSCRIPTION,
                 'payment_mode' => PaymentMode::RECURRING,
                 'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
@@ -118,6 +160,8 @@ class CreatePlanSubscriptionPayment
                 'meta' => [
                     'locale' => app()->getLocale(),
                     'fee_quote' => $feeQuote,
+                    'payment_method_code' => (string) $paymentMethod->code,
+                    'payment_driver' => (string) $paymentMethod->driver,
                     'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
                     'coupon' => $couponPricing,
                 ],
@@ -233,5 +277,40 @@ class CreatePlanSubscriptionPayment
     protected function localReference(string $prefix): string
     {
         return sprintf('FIB-%s-%s-%s', $prefix, now()->format('YmdHis'), strtoupper(Str::random(8)));
+    }
+
+    protected function resolveDefaultRecurringMethod(): PaymentMethod
+    {
+        $methods = $this->paymentMethods
+            ->availableForPurpose(PaymentPurposeType::SERVICE_PLAN, 'IQD')
+            ->filter(fn (PaymentMethod $method) => (bool) ($method->supports_recurring ?? false))
+            ->values();
+
+        if ($methods->isEmpty()) {
+            throw ValidationException::withMessages([
+                'payment_method' => __('No recurring payment method is currently available for plan subscriptions.'),
+            ]);
+        }
+
+        $preferred = strtolower(trim((string) config('payments.default_provider', '')));
+
+        if ($preferred !== '') {
+            $preferredMethod = $methods->first(fn (PaymentMethod $method) => $method->code === $preferred || $method->driver === $preferred);
+
+            if ($preferredMethod instanceof PaymentMethod) {
+                return $preferredMethod;
+            }
+        }
+
+        $fibMethod = $methods->first(fn (PaymentMethod $method) => $method->code === 'fib' || $method->driver === 'fib');
+
+        if ($fibMethod instanceof PaymentMethod) {
+            return $fibMethod;
+        }
+
+        /** @var PaymentMethod $fallback */
+        $fallback = $methods->first();
+
+        return $fallback;
     }
 }

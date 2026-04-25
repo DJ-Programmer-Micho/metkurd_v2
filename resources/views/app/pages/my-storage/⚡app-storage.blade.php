@@ -6,10 +6,19 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
+use App\Domain\Payments\Actions\CreateStorageSubscriptionPayment;
+use App\Domain\Payments\Fib\FibSubscriptionService;
+use App\Enums\PaymentPurposeType;
 use App\Models\CustomerFile;
 use App\Models\CustomerUsage;
 use App\Models\MlJob;
+use App\Models\StoragePlan;
+use App\Services\Billing\BillingCurrencyService;
+use App\Services\Billing\CustomerBillingStateService;
+use App\Services\Billing\ScheduleStoragePlanCancellation;
+use App\Services\Payments\PaymentMethodCatalog;
 use App\Support\StorageBrowser;
+use Illuminate\Support\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +42,10 @@ class extends Component
 
     public int $perPage = 12;
 
+    public int $folderBatchSize = 20;
+
+    public int $folderVisibleCount = 20;
+
     public ?string $selectedFile = null;
 
     public ?string $pendingDeleteType = null; // file|folder
@@ -41,17 +54,61 @@ class extends Component
 
     public array $toolRoots = [];
 
+    public array $storagePlans = [];
+
+    public array $storagePaymentMethods = [];
+
+    public ?int $currentStoragePlanId = null;
+
+    public ?int $selectedStoragePlanId = null;
+
+    public ?string $selectedStoragePaymentMethod = null;
+
+    public string $storageBillingCycle = 'monthly';
+
+    public string $storageDisplayCurrencyCode = 'IQD';
+
+    public string $storageDisplayCurrencySource = 'default';
+
+    public string $currentStoragePlanCode = 'free-512';
+
+    public string $currentStoragePlanName = 'Free (512MB)';
+
+    public bool $storageHourlyTestingEnabled = false;
+
+    public bool $showStoragePlanConfirm = false;
+
+    public bool $showStorageCancelConfirm = false;
+
+    public bool $processingStoragePlan = false;
+
+    public bool $canCancelCurrentStoragePlan = false;
+
+    public bool $currentStoragePlanCancellationScheduled = false;
+
+    public bool $storageOverQuota = false;
+
+    public bool $projectedStorageOverQuotaAfterDowngrade = false;
+
+    public int $storageFutureQuotaMb = 512;
+
+    public ?string $currentStoragePlanEndsAtLabel = null;
+
+    public string $storagePlanMessage = '';
+
+    public string $storagePlanMessageType = 'info';
+
     public function mount(): void
     {
         $this->toolRoots = [
             'tts'       => ['label' => __('Text to Speech'), 'icon' => 'ri-volume-up-line', 'color' => 'primary'],
-            'ftts'      => ['label' => __('F5 Text to Speech'), 'icon' => 'ri-speak-line', 'color' => 'info'],
-            'clone-tts' => ['label' => __('Clone Speech'), 'icon' => 'ri-mic-line', 'color' => 'info'],
-            'stem'      => ['label' => __('Stem Separation'), 'icon' => 'ri-equalizer-line', 'color' => 'success'],
+            'ftts'      => ['label' => __('F5 Text to Speech'), 'icon' => 'ri-volume-up-line', 'color' => 'secondary'],
+            'clone-tts' => ['label' => __('Clone Speech'), 'icon' => 'ri-mic-line', 'color' => 'success'],
+            'stem'      => ['label' => __('Stem Separation'), 'icon' => 'ri-equalizer-line', 'color' => 'info'],
             'wasr'      => ['label' => __('Speech to Text'), 'icon' => 'ri-file-text-line', 'color' => 'warning'],
-            'qasr'      => ['label' => __('QASR Speech to Text'), 'icon' => 'ri-file-text-line', 'color' => 'warning'],
+            'qasr'      => ['label' => __('QASR Speech to Text'), 'icon' => 'ri-file-text-line', 'color' => 'danger'],
             'tran'      => ['label' => __('MET Translation'), 'icon' => 'ri-translate-2', 'color' => 'primary'],
-            'ocr'       => ['label' => __('Optical Character Recognition'), 'icon' => 'ri-scan-2-line', 'color' => 'danger'],
+            'ocr'       => ['label' => __('Optical Character Recognition'), 'icon' => 'ri-scan-2-line', 'color' => 'secondary'],
         ];
 
         $this->path = $this->sanitizePath($this->path);
@@ -60,11 +117,96 @@ class extends Component
             $this->path = '';
         }
 
+        $this->loadStorageBillingData();
         $this->syncSelectedFile();
+    }
+
+    protected function loadStorageBillingData(): void
+    {
+        $customer = auth('app')->user();
+        $customer = $customer?->fresh(['profile', 'usage']);
+
+        if (! $customer) {
+            return;
+        }
+
+        $currency = app(BillingCurrencyService::class);
+        $billingState = app(CustomerBillingStateService::class);
+        $methodCatalog = app(PaymentMethodCatalog::class);
+        $fibSubscriptions = app(FibSubscriptionService::class);
+        $state = $billingState->storageQuotaState($customer);
+        $displayContext = $currency->resolveDisplayContext($customer);
+
+        $this->storageDisplayCurrencyCode = (string) ($displayContext['currency_code'] ?? 'IQD');
+        $this->storageDisplayCurrencySource = (string) ($displayContext['source'] ?? 'default');
+        $this->storageHourlyTestingEnabled = $fibSubscriptions->hourlyTestingEnabled();
+        $this->storageBillingCycle = $this->normalizeStorageBillingCycle($this->storageBillingCycle);
+        $this->syncCurrentStoragePlanState($state);
+
+        $this->storagePlans = StoragePlan::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(function (StoragePlan $plan) use ($currency, $customer) {
+                $priceIqd = $plan->priceIqdAmount();
+                $isCurrent = (int) $plan->id === (int) $this->currentStoragePlanId;
+
+                return [
+                    'id' => (int) $plan->id,
+                    'code' => (string) $plan->code,
+                    'name' => (string) $plan->name,
+                    'quota_mb' => (int) ($plan->quota_mb ?? 0),
+                    'price_iqd' => $priceIqd,
+                    'price_display' => $currency->priceDataForBaseAmountIqd($priceIqd, $customer),
+                    'is_current' => $isCurrent,
+                    'can_cancel' => $isCurrent && $this->canCancelCurrentStoragePlan,
+                    'cancellation_scheduled' => $isCurrent && $this->currentStoragePlanCancellationScheduled,
+                    'access_until_label' => $isCurrent ? $this->currentStoragePlanEndsAtLabel : null,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $this->storagePaymentMethods = $methodCatalog
+            ->availableForPurpose(PaymentPurposeType::STORAGE_PLAN, 'IQD')
+            ->filter(fn ($method) => (bool) ($method->supports_recurring ?? false))
+            ->map(fn ($method) => [
+                'code' => (string) $method->code,
+                'driver' => (string) $method->driver,
+                'name' => (string) $method->name,
+                'description' => filled($method->description) ? (string) $method->description : null,
+            ])
+            ->values()
+            ->all();
+
+        $selectedMethod = collect($this->storagePaymentMethods)
+            ->firstWhere('code', strtolower(trim((string) $this->selectedStoragePaymentMethod)));
+
+        $this->selectedStoragePaymentMethod = (string) (
+            data_get($selectedMethod, 'code')
+            ?: data_get($this->storagePaymentMethods, '0.code')
+            ?: 'fib'
+        );
+    }
+
+    protected function syncCurrentStoragePlanState(array $state): void
+    {
+        $currentPlan = $state['current_plan'] ?? null;
+
+        $this->currentStoragePlanId = (int) ($state['current_plan_id'] ?? 0) ?: null;
+        $this->currentStoragePlanCode = (string) ($currentPlan?->code ?? 'free-512');
+        $this->currentStoragePlanName = (string) ($currentPlan?->name ?? __('Free (512MB)'));
+        $this->canCancelCurrentStoragePlan = (bool) ($state['cancelable'] ?? false);
+        $this->currentStoragePlanCancellationScheduled = (bool) ($state['cancellation_scheduled'] ?? false);
+        $this->storageOverQuota = (bool) ($state['over_quota'] ?? false);
+        $this->projectedStorageOverQuotaAfterDowngrade = (bool) ($state['projected_over_quota_after_downgrade'] ?? false);
+        $this->storageFutureQuotaMb = (int) ($state['future_limit_mb'] ?? 512);
+        $this->currentStoragePlanEndsAtLabel = $this->formatStorageDateLabel($state['period_ends_at'] ?? null);
     }
 
     public function updatingSearch(): void
     {
+        $this->resetFolderListWindow();
         $this->resetPage();
     }
 
@@ -76,6 +218,7 @@ class extends Component
     public function updatedPath(): void
     {
         $this->path = $this->sanitizePath($this->path);
+        $this->resetFolderListWindow();
         $this->resetPage();
         $this->syncSelectedFile();
     }
@@ -89,8 +232,177 @@ class extends Component
         }
 
         $this->path = $path;
+        $this->resetFolderListWindow();
         $this->resetPage();
         $this->syncSelectedFile();
+    }
+
+    public function loadMoreFolders(): void
+    {
+        $this->folderVisibleCount += max(1, $this->folderBatchSize);
+    }
+
+    public function openStorageConfirm(int $planId): void
+    {
+        if ($this->processingStoragePlan) {
+            return;
+        }
+
+        $this->selectedStoragePlanId = $planId;
+        $this->storagePlanMessage = '';
+        $this->storagePlanMessageType = 'info';
+        $this->showStoragePlanConfirm = true;
+    }
+
+    public function closeStorageConfirm(): void
+    {
+        if ($this->processingStoragePlan) {
+            return;
+        }
+
+        $this->showStoragePlanConfirm = false;
+        $this->selectedStoragePlanId = null;
+    }
+
+    public function openStorageCancelConfirm(): void
+    {
+        if ($this->processingStoragePlan || ! $this->canCancelCurrentStoragePlan) {
+            return;
+        }
+
+        $this->storagePlanMessage = '';
+        $this->storagePlanMessageType = 'info';
+        $this->showStorageCancelConfirm = true;
+    }
+
+    public function closeStorageCancelConfirm(): void
+    {
+        if ($this->processingStoragePlan) {
+            return;
+        }
+
+        $this->showStorageCancelConfirm = false;
+    }
+
+    public function confirmStoragePlanChange()
+    {
+        if ($this->processingStoragePlan) {
+            return null;
+        }
+
+        $customer = auth('app')->user();
+        $selectedPlan = collect($this->storagePlans)->firstWhere('id', $this->selectedStoragePlanId);
+
+        if (! $customer) {
+            return null;
+        }
+
+        if (! $this->selectedStoragePlanId) {
+            return null;
+        }
+
+        if (! $selectedPlan) {
+            $this->storagePlanMessageType = 'danger';
+            $this->storagePlanMessage = __('Selected storage plan was not found.');
+
+            return null;
+        }
+
+        if ((int) $this->selectedStoragePlanId === (int) $this->currentStoragePlanId) {
+            $this->storagePlanMessageType = 'info';
+            $this->storagePlanMessage = __('This is already your current storage plan.');
+
+            return null;
+        }
+
+        $selectedMethod = collect($this->storagePaymentMethods)
+            ->firstWhere('code', strtolower(trim((string) $this->selectedStoragePaymentMethod)));
+        $selectedDriver = strtolower(trim((string) data_get($selectedMethod, 'driver')));
+
+        if ($selectedDriver === '') {
+            $this->storagePlanMessageType = 'danger';
+            $this->storagePlanMessage = __('No recurring payment method is currently available for storage plans.');
+
+            return null;
+        }
+
+        if ($selectedDriver !== 'fib') {
+            $this->storagePlanMessageType = 'warning';
+            $this->storagePlanMessage = __('The selected payment method is not enabled yet for recurring storage subscriptions. Please choose FIB for now.');
+
+            return null;
+        }
+
+        $this->processingStoragePlan = true;
+        $this->storagePlanMessage = '';
+        $this->storagePlanMessageType = 'info';
+
+        try {
+            $payment = app(CreateStorageSubscriptionPayment::class)->handle(
+                $customer,
+                (int) $this->selectedStoragePlanId,
+                $this->storageBillingCycle,
+                null,
+                $this->selectedStoragePaymentMethod,
+            );
+
+            $this->showStoragePlanConfirm = false;
+
+            return $this->redirectRoute('payments.fib.show', [
+                'locale' => app()->getLocale(),
+                'payment' => $payment,
+            ], navigate: true);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->storagePlanMessageType = 'danger';
+            $this->storagePlanMessage = collect($exception->errors())->flatten()->first() ?: __('Could not start the storage subscription checkout.');
+        } catch (\Throwable $exception) {
+            $this->storagePlanMessageType = 'danger';
+            $this->storagePlanMessage = __('Failed to start the storage subscription checkout: :message', ['message' => $exception->getMessage()]);
+        } finally {
+            $this->processingStoragePlan = false;
+        }
+
+        return null;
+    }
+
+    public function confirmStoragePlanCancel(): void
+    {
+        if ($this->processingStoragePlan) {
+            return;
+        }
+
+        $customer = auth('app')->user();
+
+        if (! $customer) {
+            return;
+        }
+
+        $this->processingStoragePlan = true;
+        $this->storagePlanMessage = '';
+
+        try {
+            app(ScheduleStoragePlanCancellation::class)->handle($customer);
+
+            $this->closeStorageCancelConfirm();
+            $this->loadStorageBillingData();
+
+            $this->storagePlanMessageType = 'success';
+            $this->storagePlanMessage = __('Cancellation scheduled. Your storage plan remains active until :date.', [
+                'date' => $this->currentStoragePlanEndsAtLabel ?: __('the end of the current billing period'),
+            ]);
+
+            if ($this->projectedStorageOverQuotaAfterDowngrade) {
+                $this->storagePlanMessage .= ' ' . __('After the downgrade, uploads and storage-growing actions will stay blocked until you delete files or upgrade again.');
+            }
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->storagePlanMessageType = 'danger';
+            $this->storagePlanMessage = collect($exception->errors())->flatten()->first() ?: __('Could not schedule the storage cancellation.');
+        } catch (\Throwable $exception) {
+            $this->storagePlanMessageType = 'danger';
+            $this->storagePlanMessage = __('Failed to schedule the storage cancellation: :message', ['message' => $exception->getMessage()]);
+        } finally {
+            $this->processingStoragePlan = false;
+        }
     }
 
     public function selectFile(string $relativePath): void
@@ -225,6 +537,7 @@ class extends Component
             $this->dispatch('alert', type: 'error', message: __('Delete failed. Please try again.'));
         } finally {
             $this->cancelDelete();
+            $this->resetFolderListWindow();
             $this->resetPage();
         }
     }
@@ -314,6 +627,22 @@ class extends Component
             $this->search,
             $this->toolStats()
         );
+    }
+
+    #[Computed]
+    public function visibleFolderCards(): Collection
+    {
+        $limit = max(1, max($this->folderBatchSize, $this->folderVisibleCount));
+
+        return $this->folderCards()
+            ->take($limit)
+            ->values();
+    }
+
+    #[Computed]
+    public function hasMoreFolderCards(): bool
+    {
+        return $this->folderCards()->count() > $this->visibleFolderCards()->count();
     }
 
     #[Computed]
@@ -434,6 +763,11 @@ class extends Component
         );
 
         $this->selectedFile = $fallback['relative_path'] ?? null;
+    }
+
+    protected function resetFolderListWindow(): void
+    {
+        $this->folderVisibleCount = max(1, $this->folderBatchSize);
     }
 
     protected function pathExists(string $path): bool
@@ -584,6 +918,37 @@ class extends Component
         return number_format($bytes, $i === 0 ? 0 : 2) . ' ' . $units[$i];
     }
 
+    protected function normalizeStorageBillingCycle(?string $cycle): string
+    {
+        $cycle = strtolower(trim((string) $cycle));
+        $allowed = ['monthly'];
+
+        if ($this->storageHourlyTestingEnabled) {
+            $allowed[] = 'hourly';
+        }
+
+        return in_array($cycle, $allowed, true) ? $cycle : 'monthly';
+    }
+
+    protected function formatStorageDateLabel(mixed $date): ?string
+    {
+        if ($date instanceof \DateTimeInterface) {
+            return Carbon::instance($date)->timezone(config('app.timezone'))->format('Y-m-d H:i');
+        }
+
+        if (is_scalar($date) && trim((string) $date) !== '') {
+            try {
+                return Carbon::parse((string) $date)
+                    ->timezone(config('app.timezone'))
+                    ->format('Y-m-d H:i');
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
     public function render()
     {
         return view('app.pages.my-storage.⚡app-storage');
@@ -597,6 +962,10 @@ class extends Component
             --storage-radius: 1rem;
         }
 
+        .storage-shell .chat-wrapper {
+            align-items: stretch;
+        }
+
         .storage-shell .card,
         .storage-shell .modal-content {
             border-radius: var(--storage-radius);
@@ -607,14 +976,10 @@ class extends Component
         .storage-shell .file-manager-detail-content {
             background: var(--vz-secondary-bg, var(--bs-body-bg));
             border-radius: var(--storage-radius);
-            min-height: calc(100vh - 220px);
+            min-height: calc(100vh - 20px);
         }
 
-        .storage-shell .file-manager-sidebar {
-            width: 280px;
-            flex: 0 0 280px;
-            border: 1px solid var(--vz-border-color, var(--bs-border-color));
-        }
+
 
         .storage-shell .file-manager-content {
             border: 1px solid var(--vz-border-color, var(--bs-border-color));
@@ -730,6 +1095,16 @@ class extends Component
                 width: 100%;
                 flex: 1 1 100%;
             }
+
+            .storage-shell .file-manager-sidebar {
+                height: auto;
+                max-height: none;
+                overflow: visible;
+            }
+
+            .storage-shell .file-manager-sidebar > .p-3 {
+                overflow: visible;
+            }
         }
     </style>
 
@@ -737,7 +1112,9 @@ class extends Component
         $usage = $this->usage();
         $toolStats = $this->toolStats();
         $storageSegments = $this->storageSegments();
-        $folderCards = $this->folderCards();
+        $folderCards = $this->visibleFolderCards();
+        $folderCardsTotal = $this->folderCards()->count();
+        $hasMoreFolderCards = $this->hasMoreFolderCards();
         $filesPaginator = $this->filesPaginator();
         $pagedFiles = $filesPaginator->getCollection();
         $selectedPreview = $this->selectedFileData();
@@ -899,7 +1276,7 @@ class extends Component
                                     </div>
                                     <div class="col-auto">
                                         <div class="text-muted small">
-                                            {{ $folderCards->count() }} {{ __('folder(s)') }}
+                                            {{ $folderCardsTotal }} {{ __('folder(s)') }}
                                         </div>
                                     </div>
                                 </div>
@@ -953,6 +1330,26 @@ class extends Component
                                         </div>
                                     @endforelse
                                 </div>
+
+                                @if($hasMoreFolderCards)
+                                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
+                                        <div class="text-muted small">
+                                            {{ __('Showing :shown of :total folders', ['shown' => $folderCards->count(), 'total' => $folderCardsTotal]) }}
+                                        </div>
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-primary"
+                                                wire:click="loadMoreFolders"
+                                                wire:loading.attr="disabled"
+                                                wire:target="loadMoreFolders">
+                                            <span wire:loading.remove wire:target="loadMoreFolders">
+                                                {{ __('Load Next :count', ['count' => $folderBatchSize]) }}
+                                            </span>
+                                            <span wire:loading wire:target="loadMoreFolders">
+                                                {{ __('Loading...') }}
+                                            </span>
+                                        </button>
+                                    </div>
+                                @endif
                                 
                             </div>
                             @if (count($pagedFiles))
@@ -1066,6 +1463,156 @@ class extends Component
                                 @endif
                             </div>
                             @endif
+
+                                                        <div class="card border mb-4" id="storage-subscription-panel">
+                                <div class="card-body">
+                                    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+                                        <div>
+                                            <h5 class="mb-1">{{ __('Storage Subscription') }}</h5>
+                                            <div class="text-muted small">
+                                                {{ __('Current plan: :code - :name', ['code' => strtoupper($currentStoragePlanCode), 'name' => $currentStoragePlanName]) }}
+                                            </div>
+                                            @if($currentStoragePlanCancellationScheduled && $currentStoragePlanEndsAtLabel)
+                                                <div class="small text-warning mt-1">
+                                                    {{ __('Cancellation scheduled. Access remains until :date.', ['date' => $currentStoragePlanEndsAtLabel]) }}
+                                                </div>
+                                            @endif
+                                        </div>
+
+                                        <div class="text-md-end">
+                                            <div class="fw-semibold">{{ $this->formatBytes($usage['used_bytes']) }} / {{ $this->formatBytes($usage['limit_bytes']) }}</div>
+                                            <div class="text-muted small">{{ __('Storage usage') }}: {{ $usage['percent'] }}%</div>
+                                            @if($storageDisplayCurrencyCode !== 'IQD')
+                                                <div class="text-muted small mt-1">
+                                                    {{ __('Pricing display currency: :currency', ['currency' => $storageDisplayCurrencyCode]) }}
+                                                </div>
+                                            @endif
+                                        </div>
+                                    </div>
+
+                                    @if($storagePlanMessage !== '')
+                                        <div class="alert alert-{{ $storagePlanMessageType }} mb-3">{{ $storagePlanMessage }}</div>
+                                    @endif
+
+                                    @if($projectedStorageOverQuotaAfterDowngrade && $currentStoragePlanCancellationScheduled)
+                                        <div class="alert alert-danger mb-3">
+                                            {{ __('After the scheduled downgrade, your current usage will be above the future quota. Existing files stay preserved, but uploads and storage-growing actions will be blocked until usage drops below the limit or you upgrade again.') }}
+                                        </div>
+                                    @elseif($storageOverQuota)
+                                        <div class="alert alert-danger mb-3">
+                                            {{ __('You are currently over quota. Uploads should be blocked until you upgrade or delete files.') }}
+                                        </div>
+                                    @endif
+
+                                    @if($storageHourlyTestingEnabled)
+                                        <div class="alert alert-info mb-3">
+                                            <div class="fw-semibold">{{ __('Hourly renewal is enabled for testing only.') }}</div>
+                                            <div class="small mt-1">{{ __('This keeps the storage plan price but uses a fast recurring interval to verify renewal, cancellation, and downgrade behavior quickly.') }}</div>
+                                        </div>
+
+                                        <div class="btn-group mb-3" role="group" aria-label="{{ __('Billing cycle') }}">
+                                            <button type="button"
+                                                    class="btn {{ $storageBillingCycle === 'monthly' ? 'btn-primary' : 'btn-outline-primary' }}"
+                                                    wire:click="$set('storageBillingCycle', 'monthly')">
+                                                {{ __('Monthly') }}
+                                            </button>
+                                            <button type="button"
+                                                    class="btn {{ $storageBillingCycle === 'hourly' ? 'btn-primary' : 'btn-outline-primary' }}"
+                                                    wire:click="$set('storageBillingCycle', 'hourly')">
+                                                {{ __('Hourly Test') }}
+                                            </button>
+                                        </div>
+                                    @endif
+
+                                    <div class="row g-3 align-items-end mb-3">
+                                        <div class="col-md-7">
+                                            <label class="form-label mb-1">{{ __('Recurring payment method') }}</label>
+                                            @if(count($storagePaymentMethods) > 0)
+                                                <select class="form-select"
+                                                        wire:model.live="selectedStoragePaymentMethod"
+                                                        @disabled($processingStoragePlan)>
+                                                    @foreach($storagePaymentMethods as $method)
+                                                        <option value="{{ $method['code'] }}">
+                                                            {{ $method['name'] }} ({{ strtoupper($method['driver']) }})
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                            @else
+                                                <div class="alert alert-warning mb-0 py-2">
+                                                    {{ __('No recurring payment method is currently available for storage subscriptions.') }}
+                                                </div>
+                                            @endif
+                                        </div>
+                                        <div class="col-md-5 text-md-end">
+                                            @if($canCancelCurrentStoragePlan && !$currentStoragePlanCancellationScheduled)
+                                                <button class="btn btn-outline-danger"
+                                                        wire:click="openStorageCancelConfirm"
+                                                        wire:loading.attr="disabled"
+                                                        wire:target="openStorageCancelConfirm,confirmStoragePlanCancel">
+                                                    {{ __('Cancel Current Plan') }}
+                                                </button>
+                                            @endif
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3">
+                                        @foreach($storagePlans as $plan)
+                                            @php
+                                                $showLocalPrice = (bool) data_get($plan, 'price_display.has_localized_estimate', false);
+                                            @endphp
+                                            <div class="col-lg-4 col-md-6">
+                                                <div class="card h-100 {{ $plan['is_current'] ? 'border border-success' : '' }}">
+                                                    <div class="card-body">
+                                                        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                                            <div>
+                                                                <h6 class="mb-1">{{ $plan['name'] }}</h6>
+                                                                <div class="text-muted small">{{ strtoupper($plan['code']) }}</div>
+                                                            </div>
+                                                            @if($plan['is_current'])
+                                                                <span class="badge bg-success-subtle text-success">{{ __('Current') }}</span>
+                                                            @endif
+                                                        </div>
+
+                                                        <div class="text-muted small mb-1">{{ __('Quota') }}: <b>{{ number_format($plan['quota_mb']) }} MB</b></div>
+                                                        <div class="text-muted small mb-3">
+                                                            {{ __('Price') }}:
+                                                            <b>{{ data_get($plan, 'price_display.iqd_label') }}</b>
+                                                            @if($storageBillingCycle === 'hourly')
+                                                                <span>({{ __('hourly test') }})</span>
+                                                            @else
+                                                                <span>({{ __('monthly') }})</span>
+                                                            @endif
+                                                            @if($showLocalPrice)
+                                                                <div>{{ data_get($plan, 'price_display.estimated_label') }}</div>
+                                                            @endif
+                                                        </div>
+
+                                                        @if($plan['is_current'])
+                                                            <button class="btn btn-success w-100" disabled>
+                                                                {{ $plan['cancellation_scheduled'] ? __('Current Plan') : __('Your Current Plan') }}
+                                                            </button>
+                                                            @if($plan['cancellation_scheduled'])
+                                                                <div class="small text-muted text-center mt-2">
+                                                                    {{ __('Access remains until :date', ['date' => $plan['access_until_label'] ?: __('the current period end')]) }}
+                                                                </div>
+                                                            @endif
+                                                        @else
+                                                            <button class="btn btn-primary w-100"
+                                                                    wire:click="openStorageConfirm({{ $plan['id'] }})"
+                                                                    wire:loading.attr="disabled"
+                                                                    wire:target="openStorageConfirm"
+                                                                    @disabled(count($storagePaymentMethods) === 0 || $processingStoragePlan)>
+                                                                {{ __('Change Plan') }}
+                                                            </button>
+                                                        @endif
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
                     </div>
 
@@ -1246,6 +1793,148 @@ class extends Component
 
             </div>
         {{-- </div> --}}
+
+        @if($showStoragePlanConfirm)
+            @php
+                $selectedStoragePlan = collect($storagePlans)->firstWhere('id', $selectedStoragePlanId);
+                $selectedStorageDisplay = is_array($selectedStoragePlan) ? ($selectedStoragePlan['price_display'] ?? null) : null;
+                $selectedStorageMethod = collect($storagePaymentMethods)->firstWhere('code', strtolower(trim((string) $selectedStoragePaymentMethod)));
+                $selectedStorageDriver = strtolower(trim((string) data_get($selectedStorageMethod, 'driver')));
+            @endphp
+
+            <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">{{ __('Confirm Storage Plan Change') }}</h5>
+                            <button type="button"
+                                    class="btn-close"
+                                    wire:click="closeStorageConfirm"
+                                    @disabled($processingStoragePlan)></button>
+                        </div>
+
+                        <div class="modal-body">
+                            @if($selectedStoragePlan)
+                                <p class="mb-2">
+                                    {{ __('You are switching to:') }}
+                                    <b>{{ $selectedStoragePlan['name'] }}</b>
+                                    ({{ strtoupper($selectedStoragePlan['code']) }})
+                                </p>
+                                <p class="mb-2">
+                                    {{ __('Billing cycle:') }}
+                                    <b>{{ $storageBillingCycle === 'hourly' ? __('Hourly Test') : __('Monthly') }}</b>
+                                </p>
+                                <p class="mb-2">
+                                    {{ __('New quota:') }}
+                                    <b>{{ number_format($selectedStoragePlan['quota_mb']) }} MB</b>
+                                </p>
+                                <p class="mb-2">
+                                    {{ __('Price:') }}
+                                    <b>{{ data_get($selectedStorageDisplay, 'iqd_label') }}</b>
+                                </p>
+                                @if((bool) data_get($selectedStorageDisplay, 'has_localized_estimate', false))
+                                    <p class="mb-2">
+                                        {{ __('Estimated local display:') }}
+                                        <b>{{ data_get($selectedStorageDisplay, 'display_label') }}</b>
+                                    </p>
+                                @endif
+                                <p class="mb-2">
+                                    {{ __('Payment method:') }}
+                                    <b>{{ data_get($selectedStorageMethod, 'name', strtoupper((string) $selectedStoragePaymentMethod)) }}</b>
+                                </p>
+                            @endif
+
+                            <div class="small text-muted">
+                                {{ __('If your usage is above the target quota after downgrade, existing files remain preserved, but uploads and storage-growing actions stay blocked until usage is reduced or you upgrade again.') }}
+                            </div>
+
+                            <div class="alert alert-warning mt-3 mb-0">
+                                @if($selectedStorageDriver === 'fib')
+                                    <div class="fw-semibold mb-2">{{ __('Next step: complete recurring checkout in First Iraqi Bank') }}</div>
+                                    <div>{{ __('We will open a dedicated FIB subscription page with QR scan, manual code entry, automatic status refresh, and cancel controls.') }}</div>
+                                @else
+                                    <div class="fw-semibold mb-2">{{ __('Selected provider is not yet active for storage recurring checkout') }}</div>
+                                    <div>{{ __('Please use FIB until additional recurring providers are enabled.') }}</div>
+                                @endif
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button class="btn btn-light"
+                                    wire:click="closeStorageConfirm"
+                                    @disabled($processingStoragePlan)>
+                                {{ __('Cancel') }}
+                            </button>
+                            <button class="btn btn-primary"
+                                    wire:click="confirmStoragePlanChange"
+                                    @disabled($processingStoragePlan || count($storagePaymentMethods) === 0)>
+                                @if($processingStoragePlan)
+                                    {{ __('Preparing...') }}
+                                @else
+                                    {{ __('Open Subscription Checkout') }}
+                                @endif
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
+
+        @if($showStorageCancelConfirm)
+            <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">{{ __('Cancel Storage Plan') }}</h5>
+                            <button type="button"
+                                    class="btn-close"
+                                    wire:click="closeStorageCancelConfirm"
+                                    @disabled($processingStoragePlan)></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <p class="mb-2">
+                                {{ __('Your current paid storage remains active until:') }}
+                                <b>{{ $currentStoragePlanEndsAtLabel ?: __('the end of the current billing period') }}</b>
+                            </p>
+                            <p class="mb-2">
+                                {{ __('Current usage:') }}
+                                <b>{{ $this->formatBytes($usage['used_bytes']) }}</b>
+                            </p>
+                            <p class="mb-2">
+                                {{ __('Current plan limit:') }}
+                                <b>{{ $this->formatBytes($usage['limit_bytes']) }}</b>
+                            </p>
+                            <p class="mb-2">
+                                {{ __('Future limit after downgrade:') }}
+                                <b>{{ number_format($storageFutureQuotaMb) }} MB</b>
+                            </p>
+
+                            <div class="alert alert-warning mb-0">
+                                {{ __('If your usage is above the future limit after the billing period ends, existing files will stay preserved, but uploads and storage-growing actions will be blocked until you delete files or upgrade again.') }}
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button class="btn btn-light"
+                                    wire:click="closeStorageCancelConfirm"
+                                    @disabled($processingStoragePlan)>
+                                {{ __('Keep Plan') }}
+                            </button>
+                            <button class="btn btn-danger"
+                                    wire:click="confirmStoragePlanCancel"
+                                    @disabled($processingStoragePlan)>
+                                @if($processingStoragePlan)
+                                    {{ __('Scheduling...') }}
+                                @else
+                                    {{ __('Confirm Cancellation') }}
+                                @endif
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
 
         <!-- Delete Modal -->
         <div
