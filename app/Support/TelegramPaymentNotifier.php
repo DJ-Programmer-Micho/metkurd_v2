@@ -12,7 +12,7 @@ class TelegramPaymentNotifier
 {
     public static function send(Customer $customer, string $paymentType, string $selectedPlan, array $paymentDetails = [], string $logContext = 'Payment'): void
     {
-        $teleId = trim((string) env('TELEGRAM_GROUP_PAY'));
+        $teleId = trim((string) config('services.telegram-bot-api.groups.payment', ''));
 
         if ($teleId === '') {
             return;

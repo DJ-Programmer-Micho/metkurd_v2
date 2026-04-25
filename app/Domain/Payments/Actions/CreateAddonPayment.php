@@ -17,6 +17,7 @@ use App\Services\Coupons\CouponRedemptionService;
 use App\Services\Coupons\CouponService;
 use App\Services\Payments\CheckoutAuthorizationService;
 use App\Services\Payments\PaymentFeeCalculator;
+use App\Support\TelegramSubscriptionLifecycleNotifier;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -30,6 +31,7 @@ class CreateAddonPayment
         protected PaymentEventRecorder $events,
         protected CouponService $coupons,
         protected CouponRedemptionService $redemptions,
+        protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
     ) {
     }
 
@@ -149,9 +151,10 @@ class CreateAddonPayment
                 'create_response' => $response->raw,
             ])->save();
 
-            $this->events->record($payment, [
+            $event = $this->events->record($payment, [
                 'event_type' => 'provider_payment_created',
                 'source' => 'customer_checkout',
+                'event_key' => 'provider-payment-created:' . $payment->id,
                 'before_status' => PaymentStatus::PENDING->value,
                 'after_status' => PaymentStatus::AWAITING_CUSTOMER_ACTION->value,
                 'payload' => $response->raw,
@@ -160,6 +163,25 @@ class CreateAddonPayment
                     'create_payload' => $request->toArray(),
                 ],
             ]);
+
+            if ($event->wasRecentlyCreated) {
+                $snapshot = $payment->snapshot();
+                $this->telegramLifecycleNotifier->sendCheckout(
+                    __('FIB checkout created'),
+                    [
+                        'Type' => 'addon_credits',
+                        'Customer ID' => $payment->customer_id,
+                        'Username' => $payment->customer?->username,
+                        'Product' => (string) data_get($snapshot, 'name', ''),
+                        'Product code' => (string) data_get($snapshot, 'code', ''),
+                        'Credits' => number_format((int) data_get($snapshot, 'credits_amount', 0)),
+                        'Gross amount' => (string) data_get($snapshot, 'display.iqd_label', ''),
+                        'Provider ref' => $payment->providerReference(),
+                        'Payment UUID' => (string) $payment->uuid,
+                    ],
+                    'FIB addon checkout'
+                );
+            }
 
             $this->redemptions->markApplied($payment);
 

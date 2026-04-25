@@ -11,6 +11,7 @@ use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Exceptions\FibApiException;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Models\PaymentEvent;
+use App\Notifications\Landing\TelegramPayment;
 use App\Models\CreditOrder;
 use App\Models\CreditProduct;
 use App\Models\Customer;
@@ -82,6 +83,8 @@ function fibFlowConfigure(): void
     config()->set('fib.paths.subscriptions', '/protected/v1/subscriptions');
     config()->set('fib.paths.subscription_status', '/protected/v1/subscriptions/{subscriptionId}');
     config()->set('fib.paths.subscription_cancel', '/protected/v1/subscriptions/{subscriptionId}/cancel');
+    config()->set('services.telegram-bot-api.groups.checkout', '-5210001111111');
+    config()->set('services.telegram-bot-api.groups.payment', '-1000002222222');
 }
 
 function fibFlowEnableHourlyTesting(): void
@@ -179,6 +182,28 @@ function fibFlowGrantPaidPlan(Customer $customer): ServicePlan
     return $plan;
 }
 
+it('skips telegram payment notifications safely when checkout and payment groups are not configured', function () {
+    config()->set('services.telegram-bot-api.groups.checkout', '');
+    config()->set('services.telegram-bot-api.groups.payment', '');
+
+    $customer = fibFlowCustomer();
+    \Stevebauman\Location\Facades\Location::shouldReceive('get')->andReturn(false);
+
+    app(\App\Support\TelegramSubscriptionLifecycleNotifier::class)->sendCheckout(
+        'FIB recurring checkout created',
+        ['Type' => 'service_subscription']
+    );
+
+    \App\Support\TelegramPaymentNotifier::send(
+        $customer,
+        'Subscription Plan',
+        'Pro',
+        ['Reference' => 'TEST-REF-001']
+    );
+
+    Notification::assertNothingSent();
+});
+
 it('creates a plan subscription checkout and stores fib subscription details', function () {
     Http::preventStrayRequests();
 
@@ -226,6 +251,39 @@ it('creates a plan subscription checkout and stores fib subscription details', f
     });
 });
 
+it('routes plan subscription checkout-created telegram notifications to TELEGRAM_GROUP_CHK', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+    $expectedCheckoutGroup = (string) config('services.telegram-bot-api.groups.checkout');
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => function ($request) {
+            return str_contains((string) data_get($request->data(), 'client_id'), 'subscription')
+                ? Http::response(['access_token' => 'fib-subscription-access-token', 'expires_in' => 60], 200)
+                : Http::response(['access_token' => 'fib-access-token', 'expires_in' => 60], 200);
+        },
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-plan-telegram-checkout-123'),
+            201
+        ),
+    ]);
+
+    app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'monthly');
+
+    Notification::assertSentOnDemand(
+        TelegramSubscriptionLifecycleAlert::class,
+        function (TelegramSubscriptionLifecycleAlert $notification, array $channels, $notifiable) use ($expectedCheckoutGroup): bool {
+            $title = strtolower((string) data_get($notification->toArray(new AnonymousNotifiable()), 'title', ''));
+
+            return in_array(\NotificationChannels\Telegram\TelegramChannel::class, $channels, true)
+                && str_contains($title, 'checkout created')
+                && (string) $notifiable->routeNotificationFor('telegram') === $expectedCheckoutGroup;
+        }
+    );
+});
+
 it('creates an hourly test plan subscription checkout when hourly billing is enabled', function () {
     Http::preventStrayRequests();
     fibFlowEnableHourlyTesting();
@@ -260,6 +318,78 @@ it('creates an hourly test plan subscription checkout when hourly billing is ena
         return data_get($request->data(), 'interval') === 'PT1H'
             && data_get($request->data(), 'monetaryValue.amount') === (string) $quote['gross_amount_iqd'];
     });
+});
+
+it('routes storage subscription checkout-created telegram notifications to TELEGRAM_GROUP_CHK', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $plan = StoragePlan::query()->where('code', 'pro-5120')->firstOrFail();
+    $expectedCheckoutGroup = (string) config('services.telegram-bot-api.groups.checkout');
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => function ($request) {
+            return str_contains((string) data_get($request->data(), 'client_id'), 'subscription')
+                ? Http::response(['access_token' => 'fib-subscription-access-token', 'expires_in' => 60], 200)
+                : Http::response(['access_token' => 'fib-access-token', 'expires_in' => 60], 200);
+        },
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-storage-telegram-checkout-123'),
+            201
+        ),
+    ]);
+
+    app(CreateStorageSubscriptionPayment::class)->handle($customer, $plan->id, 'monthly');
+
+    Notification::assertSentOnDemand(
+        TelegramSubscriptionLifecycleAlert::class,
+        function (TelegramSubscriptionLifecycleAlert $notification, array $channels, $notifiable) use ($expectedCheckoutGroup): bool {
+            $payload = $notification->toArray(new AnonymousNotifiable());
+            $title = strtolower((string) data_get($payload, 'title', ''));
+            $type = (string) data_get($payload, 'details.Type', '');
+
+            return in_array(\NotificationChannels\Telegram\TelegramChannel::class, $channels, true)
+                && str_contains($title, 'checkout created')
+                && $type === 'storage_subscription'
+                && (string) $notifiable->routeNotificationFor('telegram') === $expectedCheckoutGroup;
+        }
+    );
+});
+
+it('routes addon checkout-created telegram notifications to TELEGRAM_GROUP_CHK', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    fibFlowGrantPaidPlan($customer);
+    $product = CreditProduct::query()->where('code', 'addon_10000')->firstOrFail();
+    $expectedCheckoutGroup = (string) config('services.telegram-bot-api.groups.checkout');
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/payments') => Http::response(
+            fibFlowCreateResponse('fib-addon-telegram-checkout-123'),
+            201
+        ),
+    ]);
+
+    app(CreateAddonPayment::class)->handle($customer->fresh(), $product->id);
+
+    Notification::assertSentOnDemand(
+        TelegramSubscriptionLifecycleAlert::class,
+        function (TelegramSubscriptionLifecycleAlert $notification, array $channels, $notifiable) use ($expectedCheckoutGroup): bool {
+            $payload = $notification->toArray(new AnonymousNotifiable());
+            $title = strtolower((string) data_get($payload, 'title', ''));
+            $type = (string) data_get($payload, 'details.Type', '');
+
+            return in_array(\NotificationChannels\Telegram\TelegramChannel::class, $channels, true)
+                && str_contains($title, 'checkout created')
+                && $type === 'addon_credits'
+                && (string) $notifiable->routeNotificationFor('telegram') === $expectedCheckoutGroup;
+        }
+    );
 });
 
 it('marks the local subscription checkout as failed when fib subscription creation fails', function () {
@@ -355,6 +485,17 @@ it('updates storage subscription state from a validated callback and fulfills it
             ->where('payment_id', $payment->id)
             ->where('event_type', 'callback_processed')
             ->count())->toBe(1);
+
+    Notification::assertSentOnDemand(
+        TelegramPayment::class,
+        function (TelegramPayment $notification, array $channels, $notifiable): bool {
+            $payload = $notification->toArray(new AnonymousNotifiable());
+
+            return in_array(\NotificationChannels\Telegram\TelegramChannel::class, $channels, true)
+                && (string) data_get($payload, 'payment_type', '') === 'Storage Plan'
+                && (string) $notifiable->routeNotificationFor('telegram') === (string) config('services.telegram-bot-api.groups.payment');
+        }
+    );
 
     $this->actingAs($customer, 'app')
         ->get(route('payments.fib.show', ['locale' => 'en', 'payment' => $payment]))
@@ -472,6 +613,15 @@ it('ignores duplicate callbacks without double-fulfilling addon credits', functi
         ->and(PaymentEvent::query()->where('payment_id', $payment->id)->where('event_type', 'payment_fulfilled')->count())->toBe(1)
         ->and(PaymentEvent::query()->where('payment_id', $payment->id)->where('event_type', 'callback_processed')->count())->toBe(1)
         ->and((int) ($wallet?->addon_balance_credits ?? 0))->toBe((int) $product->credits_amount);
+
+    Notification::assertSentOnDemandTimes(TelegramPayment::class, 1);
+    Notification::assertSentOnDemand(
+        TelegramPayment::class,
+        function (TelegramPayment $notification, array $channels, $notifiable): bool {
+            return in_array(\NotificationChannels\Telegram\TelegramChannel::class, $channels, true)
+                && (string) $notifiable->routeNotificationFor('telegram') === (string) config('services.telegram-bot-api.groups.payment');
+        }
+    );
 });
 
 it('fulfills a successful plan subscription checkout', function () {
@@ -518,6 +668,17 @@ it('fulfills a successful plan subscription checkout', function () {
             ->where('payment_id', $payment->id)
             ->where('source_type', 'service_plan')
             ->exists())->toBeTrue();
+
+    Notification::assertSentOnDemand(
+        TelegramPayment::class,
+        function (TelegramPayment $notification, array $channels, $notifiable): bool {
+            $payload = $notification->toArray(new AnonymousNotifiable());
+
+            return in_array(\NotificationChannels\Telegram\TelegramChannel::class, $channels, true)
+                && (string) data_get($payload, 'payment_type', '') === 'Subscription Plan'
+                && (string) $notifiable->routeNotificationFor('telegram') === (string) config('services.telegram-bot-api.groups.payment');
+        }
+    );
 
     $this->actingAs($customer, 'app')
         ->get(route('payments.fib.show', ['locale' => 'en', 'payment' => $payment]))

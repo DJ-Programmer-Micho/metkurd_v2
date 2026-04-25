@@ -231,7 +231,7 @@ class CreatePlanSubscriptionPayment
 
             if ($event->wasRecentlyCreated) {
                 $snapshot = $payment->snapshot();
-                $this->telegramLifecycleNotifier->send(
+                $this->telegramLifecycleNotifier->sendCheckout(
                     __('FIB recurring checkout created'),
                     [
                         'Type' => 'service_subscription',
