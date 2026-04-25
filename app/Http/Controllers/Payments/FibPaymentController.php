@@ -6,10 +6,54 @@ use App\Domain\Payments\Actions\CancelFibPayment;
 use App\Domain\Payments\Actions\ConfirmFibPayment;
 use App\Domain\Payments\Models\Payment;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Log;
 
 class FibPaymentController extends Controller
 {
+    public function status(string $locale, Payment $payment, ConfirmFibPayment $confirm): JsonResponse
+    {
+        $this->authorize('view', $payment);
+
+        $payment = $payment->fresh(['customer.profile']) ?? $payment;
+
+        if ($this->shouldPollProvider($payment)) {
+            try {
+                $payment = $confirm->handle($payment, 'frontend_status_poll');
+            } catch (\Throwable $exception) {
+                Log::warning('FIB checkout status poll failed.', [
+                    'payment_id' => $payment->id,
+                    'payment_uuid' => (string) $payment->uuid,
+                    'provider_reference' => $payment->providerReference(),
+                    'source' => 'frontend_status_poll',
+                    'message' => $exception->getMessage(),
+                ]);
+
+                $payment = $payment->fresh(['customer.profile']) ?? $payment;
+            }
+        }
+
+        $payment = $payment->fresh(['customer.profile']) ?? $payment;
+
+        $isSuccess = $payment->isPaid();
+        $isTerminal = $payment->isTerminal();
+
+        return response()->json([
+            'status' => $payment->status->value,
+            'is_terminal' => $isTerminal,
+            'is_success' => $isSuccess,
+            'redirect_url' => $isSuccess && $payment->fulfilled_at !== null
+                ? route('app.home', ['locale' => $locale])
+                : null,
+            'message' => $isSuccess
+                ? $this->successMessage($payment)
+                : $this->statusMessage($payment),
+            'provider_status' => $payment->providerStatusLabel(),
+            'checked_at' => optional($payment->last_status_checked_at)->toIso8601String(),
+        ]);
+    }
+
     public function refresh(string $locale, Payment $payment, ConfirmFibPayment $confirm): RedirectResponse
     {
         $this->authorize('update', $payment);
@@ -106,5 +150,14 @@ class FibPaymentController extends Controller
         return $payment->isProviderSubscriptionObject()
             ? __('Congrats! Your subscription was confirmed successfully. We sent the confirmation by email.')
             : __('Congrats! Your payment was confirmed successfully. We sent the confirmation by email.');
+    }
+
+    protected function shouldPollProvider(Payment $payment): bool
+    {
+        if ($payment->isTerminal()) {
+            return false;
+        }
+
+        return ! $payment->last_status_checked_at?->greaterThan(now()->subSeconds(4));
     }
 }

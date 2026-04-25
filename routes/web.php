@@ -195,6 +195,7 @@ Route::prefix('{locale}')
     Route::livewire('/app/storage-plans', 'app::pages.storage-plan.storage-plan')->name('storage-plan');
     Route::livewire('/app/addon-credits', 'app::pages.addon-credits.addon-credits')->name('addon-credits');
     Route::livewire('/app/payments/fib/{payment}', 'app::pages.payments.fib-payment')->name('payments.fib.show');
+    Route::get('/app/payments/fib/{payment}/status', [FibPaymentController::class, 'status'])->name('payments.fib.status');
     Route::post('/app/payments/fib/{payment}/refresh', [FibPaymentController::class, 'refresh'])->name('payments.fib.refresh');
     Route::post('/app/payments/fib/{payment}/cancel', [FibPaymentController::class, 'cancel'])->name('payments.fib.cancel');
     Route::get('/app/payments/fib/{payment}/thank-you', [FibPaymentController::class, 'thankYou'])->name('payments.fib.thank-you');

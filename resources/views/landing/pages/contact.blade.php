@@ -77,14 +77,18 @@ new #[Layout('landing::layouts.app')] class extends Component
             throw $e;
         }
 
-        $teleId = trim((string) env('TELEGRAM_GROUP_CON'));
+        $teleId = trim((string) config('services.telegram-bot-api.groups.contact', ''));
         $guestIdentifier = request()->ip();
         $deviceIdentifier = (string) request()->userAgent();
         $location = $this->resolveLocation($guestIdentifier);
 
         if ($teleId === '') {
-            Log::warning('Contact page telegram chat id is missing.');
-            $this->addError('form', __('Message did not send successfully. Please try again later.'));
+            Log::warning('Contact page telegram destination is missing.', [
+                'expected_keys' => ['TELEGRAM_GROUP_CON', 'TELEGRAM_CHAT_ID', 'TELEGRAM_GROUP'],
+                'route' => request()->path(),
+                'locale' => app()->getLocale(),
+            ]);
+            $this->addError('form', __('Message service is temporarily unavailable. Please try again later.'));
             $this->resetTurnstileChallenge();
             return;
         }

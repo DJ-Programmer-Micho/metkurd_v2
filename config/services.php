@@ -93,6 +93,7 @@ return [
         'token' => env('TELEGRAM_BOT_TOKEN', '7860562413:AAF7NeKkAZBS433KxwfZ1DtekirBllvPLxY'),
         'groups' => [
             'legacy' => env('TELEGRAM_GROUP', ''),
+            'contact' => env('TELEGRAM_GROUP_CON', env('TELEGRAM_CHAT_ID', env('TELEGRAM_GROUP', ''))),
             'checkout' => env('TELEGRAM_GROUP_CHK', env('TELEGRAM_GROUP', env('TELEGRAM_GROUP_PAY', ''))),
             'payment' => env('TELEGRAM_GROUP_PAY', env('TELEGRAM_GROUP', '')),
         ],

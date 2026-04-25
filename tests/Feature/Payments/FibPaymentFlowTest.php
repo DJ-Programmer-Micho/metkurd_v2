@@ -567,10 +567,151 @@ it('renders automatic polling on pending fib checkout pages and keeps manual ref
         ->get(route('payments.fib.show', ['locale' => 'en', 'payment' => $payment]))
         ->assertOk()
         ->assertSee('data-payment-status-polling="active"', false)
-        ->assertSee('wire:poll.5s="pollStatus"', false)
+        ->assertSee('data-payment-status-endpoint="', false)
+        ->assertSee('data-payment-status-interval="5000"', false)
         ->assertSee('Automatic check is active.')
         ->assertSee('Refresh Status')
         ->assertSee('Complete Subscription In FIB');
+});
+
+it('auto-updates addon checkout status through the shared fib status endpoint without manual refresh', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    fibFlowGrantPaidPlan($customer);
+    $product = CreditProduct::query()->where('code', 'addon_10000')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/payments') => Http::response(
+            fibFlowCreateResponse('fib-addon-status-endpoint-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/payments/fib-addon-status-endpoint-123/status') => Http::response(
+            fibFlowStatusResponse('fib-addon-status-endpoint-123', 'PAID', [
+                'paidAt' => '2026-05-01T10:05:00Z',
+            ]),
+            200
+        ),
+    ]);
+
+    $payment = app(CreateAddonPayment::class)->handle($customer->fresh(), $product->id);
+
+    $this->actingAs($customer, 'app')
+        ->getJson(route('payments.fib.status', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertJson([
+            'status' => 'paid',
+            'is_terminal' => true,
+            'is_success' => true,
+        ])
+        ->assertJsonPath('redirect_url', route('app.home', ['locale' => 'en']));
+
+    $payment = $payment->fresh();
+
+    expect($payment->status)->toBe(PaymentStatus::PAID)
+        ->and($payment->fulfilled_at)->not->toBeNull()
+        ->and(CreditOrder::query()->where('payment_id', $payment->id)->count())->toBe(1);
+});
+
+it('auto-updates storage subscription checkout status through the shared fib status endpoint without manual refresh', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $plan = StoragePlan::query()->where('code', 'pro-5120')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-storage-status-endpoint-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-storage-status-endpoint-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-storage-status-endpoint-123', 'ACTIVE'),
+            200
+        ),
+    ]);
+
+    $payment = app(CreateStorageSubscriptionPayment::class)->handle($customer, $plan->id);
+
+    $this->actingAs($customer, 'app')
+        ->getJson(route('payments.fib.status', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertJson([
+            'status' => 'paid',
+            'is_terminal' => true,
+            'is_success' => true,
+        ])
+        ->assertJsonPath('redirect_url', route('app.home', ['locale' => 'en']));
+
+    expect(CustomerStorageSubscription::query()
+        ->where('payment_id', $payment->id)
+        ->where('storage_plan_id', $plan->id)
+        ->exists())->toBeTrue();
+});
+
+it('auto-updates plan subscription checkout status quickly via status polling even when callback is delayed', function () {
+    Http::preventStrayRequests();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-plan-delayed-callback-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-plan-delayed-callback-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-plan-delayed-callback-123', 'UNPAID', [
+                'lastPaymentAt' => null,
+                'activeUntil' => null,
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-plan-delayed-callback-123', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T10:15:00Z',
+                'lastPaymentAt' => '2026-05-01T10:05:00Z',
+            ]), 200),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'monthly');
+
+    $this->actingAs($customer, 'app')
+        ->getJson(route('payments.fib.status', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertJson([
+            'status' => 'awaiting_customer_action',
+            'is_terminal' => false,
+            'is_success' => false,
+        ])
+        ->assertJsonPath('redirect_url', null);
+
+    Carbon::setTestNow(now()->addSeconds(6));
+
+    $this->actingAs($customer, 'app')
+        ->getJson(route('payments.fib.status', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertJson([
+            'status' => 'paid',
+            'is_terminal' => true,
+            'is_success' => true,
+        ])
+        ->assertJsonPath('redirect_url', route('app.home', ['locale' => 'en']));
+
+    $payment = $payment->fresh();
+
+    expect($payment->status)->toBe(PaymentStatus::PAID)
+        ->and($payment->fulfilled_at)->not->toBeNull()
+        ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id);
 });
 
 it('ignores duplicate callbacks without double-fulfilling addon credits', function () {
@@ -1439,7 +1580,6 @@ it('stops automatic polling once the fib checkout reaches a terminal state', fun
         ->get(route('payments.fib.show', ['locale' => 'en', 'payment' => $payment]))
         ->assertOk()
         ->assertSee('data-payment-status-polling="stopped"', false)
-        ->assertDontSee('wire:poll.5s="pollStatus"', false)
         ->assertDontSee('Refresh Status');
 });
 

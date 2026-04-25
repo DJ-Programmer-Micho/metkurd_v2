@@ -337,6 +337,11 @@ class extends Component
             'snapshot' => $snapshot,
             'links' => $links,
             'shouldPoll' => $shouldPoll,
+            'statusEndpoint' => route('payments.fib.status', [
+                'locale' => app()->getLocale(),
+                'payment' => $payment,
+            ]),
+            'pollIntervalMs' => 5000,
             'statusClass' => $statusClass,
             'purchaseLabel' => $purchaseLabel,
             'backRoute' => $backRoute,
@@ -432,7 +437,9 @@ class extends Component
 <script src="https://cdn.lordicon.com/lordicon.js"></script>
 <div class="row justify-content-center mt-4"
      data-payment-status-polling="{{ $shouldPoll ? 'active' : 'stopped' }}"
-     @if ($shouldPoll) wire:poll.5s="pollStatus" @endif>
+     data-payment-status-endpoint="{{ $statusEndpoint }}"
+     data-payment-status-interval="{{ $pollIntervalMs }}"
+     data-payment-current-status="{{ $payment->status->value }}">
     <div class="col-xl-10">
         @if ($statusAlertMessage)
             <div class="alert alert-{{ $statusAlertClass }}">{{ $statusAlertMessage }}</div>
@@ -444,7 +451,7 @@ class extends Component
                     <div class="fw-semibold">{{ __('Waiting for FIB confirmation') }}</div>
                     <div class="small mt-1">{{ __('This page checks your :object status automatically every 5 seconds while it remains pending.', ['object' => $providerObjectLabelLower]) }}</div>
                 </div>
-                <div class="small text-muted" wire:loading.remove wire:target="pollStatus">
+                <div class="small text-muted" data-status-polling-indicator="idle">
 <lord-icon
     src="https://cdn.lordicon.com/euaablbm.json"
     trigger="loop"
@@ -454,7 +461,7 @@ class extends Component
 </lord-icon>
                     {{ __('Automatic check is active.') }}
                 </div>
-                <div class="small text-muted" wire:loading.delay wire:target="pollStatus">
+                <div class="small text-muted d-none" data-status-polling-indicator="checking">
 <lord-icon 
     src="https://cdn.lordicon.com/euaablbm.json"
     trigger="loop"
@@ -700,3 +707,121 @@ class extends Component
         </div>
     </div>
 </div>
+@push('scripts')
+<script>
+(() => {
+    const stopExistingFibPolling = () => {
+        if (typeof window.__fibPaymentPollingStop === 'function') {
+            window.__fibPaymentPollingStop();
+            window.__fibPaymentPollingStop = null;
+        }
+    };
+
+    const initFibPaymentPolling = () => {
+        stopExistingFibPolling();
+
+        const wrapper = document.querySelector('[data-payment-status-endpoint]');
+        if (!wrapper) {
+            return;
+        }
+
+        const mode = (wrapper.getAttribute('data-payment-status-polling') || 'stopped').toLowerCase();
+        if (mode !== 'active') {
+            return;
+        }
+
+        const endpoint = wrapper.getAttribute('data-payment-status-endpoint') || '';
+        if (!endpoint) {
+            return;
+        }
+
+        const intervalMs = Math.max(3000, Number(wrapper.getAttribute('data-payment-status-interval') || 5000));
+        const idleIndicator = wrapper.querySelector('[data-status-polling-indicator="idle"]');
+        const checkingIndicator = wrapper.querySelector('[data-status-polling-indicator="checking"]');
+        let timerId = null;
+        let inFlight = false;
+
+        const setChecking = (isChecking) => {
+            if (!idleIndicator || !checkingIndicator) {
+                return;
+            }
+
+            idleIndicator.classList.toggle('d-none', isChecking);
+            checkingIndicator.classList.toggle('d-none', !isChecking);
+        };
+
+        const stop = () => {
+            if (timerId !== null) {
+                clearInterval(timerId);
+                timerId = null;
+            }
+
+            inFlight = false;
+            setChecking(false);
+        };
+
+        const refreshUi = (redirectUrl = '') => {
+            stop();
+
+            if (redirectUrl) {
+                window.location.assign(redirectUrl);
+                return;
+            }
+
+            window.location.reload();
+        };
+
+        const poll = async () => {
+            if (inFlight) {
+                return;
+            }
+
+            inFlight = true;
+            setChecking(true);
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+
+                if (!response.ok) {
+                    return;
+                }
+
+                const payload = await response.json();
+                const latestStatus = String(payload.status || '').toLowerCase();
+                const currentStatus = String(wrapper.getAttribute('data-payment-current-status') || '').toLowerCase();
+                const isTerminal = Boolean(payload.is_terminal);
+                const isSuccess = Boolean(payload.is_success);
+
+                if (latestStatus !== '' && latestStatus !== currentStatus) {
+                    refreshUi(isSuccess ? String(payload.redirect_url || '') : '');
+                    return;
+                }
+
+                if (isTerminal) {
+                    refreshUi(isSuccess ? String(payload.redirect_url || '') : '');
+                }
+            } catch (_) {
+                // Keep automatic polling alive; manual refresh remains available as fallback.
+            } finally {
+                inFlight = false;
+                setChecking(false);
+            }
+        };
+
+        window.__fibPaymentPollingStop = stop;
+        timerId = window.setInterval(poll, intervalMs);
+        poll();
+    };
+
+    document.addEventListener('DOMContentLoaded', initFibPaymentPolling);
+    document.addEventListener('livewire:navigated', initFibPaymentPolling);
+})();
+</script>
+@endpush
