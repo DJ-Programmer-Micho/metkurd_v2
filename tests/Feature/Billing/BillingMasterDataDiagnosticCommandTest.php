@@ -33,3 +33,19 @@ it('can seed missing billing master data and recover failed diagnostics', functi
     expect(PaymentMethod::query()->where('code', 'fib')->exists())->toBeTrue();
 });
 
+it('fails when no recurring-capable method is available for plan subscriptions and recovers after seeding', function () {
+    PaymentMethod::query()->where('code', 'fib')->update([
+        'supports_recurring' => false,
+    ]);
+
+    $this->artisan('metkurd:diagnose-billing-master-data')
+        ->expectsOutputToContain('active+visible recurring service-plan method available')
+        ->assertExitCode(1);
+
+    $this->artisan('metkurd:diagnose-billing-master-data --seed-missing')
+        ->expectsOutputToContain('Running BillingMasterDataSeeder before diagnostics...')
+        ->expectsOutputToContain('All critical billing master-data checks passed.')
+        ->assertExitCode(0);
+
+    expect((bool) PaymentMethod::query()->where('code', 'fib')->value('supports_recurring'))->toBeTrue();
+});

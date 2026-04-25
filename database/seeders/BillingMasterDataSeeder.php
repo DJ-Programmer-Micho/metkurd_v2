@@ -239,11 +239,10 @@ class BillingMasterDataSeeder extends Seeder
         ];
 
         foreach ($rows as $row) {
-            PaymentMethod::query()->firstOrCreate(
+            PaymentMethod::query()->updateOrCreate(
                 ['code' => $row['code']],
                 $row,
             );
         }
     }
 }
-

@@ -221,9 +221,23 @@ class DiagnoseBillingMasterData extends Command
             ->pluck('code')
             ->values()
             ->all();
+        $serviceRecurringMethods = $activeVisible
+            ->filter(fn (PaymentMethod $method) => $method->supportsPurchaseType(PaymentPurposeType::SERVICE_PLAN))
+            ->filter(fn (PaymentMethod $method) => $method->supportsCurrency('IQD'))
+            ->filter(fn (PaymentMethod $method) => (bool) ($method->supports_recurring ?? false))
+            ->pluck('code')
+            ->values()
+            ->all();
         $storageCheckoutMethods = $activeVisible
             ->filter(fn (PaymentMethod $method) => $method->supportsPurchaseType(PaymentPurposeType::STORAGE_PLAN))
             ->filter(fn (PaymentMethod $method) => $method->supportsCurrency('IQD'))
+            ->pluck('code')
+            ->values()
+            ->all();
+        $storageRecurringMethods = $activeVisible
+            ->filter(fn (PaymentMethod $method) => $method->supportsPurchaseType(PaymentPurposeType::STORAGE_PLAN))
+            ->filter(fn (PaymentMethod $method) => $method->supportsCurrency('IQD'))
+            ->filter(fn (PaymentMethod $method) => (bool) ($method->supports_recurring ?? false))
             ->pluck('code')
             ->values()
             ->all();
@@ -243,10 +257,24 @@ class DiagnoseBillingMasterData extends Command
         );
         $this->pushCheck(
             $checks,
+            'active+visible recurring service-plan method available',
+            $serviceRecurringMethods !== [],
+            'critical',
+            'methods=' . ($serviceRecurringMethods === [] ? '-' : implode(',', $serviceRecurringMethods))
+        );
+        $this->pushCheck(
+            $checks,
             'active+visible storage-plan checkout method available',
             $storageCheckoutMethods !== [],
             'critical',
             'methods=' . ($storageCheckoutMethods === [] ? '-' : implode(',', $storageCheckoutMethods))
+        );
+        $this->pushCheck(
+            $checks,
+            'active+visible recurring storage-plan method available',
+            $storageRecurringMethods !== [],
+            'critical',
+            'methods=' . ($storageRecurringMethods === [] ? '-' : implode(',', $storageRecurringMethods))
         );
         $this->pushCheck(
             $checks,
