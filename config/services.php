@@ -94,6 +94,7 @@ return [
         'groups' => [
             'legacy' => env('TELEGRAM_GROUP', ''),
             'contact' => env('TELEGRAM_GROUP_CON', env('TELEGRAM_CHAT_ID', env('TELEGRAM_GROUP', ''))),
+            'registration' => env('TELEGRAM_GROUP_REG', env('TELEGRAM_GROUP', '')),
             'checkout' => env('TELEGRAM_GROUP_CHK', env('TELEGRAM_GROUP', env('TELEGRAM_GROUP_PAY', ''))),
             'payment' => env('TELEGRAM_GROUP_PAY', env('TELEGRAM_GROUP', '')),
         ],

@@ -2,6 +2,7 @@
 
 use App\Models\CustomerProfile;
 use App\Support\RegistrationPhoneCountryManager;
+use App\Support\TelegramRegistrationNotifier;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -24,12 +25,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
     public ?string $returnAfterVerifyUrl = null;
 
-    public string $digit1 = '';
-    public string $digit2 = '';
-    public string $digit3 = '';
-    public string $digit4 = '';
-    public string $digit5 = '';
-    public string $digit6 = '';
+    public string $otpCode = '';
 
     protected int $otpTtlSeconds = 300;
     protected int $maxAttempts = 5;
@@ -140,7 +136,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             $this->sendStandingTechOtp($channel, $recipient, $otp);
 
             $this->flag = 1;
-            $this->resetDigits();
+            $this->resetOtpCode();
             $this->syncState();
 
             $this->dispatch('alert', type: 'success', message: __('Code sent. Please check your phone.'));
@@ -160,7 +156,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     {
         $this->flag = 0;
         $this->resetErrorBag();
-        $this->resetDigits();
+        $this->resetOtpCode();
         $this->syncState();
     }
 
@@ -220,7 +216,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         $user->save();
 
         $this->clearOtpState();
-        $this->resetDigits();
+        $this->resetOtpCode();
         $this->channel = '';
 
         $this->phone = (string) CustomerProfile::where('customer_id', $user->id)->value('phone_number');
@@ -251,16 +247,17 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             return;
         }
 
+        $this->otpCode = preg_replace('/\D+/', '', (string) $this->otpCode);
+        $this->otpCode = substr($this->otpCode, 0, 6);
+
         $this->validate([
-            'digit1' => ['required', 'digits:1'],
-            'digit2' => ['required', 'digits:1'],
-            'digit3' => ['required', 'digits:1'],
-            'digit4' => ['required', 'digits:1'],
-            'digit5' => ['required', 'digits:1'],
-            'digit6' => ['required', 'digits:1'],
+            'otpCode' => ['required', 'digits:6'],
+        ], [
+            'otpCode.required' => __('Please enter the 6-digit code.'),
+            'otpCode.digits' => __('The code must be exactly 6 digits.'),
         ]);
 
-        $code = $this->digit1 . $this->digit2 . $this->digit3 . $this->digit4 . $this->digit5 . $this->digit6;
+        $code = $this->otpCode;
         $user = Auth::guard('app')->user();
 
         if (hash_equals((string) ($user->phone_otp_number ?? ''), $code)) {
@@ -269,7 +266,10 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             $user->phone_otp_number = null;
             $user->save();
 
+            TelegramRegistrationNotifier::sendVerifiedIfNeeded($user);
+
             $this->clearOtpState();
+            $this->resetOtpCode();
 
             $this->dispatch('alert', type: 'success', message: __('Phone verified successfully! Redirecting...'));
 
@@ -324,7 +324,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             return;
         }
 
-        $this->resetDigits();
+        $this->resetOtpCode();
         $this->sendCode($this->channel);
     }
 
@@ -412,9 +412,18 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         $this->syncState();
     }
 
-    private function resetDigits(): void
+    public function updatedOtpCode($value): void
     {
-        $this->digit1 = $this->digit2 = $this->digit3 = $this->digit4 = $this->digit5 = $this->digit6 = '';
+        $normalized = substr(preg_replace('/\D+/', '', (string) $value), 0, 6);
+
+        if ($normalized !== $this->otpCode) {
+            $this->otpCode = $normalized;
+        }
+    }
+
+    private function resetOtpCode(): void
+    {
+        $this->otpCode = '';
     }
 
     private function normalizePhone(?string $phone): string
@@ -787,27 +796,32 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                             </div>
 
                             <div class="mt-4">
-                                <form autocomplete="off" onsubmit="return false;">
-                                    <div class="row">
-                                        @foreach (['digit1','digit2','digit3','digit4','digit5','digit6'] as $i => $model)
-                                            <div class="col-2">
-                                                <div class="mb-3">
-                                                    <label for="digit{{ $i+1 }}-input" class="visually-hidden">{{ __('Digit :number', ['number' => $i + 1]) }}</label>
-                                                    <input type="text"
-                                                           class="form-control form-control-lg bg-light border-light text-center"
-                                                           wire:model.defer="{{ $model }}"
-                                                           onkeyup="moveToNext({{ $i+1 }}, event)"
-                                                           maxlength="1"
-                                                           id="digit{{ $i+1 }}-input"
-                                                           @disabled($this->inputsDisabled)>
-                                                </div>
-                                            </div>
-                                        @endforeach
+                                <form wire:submit.prevent="confirm" autocomplete="one-time-code">
+                                    <div class="mb-3">
+                                        <label for="phone-otp-code-input" class="visually-hidden">{{ __('6-digit code') }}</label>
+                                        <input
+                                            id="phone-otp-code-input"
+                                            type="text"
+                                            class="form-control form-control-lg bg-light border-light text-center"
+                                            wire:model.live.debounce.150ms="otpCode"
+                                            inputmode="numeric"
+                                            pattern="[0-9]*"
+                                            autocomplete="one-time-code"
+                                            enterkeyhint="done"
+                                            maxlength="6"
+                                            dir="ltr"
+                                            autocapitalize="off"
+                                            autocorrect="off"
+                                            spellcheck="false"
+                                            placeholder="123456"
+                                            oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"
+                                            @disabled($this->inputsDisabled)
+                                        >
+                                        @error('otpCode') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
                                     </div>
 
                                     <div class="mt-3">
-                                        <button type="button" class="btn btn-success w-100"
-                                                wire:click="confirm"
+                                        <button type="submit" class="btn btn-success w-100"
                                                 wire:loading.attr="disabled"
                                                 wire:target="confirm"
                                                 @disabled($this->inputsDisabled)>
@@ -844,25 +858,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     </div>
 </div>
 @push('scripts')
-<script>
-window.moveToNext = function (index, e) {
-    const id = 'digit' + index + '-input';
-    const input = document.getElementById(id);
-    if (!input || input.disabled) return;
-
-    const key = e.key || '';
-    input.value = input.value.replace(/\D/g, '').slice(0, 1);
-
-    if (/^\d$/.test(input.value)) {
-        const next = document.getElementById('digit' + (index + 1) + '-input');
-        if (next && !next.disabled) next.focus();
-    } else if (key === 'Backspace') {
-        const prev = document.getElementById('digit' + (index - 1) + '-input');
-        if (prev && !prev.disabled) prev.focus();
-    }
-};
-</script>
-
 @php
     $phoneOtpConfig = [
         'invalidPhoneMessage' => __('Please enter a valid phone number.'),

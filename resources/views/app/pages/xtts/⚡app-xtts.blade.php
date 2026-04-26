@@ -437,7 +437,6 @@ class extends Component
         return route('app.xtts.speaker.preview', [
             'locale' => $locale ?: $this->speakerMediaLocale(),
             'voiceCode' => $code,
-            'proxy' => 1,
         ]);
     }
 
@@ -1978,6 +1977,80 @@ class extends Component
         dispatchSpeakerPreviewState();
     }
 
+    function withPreviewProxyParam(url, value) {
+        const rawUrl = String(url || '');
+
+        try {
+            const parsed = new URL(rawUrl, window.location.origin);
+
+            if (value === null) {
+                parsed.searchParams.delete('proxy');
+            } else {
+                parsed.searchParams.set('proxy', String(value));
+            }
+
+            if (/^https?:\/\//i.test(rawUrl)) {
+                return parsed.toString();
+            }
+
+            return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        } catch (_) {
+            return rawUrl;
+        }
+    }
+
+    function speakerPreviewCandidateUrls(url) {
+        const rawUrl = String(url || '').trim();
+
+        if (!rawUrl) {
+            return [];
+        }
+
+        const candidates = [rawUrl];
+        const hasProxyOne = /([?&])proxy=1(?:[&#]|$)/.test(rawUrl);
+        const hasProxyZero = /([?&])proxy=0(?:[&#]|$)/.test(rawUrl);
+
+        if (hasProxyOne) {
+            candidates.push(withPreviewProxyParam(rawUrl, 0));
+            candidates.push(withPreviewProxyParam(rawUrl, null));
+        } else if (hasProxyZero) {
+            candidates.push(withPreviewProxyParam(rawUrl, 1));
+            candidates.push(withPreviewProxyParam(rawUrl, null));
+        } else {
+            candidates.push(withPreviewProxyParam(rawUrl, 1));
+            candidates.push(withPreviewProxyParam(rawUrl, 0));
+        }
+
+        return Array.from(new Set(candidates.filter(Boolean)));
+    }
+
+    function previewPlaybackErrorMessage(playError = null, audio = null) {
+        const mediaErrorCode = Number(audio?.error?.code || 0);
+        const errorName = String(playError?.name || '').trim();
+
+        if (errorName === 'NotAllowedError') {
+            return 'Playback was blocked by your browser. Tap preview again.';
+        }
+
+        if (mediaErrorCode === 4) {
+            return 'Preview format is not supported on this device.';
+        }
+
+        if (mediaErrorCode === 2) {
+            return 'Preview download failed. Please check your network and retry.';
+        }
+
+        if (mediaErrorCode === 3) {
+            return 'Preview decoding failed on this browser.';
+        }
+
+        if (errorName === 'AbortError') {
+            return 'Preview playback was interrupted. Please try again.';
+        }
+
+        return 'Preview could not be played. Please try again.';
+    }
+
     function playSpeakerAudio(audio, voiceCode, fallback, { token = null, pausedStateOnError = false } = {}) {
         if (!audio || !voiceCode) {
             return;
@@ -2010,17 +2083,17 @@ class extends Component
                     });
                     dispatchSpeakerPreviewState();
                 })
-                .catch(() => {
+                .catch((playError) => {
                     if (requestToken !== S.speakerPreviewToken || S.speakerPlayer?.audio !== audio) {
                         return;
                     }
 
                     if (typeof fallback === 'function') {
-                        fallback(requestToken);
+                        fallback(requestToken, playError);
                         return;
                     }
 
-                    S.speakerErrors.set(voiceCode, 'Preview unavailable for this voice.');
+                    S.speakerErrors.set(voiceCode, previewPlaybackErrorMessage(playError, audio));
                     setSpeakerPlayerState({
                         audio,
                         code: voiceCode,
@@ -2044,19 +2117,38 @@ class extends Component
     function attemptSpeakerPreview(code, url, token = null) {
         const voiceCode = String(code || '');
         const requestToken = token ?? (++S.speakerPreviewToken);
-        const sourceUrl = String(url || '');
+        const sourceCandidates = Array.isArray(url)
+            ? url.map((value) => String(value || '').trim()).filter(Boolean)
+            : speakerPreviewCandidateUrls(url);
+        const sourceUrl = String(sourceCandidates[0] || '');
+        const fallbackCandidates = sourceCandidates.slice(1);
 
         if (!voiceCode || !sourceUrl) {
             if (requestToken !== S.speakerPreviewToken) {
                 return;
             }
 
-            finalizeSpeakerPreviewError(voiceCode, 'Preview unavailable for this voice.');
+            finalizeSpeakerPreviewError(voiceCode, 'Preview source is unavailable for this voice.');
             return;
         }
 
         const audio = new Audio(sourceUrl);
         audio.preload = 'auto';
+
+        const fallbackToNextSource = (incomingToken = requestToken, playError = null) => {
+            if (incomingToken !== S.speakerPreviewToken) {
+                return false;
+            }
+
+            if (fallbackCandidates.length <= 0) {
+                finalizeSpeakerPreviewError(voiceCode, previewPlaybackErrorMessage(playError, audio));
+                return false;
+            }
+
+            attemptSpeakerPreview(voiceCode, fallbackCandidates, incomingToken);
+
+            return true;
+        };
 
         audio.onended = () => {
             if (requestToken !== S.speakerPreviewToken || S.speakerPlayer?.audio !== audio) {
@@ -2074,7 +2166,7 @@ class extends Component
             detachSpeakerAudioEvents(audio);
 
             try { audio.pause(); } catch (_) {}
-            finalizeSpeakerPreviewError(voiceCode, 'Preview unavailable for this voice.');
+            fallbackToNextSource(requestToken);
         };
 
         audio.onpause = () => {
@@ -2112,11 +2204,11 @@ class extends Component
             audio,
             code: voiceCode,
             status: 'loading',
-            urls: [sourceUrl],
+            urls: sourceCandidates,
             index: 0,
         });
 
-        playSpeakerAudio(audio, voiceCode, null, { token: requestToken });
+        playSpeakerAudio(audio, voiceCode, fallbackToNextSource, { token: requestToken });
     }
 
     window.xttsToggleSpeakerPreview = function (code, url) {
@@ -2128,7 +2220,7 @@ class extends Component
         const currentStatus = String(player.status || 'idle');
 
         if (!voiceCode || !sourceUrl) {
-            finalizeSpeakerPreviewError(voiceCode, 'Preview unavailable for this voice.');
+            finalizeSpeakerPreviewError(voiceCode, 'Preview source is unavailable for this voice.');
             return;
         }
 

@@ -7,16 +7,14 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use App\Models\Customer;
 use App\Models\CustomerProfile;
-use App\Notifications\Landing\TelegramNewRegister;
 use App\Support\RegistrationPhoneCountryManager;
-use Stevebauman\Location\Facades\Location;
+use App\Support\TelegramRegistrationNotifier;
 
 new #[Layout('app::layouts.app-auth')] class extends Component
 {
@@ -138,7 +136,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             return null;
         }
 
-        $this->sendTelegramRegistrationNotification();
+        TelegramRegistrationNotifier::sendUnverifiedIfNeeded($customer, 'normal_form');
 
         Auth::guard('app')->login($customer);
         request()->session()->regenerate();
@@ -168,62 +166,6 @@ new #[Layout('app::layouts.app-auth')] class extends Component
     private function normalizeDialCode(?string $dialCode): string
     {
         return RegistrationPhoneCountryManager::normalizeDialCode($dialCode);
-    }
-
-    private function sendTelegramRegistrationNotification(): void
-    {
-        $teleId = trim((string) env('TELEGRAM_GROUP_REG'));
-
-        if ($teleId === '') {
-            return;
-        }
-
-        $guestIdentifier = request()->ip();
-        $deviceIdentifier = (string) request()->userAgent();
-        $location = $this->resolveLocation($guestIdentifier);
-
-        try {
-            Notification::route('telegram', $teleId)->notify(
-                new TelegramNewRegister(
-                    trim($this->first_name . ' ' . $this->last_name),
-                    trim($this->username),
-                    strtolower(trim($this->email)),
-                    $this->job_title !== '' ? trim($this->job_title) : '',
-                    $this->normalizePhone($this->phone_number),
-                    $location,
-                    $guestIdentifier,
-                    $deviceIdentifier,
-                    $teleId
-                )
-            );
-        } catch (\Throwable $e) {
-            Log::warning('Signup telegram notification failed.', [
-                'error' => $e->getMessage(),
-                'email' => $this->email,
-                'username' => $this->username,
-                'ip' => $guestIdentifier,
-            ]);
-        }
-    }
-
-    private function resolveLocation(?string $ip): mixed
-    {
-        if (! $ip) {
-            return null;
-        }
-
-        try {
-            $location = Location::get($ip);
-
-            return $location === false ? null : $location;
-        } catch (\Throwable $e) {
-            Log::warning('Signup location lookup failed.', [
-                'ip' => $ip,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
-        }
     }
 
     public function updatedCfTurnstileResponse(): void

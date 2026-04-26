@@ -5,6 +5,7 @@ namespace App\Http\Controllers\App\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Services\Auth\CustomerSocialAuthService;
+use App\Support\TelegramRegistrationNotifier;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Laravel\Socialite\Facades\Socialite;
@@ -61,6 +62,8 @@ class SocialAuthController extends Controller
 
     protected function loginOrCreate($providerUser, string $provider)
     {
+        $customerExistedBeforeCallback = $this->customerExistsForProvider($providerUser, $provider);
+
         try {
             $customer = $this->socialAuth->authenticateProviderUser($providerUser, $provider, allowCreate: true);
         } catch (\Throwable $e) {
@@ -81,11 +84,41 @@ class SocialAuthController extends Controller
         Auth::guard('app')->login($customer, true);
         request()->session()->regenerate();
 
+        if (! $customerExistedBeforeCallback) {
+            TelegramRegistrationNotifier::sendUnverifiedIfNeeded($customer, $provider);
+        }
+
         if ($nextVerificationRoute = $customer->nextVerificationRouteName()) {
             return redirect()->route($nextVerificationRoute);
         }
 
         return redirect()->route('app.home', ['locale' => app()->getLocale()])
             ->with('status', 'Welcome back!');
+    }
+
+    protected function customerExistsForProvider($providerUser, string $provider): bool
+    {
+        $email = strtolower(trim((string) $providerUser->getEmail()));
+        $providerId = trim((string) $providerUser->getId());
+
+        if ($email === '' && $providerId === '') {
+            return false;
+        }
+
+        return Customer::query()
+            ->where(function ($query) use ($provider, $providerId, $email): void {
+                if ($providerId !== '') {
+                    if ($provider === 'google') {
+                        $query->orWhere('g_id', $providerId);
+                    } elseif ($provider === 'github') {
+                        $query->orWhere('h_id', $providerId);
+                    }
+                }
+
+                if ($email !== '') {
+                    $query->orWhere('email', $email);
+                }
+            })
+            ->exists();
     }
 }

@@ -29,11 +29,24 @@ class XttsSpeakerAssetController extends Controller
                 continue;
             }
 
+            $mime = $this->audioMimeForPath($target);
+            $filename = basename($target);
+
+            if ($filename === '' || $filename === '.' || $filename === DIRECTORY_SEPARATOR) {
+                $filename = $voiceCode . match ($mime) {
+                    'audio/mpeg' => '.mp3',
+                    'audio/mp4' => '.m4a',
+                    'audio/aac' => '.aac',
+                    'audio/ogg' => '.ogg',
+                    default => '.wav',
+                };
+            }
+
             return $this->respondFromDisk(
                 request: $request,
                 path: $target,
-                mime: 'audio/wav',
-                filename: basename($target) ?: "{$voiceCode}.wav"
+                mime: $mime,
+                filename: $filename
             );
         }
 
@@ -99,7 +112,7 @@ class XttsSpeakerAssetController extends Controller
             ->map(fn ($value) => trim((string) $value))
             ->filter()
             ->unique()
-            ->map(fn (string $stem) => $this->previewPathFromStem($stem))
+            ->flatMap(fn (string $stem) => $this->previewPathsFromStem($stem))
             ->filter()
             ->values()
             ->all();
@@ -116,7 +129,10 @@ class XttsSpeakerAssetController extends Controller
             ->value();
     }
 
-    protected function previewPathFromStem(string $stem): ?string
+    /**
+     * @return array<int, string>
+     */
+    protected function previewPathsFromStem(string $stem): array
     {
         $path = Str::of($stem)
             ->trim()
@@ -125,17 +141,31 @@ class XttsSpeakerAssetController extends Controller
             ->value();
 
         if ($path === '') {
-            return null;
+            return [];
         }
 
         if ($this->isExternalUrl($path)) {
-            return $path;
+            return [$path];
         }
 
-        if (!Str::endsWith(strtolower($path), '.wav')) {
-            $path .= '.wav';
+        $normalizedPath = $this->normalizePreviewStoragePath($path);
+
+        if ($normalizedPath === '') {
+            return [];
         }
 
+        if (pathinfo($normalizedPath, PATHINFO_EXTENSION) !== '') {
+            return [$normalizedPath];
+        }
+
+        return array_map(
+            static fn (string $extension) => $normalizedPath . '.' . $extension,
+            ['mp3', 'm4a', 'wav']
+        );
+    }
+
+    protected function normalizePreviewStoragePath(string $path): string
+    {
         if (Str::startsWith($path, 'metkurd_audio_data/')) {
             return $path;
         }
@@ -169,11 +199,13 @@ class XttsSpeakerAssetController extends Controller
     protected function respondFromDisk(Request $request, string $path, string $mime, string $filename)
     {
         $disk = Storage::disk('s3');
+        $cacheControl = 'private, max-age=600, stale-while-revalidate=60';
 
         if (!$request->boolean('proxy') && method_exists($disk, 'temporaryUrl')) {
             $url = $disk->temporaryUrl($path, now()->addMinutes(20), [
                 'ResponseContentType' => $mime,
                 'ResponseContentDisposition' => 'inline; filename="' . $filename . '"',
+                'ResponseCacheControl' => $cacheControl,
             ]);
 
             return redirect()->away($url);
@@ -181,6 +213,23 @@ class XttsSpeakerAssetController extends Controller
 
         $stream = $disk->readStream($path);
         abort_unless($stream, 500, 'Unable to open storage stream.');
+
+        $headers = [
+            'Content-Type' => $mime,
+            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+            'Cache-Control' => $cacheControl,
+            'Accept-Ranges' => 'bytes',
+        ];
+
+        try {
+            $size = (int) $disk->size($path);
+
+            if ($size > 0) {
+                $headers['Content-Length'] = (string) $size;
+            }
+        } catch (\Throwable) {
+            // Keep streaming when the backend does not expose object size.
+        }
 
         return response()->stream(function () use ($stream) {
             try {
@@ -190,12 +239,28 @@ class XttsSpeakerAssetController extends Controller
                     fclose($stream);
                 }
             }
-        }, 200, [
-            'Content-Type' => $mime,
-            'Content-Disposition' => 'inline; filename="' . $filename . '"',
-            'Cache-Control' => 'private, max-age=600, stale-while-revalidate=60',
-            'Accept-Ranges' => 'bytes',
-        ]);
+        }, 200, $headers);
+    }
+
+    protected function audioMimeForPath(string $path): string
+    {
+        try {
+            $detected = trim((string) Storage::disk('s3')->mimeType($path));
+
+            if (Str::startsWith(strtolower($detected), 'audio/')) {
+                return $detected;
+            }
+        } catch (\Throwable) {
+            // Fall back to extension mapping when object metadata is unavailable.
+        }
+
+        return match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
+            'mp3' => 'audio/mpeg',
+            'm4a', 'mp4' => 'audio/mp4',
+            'aac' => 'audio/aac',
+            'ogg' => 'audio/ogg',
+            default => 'audio/wav',
+        };
     }
 
     protected function mimeForPath(string $path): string

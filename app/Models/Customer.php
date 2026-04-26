@@ -51,6 +51,8 @@ class Customer extends Authenticatable
         'email_otp_number',
         'phone_otp_number',
         'uid',
+        'telegram_unverified_register_sent_at',
+        'telegram_verified_register_sent_at',
     ];
 
     protected $hidden = [
@@ -61,6 +63,8 @@ class Customer extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'phone_verified_at' => 'datetime',
+        'telegram_unverified_register_sent_at' => 'datetime',
+        'telegram_verified_register_sent_at' => 'datetime',
         'email_verify' => 'boolean',
         'phone_verify' => 'boolean',
         'password' => 'hashed',
