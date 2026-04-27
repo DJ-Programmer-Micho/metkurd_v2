@@ -18,12 +18,12 @@ class LandingPublicMetrics
     protected const METRIC_DEFINITIONS = [
         'generated_audio' => [
             'title' => 'Generated Audio',
-            'copy' => 'Finished XTTS, F5TTS, and CTTS jobs',
+            'copy' => 'Finished Apollo, Delta, and Vector jobs',
             'job_kinds' => ['tts', 'ftts', 'clone_tts'],
         ],
         'transcribed' => [
             'title' => 'Transcribed',
-            'copy' => 'Finished WASR and QASR jobs',
+            'copy' => 'Finished WASR NEO and QASR LEO',
             'job_kinds' => ['wasr', 'qasr'],
         ],
         'ocr_pages' => [

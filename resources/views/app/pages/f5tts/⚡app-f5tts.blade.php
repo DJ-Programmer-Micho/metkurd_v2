@@ -1030,7 +1030,7 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                             <div>
-                                <strong>{{ __('MK-TTS (MET KURDISH TEXT-TO-SPEECH)') }}</strong>
+                                <strong>{{ __('MK-DELTA (MET KURDISH TEXT-TO-SPEECH)') }}</strong>
                                 <div class="text-muted small">{{ __('Dynamic voice access based on customer plan') }}</div>
                             </div>
 

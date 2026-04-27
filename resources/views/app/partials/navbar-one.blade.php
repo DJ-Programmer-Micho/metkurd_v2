@@ -30,7 +30,7 @@
                 [
                     'route' => 'app.f5tts',
                     'icon' => 'ri-volume-up-line',
-                    'label' => __('F5TTS Delta'),
+                    'label' => __('TTS Delta'),
                     'enabled' => (bool) ($accessMap['ftts'] ?? false),
                 ],
                 [

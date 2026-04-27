@@ -168,6 +168,9 @@ new class extends Component
                         <div class="text-muted">{{ __('No renders yet.') }}</div>
                     @else
                         @foreach($this->renders as $r)
+                        {{-- @php
+                            dd($this->renders);
+                        @endphp --}}
                             <div
                                 class="border rounded p-2 mb-2 render-card"
                                 wire:key="{{ $domPrefix }}-render-{{ $r['id'] }}"
@@ -176,7 +179,8 @@ new class extends Component
                                 <div class="d-flex justify-content-between gap-2">
                                     <div>
                                         <div class="small text-muted">
-                                            {{ __(':created | :model | :speaker', ['created' => $r['created_at'], 'model' => $r['model'], 'speaker' => $r['speaker']]) }}
+                                            {{-- {{ __(':created | :model | :speaker', ['created' => $r['created_at'], 'model' => $r['model'], 'speaker' => $r['speaker']]) }} --}}
+                                            {{ __(':created | :model', ['created' => $r['created_at'], 'model' => $r['model']]) }}
                                         </div>
                                         <div class="small text-muted">
                                             {{ __('Words: :words | Bytes: :bytes', ['words' => $r['words'], 'bytes' => number_format($r['bytes'])]) }}
