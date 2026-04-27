@@ -141,22 +141,31 @@ class extends Component
             return;
         }
 
-        $info = $probe->probeUploadedFile($this->audioFile);
+        try {
+            $info = $probe->probeUploadedFile($this->audioFile);
 
-        $this->audioFileName    = $this->audioFile->getClientOriginalName();
-        $this->audioFileBytes   = (int) $this->audioFile->getSize();
-        $this->audioFileMime    = $this->audioFile->getMimeType() ?: 'audio/*';
-        $this->audioDurationSec = (float) $info['duration_sec'];
-        $this->audioDurationMin = (float) $info['duration_min'];
-        $this->audioBillableMin = (int) $info['billable_min'];
-        $this->audioExt         = (string) $info['audio_ext'];
+            $this->audioFileName    = $this->audioFile->getClientOriginalName();
+            $this->audioFileBytes   = (int) $this->audioFile->getSize();
+            $this->audioFileMime    = $this->audioFile->getMimeType() ?: 'audio/*';
+            $this->audioDurationSec = (float) $info['duration_sec'];
+            $this->audioDurationMin = (float) $info['duration_min'];
+            $this->audioBillableMin = (int) $info['billable_min'];
+            $this->audioExt         = (string) $info['audio_ext'];
 
-        $realPath = $this->audioFile->getRealPath();
-        $this->audioHash = $realPath && is_file($realPath)
-            ? hash_file('sha256', $realPath)
-            : sha1(($this->audioFileName ?? '') . '|' . ($this->audioFileBytes ?? 0));
+            $realPath = $this->audioFile->getRealPath();
+            $this->audioHash = $realPath && is_file($realPath)
+                ? hash_file('sha256', $realPath)
+                : sha1(($this->audioFileName ?? '') . '|' . ($this->audioFileBytes ?? 0));
 
-        $this->syncCostPreview();
+            $this->syncCostPreview();
+        } catch (\Throwable $e) {
+            Log::error('WASR_AUDIO_UPLOAD_FAIL', [
+                'message' => $e->getMessage(),
+            ]);
+
+            $this->removeAudioFile();
+            $this->dispatch('alert', type: 'error', message: __('Failed to inspect the uploaded audio file.'));
+        }
     }
 
     public function removeAudioFile(): void

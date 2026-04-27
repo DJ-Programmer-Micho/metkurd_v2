@@ -3,19 +3,29 @@
 namespace App\Services\Media;
 
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 
 class AudioProbeService
 {
     public function probeUploadedFile(UploadedFile $file): array
     {
-        $path = $file->getRealPath();
+        $fallbackExt = $this->resolveFallbackExtension($file);
+        $localPath = $this->resolveReadableLocalPath($file);
 
-        if (!$path || !is_file($path)) {
-            throw new \RuntimeException('Uploaded audio file is missing.');
+        if ($localPath) {
+            return $this->probePath($localPath, $fallbackExt);
         }
 
-        return $this->probePath($path, $file->getClientOriginalExtension() ?: 'wav');
+        $tempPath = $this->copyUploadedFileToLocalTemp($file, $fallbackExt);
+
+        try {
+            return $this->probePath($tempPath, $fallbackExt);
+        } finally {
+            if (is_file($tempPath)) {
+                @unlink($tempPath);
+            }
+        }
     }
 
     public function probePath(string $path, ?string $fallbackExt = null): array
@@ -78,5 +88,124 @@ class AudioProbeService
             'channels'       => $channels,
             'audio_ext'      => $ext !== '' ? $ext : 'wav',
         ];
+    }
+
+    protected function resolveFallbackExtension(UploadedFile $file): string
+    {
+        $ext = strtolower(trim((string) ($file->getClientOriginalExtension() ?: $file->guessExtension() ?: 'wav')));
+        $ext = preg_replace('/[^a-z0-9]/', '', $ext) ?: '';
+
+        return $ext !== '' ? $ext : 'wav';
+    }
+
+    protected function resolveReadableLocalPath(UploadedFile $file): ?string
+    {
+        $candidates = [];
+
+        foreach (['getRealPath', 'getPathname'] as $method) {
+            if (!method_exists($file, $method)) {
+                continue;
+            }
+
+            try {
+                $candidate = $file->{$method}();
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if (is_string($candidate) && $candidate !== '') {
+                $candidates[] = $candidate;
+            }
+        }
+
+        foreach (array_unique($candidates) as $candidate) {
+            if (is_file($candidate) && is_readable($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    protected function copyUploadedFileToLocalTemp(UploadedFile $file, string $extension): string
+    {
+        $source = $this->openUploadedReadStream($file);
+
+        if (!is_resource($source)) {
+            throw new \RuntimeException('Uploaded audio file is missing.');
+        }
+
+        $tmpBase = tempnam(sys_get_temp_dir(), 'metkurd-audio-probe-');
+
+        if ($tmpBase === false) {
+            fclose($source);
+            throw new \RuntimeException('Unable to allocate local temporary file for audio probing.');
+        }
+
+        $tmpPath = $tmpBase;
+        $safeExtension = preg_replace('/[^a-z0-9]/', '', strtolower($extension)) ?: '';
+        if ($safeExtension !== '') {
+            $candidatePath = $tmpBase . '.' . $safeExtension;
+            if (@rename($tmpBase, $candidatePath)) {
+                $tmpPath = $candidatePath;
+            }
+        }
+
+        $target = @fopen($tmpPath, 'wb');
+        if (!is_resource($target)) {
+            fclose($source);
+            if (is_file($tmpPath)) {
+                @unlink($tmpPath);
+            }
+            throw new \RuntimeException('Unable to write uploaded audio to local temporary file.');
+        }
+
+        $copySucceeded = false;
+        try {
+            $copied = @stream_copy_to_stream($source, $target);
+
+            if ($copied === false) {
+                throw new \RuntimeException('Unable to stream uploaded audio file for probing.');
+            }
+            $copySucceeded = true;
+        } finally {
+            fclose($source);
+            fclose($target);
+
+            if (!$copySucceeded && is_file($tmpPath)) {
+                @unlink($tmpPath);
+            }
+        }
+
+        return $tmpPath;
+    }
+
+    protected function openUploadedReadStream(UploadedFile $file)
+    {
+        if (method_exists($file, 'readStream')) {
+            try {
+                $stream = $file->readStream();
+
+                if (is_resource($stream)) {
+                    return $stream;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('AUDIO_PROBE_READ_STREAM_FAIL', [
+                    'file_class' => get_class($file),
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $localPath = $this->resolveReadableLocalPath($file);
+        if ($localPath) {
+            $stream = @fopen($localPath, 'rb');
+
+            if (is_resource($stream)) {
+                return $stream;
+            }
+        }
+
+        return null;
     }
 }

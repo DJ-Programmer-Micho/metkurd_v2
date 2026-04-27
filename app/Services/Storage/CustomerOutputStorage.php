@@ -127,9 +127,9 @@ class CustomerOutputStorage
         }
 
         $disk = 's3';
-        $stream = fopen($file->getRealPath(), 'r');
+        $stream = $this->openUploadedFileReadStream($file);
 
-        if (!$stream) {
+        if (!is_resource($stream)) {
             throw new \RuntimeException('Unable to open uploaded file stream.');
         }
 
@@ -138,13 +138,15 @@ class CustomerOutputStorage
 
         $this->assertCanConsumeStorage($customerId, $bytes);
 
-        Storage::disk($disk)->put($path, $stream, [
-            'visibility' => 'private',
-            'ContentType' => $mime,
-        ]);
-
-        if (is_resource($stream)) {
-            fclose($stream);
+        try {
+            Storage::disk($disk)->put($path, $stream, [
+                'visibility' => 'private',
+                'ContentType' => $mime,
+            ]);
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
         }
 
         $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
@@ -628,6 +630,42 @@ class CustomerOutputStorage
         }
 
         return $total;
+    }
+
+    protected function openUploadedFileReadStream(UploadedFile $file)
+    {
+        if (method_exists($file, 'readStream')) {
+            try {
+                $stream = $file->readStream();
+
+                if (is_resource($stream)) {
+                    return $stream;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('CUSTOMER_OUTPUT_UPLOAD_STREAM_READ_FAIL', [
+                    'file_class' => get_class($file),
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $candidates = [
+            $file->getRealPath(),
+            method_exists($file, 'getPathname') ? $file->getPathname() : null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (!is_string($candidate) || $candidate === '' || !is_file($candidate) || !is_readable($candidate)) {
+                continue;
+            }
+
+            $stream = @fopen($candidate, 'rb');
+            if (is_resource($stream)) {
+                return $stream;
+            }
+        }
+
+        return null;
     }
 
     public function deleteOcrOutputs(MlJob $job): void
