@@ -727,7 +727,7 @@ class extends Component
 
         $label = (string) ($this->languageCatalog[$code] ?? strtoupper($code));
 
-        return strtoupper($code) . ' · ' . $label;
+        return strtoupper($code) . ' - ' . $label;
     }
 
     public function render()
@@ -769,15 +769,7 @@ class extends Component
     };
 @endphp
 
-<div
-    id="tran-page-root"
-    x-data="tranPageUi({
-        sourceLang: $wire.entangle('sourceLang'),
-        targetLang: $wire.entangle('targetLang'),
-        primary: @js(array_values($primaryLanguageCodes)),
-        catalog: @js($languageCatalog),
-    })"
->
+<div id="tran-page-root">
     @if($currentJobId && !$jobFinished)
         <div wire:poll.visible.7000ms="pollJob"></div>
     @endif
@@ -843,28 +835,27 @@ class extends Component
                                 <div class="row g-3 align-items-end">
                                     <div class="col-lg-5">
                                         <label class="form-label">{{ __('Source Language') }}</label>
-                                        <div class="tran-chip-row mb-2" wire:ignore>
+                                        <div class="tran-chip-row mb-2">
                                             @foreach($primaryLanguages as $code => $label)
                                                 <button
                                                     type="button"
-                                                    class="btn btn-sm tran-lang-chip"
-                                                    :class="{ 'is-active': isPrimarySelected(sourceLang, '{{ $code }}') }"
-                                                    @click="setSource('{{ $code }}')"
+                                                    class="btn btn-sm tran-lang-chip {{ $this->isPrimaryLanguageActive($sourceLang, $code) ? 'is-active' : '' }}"
+                                                    wire:click="setSourceLang('{{ $code }}')"
                                                 >
                                                     <span>{{ strtoupper($code) }}</span>
                                                     <small>{{ $label }}</small>
                                                 </button>
                                             @endforeach
                                         </div>
-                                        <select class="form-select" x-model="sourceLang" @change="setSource($event.target.value)" wire:ignore>
+                                        <select class="form-select" wire:change="setSourceLang($event.target.value)">
                                             <optgroup label="{{ __('Primary Languages') }}">
                                                 @foreach($primaryLanguages as $code => $label)
-                                                    <option value="{{ $code }}">{{ $label }}</option>
+                                                    <option value="{{ $code }}" @selected($sourceLang === $code)>{{ $label }}</option>
                                                 @endforeach
                                             </optgroup>
                                             <optgroup label="{{ __('All Languages') }}">
                                                 @foreach($secondaryLanguages as $code => $label)
-                                                    <option value="{{ $code }}">{{ $label }}</option>
+                                                    <option value="{{ $code }}" @selected($sourceLang === $code)>{{ $label }}</option>
                                                 @endforeach
                                             </optgroup>
                                         </select>
@@ -880,28 +871,27 @@ class extends Component
 
                                     <div class="col-lg-5">
                                         <label class="form-label">{{ __('Target Language') }}</label>
-                                        <div class="tran-chip-row mb-2" wire:ignore>
+                                        <div class="tran-chip-row mb-2">
                                             @foreach($primaryLanguages as $code => $label)
                                                 <button
                                                     type="button"
-                                                    class="btn btn-sm tran-lang-chip"
-                                                    :class="{ 'is-active': isPrimarySelected(targetLang, '{{ $code }}') }"
-                                                    @click="setTarget('{{ $code }}')"
+                                                    class="btn btn-sm tran-lang-chip {{ $this->isPrimaryLanguageActive($targetLang, $code) ? 'is-active' : '' }}"
+                                                    wire:click="setTargetLang('{{ $code }}')"
                                                 >
                                                     <span>{{ strtoupper($code) }}</span>
                                                     <small>{{ $label }}</small>
                                                 </button>
                                             @endforeach
                                         </div>
-                                        <select class="form-select" x-model="targetLang" @change="setTarget($event.target.value)" wire:ignore>
+                                        <select class="form-select" wire:change="setTargetLang($event.target.value)">
                                             <optgroup label="{{ __('Primary Languages') }}">
                                                 @foreach($primaryLanguages as $code => $label)
-                                                    <option value="{{ $code }}">{{ $label }}</option>
+                                                    <option value="{{ $code }}" @selected($targetLang === $code)>{{ $label }}</option>
                                                 @endforeach
                                             </optgroup>
                                             <optgroup label="{{ __('All Languages') }}">
                                                 @foreach($secondaryLanguages as $code => $label)
-                                                    <option value="{{ $code }}">{{ $label }}</option>
+                                                    <option value="{{ $code }}" @selected($targetLang === $code)>{{ $label }}</option>
                                                 @endforeach
                                             </optgroup>
                                         </select>
@@ -917,7 +907,7 @@ class extends Component
                                                 <div class="fw-semibold">{{ __('Source Text') }}</div>
                                                 <div class="small text-muted">{{ __('Paste or write the text you want to translate.') }}</div>
                                             </div>
-                                            <span class="badge tran-badge" wire:ignore x-text="badge(sourceLang)"></span>
+                                            <span class="badge tran-badge">{{ $this->languageBadge($sourceLang) }}</span>
                                         </div>
 
                                         <textarea class="form-control tran-textarea" rows="12" wire:model.live.debounce.700ms="text" dir="{{ $this->langDirection($sourceLang) }}" placeholder="{{ __('Write or paste text here') }}"></textarea>
@@ -936,7 +926,7 @@ class extends Component
                                                 <div class="fw-semibold">{{ __('Translated Text') }}</div>
                                                 <div class="small text-muted">{{ __('Your latest translated output appears here.') }}</div>
                                             </div>
-                                            <span class="badge tran-badge" wire:ignore x-text="badge(targetLang)"></span>
+                                            <span class="badge tran-badge">{{ $this->languageBadge($targetLang) }}</span>
                                         </div>
 
                                         <div class="tran-output-shell">
@@ -1196,69 +1186,6 @@ class extends Component
 
 @push('scripts')
 <script>
-document.addEventListener('alpine:init', () => {
-    if (window.tranPageUi) return;
-
-    window.tranPageUi = function (config) {
-        return {
-            sourceLang: config.sourceLang,
-            targetLang: config.targetLang,
-            primary: Array.isArray(config.primary)
-                ? config.primary.map((code) => String(code || '').trim().toLowerCase())
-                : [],
-            catalog: config.catalog || {},
-            normalize(code) {
-                return String(code || '').trim().toLowerCase();
-            },
-            isPrimarySelected(selected, pillCode) {
-                const current = this.normalize(selected);
-                const pill = this.normalize(pillCode);
-
-                return this.primary.includes(current) && current === pill;
-            },
-            badge(code) {
-                const current = this.normalize(code);
-
-                if (!current) {
-                    return @js((string) __('Unknown'));
-                }
-
-                const label = this.catalog[current] || current.toUpperCase();
-
-                return current.toUpperCase() + ' \u00B7 ' + label;
-            },
-            setSource(code) {
-                const current = this.normalize(code);
-
-                if (!Object.prototype.hasOwnProperty.call(this.catalog, current)) {
-                    return;
-                }
-
-                if (current === this.targetLang) {
-                    this.targetLang = this.sourceLang;
-                }
-
-                this.sourceLang = current;
-                this.$wire.call('setSourceLang', current);
-            },
-            setTarget(code) {
-                const current = this.normalize(code);
-
-                if (!Object.prototype.hasOwnProperty.call(this.catalog, current)) {
-                    return;
-                }
-
-                if (current === this.sourceLang) {
-                    this.sourceLang = this.targetLang;
-                }
-
-                this.targetLang = current;
-                this.$wire.call('setTargetLang', current);
-            },
-        };
-    };
-});
-
 document.addEventListener('livewire:init',()=>{if(window.__tranCopyBooted)return;window.__tranCopyBooted=true;Livewire.on('tran-copy-text',payload=>{const d=Array.isArray(payload)?payload[0]:payload;const text=d&&typeof d.text!=='undefined'?d.text:'';if(text&&navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).catch(()=>{});}});});
 </script>
 @endpush

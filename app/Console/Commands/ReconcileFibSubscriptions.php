@@ -85,12 +85,12 @@ class ReconcileFibSubscriptions extends Command
                     } catch (\Throwable $exception) {
                         ++$failed;
 
-                        Log::warning('FIB subscription reconciliation failed.', [
-                            'payment_id' => $payment->id,
-                            'customer_id' => $payment->customer_id,
-                            'provider_ref' => $payment->providerReference(),
-                            'message' => $exception->getMessage(),
-                        ]);
+                        // Log::warning('FIB subscription reconciliation failed.', [
+                        //     'payment_id' => $payment->id,
+                        //     'customer_id' => $payment->customer_id,
+                        //     'provider_ref' => $payment->providerReference(),
+                        //     'message' => $exception->getMessage(),
+                        // ]);
 
                         $events->record($payment, [
                             'event_type' => 'provider_status_sync_failed',

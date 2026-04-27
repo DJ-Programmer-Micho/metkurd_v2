@@ -145,16 +145,6 @@ class extends Component
         return $paginator;
     }
 
-    protected function currentFolderForCustomer($customer): string
-    {
-        return \App\Support\CustomerFolder::make(
-            (int) $customer->id,
-            $customer->profile?->first_name ?? $customer->first_name ?? null,
-            $customer->profile?->last_name ?? $customer->last_name ?? null,
-            $customer->username ?? null
-        );
-    }
-
     protected function resetDocumentState(bool $dispatchBrowserEvent = true): void
     {
         $this->documentFile = null;
@@ -169,6 +159,24 @@ class extends Component
 
         if ($dispatchBrowserEvent) {
             $this->dispatch('ocr-document-cleared');
+        }
+    }
+
+    protected function releaseTemporaryDocumentUpload(): void
+    {
+        $upload = $this->documentFile;
+        $this->documentFile = null;
+
+        if (!is_object($upload) || !method_exists($upload, 'delete')) {
+            return;
+        }
+
+        try {
+            $upload->delete();
+        } catch (\Throwable $e) {
+            Log::warning('OCR_TMP_UPLOAD_CLEANUP_FAIL', [
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -454,13 +462,6 @@ class extends Component
         return null;
     }
 
-    protected function ocrBaseDir(string $jobId, $customer): string
-    {
-        $folder = $this->currentFolderForCustomer($customer);
-
-        return "renders/{$folder}/ocr/{$jobId}";
-    }
-
     protected function setLoadedRenderFromJob(MlJob $job, bool $dispatchBrowserEvent = true): void
     {
         $jobId = (string) $job->id;
@@ -556,9 +557,8 @@ class extends Component
                 return;
             }
 
-            $baseDir = $this->ocrBaseDir($jobId, $customer->loadMissing('profile'));
+            $customer->loadMissing('profile');
             $fileExt = strtolower((string) ($this->documentExt ?: $this->documentFile?->getClientOriginalExtension() ?: 'pdf'));
-            $inputPath = "{$baseDir}/input.{$fileExt}";
 
             $toolId = Tool::query()->where('code', $this->toolCode)->value('id');
             $actionId = ToolAction::query()
@@ -609,18 +609,21 @@ class extends Component
                 ]);
             }, 3);
 
-            $savedInput = $storage->saveUploadedFileToS3(
-                (int) $customer->id,
-                $this->documentFile,
-                $inputPath,
-                [
+            $savedInput = $storage->storeJobInputFile(
+                customer: $customer,
+                file: $this->documentFile,
+                toolCode: $this->toolCode,
+                jobId: $jobId,
+                meta: [
                     'job_id' => $jobId,
                     'tool' => 'ocr',
                     'purpose' => 'input_document',
                     'role' => 'source_pdf',
                     'checksum' => $this->documentHash,
                     'original_name' => $this->documentFileName,
-                ]
+                ],
+                extension: $fileExt,
+                baseName: 'input'
             );
 
             $inputUrl = $storage->temporaryUrl($savedInput['path'], 120, [
@@ -636,6 +639,8 @@ class extends Component
                 ]),
                 'storage_in_bytes' => (int) $savedInput['bytes'],
             ]);
+
+            $this->releaseTemporaryDocumentUpload();
 
             $lock = $locks->acquireOcrLock(
                 customerId: (int) $customer->id,
@@ -1373,7 +1378,9 @@ class extends Component
                                     type="button"
                                 >
                                     <span wire:loading.remove wire:target="submit,documentFile">
-                                        <span class="mr-1" aria-hidden="true">â–¶</span>
+                                        <span class="mr-1" aria-hidden="true">
+                                            <i class="ri ri-book-3-line"></i>
+                                        </span>
                                         {{ $this->canProcess ? __('Run OCR') : ($this->processBlockedReason ?? __('Run OCR')) }}
                                     </span>
 

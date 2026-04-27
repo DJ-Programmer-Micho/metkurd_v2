@@ -93,12 +93,29 @@ class extends Component
     protected function rules(): array
     {
         return [
-            'audioFile' => 'required|file|mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac,audio/x-flac|max:102400',
+            'audioFile' => 'required|file|mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac,audio/x-flac|max:' . $this->stemMaxUploadKb(),
             'stems' => 'required|integer|in:2,4',
             'model' => 'required|string|max:100',
             'stemCodec' => 'required|string|in:mp3',
             'stemBitrate' => 'required|string|in:192k',
         ];
+    }
+
+    protected function messages(): array
+    {
+        return [
+            'audioFile.max' => __('Maximum file size is :size MB.', ['size' => $this->stemMaxUploadMb()]),
+        ];
+    }
+
+    protected function stemMaxUploadKb(): int
+    {
+        return max(1, (int) config('livewire.stem_max_upload_kb', 102400));
+    }
+
+    protected function stemMaxUploadMb(): int
+    {
+        return max(1, (int) ceil($this->stemMaxUploadKb() / 1024));
     }
 
     #[Computed]
@@ -135,16 +152,6 @@ class extends Component
         return $paginator;
     }
 
-    protected function currentFolderForCustomer($customer): string
-    {
-        return \App\Support\CustomerFolder::make(
-            (int) $customer->id,
-            $customer->profile?->first_name ?? $customer->first_name ?? null,
-            $customer->profile?->last_name ?? $customer->last_name ?? null,
-            $customer->username ?? null
-        );
-    }
-
     protected function resetAudioState(bool $dispatchBrowserEvent = true): void
     {
         $this->audioFile = null;
@@ -160,6 +167,24 @@ class extends Component
 
         if ($dispatchBrowserEvent) {
             $this->dispatch('stem-audio-file-cleared');
+        }
+    }
+
+    protected function releaseTemporaryAudioUpload(): void
+    {
+        $upload = $this->audioFile;
+        $this->audioFile = null;
+
+        if (!is_object($upload) || !method_exists($upload, 'delete')) {
+            return;
+        }
+
+        try {
+            $upload->delete();
+        } catch (\Throwable $e) {
+            Log::warning('STEM_TMP_UPLOAD_CLEANUP_FAIL', [
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -556,9 +581,8 @@ class extends Component
                 return;
             }
 
-            $folder = $this->currentFolderForCustomer($customer->loadMissing('profile'));
+            $customer->loadMissing('profile');
             $audioExt = strtolower((string) ($this->audioExt ?: $this->audioFile?->getClientOriginalExtension() ?: 'wav'));
-            $audioKey = "renders/{$folder}/stem/{$jobId}/input.{$audioExt}";
             $toolId = Tool::query()->where('code', $this->toolCode)->value('id');
             $actionId = ToolAction::query()
                 ->where('tool_code', $this->toolCode)
@@ -608,18 +632,21 @@ class extends Component
                 ]);
             }, 3);
 
-            $savedAudio = $storage->saveUploadedFileToS3(
-                (int) $customer->id,
-                $this->audioFile,
-                $audioKey,
-                [
+            $savedAudio = $storage->storeJobInputFile(
+                customer: $customer,
+                file: $this->audioFile,
+                toolCode: $this->toolCode,
+                jobId: $jobId,
+                meta: [
                     'job_id' => $jobId,
                     'tool' => 'stem',
                     'purpose' => 'input_audio',
                     'role' => 'source_audio',
                     'checksum' => $this->audioHash,
                     'original_name' => $this->audioFileName,
-                ]
+                ],
+                extension: $audioExt,
+                baseName: 'input'
             );
 
             $audioUrl = $storage->temporaryUrl($savedAudio['path'], 120, [
@@ -636,6 +663,8 @@ class extends Component
                 ]),
                 'storage_in_bytes' => (int) $savedAudio['bytes'],
             ]);
+
+            $this->releaseTemporaryAudioUpload();
 
             $lock = $locks->acquireStemLock(
                 customerId: (int) $customer->id,
@@ -1016,6 +1045,9 @@ class extends Component
             'failed' => 'glass-load--danger',
             default => 'glass-load--secondary'
         };
+        $stemMaxUploadKb = max(1, (int) config('livewire.stem_max_upload_kb', 102400));
+        $stemMaxUploadMb = max(1, (int) ceil($stemMaxUploadKb / 1024));
+        $stemMaxUploadBytes = $stemMaxUploadKb * 1024;
     @endphp
 
     <div class="row">
@@ -1102,7 +1134,7 @@ class extends Component
                                 </div>
 
                                 <small class="text-muted d-block mt-2">
-                                    {{ __('WAV recommended | Max 100MB') }}
+                                    {{ __('WAV recommended | Max :size MB', ['size' => $stemMaxUploadMb]) }}
                                 </small>
                             </div>
 
@@ -1876,7 +1908,8 @@ class extends Component
     const STEM_FILEPOND_SIZE_JS = @js(asset('app/libs/filepond-plugin-file-validate-size/filepond-plugin-file-validate-size.min.js'));
     const STEM_WAVESURFER_JS = 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js';
     const STEM_ACCEPT_ATTR = '.wav,.mp3,.m4a,.aac,.ogg,.webm,.flac,audio/*';
-    const STEM_MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+    const STEM_MAX_UPLOAD_MB = @js($stemMaxUploadMb);
+    const STEM_MAX_UPLOAD_BYTES = @js($stemMaxUploadBytes);
     const STEM_PARAM_I18N = {
         outputs: @js(__('outputs')),
         pricing4: @js(__('4-stem separation pricing')),
@@ -1886,7 +1919,7 @@ class extends Component
         or: @js(__('or')),
         browse: @js(__('Browse')),
         uploadFailed: @js(__('Upload failed')),
-        fileTooLarge: @js(__('Maximum file size is 100MB')),
+        fileTooLarge: @js(__('Maximum file size is :size MB', ['size' => $stemMaxUploadMb])),
     };
     const FORM_KEY = 'stem_form_state_v3';
     const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
@@ -1911,6 +1944,61 @@ class extends Component
         } catch (_) {
             return null;
         }
+    }
+
+    function dispatchStemAlert(message, type = 'error') {
+        const text = String(message || '').trim();
+        if (!text) return;
+
+        window.dispatchEvent(new CustomEvent('alert', {
+            detail: { type, message: text },
+        }));
+    }
+
+    function resolveUploadSizeBytes(fileLike) {
+        if (!fileLike || typeof fileLike !== 'object') return null;
+
+        const candidates = [
+            fileLike.size,
+            fileLike.fileSize,
+            fileLike?.file?.size,
+            fileLike?.source?.size,
+        ];
+
+        for (const value of candidates) {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed) && parsed >= 0) {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    function isUploadTooLargeError(raw) {
+        const text = String(raw?.message ?? raw ?? '').toLowerCase();
+
+        return text.includes('413')
+            || text.includes('payload too large')
+            || text.includes('request entity too large')
+            || text.includes('post too large')
+            || text.includes('maximum file size')
+            || text.includes('file is too large')
+            || text.includes('unexpected token <');
+    }
+
+    function normalizeUploadErrorMessage(rawError) {
+        if (isUploadTooLargeError(rawError)) {
+            return STEM_PARAM_I18N.fileTooLarge;
+        }
+
+        const text = String(rawError?.message ?? rawError ?? '').trim();
+        return text || STEM_PARAM_I18N.uploadFailed;
+    }
+
+    function isFileTooLarge(fileLike) {
+        const bytes = resolveUploadSizeBytes(fileLike);
+        return Number.isFinite(bytes) && bytes > STEM_MAX_UPLOAD_BYTES;
     }
 
     function ensureStyle(href, key) {
@@ -2260,10 +2348,15 @@ class extends Component
             allowReorder: false,
             allowReplace: true,
             credits: false,
-            maxFileSize: '100MB',
+            maxFileSize: `${STEM_MAX_UPLOAD_MB}MB`,
             beforeAddFile: (item) => {
                 const file = item?.file || item;
-                return !!file && Number(file.size || 0) <= STEM_MAX_UPLOAD_BYTES;
+                if (isFileTooLarge(file)) {
+                    dispatchStemAlert(STEM_PARAM_I18N.fileTooLarge, 'warning');
+                    return false;
+                }
+
+                return !!file;
             },
             labelMaxFileSizeExceeded: @js(__('File is too large')),
             labelMaxFileSize: STEM_PARAM_I18N.fileTooLarge,
@@ -2275,23 +2368,51 @@ class extends Component
             `,
             server: {
                 process: (fieldName, file, metadata, load, error, progress, abort) => {
-                    lw.upload(
-                        'audioFile',
-                        file,
-                        () => load(file.name),
-                        (e) => error(typeof e === 'string' ? e : STEM_PARAM_I18N.uploadFailed),
-                        (event) => {
-                            progress(
-                                event.lengthComputable,
-                                event.loaded,
-                                event.total
-                            );
-                        }
-                    );
+                    if (isFileTooLarge(file)) {
+                        const message = STEM_PARAM_I18N.fileTooLarge;
+                        error(message);
+                        dispatchStemAlert(message, 'warning');
+
+                        return {
+                            abort: () => abort(),
+                        };
+                    }
+
+                    let uploadStarted = false;
+
+                    try {
+                        uploadStarted = true;
+                        lw.upload(
+                            'audioFile',
+                            file,
+                            () => load(file.name),
+                            (uploadError) => {
+                                const message = normalizeUploadErrorMessage(uploadError);
+                                error(message);
+                                dispatchStemAlert(message, isUploadTooLargeError(uploadError) ? 'warning' : 'error');
+                            },
+                            (event) => {
+                                progress(
+                                    event.lengthComputable,
+                                    event.loaded,
+                                    event.total
+                                );
+                            }
+                        );
+                    } catch (uploadError) {
+                        const message = normalizeUploadErrorMessage(uploadError);
+                        error(message);
+                        dispatchStemAlert(message, isUploadTooLargeError(uploadError) ? 'warning' : 'error');
+                    }
 
                     return {
                         abort: () => {
-                            lw.removeUpload('audioFile', file.name, () => {});
+                            if (uploadStarted && typeof lw.removeUpload === 'function') {
+                                try {
+                                    lw.removeUpload('audioFile', file.name, () => {});
+                                } catch (_) {}
+                            }
+
                             abort();
                         }
                     };
@@ -3365,7 +3486,12 @@ class extends Component
                 throw new Error(`Failed to load STEM render (${response.status})`);
             }
 
-            const render = await response.json();
+            let render = null;
+            try {
+                render = await response.json();
+            } catch (_) {
+                throw new Error(`Failed to parse STEM render payload (${response.status})`);
+            }
             await loadStemRender(render, { persist });
 
             return render;

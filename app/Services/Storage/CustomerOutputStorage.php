@@ -9,24 +9,34 @@ use App\Models\MlJob;
 use App\Services\Billing\CustomerBillingStateService;
 use App\Support\CustomerFolder;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class CustomerOutputStorage
 {
+    public function customerFolderFromCustomer(Customer $customer): string
+    {
+        return CustomerFolder::make(
+            (int) $customer->id,
+            $customer->profile?->first_name ?? $customer->first_name ?? null,
+            $customer->profile?->last_name ?? $customer->last_name ?? null,
+            $customer->username ?? null
+        );
+    }
+
     public function customerFolder(MlJob $job): string
     {
         $customer = $job->relationLoaded('customer')
             ? $job->customer
             : $job->customer()->with('profile')->first();
 
-        return CustomerFolder::make(
-            (int) $job->customer_id,
-            data_get($customer, 'profile.first_name') ?? data_get($customer, 'first_name'),
-            data_get($customer, 'profile.last_name') ?? data_get($customer, 'last_name'),
-            data_get($customer, 'username')
-        );
+        if ($customer instanceof Customer) {
+            return $this->customerFolderFromCustomer($customer);
+        }
+
+        return CustomerFolder::make((int) $job->customer_id, null, null, null);
     }
 
     public function renderBaseDir(MlJob $job, string $toolDir): string
@@ -140,6 +150,69 @@ class CustomerOutputStorage
         $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
 
         return compact('disk', 'path', 'bytes', 'mime');
+    }
+
+    public function inputBaseDir(Customer $customer, string $toolCode, string $jobId): string
+    {
+        $toolSegment = $this->normalizePathSegment($toolCode, 'tool');
+        $jobSegment = trim($jobId);
+
+        if ($jobSegment === '') {
+            throw new \InvalidArgumentException('Job ID is required for input storage path.');
+        }
+
+        return "renders/{$this->customerFolderFromCustomer($customer)}/{$toolSegment}/{$jobSegment}";
+    }
+
+    public function inputPath(
+        Customer $customer,
+        string $toolCode,
+        string $jobId,
+        string $extension,
+        string $baseName = 'input'
+    ): string {
+        $base = $this->inputBaseDir($customer, $toolCode, $jobId);
+        $name = $this->normalizePathSegment($baseName, 'input');
+        $ext = $this->normalizeExtension($extension, 'bin');
+
+        return "{$base}/{$name}.{$ext}";
+    }
+
+    public function storeJobInputFile(
+        Customer $customer,
+        UploadedFile $file,
+        string $toolCode,
+        string $jobId,
+        array $meta = [],
+        ?string $extension = null,
+        string $baseName = 'input'
+    ): array {
+        $resolvedExtension = $this->normalizeExtension(
+            $extension ?? (string) ($file->getClientOriginalExtension() ?: ''),
+            'bin'
+        );
+
+        $path = $this->inputPath(
+            customer: $customer,
+            toolCode: $toolCode,
+            jobId: $jobId,
+            extension: $resolvedExtension,
+            baseName: $baseName
+        );
+
+        $meta = array_merge([
+            'tool' => $toolCode,
+            'purpose' => 'input',
+            'role' => 'source_file',
+            'original_name' => $file->getClientOriginalName(),
+        ], $meta);
+
+        return $this->saveUploadedFileToS3(
+            customerId: (int) $customer->id,
+            file: $file,
+            path: $path,
+            meta: $meta
+        );
     }
 
     public function temporaryUrl(string $path, int $minutes = 60, array $options = []): string
@@ -401,6 +474,20 @@ class CustomerOutputStorage
         }
 
         return $normalized;
+    }
+
+    protected function normalizePathSegment(string $value, string $fallback): string
+    {
+        $normalized = trim(Str::of($value)->lower()->replaceMatches('/[^a-z0-9_-]+/', '-')->toString(), '-');
+
+        return $normalized !== '' ? $normalized : $fallback;
+    }
+
+    protected function normalizeExtension(string $extension, string $fallback = 'bin'): string
+    {
+        $normalized = trim(Str::of($extension)->lower()->replaceMatches('/[^a-z0-9]+/', '')->toString());
+
+        return $normalized !== '' ? $normalized : $fallback;
     }
 
     public function registerStemArtifacts(MlJob $job, array $output, string $toolCode = 'stem'): int

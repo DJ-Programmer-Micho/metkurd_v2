@@ -134,9 +134,9 @@ return [
     */
 
     'temporary_file_upload' => [
-        'disk' => env('LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK', 'local'), // Example: 'local', 's3'             | Default: 'local'
+        'disk' => env('LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK', env('LIVEWIRE_TEMP_DISK', null)), // Use shared disk (e.g. s3) in multi-node production
         'rules' => ['required', 'file', 'max:' . (int) env('LIVEWIRE_TEMP_UPLOAD_MAX_KB', 102400)], // Default overridden for audio uploads (100MB)
-        'directory' => null,                                  // Example: 'tmp'                     | Default: 'livewire-tmp'
+        'directory' => env('LIVEWIRE_TEMP_DIRECTORY', null),  // Example: 'tmp'                     | Default: 'livewire-tmp'
         'middleware' => null,                                 // Example: 'throttle:5,1'            | Default: 'throttle:60,1'
         'preview_mimes' => [                                  // Supported file types for temporary pre-signed file URLs...
             'png', 'gif', 'bmp', 'svg', 'wav', 'mp4',
@@ -146,6 +146,9 @@ return [
         'max_upload_time' => (int) env('LIVEWIRE_TEMP_UPLOAD_MAX_MINUTES', 15), // Max duration (in minutes) before an upload is invalidated...
         'cleanup' => true, // Should cleanup temporary uploads older than 24 hrs...
     ],
+
+    // App-specific upload cap used by STEM page frontend/backend validation sync.
+    'stem_max_upload_kb' => (int) env('STEM_MAX_UPLOAD_KB', 102400),
 
     /*
     |---------------------------------------------------------------------------
