@@ -54,16 +54,20 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
         $this->preferredPhoneCountries = array_slice($this->allowedPhoneCountries, 0, min(3, count($this->allowedPhoneCountries)));
 
-        $this->phone = (string) (
+        $this->phone = $this->normalizePhone((string) (
             optional($user->profile)->phone_number
             ?? CustomerProfile::where('customer_id', $user->id)->value('phone_number')
             ?? ''
-        );
+        ));
 
         $profileCountry = RegistrationPhoneCountryManager::normalizeIso2(optional($user->profile)->country);
         $this->phone_country = $profileCountry !== ''
             ? $profileCountry
             : ($this->preferredPhoneCountries[0] ?? $this->allowedPhoneCountries[0] ?? 'iq');
+
+        if (! $this->hasValidPhoneForOtp()) {
+            $this->flag = 2;
+        }
 
         $this->returnAfterVerifyUrl = $this->resolveReturnAfterVerifyUrl();
         $this->syncState();
@@ -154,7 +158,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
     public function goBack()
     {
-        $this->flag = 0;
+        $this->flag = $this->hasValidPhoneForOtp() ? 0 : 2;
         $this->resetErrorBag();
         $this->resetOtpCode();
         $this->syncState();
@@ -462,6 +466,13 @@ new #[Layout('app::layouts.app-auth')] class extends Component
             'phone.required' => __('Phone number is required.'),
             'phone.regex' => __('Phone number must be in international format (+XXXXXXXXXXX).'),
         ]);
+    }
+
+    private function hasValidPhoneForOtp(): bool
+    {
+        $candidate = $this->normalizePhone($this->phone);
+
+        return preg_match('/^\+\d{10,15}$/', $candidate) === 1;
     }
 
     private function expiresKey(): string
