@@ -1048,7 +1048,31 @@ class extends Component
         $stemMaxUploadKb = max(1, (int) config('livewire.stem_max_upload_kb', 102400));
         $stemMaxUploadMb = max(1, (int) ceil($stemMaxUploadKb / 1024));
         $stemMaxUploadBytes = $stemMaxUploadKb * 1024;
+        $stemRenderI18n = [
+            'preparing' => __('Preparing...'),
+            'playAll' => __('Play All'),
+            'pauseAll' => __('Pause All'),
+            'play' => __('Play'),
+            'pause' => __('Pause'),
+            'loading' => __('Loading'),
+            'muted' => __('Muted'),
+            'mute' => __('Mute'),
+            'original' => __('Original'),
+            'vocals' => __('Vocals'),
+            'instrumental' => __('Instrumental'),
+            'drums' => __('Drums'),
+            'bass' => __('Bass'),
+            'other' => __('Other'),
+            'originalDescription' => __('Original uploaded audio - muted by default'),
+            'separatedTrack' => __('Separated output track'),
+            'seekAll' => __('Click to seek all stems together'),
+            'clickPlayToLoad' => __('Click play to load the audio preview'),
+            'loadingTrack' => __('Loading track...'),
+            'previewUnavailable' => __('Preview unavailable'),
+        ];
     @endphp
+
+    <script type="application/json" id="stem-render-i18n">@json($stemRenderI18n)</script>
 
     <div class="row">
         <div class="col-lg-8 mb-4">
@@ -2528,27 +2552,37 @@ class extends Component
     }
 
     const S = window.__STEM_RENDER_PAGE__;
+    const renderI18nNode = document.getElementById('stem-render-i18n');
+    let stemRenderI18nPayload = {};
+    if (renderI18nNode) {
+        try {
+            stemRenderI18nPayload = JSON.parse(renderI18nNode.textContent || '{}');
+        } catch (_) {
+            stemRenderI18nPayload = {};
+        }
+    }
     const STEM_RENDER_I18N = {
-        preparing: @js(__('Preparing...')),
-        playAll: @js(__('Play All')),
-        pauseAll: @js(__('Pause All')),
-        play: @js(__('Play')),
-        pause: @js(__('Pause')),
-        loading: @js(__('Loading')),
-        muted: @js(__('Muted')),
-        mute: @js(__('Mute')),
-        original: @js(__('Original')),
-        vocals: @js(__('Vocals')),
-        instrumental: @js(__('Instrumental')),
-        drums: @js(__('Drums')),
-        bass: @js(__('Bass')),
-        other: @js(__('Other')),
-        originalDescription: @js(__('Original uploaded audio - muted by default')),
-        separatedTrack: @js(__('Separated output track')),
-        seekAll: @js(__('Click to seek all stems together')),
-        clickPlayToLoad: @js(__('Click play to load the audio preview')),
-        loadingTrack: @js(__('Loading track...')),
-        previewUnavailable: @js(__('Preview unavailable')),
+        preparing: 'Preparing...',
+        playAll: 'Play All',
+        pauseAll: 'Pause All',
+        play: 'Play',
+        pause: 'Pause',
+        loading: 'Loading',
+        muted: 'Muted',
+        mute: 'Mute',
+        original: 'Original',
+        vocals: 'Vocals',
+        instrumental: 'Instrumental',
+        drums: 'Drums',
+        bass: 'Bass',
+        other: 'Other',
+        originalDescription: 'Original uploaded audio - muted by default',
+        separatedTrack: 'Separated output track',
+        seekAll: 'Click to seek all stems together',
+        clickPlayToLoad: 'Click play to load the audio preview',
+        loadingTrack: 'Loading track...',
+        previewUnavailable: 'Preview unavailable',
+        ...stemRenderI18nPayload,
     };
     const RENDER_KEY = 'stem_render_cache_v2';
     const LAST_RENDER_KEY = 'stem_last_render_id_v1';
