@@ -2087,9 +2087,19 @@ class extends Component
         await ensureScript(STEM_FILEPOND_JS, 'filepond-js', () => !!window.FilePond);
         await ensureScript(STEM_FILEPOND_SIZE_JS, 'filepond-size-js', () => !!window.FilePondPluginFileValidateSize);
 
-        if (!S.pluginsRegistered && window.FilePond && window.FilePondPluginFileValidateSize) {
-            FilePond.registerPlugin(FilePondPluginFileValidateSize);
-            S.pluginsRegistered = true;
+        if (!S.pluginsRegistered && window.FilePond) {
+            const plugins = [];
+
+            if (window.FilePondPluginFileValidateSize) {
+                plugins.push(window.FilePondPluginFileValidateSize);
+            }
+
+            if (plugins.length > 0) {
+                window.FilePond.registerPlugin(...plugins);
+                S.pluginsRegistered = true;
+            } else {
+                console.warn('[STEM] FilePond plugins are not available.');
+            }
         }
     }
 

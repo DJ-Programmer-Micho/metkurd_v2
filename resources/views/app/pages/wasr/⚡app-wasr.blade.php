@@ -1547,12 +1547,23 @@ class extends Component
     const FORM_KEY = 'wasr_form_state_v2';
     const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
 
-    if (!S.pluginsRegistered) {
-        FilePond.registerPlugin(
-            FilePondPluginFileValidateType,
-            FilePondPluginFileValidateSize
-        );
-        S.pluginsRegistered = true;
+    if (!S.pluginsRegistered && window.FilePond) {
+        const plugins = [];
+
+        if (window.FilePondPluginFileValidateType) {
+            plugins.push(window.FilePondPluginFileValidateType);
+        }
+
+        if (window.FilePondPluginFileValidateSize) {
+            plugins.push(window.FilePondPluginFileValidateSize);
+        }
+
+        if (plugins.length > 0) {
+            FilePond.registerPlugin(...plugins);
+            S.pluginsRegistered = true;
+        } else {
+            console.warn('[WASR] FilePond plugins are not available.');
+        }
     }
 
     function getWasrComponent() {
