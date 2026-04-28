@@ -24,6 +24,10 @@ abstract class MobileApiController extends Controller
     protected function appContext(Request $request, string $app): array
     {
         $customer = $this->customer($request);
+
+        abort_if((int) ($customer->status ?? 0) !== 1, 423, 'This account is inactive. Please use the website for support.');
+        abort_unless($customer->hasCompletedVerification(), 403, 'Complete your account verification before using this mobile API.');
+
         $catalog = app(MobileAppCatalog::class);
         $context = $catalog->for($app);
 

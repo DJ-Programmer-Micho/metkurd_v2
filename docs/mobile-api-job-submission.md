@@ -10,7 +10,14 @@ Base path:
 
 Shared notes:
 
-- Authenticate first with `POST /api/mobile/auth/login`.
+- Authenticate first with either:
+  - `POST /api/mobile/auth/login` for existing website accounts, or
+  - `POST /api/mobile/auth/social/{provider}` for Socialite mobile login.
+- Mobile has no normal register endpoint. New mobile account creation is Socialite-only.
+- If social login returns `needs_phone_number` or `needs_phone_otp`, complete:
+  - `POST /api/mobile/auth/phone`
+  - `POST /api/mobile/auth/phone/otp/send`
+  - `POST /api/mobile/auth/phone/otp/verify`
 - Save the returned bearer token and send `Authorization: Bearer {token}` on every later request.
 - Poll `GET /api/mobile/{app}/jobs/{jobId}` every `5` seconds after submission.
 - Each poll hits the backend sync path for active RunPod jobs before the job JSON is returned.
@@ -702,6 +709,13 @@ FlutterFlow notes:
 - Poll with `job.id`, then use `result.primary_output.download_endpoint` when the job finishes.
 
 ## End-to-End Test Flows
+
+Auth prerequisite for all flows:
+
+1. Existing website account: `POST /api/mobile/auth/login`
+2. Socialite mobile login: `POST /api/mobile/auth/social/{provider}`
+3. If social response is `needs_phone_number` or `needs_phone_otp`, complete phone onboarding first
+4. Continue with the returned full bearer token once state is `phone_verified` or `authenticated`
 
 ### 1. TTS
 

@@ -62,7 +62,7 @@ class SocialAuthController extends Controller
 
     protected function loginOrCreate($providerUser, string $provider)
     {
-        $customerExistedBeforeCallback = $this->customerExistsForProvider($providerUser, $provider);
+        $customerExistedBeforeCallback = $this->socialAuth->customerExistsForProviderUser($providerUser, $provider);
 
         try {
             $customer = $this->socialAuth->authenticateProviderUser($providerUser, $provider, allowCreate: true);
@@ -94,31 +94,5 @@ class SocialAuthController extends Controller
 
         return redirect()->route('app.home', ['locale' => app()->getLocale()])
             ->with('status', 'Welcome back!');
-    }
-
-    protected function customerExistsForProvider($providerUser, string $provider): bool
-    {
-        $email = strtolower(trim((string) $providerUser->getEmail()));
-        $providerId = trim((string) $providerUser->getId());
-
-        if ($email === '' && $providerId === '') {
-            return false;
-        }
-
-        return Customer::query()
-            ->where(function ($query) use ($provider, $providerId, $email): void {
-                if ($providerId !== '') {
-                    if ($provider === 'google') {
-                        $query->orWhere('g_id', $providerId);
-                    } elseif ($provider === 'github') {
-                        $query->orWhere('h_id', $providerId);
-                    }
-                }
-
-                if ($email !== '') {
-                    $query->orWhere('email', $email);
-                }
-            })
-            ->exists();
     }
 }

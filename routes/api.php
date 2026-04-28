@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Mobile\Auth\MobileAuthController;
+use App\Http\Controllers\Api\Mobile\Auth\MobilePhoneVerificationController;
 use App\Http\Controllers\Api\Mobile\Auth\MobileSocialAuthController;
 use App\Http\Controllers\Api\Mobile\MobileAccountUsageController;
 use App\Http\Controllers\Api\Mobile\MobileFilesController;
@@ -15,11 +16,20 @@ Route::prefix('mobile')->name('api.mobile.')->group(function () {
             ->name('login');
 
         Route::post('/social/{provider}', [MobileSocialAuthController::class, 'login'])
-            ->where(['provider' => 'google|github'])
             ->middleware('throttle:10,1')
             ->name('social');
 
         Route::middleware('auth:sanctum')->group(function () {
+            Route::post('/phone', [MobilePhoneVerificationController::class, 'savePhone'])
+                ->middleware('throttle:10,1')
+                ->name('phone.save');
+            Route::post('/phone/otp/send', [MobilePhoneVerificationController::class, 'sendOtp'])
+                ->middleware('throttle:10,1')
+                ->name('phone.otp.send');
+            Route::post('/phone/otp/verify', [MobilePhoneVerificationController::class, 'verifyOtp'])
+                ->middleware('throttle:12,1')
+                ->name('phone.otp.verify');
+
             Route::get('/me', [MobileAuthController::class, 'me'])->name('me');
             Route::post('/logout', [MobileAuthController::class, 'logout'])->name('logout');
             Route::get('/apps', [MobileAuthController::class, 'apps'])->name('apps');

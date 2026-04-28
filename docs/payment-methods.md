@@ -2,6 +2,16 @@
 
 The checkout system is now driven by the `payment_methods` table plus provider adapters under `app/Services/Payments/Providers`.
 
+## Mobile API auth requirement
+
+- Mobile clients do not have a normal register endpoint.
+- Mobile account creation is Socialite-only (`POST /api/mobile/auth/social/{provider}`).
+- Before any payment, checkout, or subscription-related API action, the customer must complete phone onboarding:
+  - submit phone number
+  - send OTP
+  - verify OTP
+- Do not allow payment/subscription flows from onboarding-only mobile tokens (`mobile:onboarding`).
+
 ## Add a new payment method
 
 1. Create a provider adapter that implements `App\Contracts\Payments\PaymentProviderInterface`.

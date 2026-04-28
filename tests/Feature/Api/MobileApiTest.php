@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\CustomerProfile;
 use App\Models\CustomerFile;
 use App\Models\MlJob;
 use App\Models\PlanEntitlement;
@@ -13,11 +14,13 @@ use App\Models\ToolAction;
 use App\Models\Voice;
 use App\Services\Billing\PlanSwitcher;
 use App\Services\Media\AudioProbeService;
+use App\Services\Auth\CustomerSocialAuthService;
 use App\Services\Mobile\MobileApiTokenService;
 use App\Services\Providers\RunPodProvider;
 use App\Support\AppToolCatalog;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -69,6 +72,18 @@ function assignMobileStoragePlan(Customer $customer, string $code = 'free-512'):
 function mobileApiToken(Customer $customer, ?string $appSlug = null): string
 {
     return app(MobileApiTokenService::class)->issue($customer, 'test-device', $appSlug)['plain_text_token'];
+}
+
+function fakeMobileProviderUser(string $providerId, string $email, string $name = 'Mobile Social User'): \Laravel\Socialite\Contracts\User
+{
+    $providerUser = \Mockery::mock(\Laravel\Socialite\Contracts\User::class);
+    $providerUser->shouldReceive('getId')->andReturn($providerId);
+    $providerUser->shouldReceive('getEmail')->andReturn($email);
+    $providerUser->shouldReceive('getName')->andReturn($name);
+    $providerUser->shouldReceive('getNickname')->andReturn(null);
+    $providerUser->shouldReceive('getAvatar')->andReturn(null);
+
+    return $providerUser;
 }
 
 function createMobileJob(
@@ -237,6 +252,137 @@ it('blocks mobile login until verification is complete', function () {
         'app_slug' => 'tts',
     ])->assertStatus(403)
         ->assertJsonPath('message', 'Complete your account verification on the website before using the mobile apps.');
+});
+
+it('returns onboarding state from mobile social login when phone number is missing', function () {
+    $customer = mobileApiCustomer('mobile-social-onboarding@example.com', 'mobile_social_onboarding_user', verified: false);
+    $customer->update([
+        'email_verify' => true,
+        'phone_verify' => false,
+        'status' => 1,
+    ]);
+    CustomerProfile::query()->updateOrCreate(
+        ['customer_id' => (int) $customer->id],
+        ['phone_number' => null]
+    );
+
+    $providerUser = fakeMobileProviderUser('google-id-100', $customer->email);
+
+    $socialAuthMock = \Mockery::mock(CustomerSocialAuthService::class);
+    $socialAuthMock->shouldReceive('isSupportedProvider')->once()->with('google')->andReturnTrue();
+    $socialAuthMock->shouldReceive('fetchProviderUserFromToken')->once()->with('google', 'provider-token')->andReturn($providerUser);
+    $socialAuthMock->shouldReceive('customerExistsForProviderUser')->once()->with($providerUser, 'google')->andReturnFalse();
+    $socialAuthMock->shouldReceive('authenticateProviderUser')->once()->with($providerUser, 'google', true)->andReturn($customer->fresh(['profile', 'usage', 'activeServiceSubscription.servicePlan', 'activeStorageSubscription.storagePlan']));
+    app()->instance(CustomerSocialAuthService::class, $socialAuthMock);
+
+    $response = $this->postJson('/api/mobile/auth/social/google', [
+        'access_token' => 'provider-token',
+        'device_name' => 'Pixel 9',
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('state', 'needs_phone_number')
+        ->assertJsonPath('token_type', 'Bearer')
+        ->assertJsonPath('abilities.0', 'mobile:onboarding')
+        ->assertJsonPath('phone.exists', false)
+        ->assertJsonPath('phone.verified', false);
+});
+
+it('returns authenticated state from mobile social login when verification is complete', function () {
+    $customer = mobileApiCustomer('mobile-social-verified@example.com', 'mobile_social_verified_user', verified: true);
+    assignMobilePlan($customer, 'premium');
+
+    $providerUser = fakeMobileProviderUser('google-id-200', $customer->email);
+
+    $socialAuthMock = \Mockery::mock(CustomerSocialAuthService::class);
+    $socialAuthMock->shouldReceive('isSupportedProvider')->once()->with('google')->andReturnTrue();
+    $socialAuthMock->shouldReceive('fetchProviderUserFromToken')->once()->with('google', 'provider-token')->andReturn($providerUser);
+    $socialAuthMock->shouldReceive('customerExistsForProviderUser')->once()->with($providerUser, 'google')->andReturnTrue();
+    $socialAuthMock->shouldReceive('authenticateProviderUser')->once()->with($providerUser, 'google', true)->andReturn($customer->fresh(['profile', 'usage', 'activeServiceSubscription.servicePlan', 'activeStorageSubscription.storagePlan']));
+    app()->instance(CustomerSocialAuthService::class, $socialAuthMock);
+
+    $response = $this->postJson('/api/mobile/auth/social/google', [
+        'access_token' => 'provider-token',
+        'device_name' => 'iPhone 15 Pro',
+        'app_slug' => 'tts',
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('state', 'authenticated')
+        ->assertJsonPath('token_type', 'Bearer')
+        ->assertJsonPath('abilities.0', 'mobile')
+        ->assertJsonPath('abilities.1', 'mobile:tts')
+        ->assertJsonPath('user.email', $customer->email);
+});
+
+it('completes mobile phone onboarding and returns a full token after otp verification', function () {
+    Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+    config()->set('services.standingtech.base', 'https://standingtech.test');
+    config()->set('services.standingtech.token', 'test-token');
+    config()->set('services.standingtech.sender', 'METKURD');
+
+    $customer = mobileApiCustomer('mobile-social-phone-otp@example.com', 'mobile_social_phone_otp_user', verified: false);
+    assignMobilePlan($customer, 'premium');
+    $customer->update([
+        'email_verify' => true,
+        'phone_verify' => false,
+        'status' => 1,
+    ]);
+
+    $onboardingToken = app(MobileApiTokenService::class)->issueOnboarding($customer, 'Android Device')['plain_text_token'];
+
+    $savePhone = $this->withToken($onboardingToken)->postJson('/api/mobile/auth/phone', [
+        'phone' => '+9647501234567',
+        'phone_country' => 'iq',
+        'phone_dial_code' => '964',
+        'channel' => 'sms',
+    ]);
+
+    $savePhone->assertOk()
+        ->assertJsonPath('state', 'needs_phone_otp')
+        ->assertJsonPath('otp_sent', true)
+        ->assertJsonPath('phone.exists', true);
+
+    $customer->refresh();
+    $otpCode = (string) $customer->phone_otp_number;
+
+    expect($otpCode)->toMatch('/^\d{6}$/');
+
+    $verify = $this->withToken($onboardingToken)->postJson('/api/mobile/auth/phone/otp/verify', [
+        'otp_code' => $otpCode,
+        'device_name' => 'Android Device',
+        'app_slug' => 'asr',
+    ]);
+
+    $verify->assertOk()
+        ->assertJsonPath('state', 'phone_verified')
+        ->assertJsonPath('token_type', 'Bearer')
+        ->assertJsonPath('abilities.0', 'mobile')
+        ->assertJsonPath('abilities.1', 'mobile:asr')
+        ->assertJsonPath('phone.verified', true);
+
+    $customer->refresh();
+
+    expect((bool) $customer->phone_verify)->toBeTrue()
+        ->and($customer->phone_otp_number)->toBeNull();
+});
+
+it('blocks app routes when using onboarding-only token', function () {
+    $customer = mobileApiCustomer('mobile-onboarding-token-block@example.com', 'mobile_onboarding_token_block_user', verified: false);
+    assignMobilePlan($customer, 'premium');
+    $customer->update([
+        'email_verify' => true,
+        'phone_verify' => false,
+        'status' => 1,
+    ]);
+
+    $token = app(MobileApiTokenService::class)->issueOnboarding($customer, 'test-device')['plain_text_token'];
+
+    $this->withToken($token)
+        ->getJson('/api/mobile/tts/voices')
+        ->assertStatus(403)
+        ->assertJsonPath('message', 'Complete your account verification before using this mobile API.');
 });
 
 it('returns a json 401 response for unauthenticated mobile job creation even without an accept header', function () {

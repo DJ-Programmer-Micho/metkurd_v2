@@ -18,7 +18,7 @@ Base path:
 General rules:
 
 - Mobile authentication uses Laravel Sanctum bearer tokens.
-- Mobile apps support sign-in only. Registration stays website-only.
+- Mobile app has no normal register endpoint. Account creation from mobile is Socialite-only via `POST /api/mobile/auth/social/{provider}`.
 - Payments, billing changes, password changes, email changes, and advanced account-security management are not exposed here.
 - Job and file routes are always app-scoped.
 - The TTS app also exposes a dedicated voice catalog at `GET /api/mobile/tts/voices`.
@@ -122,6 +122,11 @@ Example success response:
 }
 ```
 
+Notes:
+
+- Requires completed account verification.
+- If phone onboarding is incomplete, this endpoint returns `403`.
+
 Example error response:
 
 ```json
@@ -146,7 +151,9 @@ Notes:
 
 Purpose:
 
-- Sign in an existing customer with a native mobile provider access token.
+- Socialite login for mobile.
+- Creates a new customer when needed (no separate mobile register endpoint).
+- Returns onboarding state until phone verification is completed.
 
 Used by:
 
@@ -158,7 +165,7 @@ Auth:
 
 Route parameter:
 
-- `provider`: required, `google` or `github`
+- `provider`: required, supported configured Socialite provider (currently `google` or `github`)
 
 Request headers:
 
@@ -181,10 +188,13 @@ Example request:
 }
 ```
 
-Example success response:
+Possible success responses:
+
+1. Fully verified account:
 
 ```json
 {
+  "state": "authenticated",
   "token_type": "Bearer",
   "token": "2|plain-text-token",
   "expires_at": "2026-07-17T10:30:00+00:00",
@@ -204,10 +214,230 @@ Example success response:
 }
 ```
 
+2. Social login succeeded, phone number missing:
+
+```json
+{
+  "state": "needs_phone_number",
+  "token_type": "Bearer",
+  "token": "3|onboarding-token",
+  "expires_at": "2026-07-17T11:30:00+00:00",
+  "abilities": [
+    "mobile:onboarding"
+  ],
+  "phone": {
+    "exists": false,
+    "number": null,
+    "verified": false
+  },
+  "otp": {
+    "channel_required": true,
+    "expires_remaining": 0,
+    "cooldown_remaining": 0,
+    "attempts_left": 5,
+    "lock_remaining": 0
+  },
+  "user": {
+    "id": 14,
+    "email": "user@example.com",
+    "verification_complete": false
+  }
+}
+```
+
+3. Social login succeeded, phone exists but not verified:
+
+```json
+{
+  "state": "needs_phone_otp",
+  "token_type": "Bearer",
+  "token": "3|onboarding-token",
+  "expires_at": "2026-07-17T11:30:00+00:00",
+  "abilities": [
+    "mobile:onboarding"
+  ],
+  "phone": {
+    "exists": true,
+    "number": "+9647501234567",
+    "verified": false
+  },
+  "otp": {
+    "channel_required": true,
+    "expires_remaining": 0,
+    "cooldown_remaining": 0,
+    "attempts_left": 5,
+    "lock_remaining": 0
+  },
+  "user": {
+    "id": 14,
+    "email": "user@example.com",
+    "verification_complete": false
+  }
+}
+```
+
+Validation error response example:
+
+```json
+{
+  "state": "validation_error",
+  "message": "The given data was invalid.",
+  "errors": {
+    "access_token": [
+      "Social sign-in failed. Please confirm your provider token and try again."
+    ]
+  }
+}
+```
+
+Behavior notes:
+
+- Mobile has no normal register endpoint.
+- New mobile account creation is done only through this Socialite endpoint.
+- If onboarding is required, response returns an onboarding token (`mobile:onboarding`).
+- Onboarding tokens cannot access full app job/file APIs.
+
+### POST /api/mobile/auth/phone
+
+Purpose:
+
+- Submit or update phone number during mobile onboarding.
+- Optionally send OTP in the same call using `channel`.
+
+Auth:
+
+- Yes (`auth:sanctum`, onboarding token or full token)
+
+Request body:
+
+- `phone`: required, international format (`+XXXXXXXXXX...`)
+- `phone_country`: required, ISO2 country code
+- `phone_dial_code`: required, dial code digits only
+- `channel`: optional, `sms`, `telegram`, `whatsapp`
+
+Example request:
+
+```json
+{
+  "phone": "+9647501234567",
+  "phone_country": "iq",
+  "phone_dial_code": "964",
+  "channel": "sms"
+}
+```
+
+Example response:
+
+```json
+{
+  "state": "needs_phone_otp",
+  "message": "Phone saved and OTP sent successfully.",
+  "otp_sent": true,
+  "phone": {
+    "exists": true,
+    "number": "+9647501234567",
+    "verified": false
+  },
+  "otp": {
+    "expires_remaining": 300,
+    "cooldown_remaining": 60,
+    "attempts_left": 5,
+    "lock_remaining": 0,
+    "is_locked": false,
+    "is_expired": false
+  }
+}
+```
+
+### POST /api/mobile/auth/phone/otp/send
+
+Purpose:
+
+- Send or resend phone OTP via selected channel.
+
+Auth:
+
+- Yes (`auth:sanctum`, onboarding token or full token)
+
+Request body:
+
+- `channel`: required, `sms`, `telegram`, `whatsapp`
+
+Example response:
+
+```json
+{
+  "state": "needs_phone_otp",
+  "message": "Code sent. Please check your phone."
+}
+```
+
 Notes:
 
-- The backend does not create new customers here.
-- The social identity must match an existing website account.
+- Rate-limited by API middleware plus OTP cooldown/lock rules.
+- Too many attempts can return `429`.
+
+### POST /api/mobile/auth/phone/otp/verify
+
+Purpose:
+
+- Verify the 6-digit phone OTP.
+- On success, issue full mobile token.
+
+Auth:
+
+- Yes (`auth:sanctum`, onboarding token or full token)
+
+Request body:
+
+- `otp_code`: required, exactly 6 digits
+- `device_name`: optional
+- `app_slug`: optional (`tts`, `ctts`, `asr`, `stem`, `ocr`, `tran`)
+
+Example request:
+
+```json
+{
+  "otp_code": "123456",
+  "device_name": "Pixel 9",
+  "app_slug": "asr"
+}
+```
+
+Example success response:
+
+```json
+{
+  "state": "phone_verified",
+  "message": "Phone verified successfully.",
+  "token_type": "Bearer",
+  "token": "4|plain-text-token",
+  "expires_at": "2026-07-17T10:30:00+00:00",
+  "abilities": [
+    "mobile",
+    "mobile:asr"
+  ],
+  "phone": {
+    "exists": true,
+    "number": "+9647501234567",
+    "verified": true
+  }
+}
+```
+
+Invalid OTP example:
+
+```json
+{
+  "state": "validation_error",
+  "message": "Invalid code. Please try again.",
+  "errors": {
+    "otp_code": [
+      "Invalid code. Please try again."
+    ]
+  }
+}
+```
 
 ### GET /api/mobile/auth/me
 
@@ -307,6 +537,13 @@ Example success response:
   ]
 }
 ```
+
+## Socialite-Only Mobile Registration Rule
+
+- Mobile app does not expose a normal register endpoint.
+- Mobile account creation happens only through `POST /api/mobile/auth/social/{provider}`.
+- Website signup remains website-only.
+- If social login returns onboarding state, complete phone number + OTP steps before using app job/file endpoints.
 
 ## Account Usage
 
@@ -1453,6 +1690,9 @@ Storage quota example:
 - Tokens are Laravel Sanctum personal access tokens.
 - Default token lifetime is controlled by `MOBILE_API_TOKEN_EXPIRATION_DAYS`.
 - Current default is `90` days.
+- Social onboarding issues a limited token with ability `mobile:onboarding`.
+- Onboarding token lifetime is controlled by `MOBILE_API_ONBOARDING_TOKEN_EXPIRATION_MINUTES` (default `120`).
+- Full app access tokens are issued only after phone verification succeeds.
 - `POST /api/mobile/auth/logout` revokes the current token only.
 - Store the bearer token in secure storage on device.
 - When a token expires or is revoked, the API returns `401`.

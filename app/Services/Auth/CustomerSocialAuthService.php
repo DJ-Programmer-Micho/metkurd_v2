@@ -11,22 +11,107 @@ use Laravel\Socialite\Facades\Socialite;
 
 class CustomerSocialAuthService
 {
+    /**
+     * @return array<string, string>
+     */
+    protected function providerColumns(): array
+    {
+        return [
+            'google' => 'g_id',
+            'github' => 'h_id',
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function supportedProviders(): array
+    {
+        return collect($this->providerColumns())
+            ->keys()
+            ->map(fn (string $provider): string => strtolower(trim($provider)))
+            ->filter(function (string $provider): bool {
+                return filled(config('services.' . $provider . '.client_id'))
+                    && filled(config('services.' . $provider . '.client_secret'));
+            })
+            ->values()
+            ->all();
+    }
+
+    public function isSupportedProvider(string $provider): bool
+    {
+        $provider = strtolower(trim($provider));
+
+        $configured = $this->supportedProviders();
+
+        if ($configured !== []) {
+            return in_array($provider, $configured, true);
+        }
+
+        return array_key_exists($provider, $this->providerColumns());
+    }
+
+    public function customerExistsForProviderUser(ProviderUser $providerUser, string $provider): bool
+    {
+        $provider = strtolower(trim($provider));
+        $providerColumn = $this->providerColumn($provider);
+        $email = strtolower(trim((string) $providerUser->getEmail()));
+        $providerId = trim((string) $providerUser->getId());
+
+        if ($email === '' && $providerId === '') {
+            return false;
+        }
+
+        return Customer::query()
+            ->where(function ($query) use ($providerColumn, $providerId, $email): void {
+                $applied = false;
+
+                if ($providerColumn !== null && $providerId !== '') {
+                    $query->where($providerColumn, $providerId);
+                    $applied = true;
+                }
+
+                if ($email !== '') {
+                    if ($applied) {
+                        $query->orWhere('email', $email);
+                    } else {
+                        $query->where('email', $email);
+                    }
+                }
+            })
+            ->exists();
+    }
+
     public function fetchProviderUserFromCallback(string $provider): ProviderUser
     {
+        if (! $this->isSupportedProvider($provider)) {
+            throw new \RuntimeException("Unsupported social provider [{$provider}].");
+        }
+
         return Socialite::driver($provider)->stateless()->user();
     }
 
     public function fetchProviderUserFromToken(string $provider, string $accessToken): ProviderUser
     {
+        if (! $this->isSupportedProvider($provider)) {
+            throw new \RuntimeException("Unsupported social provider [{$provider}].");
+        }
+
         return Socialite::driver($provider)->stateless()->userFromToken($accessToken);
     }
 
     public function authenticateProviderUser(ProviderUser $providerUser, string $provider, bool $allowCreate = true): Customer
     {
+        $provider = strtolower(trim($provider));
+        $providerColumn = $this->providerColumn($provider);
         $email = strtolower(trim((string) $providerUser->getEmail()));
         $name = $providerUser->getName() ?: $providerUser->getNickname();
         $avatarUrl = $providerUser->getAvatar();
         $providerId = (string) $providerUser->getId();
+
+        if ($providerColumn === null) {
+            throw new \RuntimeException("Unsupported social provider [{$provider}].");
+        }
 
         if ($email === '') {
             throw new \RuntimeException("Your {$provider} account has no email address.");
@@ -38,12 +123,11 @@ class CustomerSocialAuthService
 
         $normalizedAvatar = $this->normalizeProviderAvatarUrl($avatarUrl);
 
-        return DB::transaction(function () use ($allowCreate, $email, $name, $provider, $providerId, $normalizedAvatar) {
+        return DB::transaction(function () use ($allowCreate, $email, $name, $provider, $providerColumn, $providerId, $normalizedAvatar) {
             [$first, $last] = $this->splitName($name);
 
             $customerByProvider = Customer::query()
-                ->when($provider === 'google', fn ($query) => $query->where('g_id', $providerId))
-                ->when($provider === 'github', fn ($query) => $query->where('h_id', $providerId))
+                ->where($providerColumn, $providerId)
                 ->lockForUpdate()
                 ->first();
 
@@ -79,13 +163,8 @@ class CustomerSocialAuthService
 
             $customerNeedsSave = false;
 
-            if ($provider === 'google' && empty($customer->g_id)) {
-                $customer->g_id = $providerId;
-                $customerNeedsSave = true;
-            }
-
-            if ($provider === 'github' && empty($customer->h_id)) {
-                $customer->h_id = $providerId;
+            if (empty($customer->getAttribute($providerColumn))) {
+                $customer->setAttribute($providerColumn, $providerId);
                 $customerNeedsSave = true;
             }
 
@@ -186,5 +265,12 @@ class CustomerSocialAuthService
         }
 
         return $url;
+    }
+
+    protected function providerColumn(string $provider): ?string
+    {
+        $provider = strtolower(trim($provider));
+
+        return $this->providerColumns()[$provider] ?? null;
     }
 }

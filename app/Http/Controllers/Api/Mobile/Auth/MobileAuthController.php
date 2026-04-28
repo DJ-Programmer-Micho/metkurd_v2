@@ -74,6 +74,10 @@ class MobileAuthController extends MobileApiController
     {
         $customer = $this->customer($request);
 
+        if ($response = $this->ensureCustomerCanUseMobile($customer)) {
+            return $response;
+        }
+
         return response()->json([
             'data' => $this->catalog->appsForCustomer($customer),
         ]);

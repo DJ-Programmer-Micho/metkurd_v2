@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: METKURD Mobile API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Mobile API for the six METKURD FlutterFlow apps.
     Authentication uses Laravel Sanctum bearer tokens.
@@ -46,7 +46,7 @@ paths:
   /api/mobile/auth/social/{provider}:
     post:
       tags: [Authentication]
-      summary: Sign in with Google or GitHub mobile token
+      summary: Socialite login with onboarding states
       operationId: mobileAuthSocialLogin
       parameters:
         - $ref: '#/components/parameters/Provider'
@@ -58,15 +58,104 @@ paths:
               $ref: '#/components/schemas/SocialLoginRequest'
       responses:
         '200':
-          description: Login succeeded
+          description: Social login succeeded with either full auth or onboarding state
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
+                $ref: '#/components/schemas/SocialLoginResponse'
         '403':
           $ref: '#/components/responses/Message403'
         '422':
-          $ref: '#/components/responses/Message422'
+          $ref: '#/components/responses/ValidationState422'
+        '423':
+          $ref: '#/components/responses/Message423'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/auth/phone:
+    post:
+      tags: [Authentication]
+      summary: Save or update phone number during onboarding
+      operationId: mobileAuthPhoneSave
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhoneSaveRequest'
+      responses:
+        '200':
+          description: Phone accepted, onboarding continues
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhoneOnboardingResponse'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '422':
+          $ref: '#/components/responses/ValidationState422'
+        '423':
+          $ref: '#/components/responses/Message423'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/auth/phone/otp/send:
+    post:
+      tags: [Authentication]
+      summary: Send or resend phone OTP
+      operationId: mobileAuthPhoneOtpSend
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhoneOtpSendRequest'
+      responses:
+        '200':
+          description: OTP was sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhoneOnboardingResponse'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '422':
+          $ref: '#/components/responses/ValidationState422'
+        '423':
+          $ref: '#/components/responses/Message423'
+        '429':
+          $ref: '#/components/responses/Message429'
+  /api/mobile/auth/phone/otp/verify:
+    post:
+      tags: [Authentication]
+      summary: Verify phone OTP and issue full token
+      operationId: mobileAuthPhoneOtpVerify
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhoneOtpVerifyRequest'
+      responses:
+        '200':
+          description: Phone verified or already verified
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LoginResponse'
+                  - $ref: '#/components/schemas/PhoneVerifiedResponse'
+                  - $ref: '#/components/schemas/AuthenticatedStateResponse'
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '422':
+          $ref: '#/components/responses/ValidationState422'
         '423':
           $ref: '#/components/responses/Message423'
         '429':
@@ -119,6 +208,10 @@ paths:
                 $ref: '#/components/schemas/AppsResponse'
         '401':
           $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '423':
+          $ref: '#/components/responses/Message423'
   /api/mobile/account/usage:
     get:
       tags: [Account]
@@ -522,6 +615,7 @@ components:
       name: provider
       in: path
       required: true
+      description: Supported Socialite provider configured in this deployment
       schema:
         type: string
         enum: [google, github]
@@ -619,6 +713,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ValidationError'
+    ValidationState422:
+      description: Validation failure with onboarding state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationStateError'
     JobCreated201:
       description: Job created
       content:
@@ -653,6 +753,44 @@ components:
         app_slug:
           type: string
           enum: [tts, ctts, asr, stem, ocr, tran]
+    PhoneSaveRequest:
+      type: object
+      required: [phone, phone_country, phone_dial_code]
+      properties:
+        phone:
+          type: string
+          example: "+9647501234567"
+        phone_country:
+          type: string
+          minLength: 2
+          maxLength: 2
+          example: iq
+        phone_dial_code:
+          type: string
+          example: "964"
+        channel:
+          type: string
+          enum: [sms, telegram, whatsapp]
+    PhoneOtpSendRequest:
+      type: object
+      required: [channel]
+      properties:
+        channel:
+          type: string
+          enum: [sms, telegram, whatsapp]
+    PhoneOtpVerifyRequest:
+      type: object
+      required: [otp_code]
+      properties:
+        otp_code:
+          type: string
+          example: "123456"
+        device_name:
+          type: string
+          maxLength: 120
+        app_slug:
+          type: string
+          enum: [tts, ctts, asr, stem, ocr, tran]
     MessageResponse:
       type: object
       required: [message]
@@ -670,6 +808,14 @@ components:
                 type: array
                 items:
                   type: string
+    ValidationStateError:
+      allOf:
+        - $ref: '#/components/schemas/ValidationError'
+        - type: object
+          properties:
+            state:
+              type: string
+              enum: [validation_error]
     LoginResponse:
       type: object
       properties:
@@ -689,6 +835,115 @@ components:
         user:
           $ref: '#/components/schemas/CurrentUser'
       required: [token_type, token, abilities, user]
+    AuthenticatedTokenResponse:
+      allOf:
+        - $ref: '#/components/schemas/LoginResponse'
+        - type: object
+          required: [state]
+          properties:
+            state:
+              type: string
+              enum: [authenticated]
+    SocialLoginResponse:
+      oneOf:
+        - $ref: '#/components/schemas/AuthenticatedTokenResponse'
+        - $ref: '#/components/schemas/OnboardingStateResponse'
+    PhoneState:
+      type: object
+      properties:
+        exists:
+          type: boolean
+        number:
+          type: string
+          nullable: true
+        verified:
+          type: boolean
+    OtpState:
+      type: object
+      properties:
+        channel_required:
+          type: boolean
+        expires_remaining:
+          type: integer
+        cooldown_remaining:
+          type: integer
+        attempts_left:
+          type: integer
+        lock_remaining:
+          type: integer
+        is_locked:
+          type: boolean
+        is_expired:
+          type: boolean
+    OnboardingStateResponse:
+      type: object
+      required: [state, token_type, token, abilities, user, phone, otp]
+      properties:
+        state:
+          type: string
+          enum: [needs_phone_number, needs_phone_otp]
+        token_type:
+          type: string
+          example: Bearer
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        abilities:
+          type: array
+          items:
+            type: string
+        phone:
+          $ref: '#/components/schemas/PhoneState'
+        otp:
+          $ref: '#/components/schemas/OtpState'
+        user:
+          $ref: '#/components/schemas/CurrentUser'
+    PhoneOnboardingResponse:
+      type: object
+      required: [state, message, phone, otp, user]
+      properties:
+        state:
+          type: string
+          enum: [needs_phone_otp, needs_phone_number]
+        message:
+          type: string
+        otp_sent:
+          type: boolean
+        phone:
+          $ref: '#/components/schemas/PhoneState'
+        otp:
+          $ref: '#/components/schemas/OtpState'
+        user:
+          $ref: '#/components/schemas/CurrentUser'
+    PhoneVerifiedResponse:
+      allOf:
+        - $ref: '#/components/schemas/LoginResponse'
+        - type: object
+          required: [state, message, phone]
+          properties:
+            state:
+              type: string
+              enum: [phone_verified]
+            message:
+              type: string
+            phone:
+              $ref: '#/components/schemas/PhoneState'
+    AuthenticatedStateResponse:
+      type: object
+      required: [state, message, phone, user]
+      properties:
+        state:
+          type: string
+          enum: [authenticated]
+        message:
+          type: string
+        phone:
+          $ref: '#/components/schemas/PhoneState'
+        user:
+          $ref: '#/components/schemas/CurrentUser'
     CurrentUserEnvelope:
       type: object
       required: [data]
