@@ -8,6 +8,7 @@ use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class FibSubscriptionCallbackController extends Controller
 {
@@ -20,7 +21,27 @@ class FibSubscriptionCallbackController extends Controller
         $payload = $request->all();
         $validation = $validator->validate($request);
 
+        Log::info('FIB subscription callback received.', [
+            'provider_object_type' => 'subscription',
+            'vm_hostname' => gethostname() ?: php_uname('n'),
+            'request_url' => $request->fullUrl(),
+            'request_host' => $request->getHost(),
+            'request_ip' => $request->ip(),
+            'x_forwarded_for' => $request->header('x-forwarded-for'),
+            'cf_connecting_ip' => $request->header('cf-connecting-ip'),
+            'subscription_id' => $validation['subscription_id'],
+            'payload_status' => is_scalar(data_get($payload, 'status')) ? (string) data_get($payload, 'status') : null,
+        ]);
+
         if (! $validation['valid']) {
+            Log::warning('FIB subscription callback rejected by validator.', [
+                'provider_object_type' => 'subscription',
+                'vm_hostname' => gethostname() ?: php_uname('n'),
+                'subscription_id' => $validation['subscription_id'],
+                'issues' => $validation['issues'],
+                'payload_status' => is_scalar(data_get($payload, 'status')) ? (string) data_get($payload, 'status') : null,
+            ]);
+
             $events->record(null, [
                 'event_type' => 'callback_rejected',
                 'source' => 'fib_subscription_callback',
@@ -43,6 +64,13 @@ class FibSubscriptionCallbackController extends Controller
             $payment = $sync->handleByFibSubscriptionId((string) $validation['subscription_id'], 'callback', $payload);
 
             if ($payment === null) {
+                Log::warning('FIB subscription callback did not match a local payment.', [
+                    'provider_object_type' => 'subscription',
+                    'vm_hostname' => gethostname() ?: php_uname('n'),
+                    'subscription_id' => $validation['subscription_id'],
+                    'payload_status' => is_scalar(data_get($payload, 'status')) ? (string) data_get($payload, 'status') : null,
+                ]);
+
                 $events->record(null, [
                     'event_type' => 'callback_orphaned',
                     'source' => 'fib_subscription_callback',
@@ -57,6 +85,16 @@ class FibSubscriptionCallbackController extends Controller
                     'status' => 'accepted',
                 ], 202);
             }
+
+            Log::info('FIB subscription callback processed.', [
+                'provider_object_type' => 'subscription',
+                'vm_hostname' => gethostname() ?: php_uname('n'),
+                'payment_uuid' => (string) $payment->uuid,
+                'provider_reference' => $payment->providerReference(),
+                'local_status' => $payment->status->value,
+                'provider_status' => $payment->providerStatusLabel(),
+                'payload_status' => is_scalar(data_get($payload, 'status')) ? (string) data_get($payload, 'status') : null,
+            ]);
 
             $events->record($payment, [
                 'event_type' => 'callback_processed',
@@ -73,6 +111,14 @@ class FibSubscriptionCallbackController extends Controller
                 'status' => 'accepted',
             ], 202);
         } catch (\Throwable $exception) {
+            Log::error('FIB subscription callback processing failed.', [
+                'provider_object_type' => 'subscription',
+                'vm_hostname' => gethostname() ?: php_uname('n'),
+                'subscription_id' => $validation['subscription_id'],
+                'payload_status' => is_scalar(data_get($payload, 'status')) ? (string) data_get($payload, 'status') : null,
+                'message' => $exception->getMessage(),
+            ]);
+
             $events->record(null, [
                 'event_type' => 'callback_failed',
                 'source' => 'fib_subscription_callback',

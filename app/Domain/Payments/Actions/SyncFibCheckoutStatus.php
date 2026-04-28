@@ -8,6 +8,7 @@ use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Fib\FibMapper;
 use App\Domain\Payments\Fib\FibOneTimePaymentService;
+use App\Domain\Payments\Fib\FibStatusReasonParser;
 use App\Domain\Payments\Fib\FibSubscriptionMapper;
 use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Domain\Payments\Models\Payment;
@@ -26,6 +27,7 @@ class SyncFibCheckoutStatus
         protected FibSubscriptionService $subscriptions,
         protected FibMapper $paymentMapper,
         protected FibSubscriptionMapper $subscriptionMapper,
+        protected FibStatusReasonParser $statusReasonParser,
         protected PaymentEventRecorder $events,
         protected SyncProviderSubscriptionLifecycle $lifecycle,
         protected CouponRedemptionService $redemptions,
@@ -56,6 +58,8 @@ class SyncFibCheckoutStatus
                 $audit = [
                     'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
                     'provider_status_raw' => $status->status,
+                    'provider_reason' => $this->statusReasonParser->reasonFromRaw($status->raw),
+                    'provider_error_codes' => $this->statusReasonParser->errorCodesFromRaw($status->raw),
                     'local_previous_status' => $currentStatus->value,
                     'local_requested_status' => $nextStatus->value,
                     'corrective_reversion' => $correctiveReversion,
@@ -155,6 +159,9 @@ class SyncFibCheckoutStatus
             $audit = [
                 'provider_object_type' => PaymentProviderObjectType::PAYMENT->value,
                 'provider_status_raw' => $status->status,
+                'provider_reason' => $this->statusReasonParser->reasonFromRaw($status->raw)
+                    ?? $status->decliningReason,
+                'provider_error_codes' => $this->statusReasonParser->errorCodesFromRaw($status->raw),
                 'local_previous_status' => $currentStatus->value,
                 'local_requested_status' => $nextStatus->value,
                 'corrective_reversion' => false,
@@ -271,7 +278,9 @@ class SyncFibCheckoutStatus
             'provider_status' => $status->status,
             'provider_payment_status' => $status->status,
             'declining_reason' => $this->paymentMapper->normalizeDecliningReason($status->decliningReason),
-            'status_reason' => $status->decliningReason ?: $status->status,
+            'status_reason' => $this->statusReasonParser->reasonFromRaw($status->raw)
+                ?: $status->decliningReason
+                ?: $status->status,
             'status_response' => $status->raw,
             'valid_until' => $status->validUntil,
             'last_status_checked_at' => now(),
@@ -293,7 +302,7 @@ class SyncFibCheckoutStatus
         $update = [
             'provider_status' => $status->status,
             'provider_subscription_status' => $this->subscriptionMapper->normalizeStatus($status->status),
-            'status_reason' => $status->status,
+            'status_reason' => $this->statusReasonParser->reasonFromRaw($status->raw) ?: $status->status,
             'status_response' => $status->raw,
             'readable_code' => $status->readableCode ?? $payment->readable_code,
             'provider_links' => $status->providerLinks !== [] ? $status->providerLinks : $payment->provider_links,
@@ -371,6 +380,8 @@ class SyncFibCheckoutStatus
                 'source' => $source,
                 'provider_object_type' => $audit['provider_object_type'] ?? ($payment->provider_object_type?->value ?? null),
                 'provider_status_raw' => $audit['provider_status_raw'] ?? null,
+                'provider_reason' => $audit['provider_reason'] ?? null,
+                'provider_error_codes' => $audit['provider_error_codes'] ?? [],
                 'local_previous_status' => $previous !== '' ? $previous : null,
                 'local_requested_status' => $audit['local_requested_status'] ?? null,
                 'local_new_status' => $new,
@@ -391,6 +402,7 @@ class SyncFibCheckoutStatus
             'payment_uuid' => (string) $payment->uuid,
             'customer_id' => (int) $payment->customer_id,
             'provider_reference' => $payment->providerReference(),
+            'vm_hostname' => gethostname() ?: php_uname('n'),
         ];
     }
 }

@@ -18,13 +18,20 @@ class FibCallbackUrlService
     {
         $host = (string) parse_url($url, PHP_URL_HOST);
         $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+        $environment = strtolower(trim((string) config('fib.environment', 'staging')));
 
         if ($host === '') {
             throw new \RuntimeException('The FIB callback URL could not be generated. Configure APP_URL or FIB_CALLBACK_BASE_URL.');
         }
 
-        if ($channel === 'subscription' && $scheme !== 'https') {
-            throw new \RuntimeException('FIB subscription callbacks must use a public HTTPS URL. Configure FIB_CALLBACK_BASE_URL accordingly.');
+        $requiresHttps = $channel === 'subscription' || $environment === 'production';
+
+        if ($requiresHttps && $scheme !== 'https') {
+            $message = $channel === 'subscription'
+                ? 'FIB subscription callbacks must use a public HTTPS URL. Configure FIB_CALLBACK_BASE_URL accordingly.'
+                : 'FIB callbacks in production must use a public HTTPS URL. Configure FIB_CALLBACK_BASE_URL accordingly.';
+
+            throw new \RuntimeException($message);
         }
 
         $normalizedHost = strtolower(trim($host));

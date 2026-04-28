@@ -94,3 +94,37 @@ php artisan fib:debug-config --probe
 ```
 
 The probe command does not print secrets or bearer tokens. It reports the resolved host, token issuer, and the protected-endpoint response for each profile so staging host mismatches are easy to spot.
+
+## FIB production rejection checklist
+
+Use this checklist when real customer checkouts are being rejected in production:
+
+1. Verify production provider defaults:
+   - `PAYMENTS_DEFAULT_PROVIDER=fib`
+   - `PAYMENTS_FAKE_ENABLED=false`
+   - `FIB_ENABLED=true`
+2. Verify callback base URL is public HTTPS:
+   - `APP_URL=https://metkurd.ai`
+   - `FIB_CALLBACK_BASE_URL=https://metkurd.ai`
+3. Verify payment and subscription profiles are configured separately:
+   - Payment profile uses `FIB_PAYMENT_CLIENT_ID` / `FIB_PAYMENT_CLIENT_SECRET` (`pg-*`)
+   - Subscription profile uses `FIB_SUBSCRIPTION_CLIENT_ID` / `FIB_SUBSCRIPTION_CLIENT_SECRET` (`sub-*`)
+4. Clear and rebuild config cache on every app VM after env changes:
+   - `php artisan optimize:clear`
+   - `php artisan config:cache`
+5. Verify webhook routes are reachable publicly:
+   - `POST https://metkurd.ai/payments/webhooks/fib`
+   - `POST https://metkurd.ai/payments/webhooks/fib/subscription`
+   - Ensure no auth/CSRF/Cloudflare rules block provider callbacks.
+6. Use the diagnose command to inspect live status and provider reason for one payment UUID:
+   - `php artisan payments:fib:diagnose`
+   - `php artisan payments:fib:diagnose <payment_uuid>`
+   - `php artisan payments:fib:diagnose <payment_uuid> --no-provider-check`
+
+The diagnose command prints non-secret runtime data:
+- app environment and `APP_URL`
+- callback URL and callback validity check
+- resolved payment/subscription base hosts and client-id source
+- local payment status and provider reference
+- live provider status, mapped local status, provider reason, and provider error codes
+- current VM hostname (useful in multi-VM load-balanced production)
