@@ -17,6 +17,7 @@ use App\Events\Payments\PaymentConfirmed;
 use App\Services\Billing\SyncProviderSubscriptionLifecycle;
 use App\Services\Coupons\CouponRedemptionService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class SyncFibCheckoutStatus
 {
@@ -40,15 +41,31 @@ class SyncFibCheckoutStatus
         if ($objectType->isSubscription()) {
             $status = $this->subscriptions->getStatus($payment);
             $nextStatus = $this->subscriptionMapper->toLocalStatus($status);
+            $audit = [];
 
-            $payment = DB::transaction(function () use ($payment, $status, $nextStatus, $source, $callbackPayload, &$shouldDispatch) {
+            $payment = DB::transaction(function () use ($payment, $status, $nextStatus, $source, $callbackPayload, &$shouldDispatch, &$audit) {
                 /** @var Payment $locked */
                 $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
                 $currentStatus = $locked->status ?? PaymentStatus::PENDING;
                 $baseUpdate = $this->subscriptionBaseUpdate($locked, $status, $callbackPayload);
+                $correctiveReversion = $this->shouldRevertUnfulfilledPrematurePaid($locked, $nextStatus, $status);
+                $requestedTransitionBlocked = $currentStatus !== $nextStatus
+                    && ! PaymentTransitions::canTransition($currentStatus, $nextStatus)
+                    && ! $correctiveReversion;
 
-                if ($currentStatus !== $nextStatus && ! PaymentTransitions::canTransition($currentStatus, $nextStatus)) {
+                $audit = [
+                    'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
+                    'provider_status_raw' => $status->status,
+                    'local_previous_status' => $currentStatus->value,
+                    'local_requested_status' => $nextStatus->value,
+                    'corrective_reversion' => $correctiveReversion,
+                    'callback_present' => $callbackPayload !== null,
+                ];
+
+                if ($requestedTransitionBlocked) {
                     $locked->forceFill($baseUpdate)->save();
+                    $audit['local_new_status'] = $locked->status->value;
+                    $audit['transition_ignored'] = true;
 
                     $this->events->record($locked, [
                         'event_type' => 'provider_status_ignored',
@@ -62,15 +79,32 @@ class SyncFibCheckoutStatus
                         ],
                     ]);
 
+                    if ($this->isPaidToFailedLikeTransition($currentStatus, $nextStatus)) {
+                        Log::warning('Ignored invalid paid-to-terminal FIB subscription transition.', array_merge(
+                            $this->auditContext($locked),
+                            [
+                                'source' => $source,
+                                'provider_status_raw' => $status->status,
+                                'requested_status' => $nextStatus->value,
+                                'fulfilled_at' => optional($locked->fulfilled_at)?->toIso8601String(),
+                                'has_provider_charge_evidence' => $this->hasProviderChargeEvidence($status),
+                            ],
+                        ));
+                    }
+
                     return $locked->fresh();
                 }
 
                 $locked->forceFill(array_filter(array_merge($baseUpdate, [
                     'status' => $nextStatus,
-                    'paid_at' => $nextStatus === PaymentStatus::PAID ? ($locked->paid_at ?? $status->lastPaymentAt ?? now()) : $locked->paid_at,
+                    'paid_at' => $nextStatus === PaymentStatus::PAID
+                        ? ($locked->paid_at ?? $status->lastPaymentAt ?? now())
+                        : ($correctiveReversion ? null : $locked->paid_at),
                     'canceled_at' => $nextStatus === PaymentStatus::CANCELED ? ($locked->canceled_at ?? now()) : $locked->canceled_at,
                     'expired_at' => $nextStatus === PaymentStatus::EXPIRED ? ($locked->expired_at ?? now()) : $locked->expired_at,
                 ]), static fn (mixed $value) => $value !== null))->save();
+                $audit['local_new_status'] = $locked->status->value;
+                $audit['transition_ignored'] = false;
 
                 $this->events->record($locked, [
                     'event_type' => 'provider_status_checked',
@@ -81,6 +115,7 @@ class SyncFibCheckoutStatus
                     'meta' => [
                         'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
                         'callback_present' => $callbackPayload !== null,
+                        'corrective_reversion' => $correctiveReversion,
                     ],
                 ]);
 
@@ -88,6 +123,8 @@ class SyncFibCheckoutStatus
 
                 return $locked->fresh();
             });
+
+            $this->logSyncAudit($payment, $source, $audit);
 
             if ($shouldDispatch) {
                 event(new PaymentConfirmed((int) $payment->id));
@@ -106,15 +143,28 @@ class SyncFibCheckoutStatus
 
         $status = $this->oneTime->getStatus($payment);
         $nextStatus = $this->paymentMapper->toLocalStatus($status);
+        $audit = [];
 
-        $payment = DB::transaction(function () use ($payment, $status, $nextStatus, $source, $callbackPayload, &$shouldDispatch) {
+        $payment = DB::transaction(function () use ($payment, $status, $nextStatus, $source, $callbackPayload, &$shouldDispatch, &$audit) {
             /** @var Payment $locked */
             $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
             $currentStatus = $locked->status ?? PaymentStatus::PENDING;
             $baseUpdate = $this->paymentBaseUpdate($status, $callbackPayload);
+            $requestedTransitionBlocked = $currentStatus !== $nextStatus
+                && ! PaymentTransitions::canTransition($currentStatus, $nextStatus);
+            $audit = [
+                'provider_object_type' => PaymentProviderObjectType::PAYMENT->value,
+                'provider_status_raw' => $status->status,
+                'local_previous_status' => $currentStatus->value,
+                'local_requested_status' => $nextStatus->value,
+                'corrective_reversion' => false,
+                'callback_present' => $callbackPayload !== null,
+            ];
 
-            if ($currentStatus !== $nextStatus && ! PaymentTransitions::canTransition($currentStatus, $nextStatus)) {
+            if ($requestedTransitionBlocked) {
                 $locked->forceFill($baseUpdate)->save();
+                $audit['local_new_status'] = $locked->status->value;
+                $audit['transition_ignored'] = true;
 
                 $this->events->record($locked, [
                     'event_type' => 'provider_status_ignored',
@@ -128,6 +178,18 @@ class SyncFibCheckoutStatus
                     ],
                 ]);
 
+                if ($this->isPaidToFailedLikeTransition($currentStatus, $nextStatus)) {
+                    Log::warning('Ignored invalid paid-to-terminal FIB one-time transition.', array_merge(
+                        $this->auditContext($locked),
+                        [
+                            'source' => $source,
+                            'provider_status_raw' => $status->status,
+                            'requested_status' => $nextStatus->value,
+                            'fulfilled_at' => optional($locked->fulfilled_at)?->toIso8601String(),
+                        ],
+                    ));
+                }
+
                 return $locked->fresh();
             }
 
@@ -137,6 +199,8 @@ class SyncFibCheckoutStatus
                 'canceled_at' => $nextStatus === PaymentStatus::CANCELED ? ($locked->canceled_at ?? now()) : $locked->canceled_at,
                 'expired_at' => $nextStatus === PaymentStatus::EXPIRED ? ($locked->expired_at ?? $status->declinedAt ?? now()) : $locked->expired_at,
             ]), static fn (mixed $value) => $value !== null))->save();
+            $audit['local_new_status'] = $locked->status->value;
+            $audit['transition_ignored'] = false;
 
             $this->events->record($locked, [
                 'event_type' => 'provider_status_checked',
@@ -154,6 +218,8 @@ class SyncFibCheckoutStatus
 
             return $locked->fresh();
         });
+
+        $this->logSyncAudit($payment, $source, $audit);
 
         if ($shouldDispatch) {
             event(new PaymentConfirmed((int) $payment->id));
@@ -245,5 +311,86 @@ class SyncFibCheckoutStatus
         }
 
         return $update;
+    }
+
+    protected function shouldRevertUnfulfilledPrematurePaid(
+        Payment $payment,
+        PaymentStatus $nextStatus,
+        FibSubscriptionStatusData $status,
+    ): bool {
+        if ($payment->status !== PaymentStatus::PAID || $payment->fulfilled_at !== null) {
+            return false;
+        }
+
+        if (! $this->isFailedLikeStatus($nextStatus)) {
+            return false;
+        }
+
+        return ! $this->hasProviderChargeEvidence($status);
+    }
+
+    protected function hasProviderChargeEvidence(FibSubscriptionStatusData $status): bool
+    {
+        return $status->lastPaymentAt !== null;
+    }
+
+    protected function isFailedLikeStatus(PaymentStatus $status): bool
+    {
+        return in_array($status, [
+            PaymentStatus::FAILED,
+            PaymentStatus::CANCELED,
+            PaymentStatus::EXPIRED,
+        ], true);
+    }
+
+    protected function isPaidToFailedLikeTransition(PaymentStatus $currentStatus, PaymentStatus $nextStatus): bool
+    {
+        return $currentStatus === PaymentStatus::PAID
+            && $this->isFailedLikeStatus($nextStatus);
+    }
+
+    /**
+     * @param  array<string, mixed>  $audit
+     */
+    protected function logSyncAudit(Payment $payment, string $source, array $audit): void
+    {
+        $previous = (string) ($audit['local_previous_status'] ?? '');
+        $new = (string) ($audit['local_new_status'] ?? $payment->status->value);
+        $transitionIgnored = (bool) ($audit['transition_ignored'] ?? false);
+        $correctiveReversion = (bool) ($audit['corrective_reversion'] ?? false);
+        $callbackPresent = (bool) ($audit['callback_present'] ?? false);
+        $statusChanged = $previous !== '' && $new !== '' && $previous !== $new;
+
+        if (! $statusChanged && ! $transitionIgnored && ! $correctiveReversion && ! $callbackPresent) {
+            return;
+        }
+
+        Log::info('FIB payment status sync audit.', array_merge(
+            $this->auditContext($payment),
+            [
+                'source' => $source,
+                'provider_object_type' => $audit['provider_object_type'] ?? ($payment->provider_object_type?->value ?? null),
+                'provider_status_raw' => $audit['provider_status_raw'] ?? null,
+                'local_previous_status' => $previous !== '' ? $previous : null,
+                'local_requested_status' => $audit['local_requested_status'] ?? null,
+                'local_new_status' => $new,
+                'transition_ignored' => $transitionIgnored,
+                'corrective_reversion' => $correctiveReversion,
+                'callback_present' => $callbackPresent,
+            ],
+        ));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function auditContext(Payment $payment): array
+    {
+        return [
+            'payment_id' => $payment->id,
+            'payment_uuid' => (string) $payment->uuid,
+            'customer_id' => (int) $payment->customer_id,
+            'provider_reference' => $payment->providerReference(),
+        ];
     }
 }

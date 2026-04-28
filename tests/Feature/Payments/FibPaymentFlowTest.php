@@ -1374,6 +1374,84 @@ it('keeps unpaid subscription checkouts awaiting customer action without fulfill
         ->and($customer->fresh()->currentServicePlanId())->not->toBe($plan->id);
 });
 
+it('does not fulfill subscriptions from ACTIVE status when no provider payment evidence exists yet', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-active-without-payment-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-active-without-payment-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-active-without-payment-123', 'ACTIVE', [
+                'lastPaymentAt' => null,
+                'activeUntil' => '2026-06-01T10:15:00Z',
+            ]),
+            200
+        ),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'monthly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'active_without_payment_evidence')->fresh();
+
+    expect($payment->status)->toBe(PaymentStatus::AWAITING_CUSTOMER_ACTION)
+        ->and($payment->fulfilled_at)->toBeNull()
+        ->and($customer->fresh()->currentServicePlanId())->not->toBe($plan->id)
+        ->and(CustomerServiceSubscription::query()->where('payment_id', $payment->id)->exists())->toBeFalse();
+});
+
+it('marks first-payment rejected subscriptions as failed without fulfillment side effects', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-first-payment-rejected-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-first-payment-rejected-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-first-payment-rejected-123', 'REJECTED', [
+                'lastPaymentAt' => null,
+                'activeUntil' => null,
+            ]),
+            200
+        ),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'monthly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'first_payment_rejected')->fresh();
+
+    expect($payment->status)->toBe(PaymentStatus::FAILED)
+        ->and($payment->fulfilled_at)->toBeNull()
+        ->and($payment->paid_at)->toBeNull()
+        ->and($customer->fresh()->currentServicePlanId())->not->toBe($plan->id)
+        ->and(CustomerServiceSubscription::query()->where('payment_id', $payment->id)->exists())->toBeFalse()
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $payment->id)
+            ->where('event_type', 'payment_fulfilled')
+            ->exists())->toBeFalse();
+
+    $paymentAlerts = Notification::sent(
+        new AnonymousNotifiable(),
+        TelegramPayment::class
+    );
+
+    expect($paymentAlerts->count())->toBe(0);
+});
+
 it('marks expired subscription checkouts as expired without fulfillment', function () {
     Http::preventStrayRequests();
 

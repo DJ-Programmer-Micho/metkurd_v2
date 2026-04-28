@@ -38,17 +38,21 @@ class FibPaymentController extends Controller
 
         $isSuccess = $payment->isPaid();
         $isTerminal = $payment->isTerminal();
+        $state = $this->frontendState($payment);
+        $message = $isSuccess
+            ? $this->successMessage($payment)
+            : $this->statusMessage($payment);
 
         return response()->json([
             'status' => $payment->status->value,
+            'state' => $state,
             'is_terminal' => $isTerminal,
             'is_success' => $isSuccess,
+            'can_retry' => in_array($payment->status->value, ['failed', 'canceled', 'expired'], true),
             'redirect_url' => $isSuccess && $payment->fulfilled_at !== null
                 ? route('app.home', ['locale' => $locale])
                 : null,
-            'message' => $isSuccess
-                ? $this->successMessage($payment)
-                : $this->statusMessage($payment),
+            'message' => $message,
             'provider_status' => $payment->providerStatusLabel(),
             'checked_at' => optional($payment->last_status_checked_at)->toIso8601String(),
         ]);
@@ -159,5 +163,16 @@ class FibPaymentController extends Controller
         }
 
         return ! $payment->last_status_checked_at?->greaterThan(now()->subSeconds(4));
+    }
+
+    protected function frontendState(Payment $payment): string
+    {
+        return match ($payment->status->value) {
+            'paid' => 'success',
+            'failed' => 'failed',
+            'canceled' => 'canceled',
+            'expired' => 'expired',
+            default => 'pending',
+        };
     }
 }

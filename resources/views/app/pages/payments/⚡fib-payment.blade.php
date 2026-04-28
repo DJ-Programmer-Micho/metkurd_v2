@@ -342,6 +342,7 @@ class extends Component
                 'payment' => $payment,
             ]),
             'pollIntervalMs' => 5000,
+            'pollMaxDurationMs' => 300000,
             'statusClass' => $statusClass,
             'purchaseLabel' => $purchaseLabel,
             'backRoute' => $backRoute,
@@ -439,6 +440,7 @@ class extends Component
      data-payment-status-polling="{{ $shouldPoll ? 'active' : 'stopped' }}"
      data-payment-status-endpoint="{{ $statusEndpoint }}"
      data-payment-status-interval="{{ $pollIntervalMs }}"
+     data-payment-status-max-ms="{{ $pollMaxDurationMs }}"
      data-payment-current-status="{{ $payment->status->value }}">
     <div class="col-xl-10">
         @if ($statusAlertMessage)
@@ -470,6 +472,9 @@ class extends Component
     style="width:24px;height:24px">
 </lord-icon>
                     {{ __('Checking now...') }}
+                </div>
+                <div class="small text-muted mt-2 w-100" data-status-runtime-message>
+                    {{ __('Waiting for provider confirmation...') }}
                 </div>
             </div>
         @endif
@@ -736,10 +741,32 @@ class extends Component
         }
 
         const intervalMs = Math.max(3000, Number(wrapper.getAttribute('data-payment-status-interval') || 5000));
+        const maxPollingMs = Math.max(intervalMs, Number(wrapper.getAttribute('data-payment-status-max-ms') || 300000));
         const idleIndicator = wrapper.querySelector('[data-status-polling-indicator="idle"]');
         const checkingIndicator = wrapper.querySelector('[data-status-polling-indicator="checking"]');
+        const runtimeMessage = wrapper.querySelector('[data-status-runtime-message]');
+        const startedAt = Date.now();
+        let consecutiveFailures = 0;
         let timerId = null;
         let inFlight = false;
+        const labels = {
+            waiting: @js(__('Waiting for provider confirmation...')),
+            waitingWithStatus: @js(__('Waiting for provider confirmation. Provider status: :status')),
+            timeout: @js(__('Still waiting for confirmation. You can keep this page open and use manual refresh as a fallback.')),
+            rateLimited: @js(__('Too many status checks were sent. Please wait a moment and try again.')),
+            serverError: @js(__('Status check is temporarily unavailable. Retrying automatically...')),
+            networkError: @js(__('Network issue while checking status. Retrying automatically...')),
+        };
+
+        const setRuntimeMessage = (message, tone = 'muted') => {
+            if (!runtimeMessage || !message) {
+                return;
+            }
+
+            runtimeMessage.textContent = String(message);
+            runtimeMessage.classList.remove('text-muted', 'text-warning', 'text-danger', 'text-success');
+            runtimeMessage.classList.add(`text-${tone}`);
+        };
 
         const setChecking = (isChecking) => {
             if (!idleIndicator || !checkingIndicator) {
@@ -776,6 +803,13 @@ class extends Component
                 return;
             }
 
+            if (Date.now() - startedAt >= maxPollingMs) {
+                stop();
+                setRuntimeMessage(labels.timeout, 'warning');
+
+                return;
+            }
+
             inFlight = true;
             setChecking(true);
 
@@ -790,14 +824,36 @@ class extends Component
                 });
 
                 if (!response.ok) {
+                    consecutiveFailures += 1;
+
+                    if (response.status === 429) {
+                        setRuntimeMessage(labels.rateLimited, 'warning');
+                    } else if (response.status >= 500) {
+                        setRuntimeMessage(labels.serverError, 'warning');
+                    } else {
+                        setRuntimeMessage(labels.networkError, 'warning');
+                    }
+
                     return;
                 }
 
-                const payload = await response.json();
+                let payload = null;
+
+                try {
+                    payload = await response.json();
+                } catch (_) {
+                    consecutiveFailures += 1;
+                    setRuntimeMessage(labels.serverError, 'warning');
+
+                    return;
+                }
+
+                consecutiveFailures = 0;
                 const latestStatus = String(payload.status || '').toLowerCase();
                 const currentStatus = String(wrapper.getAttribute('data-payment-current-status') || '').toLowerCase();
                 const isTerminal = Boolean(payload.is_terminal);
                 const isSuccess = Boolean(payload.is_success);
+                const providerStatus = String(payload.provider_status || '').trim();
 
                 if (latestStatus !== '' && latestStatus !== currentStatus) {
                     refreshUi(isSuccess ? String(payload.redirect_url || '') : '');
@@ -806,15 +862,28 @@ class extends Component
 
                 if (isTerminal) {
                     refreshUi(isSuccess ? String(payload.redirect_url || '') : '');
+
+                    return;
+                }
+
+                if (providerStatus !== '') {
+                    setRuntimeMessage(labels.waitingWithStatus.replace(':status', providerStatus), 'muted');
+                } else if (payload && payload.message) {
+                    setRuntimeMessage(String(payload.message), 'muted');
+                } else {
+                    setRuntimeMessage(labels.waiting, 'muted');
                 }
             } catch (_) {
                 // Keep automatic polling alive; manual refresh remains available as fallback.
+                consecutiveFailures += 1;
+                setRuntimeMessage(labels.networkError, 'warning');
             } finally {
                 inFlight = false;
                 setChecking(false);
             }
         };
 
+        setRuntimeMessage(labels.waiting, 'muted');
         window.__fibPaymentPollingStop = stop;
         timerId = window.setInterval(poll, intervalMs);
         poll();

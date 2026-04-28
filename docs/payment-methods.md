@@ -31,6 +31,19 @@ The checkout system is now driven by the `payment_methods` table plus provider a
 
 Set `is_active = false` in the admin payment-method page. This removes it from checkout without deleting history.
 
+## Production safety defaults
+
+Use these environment values in production:
+
+- `PAYMENTS_DEFAULT_PROVIDER=fib`
+- `PAYMENTS_FAKE_ENABLED=false`
+
+Behavior notes:
+
+- When fake is disabled, it is excluded from checkout method resolution and customer checkout options.
+- If `PAYMENTS_DEFAULT_PROVIDER` points to a disabled/unavailable provider, checkout falls back to the first checkout-ready method and logs a warning with context (`preferred_provider`, purpose, fallback method).
+- Keep fake enabled only in local/test environments where simulated payments are intentionally used.
+
 ## Hide a payment method
 
 Set `is_visible = false`. The method stays in the catalog but is hidden from customer checkout screens.

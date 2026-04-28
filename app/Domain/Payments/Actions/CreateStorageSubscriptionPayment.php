@@ -23,6 +23,7 @@ use App\Services\Payments\PaymentMethodCatalog;
 use App\Services\Payments\PaymentFeeCalculator;
 use App\Support\TelegramSubscriptionLifecycleNotifier;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -295,6 +296,16 @@ class CreateStorageSubscriptionPayment
             if ($preferredMethod instanceof PaymentMethod) {
                 return $preferredMethod;
             }
+
+            /** @var PaymentMethod|null $fallback */
+            $fallback = $methods->first();
+            Log::warning('Configured payment default provider is unavailable for storage recurring checkout; using fallback method.', [
+                'preferred_provider' => $preferred,
+                'purpose_type' => PaymentPurposeType::STORAGE_PLAN->value,
+                'fallback_method_code' => $fallback?->code,
+                'fallback_method_driver' => $fallback?->driver,
+                'available_method_codes' => $methods->map(fn (PaymentMethod $method): string => (string) $method->code)->values()->all(),
+            ]);
         }
 
         $fibMethod = $methods->first(fn (PaymentMethod $method) => $method->code === 'fib' || $method->driver === 'fib');

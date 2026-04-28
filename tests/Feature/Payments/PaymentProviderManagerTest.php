@@ -60,3 +60,20 @@ it('reports missing fib configuration clearly', function () {
         ->and($manager->configurationIssues($method))->toContain('Missing Payment Client ID')
         ->and($manager->configurationIssues($method))->toContain('Missing Payment Client Secret');
 });
+
+it('treats fake payments as disabled when PAYMENTS_FAKE_ENABLED is false', function () {
+    config()->set('payments.providers.fake.enabled', false);
+    config()->set('payments.fake_enabled', false);
+
+    $method = new PaymentMethod([
+        'code' => 'fake',
+        'driver' => 'fake',
+        'name' => 'Fake Payments',
+    ]);
+
+    $manager = app(PaymentProviderManager::class);
+
+    expect($manager->isEnabled($method->driver))->toBeFalse()
+        ->and($manager->configurationReady($method))->toBeFalse()
+        ->and($manager->checkoutReady($method))->toBeFalse();
+});

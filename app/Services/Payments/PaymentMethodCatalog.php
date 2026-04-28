@@ -6,9 +6,15 @@ use App\Enums\PaymentPurposeType;
 use App\Models\PaymentMethod;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class PaymentMethodCatalog
 {
+    /**
+     * @var array<string, bool>
+     */
+    protected static array $preferredFallbackWarnings = [];
+
     public function __construct(
         protected PaymentProviderManager $providers,
     ) {
@@ -75,6 +81,9 @@ class PaymentMethodCatalog
         ?string $preferredCode = null,
     ): ?PaymentMethod {
         $methods = $this->availableForPurpose($purposeType, $currencyCode);
+        $normalizedPurpose = $purposeType instanceof PaymentPurposeType
+            ? $purposeType
+            : PaymentPurposeType::from((string) $purposeType);
 
         $preferredCode = strtolower(trim((string) ($preferredCode ?: config('payments.default_provider', ''))));
 
@@ -86,6 +95,8 @@ class PaymentMethodCatalog
             if ($preferred instanceof PaymentMethod) {
                 return $preferred;
             }
+
+            $this->warnUnavailablePreferredProvider($normalizedPurpose, $currencyCode, $preferredCode, $methods);
         }
 
         return $methods->first();
@@ -136,5 +147,43 @@ class PaymentMethodCatalog
     protected function cacheKey(string $suffix): string
     {
         return "payment-method-catalog:{$suffix}";
+    }
+
+    /**
+     * @param  Collection<int, PaymentMethod>  $methods
+     */
+    protected function warnUnavailablePreferredProvider(
+        PaymentPurposeType $purposeType,
+        string $currencyCode,
+        string $preferredCode,
+        Collection $methods,
+    ): void {
+        $fallback = $methods->first();
+        $fallbackCode = $fallback instanceof PaymentMethod ? (string) $fallback->code : null;
+        $fallbackDriver = $fallback instanceof PaymentMethod ? (string) $fallback->driver : null;
+
+        $cacheKey = implode('|', [
+            $purposeType->value,
+            strtoupper(trim($currencyCode)),
+            $preferredCode,
+            (string) ($fallbackCode ?? ''),
+            (string) ($fallbackDriver ?? ''),
+        ]);
+
+        if (isset(self::$preferredFallbackWarnings[$cacheKey])) {
+            return;
+        }
+
+        self::$preferredFallbackWarnings[$cacheKey] = true;
+
+        Log::warning('Configured payment default provider is unavailable for checkout; using fallback checkout-ready method.', [
+            'preferred_provider' => $preferredCode,
+            'preferred_enabled' => $this->providers->isEnabled($preferredCode),
+            'purpose_type' => $purposeType->value,
+            'currency_code' => strtoupper(trim($currencyCode)),
+            'fallback_method_code' => $fallbackCode,
+            'fallback_method_driver' => $fallbackDriver,
+            'available_method_codes' => $methods->map(fn (PaymentMethod $method): string => (string) $method->code)->values()->all(),
+        ]);
     }
 }

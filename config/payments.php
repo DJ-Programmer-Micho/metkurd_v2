@@ -4,7 +4,7 @@ use App\Enums\PaymentCardOrigin;
 use App\Enums\PaymentProvider;
 
 return [
-    'default_provider' => env('PAYMENTS_DEFAULT_PROVIDER', PaymentProvider::FAKE->value),
+    'default_provider' => env('PAYMENTS_DEFAULT_PROVIDER', PaymentProvider::FIB->value),
     'fake_enabled' => (bool) env('PAYMENTS_FAKE_ENABLED', true),
 
     'providers' => [
