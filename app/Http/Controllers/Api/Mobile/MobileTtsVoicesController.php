@@ -43,4 +43,15 @@ class MobileTtsVoicesController extends MobileApiController
 
         return $this->assets->avatarResponse($voice);
     }
+
+    public function preview(Request $request, string $speakerId)
+    {
+        $this->appContext($request, 'tts');
+        $customer = $this->customer($request);
+        $voice = $this->voices->findVoiceForCustomer($customer, $speakerId);
+
+        abort_unless($voice, 404);
+
+        return $this->assets->previewResponse($voice);
+    }
 }

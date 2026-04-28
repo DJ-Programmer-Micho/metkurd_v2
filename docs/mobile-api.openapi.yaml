@@ -293,6 +293,45 @@ paths:
           $ref: '#/components/responses/Message403'
         '404':
           $ref: '#/components/responses/Message404'
+  /api/mobile/tts/voices/{speakerId}/preview:
+    get:
+      tags: [Voices]
+      summary: Get a protected TTS voice preview sample
+      operationId: mobileTtsVoicePreviewShow
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SpeakerId'
+      responses:
+        '200':
+          description: Binary audio response for the requested voice preview
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/mp4:
+              schema:
+                type: string
+                format: binary
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+            audio/aac:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Message401'
+        '403':
+          $ref: '#/components/responses/Message403'
+        '404':
+          $ref: '#/components/responses/Message404'
   /api/mobile/{app}/jobs:
     get:
       tags: [Jobs]
@@ -1226,7 +1265,7 @@ components:
         available:
           type: boolean
         file_id:
-          type: integer
+          type: string
           nullable: true
         download_endpoint:
           type: string

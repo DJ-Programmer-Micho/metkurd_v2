@@ -17,7 +17,9 @@ class MobileTtsVoiceResource extends JsonResource
         $meta = (array) ($this->resource->meta ?? []);
         $engine = strtolower(trim((string) data_get($meta, 'engine')));
         $toolCode = app(MobileTtsVoiceCatalog::class)->toolCodeForEngine($engine);
-        $avatar = app(MobileTtsVoiceAssetService::class)->avatarPayload($this->resource);
+        $assets = app(MobileTtsVoiceAssetService::class);
+        $avatar = $assets->avatarPayload($this->resource);
+        $preview = $assets->previewPayload($this->resource);
         $languageCodes = data_get($meta, 'language_codes', []);
 
         if (! is_array($languageCodes)) {
@@ -38,11 +40,7 @@ class MobileTtsVoiceResource extends JsonResource
             'sort_order' => $this->sortOrder(),
             'is_featured' => (bool) data_get($meta, 'is_featured', false),
             'avatar' => $avatar,
-            'preview' => [
-                'available' => false,
-                'file_id' => null,
-                'download_endpoint' => null,
-            ],
+            'preview' => $preview,
         ];
     }
 

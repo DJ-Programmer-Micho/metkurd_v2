@@ -26,7 +26,7 @@ General rules:
 - `jobId` is the UUID string from `ml_jobs.id`.
 - `fileId` is the numeric integer from `customer_files.id`.
 - Completed job detail responses include explicit output file references with the correct `fileId` values and download endpoints.
-- TTS avatars and generated outputs stay private. Avatars are served through an authenticated backend route, and file downloads still use temporary signed URLs returned by `download_endpoint`.
+- TTS avatars, preview samples, and generated outputs stay private. Voice assets are served through authenticated backend routes, and file downloads still use temporary signed URLs returned by `download_endpoint`.
 - Unless noted otherwise, send `Accept: application/json`.
 
 ## Authentication
@@ -702,7 +702,8 @@ Response notes:
 - `tool_code` is the exact engine selector for the job request.
 - `avatar.url` is an authenticated backend endpoint, not a public object-storage URL.
 - If no private avatar is available for a voice, `avatar` is `null`.
-- `preview` is reserved for future audio previews and currently returns placeholder values.
+- `preview.download_endpoint` is an authenticated backend audio route.
+- If no preview file exists for a voice, `preview.available=false` and `download_endpoint=null`.
 
 Example response:
 
@@ -730,9 +731,9 @@ Example response:
           "url": "https://example.com/api/mobile/tts/voices/xtts_female_1/avatar"
         },
         "preview": {
-          "available": false,
-          "file_id": null,
-          "download_endpoint": null
+          "available": true,
+          "file_id": "mobile_xtts_voice_preview.mp3",
+          "download_endpoint": "https://example.com/api/mobile/tts/voices/xtts_female_1/preview"
         }
       },
       {
@@ -784,6 +785,34 @@ Notes:
 - This is an authenticated backend asset route.
 - The response is binary image content such as `image/png` or `image/jpeg`.
 - Missing or unavailable private avatars return `404 Not Found`.
+
+### GET /api/mobile/tts/voices/{speakerId}/preview
+
+Purpose:
+
+- Return a private preview audio sample for an entitled TTS voice.
+
+Used by:
+
+- `METKURD - TTS`
+
+Auth:
+
+- Yes
+
+Headers:
+
+- `Authorization: Bearer {token}`
+
+Route parameters:
+
+- `speakerId`: exact voice code from the voices endpoint
+
+Notes:
+
+- This is an authenticated backend asset route.
+- The response is binary audio content such as `audio/mpeg`, `audio/mp4`, or `audio/wav`.
+- Missing or unavailable private previews return `404 Not Found`.
 
 ## Shared Job Endpoints
 

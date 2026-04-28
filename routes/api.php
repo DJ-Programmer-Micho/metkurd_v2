@@ -42,6 +42,9 @@ Route::prefix('mobile')->name('api.mobile.')->group(function () {
         Route::get('/tts/voices/{speakerId}/avatar', [MobileTtsVoicesController::class, 'avatar'])
             ->where(['speakerId' => '[A-Za-z0-9_-]+'])
             ->name('tts.voices.avatar');
+        Route::get('/tts/voices/{speakerId}/preview', [MobileTtsVoicesController::class, 'preview'])
+            ->where(['speakerId' => '[A-Za-z0-9_-]+'])
+            ->name('tts.voices.preview');
         Route::get('/account/usage', [MobileAccountUsageController::class, 'show'])
             ->name('account.usage');
 

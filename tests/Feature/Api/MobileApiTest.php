@@ -586,6 +586,7 @@ it('lists mobile tts voices with the normalized flutter payload', function () {
     $xttsVoice->update([
         'meta' => array_merge((array) ($xttsVoice->meta ?? []), [
             'avatar' => 'xtts/mobile_xtts_voice.png',
+            'preview_audio' => 'xtts/mobile_xtts_voice_preview.mp3',
             'description' => 'Warm Kurdish narration voice.',
             'language_codes' => ['ku', 'ar', 'en'],
             'is_featured' => true,
@@ -593,6 +594,7 @@ it('lists mobile tts voices with the normalized flutter payload', function () {
     ]);
 
     Storage::disk('s3')->put('metkurd_audio_data/xtts/mobile_xtts_voice.png', 'fake-image-bytes');
+    Storage::disk('s3')->put('metkurd_audio_data/xtts/mobile_xtts_voice_preview.mp3', 'fake-preview-bytes');
 
     $response = $this->withToken(mobileApiToken($customer, 'tts'))
         ->getJson('/api/mobile/tts/voices');
@@ -630,7 +632,9 @@ it('lists mobile tts voices with the normalized flutter payload', function () {
         ->and(data_get($xttsPayload, 'is_featured'))->toBeTrue()
         ->and(data_get($xttsPayload, 'avatar.path'))->toBe('metkurd_audio_data/xtts/mobile_xtts_voice.png')
         ->and(data_get($xttsPayload, 'avatar.url'))->toBe(route('api.mobile.tts.voices.avatar', ['speakerId' => $xttsSpeaker]))
-        ->and(data_get($xttsPayload, 'preview.available'))->toBeFalse();
+        ->and(data_get($xttsPayload, 'preview.available'))->toBeTrue()
+        ->and(data_get($xttsPayload, 'preview.file_id'))->toBe('mobile_xtts_voice_preview.mp3')
+        ->and(data_get($xttsPayload, 'preview.download_endpoint'))->toBe(route('api.mobile.tts.voices.preview', ['speakerId' => $xttsSpeaker]));
 });
 
 it('filters mobile tts voices by tool code', function () {
@@ -716,6 +720,51 @@ it('returns 404 when a protected mobile voice avatar is missing', function () {
 
     $this->withToken(mobileApiToken($customer, 'tts'))
         ->getJson('/api/mobile/tts/voices/' . $speaker . '/avatar')
+        ->assertStatus(404)
+        ->assertHeader('content-type', 'application/json');
+});
+
+it('streams mobile voice previews through the protected endpoint', function () {
+    Storage::fake('s3');
+
+    $customer = mobileApiCustomer('mobile-voice-preview@example.com', 'mobile_voice_preview_user');
+    $plan = assignMobilePlan($customer, 'premium');
+
+    $speaker = firstPlanSpeaker($plan, 'xtts');
+    $voice = Voice::query()->where('code', $speaker)->firstOrFail();
+    $voice->update([
+        'meta' => array_merge((array) ($voice->meta ?? []), [
+            'preview_audio' => 'xtts/mobile_voice_preview.mp3',
+        ]),
+    ]);
+
+    Storage::disk('s3')->put('metkurd_audio_data/xtts/mobile_voice_preview.mp3', 'mobile-preview-audio');
+
+    $response = $this->withToken(mobileApiToken($customer, 'tts'))
+        ->get('/api/mobile/tts/voices/' . $speaker . '/preview');
+
+    $response->assertOk()
+        ->assertHeader('content-type', 'audio/mpeg');
+
+    expect($response->streamedContent())->toBe('mobile-preview-audio');
+});
+
+it('returns 404 when a protected mobile voice preview is missing', function () {
+    Storage::fake('s3');
+
+    $customer = mobileApiCustomer('mobile-voice-preview-missing@example.com', 'mobile_voice_preview_missing_user');
+    $plan = assignMobilePlan($customer, 'premium');
+
+    $speaker = firstPlanSpeaker($plan, 'xtts');
+    $voice = Voice::query()->where('code', $speaker)->firstOrFail();
+    $voice->update([
+        'meta' => array_merge((array) ($voice->meta ?? []), [
+            'preview_audio' => 'xtts/missing_mobile_voice_preview.mp3',
+        ]),
+    ]);
+
+    $this->withToken(mobileApiToken($customer, 'tts'))
+        ->getJson('/api/mobile/tts/voices/' . $speaker . '/preview')
         ->assertStatus(404)
         ->assertHeader('content-type', 'application/json');
 });

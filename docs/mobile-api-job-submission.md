@@ -74,9 +74,9 @@ Sample voice-catalog response:
           "url": "https://example.com/api/mobile/tts/voices/xtts_female_1/avatar"
         },
         "preview": {
-          "available": false,
-          "file_id": null,
-          "download_endpoint": null
+          "available": true,
+          "file_id": "mobile_xtts_voice_preview.mp3",
+          "download_endpoint": "https://example.com/api/mobile/tts/voices/xtts_female_1/preview"
         }
       }
     ]
@@ -87,6 +87,7 @@ Sample voice-catalog response:
 Avatar note:
 
 - `avatar.url` is an authenticated backend image route, not a public bucket URL.
+- `preview.download_endpoint` is an authenticated backend audio route, not a public bucket URL.
 
 Request body fields:
 
