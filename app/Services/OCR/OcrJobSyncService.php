@@ -23,6 +23,7 @@ class OcrJobSyncService
         string $inputDisk,
         string $inputPath,
         string $fileName = 'input.pdf',
+        string $fileMime = 'application/pdf',
         string $lang = 'ckb',
         string $pageRange = '',
         int $dpi = 200,
@@ -39,7 +40,7 @@ class OcrJobSyncService
             path: $inputPath,
             expiresAt: now()->addHours(8),
             options: [
-                'ResponseContentType' => 'application/pdf',
+                'ResponseContentType' => $fileMime !== '' ? $fileMime : 'application/pdf',
                 'ResponseContentDisposition' => 'inline; filename="' . ($fileName !== '' ? $fileName : basename($inputPath)) . '"',
             ]
         );
@@ -50,6 +51,7 @@ class OcrJobSyncService
             'job_id' => (string) $job->id,
             'file_url' => $fileUrl,
             'file_name' => $fileName !== '' ? $fileName : 'input.pdf',
+            'file_mime' => $fileMime !== '' ? $fileMime : 'application/pdf',
             'lang' => $lang,
             'page_range' => trim($pageRange),
             'dpi' => $dpi,

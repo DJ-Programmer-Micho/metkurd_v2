@@ -154,21 +154,21 @@ class OcrRenderController extends Controller
         $path = (string) data_get($job->input, 'file_path', '');
         $mime = (string) data_get($job->input, 'file_mime', 'application/pdf');
 
-        abort_if($path === '', 404, 'Input PDF missing.');
+        abort_if($path === '', 404, 'Input document missing.');
 
         try {
             if (!$request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($path, now()->addMinutes(20), [
                     'ResponseContentType' => $mime,
-                    'ResponseContentDisposition' => 'inline; filename="' . (basename($path) ?: 'input.pdf') . '"',
+                    'ResponseContentDisposition' => 'inline; filename="' . (basename($path) ?: 'input') . '"',
                 ]);
 
                 return redirect()->away($url);
             }
 
-            abort_unless(Storage::disk($disk)->exists($path), 404, 'Input PDF not found.');
+            abort_unless(Storage::disk($disk)->exists($path), 404, 'Input document not found.');
             $stream = Storage::disk($disk)->readStream($path);
-            abort_unless($stream, 500, 'Unable to open input PDF stream.');
+            abort_unless($stream, 500, 'Unable to open input document stream.');
 
             return response()->stream(function () use ($stream) {
                 try {
@@ -188,7 +188,7 @@ class OcrRenderController extends Controller
                 'message' => $e->getMessage(),
             ]);
 
-            abort(500, 'Input PDF stream failed.');
+            abort(500, 'Input document stream failed.');
         }
     }
 

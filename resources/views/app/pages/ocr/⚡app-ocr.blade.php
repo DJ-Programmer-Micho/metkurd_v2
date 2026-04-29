@@ -29,6 +29,20 @@ class extends Component
     use WithFileUploads;
     use WithPagination;
 
+    protected const OCR_ALLOWED_EXTENSIONS = [
+        'pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tif', 'tiff',
+    ];
+
+    protected const OCR_ALLOWED_MIME_TYPES = [
+        'application/pdf',
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+        'image/bmp',
+        'image/gif',
+        'image/tiff',
+    ];
+
     protected $paginationTheme = 'bootstrap';
 
     protected string $jobKind = 'ocr';
@@ -97,7 +111,7 @@ class extends Component
     protected function rules(): array
     {
         return [
-            'documentFile' => 'required|file|mimes:pdf|max:204800',
+            'documentFile' => 'required|file|mimes:pdf,png,jpg,jpeg,webp,bmp,gif,tif,tiff|max:204800',
             'lang' => 'required|string|max:50',
             'pageRange' => 'nullable|string|max:255',
             'dpi' => 'required|integer|min:72|max:600',
@@ -265,23 +279,39 @@ class extends Component
         try {
             $this->documentFileName = (string) $this->documentFile->getClientOriginalName();
             $this->documentFileBytes = (int) $this->documentFile->getSize();
-            $this->documentFileMime = (string) ($this->documentFile->getMimeType() ?: 'application/pdf');
-            $this->documentExt = strtolower((string) ($this->documentFile->getClientOriginalExtension() ?: 'pdf'));
+            $this->documentFileMime = strtolower((string) ($this->documentFile->getMimeType() ?: 'application/octet-stream'));
+            $this->documentExt = strtolower((string) ($this->documentFile->getClientOriginalExtension()
+                ?: pathinfo($this->documentFileName, PATHINFO_EXTENSION)
+                ?: 'pdf'));
+
+            if (! $this->isSupportedDocumentUpload()) {
+                $this->resetDocumentState();
+                $this->dispatch('alert', type: 'error', message: __('Only PDF and common image files are allowed.'));
+                return;
+            }
 
             $realPath = $this->documentFile->getRealPath();
             $this->documentHash = $realPath && is_file($realPath)
                 ? hash_file('sha256', $realPath)
                 : sha1(($this->documentFileName ?? '') . '|' . ($this->documentFileBytes ?? 0));
 
+            if (! $this->isPdfDocument()) {
+                $this->clientPdfPageCount = 1;
+                $this->pageRange = '';
+                $this->dispatch('ocr-image-uploaded');
+            }
+
             $this->syncCostPreview();
-            $this->dispatch('alert', type: 'success', message: __('PDF uploaded successfully.'));
+            $this->dispatch('alert', type: 'success', message: $this->isPdfDocument()
+                ? __('PDF uploaded successfully.')
+                : __('Image uploaded successfully.'));
         } catch (\Throwable $e) {
             Log::error('OCR_DOCUMENT_UPLOAD_FAIL', [
                 'message' => $e->getMessage(),
             ]);
 
             $this->resetDocumentState();
-            $this->dispatch('alert', type: 'error', message: __('Failed to process the uploaded PDF.'));
+            $this->dispatch('alert', type: 'error', message: __('Failed to process the uploaded document.'));
         }
     }
 
@@ -330,8 +360,53 @@ class extends Component
         return $this->toolCode . '.' . $this->actionCode();
     }
 
+    protected function normalizedDocumentExtension(): string
+    {
+        $extension = strtolower(trim((string) ($this->documentExt
+            ?: $this->documentFile?->getClientOriginalExtension()
+            ?: pathinfo((string) ($this->documentFileName ?? ''), PATHINFO_EXTENSION))));
+
+        return $extension !== '' ? $extension : 'pdf';
+    }
+
+    protected function normalizedDocumentMime(): string
+    {
+        $mime = strtolower(trim((string) ($this->documentFileMime ?: '')));
+        $ext = $this->normalizedDocumentExtension();
+
+        if ($mime !== '' && in_array($mime, self::OCR_ALLOWED_MIME_TYPES, true)) {
+            return $mime;
+        }
+
+        return match ($ext) {
+            'png' => 'image/png',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'webp' => 'image/webp',
+            'bmp' => 'image/bmp',
+            'gif' => 'image/gif',
+            'tif', 'tiff' => 'image/tiff',
+            default => 'application/pdf',
+        };
+    }
+
+    protected function isPdfDocument(): bool
+    {
+        return $this->normalizedDocumentExtension() === 'pdf'
+            || $this->normalizedDocumentMime() === 'application/pdf';
+    }
+
+    protected function isSupportedDocumentUpload(): bool
+    {
+        return in_array($this->normalizedDocumentExtension(), self::OCR_ALLOWED_EXTENSIONS, true)
+            && in_array($this->normalizedDocumentMime(), self::OCR_ALLOWED_MIME_TYPES, true);
+    }
+
     protected function estimatedPages(): int
     {
+        if (! $this->isPdfDocument()) {
+            return 1;
+        }
+
         $totalPages = max(1, (int) ($this->clientPdfPageCount ?: 1));
         $range = $this->parsePageRange($this->pageRange, $totalPages);
 
@@ -448,7 +523,7 @@ class extends Component
         }
 
         if (!$this->documentFile) {
-            return __('Please upload a PDF file.');
+            return __('Please upload a PDF or image file.');
         }
 
         if ($this->creditsCost <= 0) {
@@ -558,7 +633,8 @@ class extends Component
             }
 
             $customer->loadMissing('profile');
-            $fileExt = strtolower((string) ($this->documentExt ?: $this->documentFile?->getClientOriginalExtension() ?: 'pdf'));
+            $fileExt = $this->normalizedDocumentExtension();
+            $fileMime = $this->normalizedDocumentMime();
 
             $toolId = Tool::query()->where('code', $this->toolCode)->value('id');
             $actionId = ToolAction::query()
@@ -566,7 +642,7 @@ class extends Component
                 ->where('action_code', $this->actionCode())
                 ->value('id');
 
-            DB::transaction(function () use ($jobId, $customer, $needed, $toolId, $actionId) {
+            DB::transaction(function () use ($jobId, $customer, $needed, $toolId, $actionId, $fileExt, $fileMime) {
                 MlJob::create([
                     'id' => $jobId,
                     'customer_id' => (int) $customer->id,
@@ -580,13 +656,14 @@ class extends Component
                     'credits_charged' => (int) $needed,
                     'input' => [
                         'file_name' => (string) $this->documentFileName,
-                        'file_mime' => (string) $this->documentFileMime,
+                        'file_mime' => (string) $fileMime,
                         'file_bytes' => (int) $this->documentFileBytes,
-                        'file_ext' => (string) $this->documentExt,
+                        'file_ext' => (string) $fileExt,
+                        'input_kind' => $this->isPdfDocument() ? 'pdf' : 'image',
                         'lang' => (string) $this->lang,
-                        'page_range' => trim((string) $this->pageRange),
+                        'page_range' => $this->isPdfDocument() ? trim((string) $this->pageRange) : '',
                         'pages_estimated' => (int) $this->estimatedPages(),
-                        'client_pdf_page_count' => (int) ($this->clientPdfPageCount ?: 0),
+                        'client_pdf_page_count' => (int) ($this->isPdfDocument() ? ($this->clientPdfPageCount ?: 0) : 1),
                         'dpi' => (int) $this->dpi,
                         'psm' => (int) $this->psm,
                         'oem' => (int) $this->oem,
@@ -618,7 +695,7 @@ class extends Component
                     'job_id' => $jobId,
                     'tool' => 'ocr',
                     'purpose' => 'input_document',
-                    'role' => 'source_pdf',
+                    'role' => 'source_document',
                     'checksum' => $this->documentHash,
                     'original_name' => $this->documentFileName,
                 ],
@@ -627,7 +704,7 @@ class extends Component
             );
 
             $inputUrl = $storage->temporaryUrl($savedInput['path'], 120, [
-                'ResponseContentType' => $savedInput['mime'] ?? 'application/pdf',
+                'ResponseContentType' => $savedInput['mime'] ?? $fileMime,
             ]);
 
             $job = MlJob::query()->findOrFail($jobId);
@@ -660,9 +737,10 @@ class extends Component
                 job: $job->fresh(),
                 inputDisk: (string) $savedInput['disk'],
                 inputPath: (string) $savedInput['path'],
-                fileName: (string) ($this->documentFileName ?: 'input.pdf'),
+                fileName: (string) ($this->documentFileName ?: ('input.' . $fileExt)),
+                fileMime: (string) ($savedInput['mime'] ?? $fileMime),
                 lang: (string) $this->lang,
-                pageRange: trim((string) $this->pageRange),
+                pageRange: $this->isPdfDocument() ? trim((string) $this->pageRange) : '',
                 dpi: (int) $this->dpi,
                 psm: (int) $this->psm,
                 oem: (int) $this->oem,
@@ -1073,8 +1151,8 @@ class extends Component
                         <div class="card-body p-3 p-md-4">
                             <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
                                 <div>
-                                    <strong class="d-block">{{ __('Upload PDF') }}</strong>
-                                    <small class="text-muted">{{ __('OCR-ready PDF viewer with range preview') }}</small>
+                                    <strong class="d-block">{{ __('Upload Document') }}</strong>
+                                    <small class="text-muted">{{ __('OCR-ready PDF and image upload with PDF range preview') }}</small>
                                 </div>
                                 <span class="badge badge-primary">{{ __('Optical Character Recognition') }}</span>
                             </div>
@@ -1101,7 +1179,7 @@ class extends Component
                             <section class="ocr-card dropzone mb-3">
                                 <div id="dropbox" class="dropbox" role="button" tabindex="0" wire:ignore>
                                     <div style="min-width:0">
-                                        <div class="pill" style="display:inline-block;margin-bottom:8px;">{{ __('PDF only') }}</div>
+                                        <div class="pill" style="display:inline-block;margin-bottom:8px;">{{ __('PDF + Images') }}</div>
                                         <div id="fileHint" class="hint">
                                             {{ $documentFileName ? $documentFileName : __('No file selected.') }}
                                         </div>
@@ -1109,17 +1187,17 @@ class extends Component
                                     </div>
 
                                     <div class="actions">
-                                        <label class="btn btn-primary" for="fileInput">{{ __('Choose PDF') }}</label>
+                                        <label class="btn btn-primary" for="fileInput">{{ __('Choose File') }}</label>
                                         <button id="clearBtn" class="btn btn-outline-danger" type="button" {{ $documentFile ? '' : 'disabled' }}>
                                             {{ __('Clear') }}
                                         </button>
                                     </div>
 
-                                    <input id="fileInput" type="file" accept="application/pdf" />
+                                    <input id="fileInput" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff,image/png,image/jpeg,image/webp,image/bmp,image/gif,image/tiff,application/pdf" />
                                 </div>
 
                                 <div wire:loading wire:target="documentFile" class="small text-primary mt-2">
-                                    {{ __('Uploading PDF...') }}
+                                    {{ __('Uploading document...') }}
                                 </div>
                             </section>
 
@@ -1157,12 +1235,12 @@ class extends Component
                                             <span class="muted" id="thumbsCount">0</span>
                                         </div>
                                         <div class="thumbsList" id="thumbsList">
-                                            <div class="empty" id="thumbsEmpty">{{ __('Upload a PDF to see thumbnails.') }}</div>
+                                            <div class="empty" id="thumbsEmpty">{{ __('Upload a PDF to see thumbnails (images use single preview).') }}</div>
                                         </div>
                                     </aside>
 
                                     <div class="mainStage" id="mainStage">
-                                        <div class="empty" id="emptyState">{{ __('Upload a PDF to preview it here.') }}</div>
+                                        <div class="empty" id="emptyState">{{ __('Upload a PDF or image to preview it here.') }}</div>
                                         <canvas id="pdfCanvas" style="display:none;"></canvas>
                                     </div>
                                 </div>
@@ -1290,7 +1368,7 @@ class extends Component
                             <div class="mb-3">
                                 <label class="mb-1"><b>{{ __('Page Range') }}</b></label>
                                 <input type="text" wire:model.change="pageRange" class="form-control rounded-pill" placeholder="{{ __('e.g. 1-3,5,8-10') }}">
-                                <small class="text-muted d-block mt-2">{{ __('Leave empty to OCR the full PDF.') }}</small>
+                                <small class="text-muted d-block mt-2">{{ __('Leave empty to OCR the full document (for PDFs this means all pages).') }}</small>
                             </div>
 
                             <hr>
@@ -1358,7 +1436,7 @@ class extends Component
                                     <div>
                                         <div class="fw-semibold">{{ __('Estimated Cost') }}</div>
                                         <div class="small text-muted">
-                                            {{ $documentFile ? $this->estimatedPages() . ' ' . __('selected page(s)') : __('Upload a PDF first') }}
+                                            {{ $documentFile ? $this->estimatedPages() . ' ' . __('selected page(s)') : __('Upload a PDF or image first') }}
                                         </div>
                                     </div>
 
@@ -1386,7 +1464,7 @@ class extends Component
 
                                     <span wire:loading wire:target="documentFile">
                                         <span class="spinner-border spinner-border-sm mr-1"></span>
-                                        {{ __('Uploading PDF...') }}
+                                        {{ __('Uploading document...') }}
                                     </span>
 
                                     <span wire:loading wire:target="submit">
@@ -1447,7 +1525,7 @@ class extends Component
                                                         <div class="d-flex align-items-center">
                                                             <i class="mdi mdi-file-document-outline mr-2 render-cache-icon"></i>
                                                             <div>
-                                                                <b class="d-block text-truncate" style="max-width: 200px;">{{ $render['input_name'] ?: __('Untitled PDF') }}</b>
+                                                                <b class="d-block text-truncate" style="max-width: 200px;">{{ $render['input_name'] ?: __('Untitled document') }}</b>
                                                                 <small class="text-muted d-block">
                                                                     {{ __(':pages | :language', ['pages' => $render['page_range'] ?: __('All pages'), 'language' => $render['lang']]) }}
                                                                 </small>
@@ -1896,6 +1974,8 @@ class extends Component
                         pdfDoc: null,
                         pageCount: 0,
                         scale: 1.1,
+                        previewKind: 'none',
+                        imageElement: null,
                         currentFile: null,
                         currentBlobUrl: null,
                         activePages: null,
@@ -1921,11 +2001,14 @@ class extends Component
                     fullPdf: @js(__('full.pdf')),
                     rangePdf: @js(__('range.pdf')),
                     documentPdf: @js(__('document.pdf')),
-                    uploadPreview: @js(__('Upload a PDF to preview it here.')),
+                    documentFile: @js(__('document')),
+                    uploadPreview: @js(__('Upload a PDF or image to preview it here.')),
                     pageZero: @js(__('Page 0 / 0')),
-                    onlyPdf: @js(__('Only PDF files are allowed.')),
+                    onlySupportedDocs: @js(__('Only PDF and common image files are allowed.')),
                     uploadFailed: @js(__('Upload failed')),
-                    failedToOpenPdf: @js(__('Failed to open the selected PDF.')),
+                    failedToOpenFile: @js(__('Failed to open the selected file.')),
+                    imageRangeHint: @js(__('Range preview is available for PDFs only.')),
+                    imageLabel: @js(__('Image')),
                     loadingOcrText: @js(__('Loading OCR text...')),
                     failedToLoadOcrText: @js(__('Failed to load OCR text.')),
                     prev: @js(__('Prev')),
@@ -1971,6 +2054,54 @@ class extends Component
                 function safeInt(value, fallback) {
                     const parsed = parseInt(value, 10);
                     return Number.isFinite(parsed) ? parsed : fallback;
+                }
+
+                function normalizeMime(value) {
+                    return String(value || '').trim().toLowerCase();
+                }
+
+                function fileExtension(name) {
+                    const raw = String(name || '').trim().toLowerCase();
+                    const idx = raw.lastIndexOf('.');
+                    return idx >= 0 ? raw.slice(idx + 1) : '';
+                }
+
+                function detectDocumentKindFromFile(file) {
+                    if (!file) return null;
+
+                    const mime = normalizeMime(file.type);
+                    const ext = fileExtension(file.name);
+
+                    if (mime === 'application/pdf' || ext === 'pdf') {
+                        return 'pdf';
+                    }
+
+                    const imageExt = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tif', 'tiff'];
+                    if (mime.startsWith('image/') || imageExt.includes(ext)) {
+                        return 'image';
+                    }
+
+                    return null;
+                }
+
+                function detectDocumentKindFromMeta(render) {
+                    const mime = normalizeMime(render?.input_mime);
+                    if (mime === 'application/pdf') {
+                        return 'pdf';
+                    }
+                    if (mime.startsWith('image/')) {
+                        return 'image';
+                    }
+
+                    if (render?.input_is_pdf === true) {
+                        return 'pdf';
+                    }
+                    if (render?.input_is_pdf === false) {
+                        return 'image';
+                    }
+
+                    const ext = fileExtension(render?.input_name);
+                    return ext === 'pdf' ? 'pdf' : (ext !== '' ? 'image' : null);
                 }
 
                 function formSave() {
@@ -2260,8 +2391,10 @@ class extends Component
                     }
                 }
 
-                async function loadPdfFromArrayBuffer(buffer, fileName = OCR_I18N.documentPdf) {
+                async function loadPdfFromArrayBuffer(buffer, fileName = OCR_I18N.documentPdf, rangeValue = '') {
                     revokeBlobUrl();
+                    S.previewKind = 'pdf';
+                    S.imageElement = null;
 
                     const blob = new Blob([buffer], { type: 'application/pdf' });
                     S.currentBlobUrl = URL.createObjectURL(blob);
@@ -2273,10 +2406,13 @@ class extends Component
                     const rangeInput = qs('rangeInput');
                     const zoomRange = qs('zoomRange');
                     const zoomLabel = qs('zoomLabel');
+                    const rangeHelp = qs('rangeHelp');
 
+                    if (rangeInput) rangeInput.value = rangeValue || '';
                     if (rangeInput) rangeInput.disabled = false;
                     if (zoomRange) zoomRange.disabled = false;
                     if (zoomLabel) zoomLabel.textContent = `${Math.round(S.scale * 100)}%`;
+                    if (rangeHelp) rangeHelp.textContent = '';
 
                     setControlsEnabled(true);
 
@@ -2299,19 +2435,114 @@ class extends Component
                     showError('');
                 }
 
-                async function loadPdfFromUrl(url, fileName = OCR_I18N.documentPdf, rangeValue = '') {
+                async function loadImageFromBlob(blob, fileName = OCR_I18N.documentFile) {
+                    revokeBlobUrl();
+
+                    const imageBlob = blob instanceof Blob ? blob : new Blob([blob], { type: 'image/png' });
+                    const imageMime = normalizeMime(imageBlob.type) || 'image/png';
+
+                    S.previewKind = 'image';
+                    S.pdfDoc = null;
+                    S.pageCount = 1;
+                    S.activePages = null;
+                    S.activeIndex = 0;
+                    S.currentBlobUrl = URL.createObjectURL(imageBlob);
+                    S.currentFile = new File([imageBlob], fileName || OCR_I18N.documentFile, { type: imageMime });
+
+                    const image = new Image();
+                    image.decoding = 'async';
+                    image.src = S.currentBlobUrl;
+
+                    await new Promise((resolve, reject) => {
+                        image.onload = () => resolve(true);
+                        image.onerror = () => reject(new Error(OCR_I18N.failedToOpenFile));
+                    });
+
+                    S.imageElement = image;
+
+                    const zoomRange = qs('zoomRange');
+                    const zoomLabel = qs('zoomLabel');
+                    const rangeInput = qs('rangeInput');
+                    const rangeHelp = qs('rangeHelp');
+                    const prevBtn = qs('prevBtn');
+                    const nextBtn = qs('nextBtn');
+                    const applyRangeBtn = qs('applyRangeBtn');
+                    const clearRangeBtn = qs('clearRangeBtn');
+                    const downloadRangeBtn = qs('downloadRangeBtn');
+                    const downloadAllBtn = qs('downloadAllBtn');
+                    const clearBtn = qs('clearBtn');
+                    const pageInfo = qs('pageInfo');
+
+                    if (zoomRange) zoomRange.disabled = true;
+                    if (zoomLabel) zoomLabel.textContent = `${Math.round(S.scale * 100)}%`;
+                    if (rangeInput) {
+                        rangeInput.value = '';
+                        rangeInput.disabled = true;
+                    }
+                    if (rangeHelp) rangeHelp.textContent = OCR_I18N.imageRangeHint;
+                    if (prevBtn) prevBtn.disabled = true;
+                    if (nextBtn) nextBtn.disabled = true;
+                    if (applyRangeBtn) applyRangeBtn.disabled = true;
+                    if (clearRangeBtn) clearRangeBtn.disabled = true;
+                    if (downloadRangeBtn) downloadRangeBtn.disabled = true;
+                    if (downloadAllBtn) downloadAllBtn.disabled = false;
+                    if (clearBtn) clearBtn.disabled = false;
+                    if (pageInfo) pageInfo.textContent = `${OCR_I18N.imageLabel} 1 / 1`;
+
+                    const thumbsList = qs('thumbsList');
+                    const thumbsEmpty = qs('thumbsEmpty');
+                    const thumbsCount = qs('thumbsCount');
+                    if (thumbsList) thumbsList.innerHTML = '';
+                    if (thumbsEmpty && thumbsList) thumbsList.appendChild(thumbsEmpty);
+                    if (thumbsEmpty) thumbsEmpty.style.display = '';
+                    if (thumbsCount) thumbsCount.textContent = '0';
+
+                    const canvas = qs('pdfCanvas');
+                    const empty = qs('emptyState');
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        const width = Math.max(1, Math.round(image.naturalWidth));
+                        const height = Math.max(1, Math.round(image.naturalHeight));
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.clearRect(0, 0, width, height);
+                        ctx.drawImage(image, 0, 0, width, height);
+                        canvas.style.display = '';
+                    }
+                    if (empty) empty.style.display = 'none';
+
+                    const lw = getOcrComponent();
+                    if (lw) {
+                        try {
+                            lw.set('clientPdfPageCount', 1);
+                            lw.set('pageRange', '');
+                        } catch (_) {}
+                    }
+
+                    updateHint(fileName || OCR_I18N.documentFile);
+                    showError('');
+                }
+
+                async function loadDocumentFromUrl(url, fileName = OCR_I18N.documentFile, rangeValue = '', render = null) {
                     try {
                         const res = await fetch(url, { credentials: 'same-origin' });
-                        if (!res.ok) throw new Error(`Failed to load PDF (${res.status})`);
+                        if (!res.ok) throw new Error(`Failed to load document (${res.status})`);
                         const buffer = await res.arrayBuffer();
+                        const kind = detectDocumentKindFromMeta(render)
+                            || (normalizeMime(res.headers.get('content-type')) === 'application/pdf' ? 'pdf' : null)
+                            || (fileExtension(fileName) === 'pdf' ? 'pdf' : 'image');
 
-                        const rangeInput = qs('rangeInput');
-                        if (rangeInput) rangeInput.value = rangeValue || '';
+                        if (kind === 'pdf') {
+                            await loadPdfFromArrayBuffer(buffer, fileName || OCR_I18N.documentPdf, rangeValue || '');
+                            return;
+                        }
 
-                        await loadPdfFromArrayBuffer(buffer, fileName);
+                        await loadImageFromBlob(new Blob([buffer], {
+                            type: normalizeMime(render?.input_mime) || normalizeMime(res.headers.get('content-type')) || 'image/png',
+                        }), fileName || OCR_I18N.documentFile);
                     } catch (e) {
-                        showError(e?.message || 'Failed to load PDF.');
-                        setEmptyState('Unable to preview the selected PDF.');
+                        showError(e?.message || OCR_I18N.failedToOpenFile);
+                        setEmptyState(OCR_I18N.uploadPreview);
                     }
                 }
 
@@ -2399,12 +2630,12 @@ class extends Component
                     setTimeout(() => URL.revokeObjectURL(url), 1000);
                 }
 
-                function downloadFullPdf() {
+                function downloadCurrentDocument() {
                     if (!S.currentBlobUrl) return;
 
                     const a = document.createElement('a');
                     a.href = S.currentBlobUrl;
-                    a.download = S.currentFile?.name || OCR_I18N.documentPdf;
+                    a.download = S.currentFile?.name || OCR_I18N.documentFile;
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
@@ -2413,6 +2644,8 @@ class extends Component
                 function clearViewerUi(message = OCR_I18N.uploadPreview) {
                     S.pdfDoc = null;
                     S.pageCount = 0;
+                    S.previewKind = 'none';
+                    S.imageElement = null;
                     S.activePages = null;
                     S.activeIndex = 0;
                     S.currentFile = null;
@@ -2463,10 +2696,12 @@ class extends Component
                     }
                 }
 
-                async function uploadPdfFile(file) {
+                async function uploadDocumentFile(file) {
                     if (!file) return;
-                    if (file.type !== 'application/pdf' && !String(file.name || '').toLowerCase().endsWith('.pdf')) {
-                        showError(OCR_I18N.onlyPdf);
+
+                    const kind = detectDocumentKindFromFile(file);
+                    if (!kind) {
+                        showError(OCR_I18N.onlySupportedDocs);
                         return;
                     }
 
@@ -2478,7 +2713,12 @@ class extends Component
 
                     try {
                         const buffer = await file.arrayBuffer();
-                        await loadPdfFromArrayBuffer(buffer, file.name);
+
+                        if (kind === 'pdf') {
+                            await loadPdfFromArrayBuffer(buffer, file.name || OCR_I18N.documentPdf);
+                        } else {
+                            await loadImageFromBlob(new Blob([buffer], { type: normalizeMime(file.type) || 'image/png' }), file.name || OCR_I18N.documentFile);
+                        }
 
                         lw.upload(
                             'documentFile',
@@ -2489,7 +2729,7 @@ class extends Component
                             }
                         );
                     } catch (e) {
-                        showError(e?.message || OCR_I18N.failedToOpenPdf);
+                        showError(e?.message || OCR_I18N.failedToOpenFile);
                     }
                 }
 
@@ -2564,7 +2804,12 @@ class extends Component
                     await fetchAndShowText(render.text_view_url || null);
 
                     if (render.input_url) {
-                        await loadPdfFromUrl(render.input_url, render.input_name || OCR_I18N.documentPdf, render.page_range || '');
+                        await loadDocumentFromUrl(
+                            render.input_url,
+                            render.input_name || OCR_I18N.documentFile,
+                            render.page_range || '',
+                            render
+                        );
                     }
                 }
 
@@ -2599,7 +2844,7 @@ class extends Component
                             e.preventDefault();
                             dropbox.classList.remove('is-dragover');
                             const file = e.dataTransfer?.files?.[0] || null;
-                            await uploadPdfFile(file);
+                            await uploadDocumentFile(file);
                         });
 
                         dropbox.addEventListener('click', (e) => {
@@ -2619,7 +2864,7 @@ class extends Component
                         fileInput.dataset.bound = '1';
                         fileInput.addEventListener('change', async (e) => {
                             const file = e.target.files?.[0] || null;
-                            await uploadPdfFile(file);
+                            await uploadDocumentFile(file);
                         });
                     }
 
@@ -2699,7 +2944,7 @@ class extends Component
 
                     if (downloadAllBtn && !downloadAllBtn.dataset.bound) {
                         downloadAllBtn.dataset.bound = '1';
-                        downloadAllBtn.addEventListener('click', downloadFullPdf);
+                        downloadAllBtn.addEventListener('click', downloadCurrentDocument);
                     }
 
                     if (copyBtn && !copyBtn.dataset.bound) {
@@ -2738,6 +2983,13 @@ class extends Component
 
                     Livewire.on('ocr-form-state-clear', () => {
                         formClear();
+                    });
+
+                    Livewire.on('ocr-image-uploaded', () => {
+                        const rangeHelp = qs('rangeHelp');
+                        if (rangeHelp) {
+                            rangeHelp.textContent = OCR_I18N.imageRangeHint;
+                        }
                     });
 
                     Livewire.on('ocr-render-selected', async (event) => {

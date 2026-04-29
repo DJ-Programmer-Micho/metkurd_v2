@@ -26,6 +26,13 @@ class extends Component
 {
     use \App\Support\Plans\ResolvesConcurrentJobLimit;
 
+    protected const NFE_STEP_MIN = 1;
+    protected const NFE_STEP_MAX = 128;
+    protected const CFG_STRENGTH_MIN = 0.0;
+    protected const CFG_STRENGTH_MAX = 10.0;
+    protected const SPEED_MIN = 0.1;
+    protected const SPEED_MAX = 2.0;
+
     protected string $toolCode = 'ftts';
     protected string $actionCode = 'standard';
     protected string $fullActionCode = 'ftts.standard';
@@ -117,6 +124,21 @@ class extends Component
     {
         $this->syncCostPreview();
         $this->syncSpeakerPickerSelection();
+    }
+
+    public function updatedNfeStep(): void
+    {
+        $this->nfe_step = $this->clampInt($this->nfe_step, self::NFE_STEP_MIN, self::NFE_STEP_MAX);
+    }
+
+    public function updatedCfgStrength(): void
+    {
+        $this->cfg_strength = $this->clampFloat($this->cfg_strength, self::CFG_STRENGTH_MIN, self::CFG_STRENGTH_MAX);
+    }
+
+    public function updatedSpeed(): void
+    {
+        $this->speed = $this->clampFloat($this->speed, self::SPEED_MIN, self::SPEED_MAX);
     }
 
     #[Computed]
@@ -387,29 +409,84 @@ class extends Component
             data_get($toolMeta, 'use_ema', true)
         );
 
-        $this->nfe_step = max(1, (int) data_get(
+        $this->nfe_step = $this->clampInt((int) data_get(
             $toolMeta,
             'f5tts.nfe_step',
             data_get($toolMeta, 'nfe_step', 32)
-        ));
+        ), self::NFE_STEP_MIN, self::NFE_STEP_MAX);
 
-        $this->cfg_strength = max(0, (float) data_get(
+        $this->cfg_strength = $this->clampFloat((float) data_get(
             $toolMeta,
             'f5tts.cfg_strength',
             data_get($toolMeta, 'cfg_strength', 2.0)
-        ));
+        ), self::CFG_STRENGTH_MIN, self::CFG_STRENGTH_MAX);
 
-        $this->speed = max(0.1, (float) data_get(
+        $this->speed = $this->clampFloat((float) data_get(
             $toolMeta,
             'f5tts.speed',
             data_get($toolMeta, 'speed', 1.0)
-        ));
+        ), self::SPEED_MIN, self::SPEED_MAX);
 
         $this->remove_silence = (bool) data_get(
             $toolMeta,
             'f5tts.remove_silence',
             data_get($toolMeta, 'remove_silence', false)
         );
+    }
+
+    protected function normalizeF5Settings(): void
+    {
+        $this->nfe_step = $this->clampInt($this->nfe_step, self::NFE_STEP_MIN, self::NFE_STEP_MAX);
+        $this->cfg_strength = $this->clampFloat($this->cfg_strength, self::CFG_STRENGTH_MIN, self::CFG_STRENGTH_MAX);
+        $this->speed = $this->clampFloat($this->speed, self::SPEED_MIN, self::SPEED_MAX);
+    }
+
+    protected function clampInt(int|float|string|null $value, int $min, int $max): int
+    {
+        return max($min, min($max, (int) $value));
+    }
+
+    protected function clampFloat(int|float|string|null $value, float $min, float $max): float
+    {
+        $numeric = (float) $value;
+
+        return max($min, min($max, $numeric));
+    }
+
+    protected function friendlyF5FailureMessage(string $rawMessage): string
+    {
+        $message = trim($rawMessage);
+
+        if ($message !== '' && str_starts_with($message, '{')) {
+            $decoded = json_decode($message, true);
+
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $decodedMessage = trim((string) data_get($decoded, 'message', ''));
+
+                if ($decodedMessage !== '') {
+                    $message = $decodedMessage;
+                }
+            }
+        }
+
+        $message = trim((string) preg_replace('/\s+/u', ' ', $message));
+
+        if ($message === '') {
+            return __('Generation failed. Please retry.');
+        }
+
+        if (str_contains(strtolower($message), 't must be strictly increasing or decreasing')) {
+            return __('We could not generate stable audio timing. Please retry. If it repeats, shorten the text or adjust voice/settings.');
+        }
+
+        if (
+            str_contains(strtolower($message), 'output.wav_b64')
+            || str_contains(strtolower($message), 'completed without output')
+        ) {
+            return __('Generation finished without a valid audio file. Please retry.');
+        }
+
+        return $message;
     }
 
     #[Computed]
@@ -529,16 +606,20 @@ class extends Component
     protected function rules(): array
     {
         return [
-            'text' => ['required', 'string', 'min:1', 'max:' . $this->maxPerSubmit],
+            'text' => ['required', 'string', 'min:1', 'max:' . $this->maxPerSubmit, function (string $attribute, mixed $value, \Closure $fail): void {
+                if (trim((string) $value) === '') {
+                    $fail(__('Please enter some text.'));
+                }
+            }],
             'speaker_id' => ['required', 'string', function ($attribute, $value, $fail) {
                 if (!array_key_exists((string) $value, $this->availableSpeakers)) {
                     $fail(__('The selected speaker is not available for your plan.'));
                 }
             }],
             'use_ema' => ['boolean'],
-            'nfe_step' => ['required', 'integer', 'min:1'],
-            'cfg_strength' => ['required', 'numeric', 'min:0'],
-            'speed' => ['required', 'numeric', 'min:0.1'],
+            'nfe_step' => ['required', 'integer', 'min:' . self::NFE_STEP_MIN, 'max:' . self::NFE_STEP_MAX],
+            'cfg_strength' => ['required', 'numeric', 'min:' . self::CFG_STRENGTH_MIN, 'max:' . self::CFG_STRENGTH_MAX],
+            'speed' => ['required', 'numeric', 'min:' . self::SPEED_MIN, 'max:' . self::SPEED_MAX],
             'remove_silence' => ['boolean'],
         ];
     }
@@ -579,7 +660,7 @@ class extends Component
 
     public function postF5tts(RunPodProvider $runpod, CreditService $credits): void
     {
-        
+        $this->normalizeF5Settings();
         $this->showJobStatus = true;
         $c = auth('app')->user();
         $actionCode = $this->fullActionCode;
@@ -714,9 +795,11 @@ class extends Component
                 'reason'       => 'provider_start_failed',
             ]);
 
+            $friendlyMessage = $this->friendlyF5FailureMessage($e->getMessage());
+
             MlJob::where('id', $jobId)->update([
                 'status' => 'failed',
-                'error' => ['message' => $e->getMessage()],
+                'error' => ['message' => $friendlyMessage],
                 'finished_at' => now(),
             ]);
             $this->currentStatus = 'failed';
@@ -726,7 +809,7 @@ class extends Component
             
             $this->dispatch('header:refresh');
             $this->dispatch('f5tts-job-state-clear');
-            $this->dispatch('alert', type: 'error', message: __('RunPod failed: :message', ['message' => $e->getMessage()]));
+            $this->dispatch('alert', type: 'error', message: $friendlyMessage);
         }
     }
 
@@ -772,7 +855,7 @@ class extends Component
             if (!empty($result['failed'])) {
                 $this->dispatch('header:refresh');
                 $this->dispatch('f5tts-job-state-clear');
-                $this->dispatch('alert', type: 'error', message: $result['message'] ?: __('Job failed.'));
+                $this->dispatch('alert', type: 'error', message: $this->friendlyF5FailureMessage((string) ($result['message'] ?: __('Generation failed. Please retry.'))));
             }
         } catch (\Throwable $e) {
             Log::warning('RUNPOD_TTS_STATUS_FAIL', [
@@ -782,7 +865,7 @@ class extends Component
 
             MlJob::query()->where('id', $this->currentJobId)->update([
                 'status' => 'failed',
-                'error' => ['message' => __('Polling failed: :message', ['message' => $e->getMessage()])],
+                'error' => ['message' => $this->friendlyF5FailureMessage($e->getMessage())],
                 'finished_at' => now(),
             ]);
 
@@ -792,7 +875,7 @@ class extends Component
 
             $this->dispatch('header:refresh');
             $this->dispatch('f5tts-job-state-clear');
-            $this->dispatch('alert', type: 'error', message: __('Polling failed: :message', ['message' => $e->getMessage()]));
+            $this->dispatch('alert', type: 'error', message: $this->friendlyF5FailureMessage($e->getMessage()));
         }
     }
 
@@ -1709,9 +1792,19 @@ class extends Component
     const SPA_KEY  = 'f5tts_spa_job';
     const FORM_KEY = 'f5tts_form_state_v1';
 
-    function safeNumber(value, fallback) {
+    function safeNumber(value, fallback, min = null, max = null) {
         const n = Number(value);
-        return Number.isFinite(n) ? n : fallback;
+        let normalized = Number.isFinite(n) ? n : fallback;
+
+        if (min !== null) {
+            normalized = Math.max(Number(min), normalized);
+        }
+
+        if (max !== null) {
+            normalized = Math.min(Number(max), normalized);
+        }
+
+        return normalized;
     }
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     function formatTime(sec) {
@@ -2501,7 +2594,8 @@ class extends Component
 
         const blob = await getBlob(url);
         const blobUrl = URL.createObjectURL(blob);
-        S.previewMeta.set(jobId, { url, blobUrl });
+        const existingMeta = S.previewMeta.get(jobId) || {};
+        S.previewMeta.set(jobId, { ...existingMeta, url, blobUrl });
 
         return blobUrl;
     }
@@ -2541,10 +2635,27 @@ class extends Component
     }
 
     function initPreview(jobId, url, isLatest = false) {
-        if (S.previewWS.has(jobId)) return S.previewWS.get(jobId);
+        jobId = String(jobId || '').trim();
+        url = String(url || '').trim();
+
+        if (!jobId || !url) return null;
+
+        const existingWave = document.getElementById('f5tts-wave-' + jobId);
+        const existingMeta = S.previewMeta.get(jobId);
+
+        if (S.previewWS.has(jobId)) {
+            const sameContainer = existingMeta?.waveEl && existingWave && existingMeta.waveEl === existingWave && existingMeta.waveEl.isConnected;
+            const sameUrl = String(existingMeta?.url || '') === url;
+
+            if (sameContainer && sameUrl) {
+                return S.previewWS.get(jobId);
+            }
+
+            destroyPreview(jobId);
+        }
 
         const ph = document.getElementById('f5tts-ph-' + jobId);
-        const wave = document.getElementById('f5tts-wave-' + jobId);
+        const wave = existingWave || document.getElementById('f5tts-wave-' + jobId);
         const time = document.getElementById('f5tts-time-' + jobId);
 
         if (!wave || !url) return null;
@@ -2577,15 +2688,62 @@ class extends Component
         (async () => {
             try {
                 const blobUrl = await getBlobUrl(jobId, url);
+                const cachedMeta = S.previewMeta.get(jobId) || {};
+                S.previewMeta.set(jobId, { ...cachedMeta, url, waveEl: wave });
                 ws.load(blobUrl);
             } catch (e) {
                 console.warn('[F5TTS] Falling back to direct URL', jobId, e);
+                const cachedMeta = S.previewMeta.get(jobId) || {};
+                S.previewMeta.set(jobId, { ...cachedMeta, url, waveEl: wave });
                 ws.load(url);
             }
         })();
 
+        const cachedMeta = S.previewMeta.get(jobId) || {};
+        S.previewMeta.set(jobId, { ...cachedMeta, url, waveEl: wave });
         S.previewWS.set(jobId, ws);
         return ws;
+    }
+
+    function previewButtonEntries() {
+        return Array.from(document.querySelectorAll('.btn-f5tts-preview[data-job][data-url]'))
+            .map((btn, index) => ({
+                btn,
+                jobId: String(btn.getAttribute('data-job') || '').trim(),
+                url: String(btn.getAttribute('data-url') || '').trim(),
+                isLatest: btn.getAttribute('data-latest') === '1',
+                rank: Number(btn.getAttribute('data-preload-rank') ?? index),
+            }))
+            .filter((entry) => entry.jobId !== '' && entry.url !== '');
+    }
+
+    function reconcilePreviewInstances() {
+        const entries = previewButtonEntries();
+        const active = new Map(entries.map((entry) => [entry.jobId, entry]));
+
+        Array.from(S.previewWS.keys()).forEach((jobId) => {
+            const entry = active.get(jobId);
+
+            if (!entry) {
+                destroyPreview(jobId);
+                return;
+            }
+
+            const meta = S.previewMeta.get(jobId) || {};
+            const wave = document.getElementById('f5tts-wave-' + jobId);
+            const sameContainer = meta.waveEl && wave && meta.waveEl === wave && meta.waveEl.isConnected;
+            const sameUrl = String(meta.url || '') === entry.url;
+
+            if (!sameContainer || !sameUrl) {
+                destroyPreview(jobId);
+            }
+        });
+
+        entries.forEach((entry) => {
+            if (!S.previewWS.has(entry.jobId)) {
+                initPreview(entry.jobId, entry.url, entry.isLatest);
+            }
+        });
     }
 
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Button binding Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -2619,19 +2777,14 @@ class extends Component
 
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Preload + render waveforms eagerly Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     async function preloadAndRenderRecentAudio() {
-        const buttons = Array.from(
-            document.querySelectorAll('.btn-f5tts-preview[data-job][data-url]')
-        )
-        .sort((a, b) =>
-            Number(a.getAttribute('data-preload-rank') ?? 9999) -
-            Number(b.getAttribute('data-preload-rank') ?? 9999)
-        )
-        .slice(0, PRELOAD_LIMIT);
+        const buttons = previewButtonEntries()
+            .sort((a, b) => a.rank - b.rank)
+            .slice(0, PRELOAD_LIMIT);
 
         for (const btn of buttons) {
-            const jobId = btn.getAttribute('data-job');
-            const url = btn.getAttribute('data-url');
-            const isLatest = btn.getAttribute('data-latest') === '1';
+            const jobId = btn.jobId;
+            const url = btn.url;
+            const isLatest = btn.isLatest;
 
             if (!jobId || !url) continue;
             if (S.previewWS.has(jobId)) continue;
@@ -2730,9 +2883,9 @@ class extends Component
                 text: lw.get('text') ?? '',
                 speaker_id: lw.get('speaker_id') ?? '',
                 use_ema: !!lw.get('use_ema'),
-                nfe_step: parseInt(safeNumber(lw.get('nfe_step'), 32), 10),
-                cfg_strength: safeNumber(lw.get('cfg_strength'), 2.0),
-                speed: safeNumber(lw.get('speed'), 1.0),
+                nfe_step: parseInt(safeNumber(lw.get('nfe_step'), 32, 1, 128), 10),
+                cfg_strength: safeNumber(lw.get('cfg_strength'), 2.0, 0, 10),
+                speed: safeNumber(lw.get('speed'), 1.0, 0.1, 2),
                 remove_silence: !!lw.get('remove_silence'),
                 ts: Date.now(),
             };
@@ -2780,9 +2933,9 @@ class extends Component
             lw.set('text', saved.text ?? '');
             lw.set('speaker_id', saved.speaker_id ?? '');
             lw.set('use_ema', !!saved.use_ema);
-            lw.set('nfe_step', parseInt(safeNumber(saved.nfe_step, 32), 10));
-            lw.set('cfg_strength', safeNumber(saved.cfg_strength, 2.0));
-            lw.set('speed', safeNumber(saved.speed, 1.0));
+            lw.set('nfe_step', parseInt(safeNumber(saved.nfe_step, 32, 1, 128), 10));
+            lw.set('cfg_strength', safeNumber(saved.cfg_strength, 2.0, 0, 10));
+            lw.set('speed', safeNumber(saved.speed, 1.0, 0.1, 2));
             lw.set('remove_silence', !!saved.remove_silence);
         } catch (e) {
             console.warn('[F5TTS] Form restore failed', e);
@@ -2904,6 +3057,8 @@ class extends Component
             spaClear();
             requestAnimationFrame(() => {
                 bindPreviewButtons();
+                reconcilePreviewInstances();
+                preloadAndRenderRecentAudio().catch(() => {});
                 highlightLatestRender();
             });
         });
@@ -2915,6 +3070,8 @@ class extends Component
                 succeed(() => {
                     requestAnimationFrame(() => {
                         bindPreviewButtons();
+                        reconcilePreviewInstances();
+                        preloadAndRenderRecentAudio().catch(() => {});
                         formSave();
                     });
                 });
@@ -2939,6 +3096,8 @@ class extends Component
 
             registerLivewireEvents();
             bindPreviewButtons();
+            reconcilePreviewInstances();
+            preloadAndRenderRecentAudio().catch(() => {});
             spaRestoreIfNeeded();
             formRestoreIfNeeded();
             watchAndPersistForm();

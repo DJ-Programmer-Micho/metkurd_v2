@@ -77,14 +77,15 @@
 
     $fallbackFavicon = app()->bound('logo_1024_tran_black')
         ? asset(app('logo_1024_tran_black'))
-        : asset('favicon.ico');
-    $favicon = $metaSettings->publicUrl($metaSettings->faviconPath()) ?: $fallbackFavicon;
-    $appleTouchIcon = $metaSettings->publicUrl($metaSettings->appleTouchIconPath()) ?: $favicon;
-    $appIcon192 = $metaSettings->publicUrl($metaSettings->appIcon192Path()) ?: null;
-    $appIcon512 = $metaSettings->publicUrl($metaSettings->appIcon512Path()) ?: null;
-    $defaultLogo = asset(app()->bound('logo_1024') ? app('logo_1024') : 'favicon.ico');
-    $defaultOgImage = $metaSettings->publicUrl($metaSettings->ogImagePath()) ?: $defaultLogo;
-    $defaultTwitterImage = $metaSettings->publicUrl($metaSettings->twitterImagePath()) ?: $defaultOgImage;
+        : (app()->bound('logo_1024') ? asset(app('logo_1024')) : asset('favicon.ico'));
+    $favicon = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->faviconPath())) ?: $fallbackFavicon;
+    $appleTouchIcon = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appleTouchIconPath())) ?: $favicon;
+    $appIcon192 = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appIcon192Path())) ?: null;
+    $appIcon512 = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appIcon512Path())) ?: null;
+    $defaultLogo = $appIcon512
+        ?: (app()->bound('logo_1024') ? asset(app('logo_1024')) : $fallbackFavicon);
+    $defaultOgImage = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->ogImagePath())) ?: $defaultLogo;
+    $defaultTwitterImage = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->twitterImagePath())) ?: $defaultOgImage;
     $pageImage = $absoluteAssetUrl($image) ?: $defaultOgImage;
     $twitterImage = $absoluteAssetUrl($image) ?: $defaultTwitterImage;
     $pageImageAlt = $rawTitle !== '' ? $rawTitle : $defaultImageAlt;

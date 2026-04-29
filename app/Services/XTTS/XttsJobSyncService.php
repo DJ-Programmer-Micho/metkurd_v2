@@ -67,12 +67,18 @@ class XttsJobSyncService
         }
 
         if ($mapped === 'failed') {
-            $err = (string) (data_get($st, 'error') ?: data_get($out, 'error') ?: 'RunPod failed.');
+            $err = $this->normalizeProviderFailureMessage(
+                (string) (data_get($st, 'error') ?: data_get($out, 'error') ?: ''),
+                $toolCode
+            );
             return $this->failJob($job, $err);
         }
 
         if ($rawStatus === 'COMPLETED' && $toolCode === 'ftts' && $wavB64 === '') {
-            return $this->failJob($job, 'F5TTS completed without output.wav_b64.');
+            return $this->failJob($job, $this->normalizeProviderFailureMessage(
+                'F5TTS completed without output.wav_b64.',
+                $toolCode
+            ));
         }
 
         if ($wavB64 !== '') {
@@ -248,5 +254,49 @@ class XttsJobSyncService
             'ftts' => 'ftts',
             default => 'tts',
         };
+    }
+
+    protected function normalizeProviderFailureMessage(string $rawMessage, string $toolCode = ''): string
+    {
+        $toolCode = strtolower(trim($toolCode));
+        $message = trim($rawMessage);
+
+        if ($message !== '' && str_starts_with($message, '{')) {
+            $decoded = json_decode($message, true);
+
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $jsonMessage = trim((string) data_get($decoded, 'message', ''));
+
+                if ($jsonMessage !== '') {
+                    $message = $jsonMessage;
+                }
+            }
+        }
+
+        $message = trim((string) preg_replace('/\s+/u', ' ', $message));
+
+        if ($message === '') {
+            return $this->genericProviderFailureMessage($toolCode);
+        }
+
+        if (str_contains(strtolower($message), 't must be strictly increasing or decreasing')) {
+            return 'We could not generate stable audio timing for this request. Please try again. If it repeats, shorten the text or change the selected voice/settings.';
+        }
+
+        if (
+            str_contains(strtolower($message), 'completed without output.wav_b64')
+            || str_contains(strtolower($message), 'output.wav_b64')
+        ) {
+            return 'Generation finished without a valid audio file. Please retry.';
+        }
+
+        return $message;
+    }
+
+    protected function genericProviderFailureMessage(string $toolCode = ''): string
+    {
+        return $toolCode === 'ftts'
+            ? 'The F5TTS generation failed. Please try again.'
+            : 'The audio generation failed. Please try again.';
     }
 }

@@ -5,6 +5,7 @@ namespace App\Support\Landing;
 use App\Models\SiteMetaSetting;
 use App\Support\LandingContent;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class SiteMetaSettingsRepository
 {
@@ -122,7 +123,27 @@ class SiteMetaSettingsRepository
 
     public function publicUrl(?string $path): ?string
     {
-        return $this->mediaStorage()->publicUrl($path);
+        $url = $this->mediaStorage()->publicUrl($path);
+
+        if (! is_string($url) || trim($url) === '') {
+            return null;
+        }
+
+        $normalized = $this->mediaStorage()->normalizeStoredPath($path);
+
+        if (! is_string($normalized) || trim($normalized) === '' || Str::startsWith($normalized, ['http://', 'https://'])) {
+            return $url;
+        }
+
+        $lastModified = $this->mediaStorage()->lastModified($normalized);
+
+        if (! is_int($lastModified) || $lastModified <= 0) {
+            return $url;
+        }
+
+        $separator = str_contains($url, '?') ? '&' : '?';
+
+        return $url . $separator . 'v=' . $lastModified;
     }
 
     protected function hasTable(): bool
@@ -190,7 +211,13 @@ class SiteMetaSettingsRepository
             : 'png'));
         $extension = $extension !== '' ? $extension : 'png';
 
-        $filename = $basename . '-' . now()->format('YmdHis') . '.' . $extension;
+        $filename = $basename
+            . '-'
+            . now()->format('YmdHisv')
+            . '-'
+            . Str::lower(Str::random(6))
+            . '.'
+            . $extension;
         $storedPath = $uploadedFile->storeAs(self::STORAGE_DIR, $filename, $this->mediaStorage()->diskName());
 
         if (! is_string($storedPath) || trim($storedPath) === '') {

@@ -3,11 +3,11 @@
 use Livewire\Component;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Computed;
-use App\Models\Customer;
+use App\Support\AppShellData;
 
 new class extends Component
 {
-    public ?Customer $customer = null;
+    public array $shell = [];
     public int $refreshKey = 0;
 
     public function mount(): void
@@ -20,74 +20,63 @@ new class extends Component
     #[On('customerStorageUpdated')]
     #[On('xtts-renders-refresh')]
     #[On('f5tts-renders-refresh')]
+    #[On('clone-xtts-renders-refresh')]
+    #[On('wasr-renders-refresh')]
+    #[On('qasr-renders-refresh')]
+    #[On('tran-renders-refresh')]
+    #[On('stem-renders-refresh')]
+    #[On('ocr-renders-refresh')]
     public function refreshHeader(): void
     {
-        $this->loadData();
+        $this->loadData(forceRefresh: true);
         $this->refreshKey++;
     }
 
-    private function loadData(): void
+    private function loadData(bool $forceRefresh = false): void
     {
-        $this->customer = auth('app')->user();
-
-        $this->customer?->loadMissing([
-            'usage',
-            'wallet',
-        ]);
-
-        if ($this->customer && method_exists($this->customer, 'currentServicePlan')) {
-            $this->customer->currentServicePlan();
-        }
-
-        if ($this->customer && method_exists($this->customer, 'currentStoragePlan')) {
-            $this->customer->currentStoragePlan();
-        }
+        $this->shell = app(AppShellData::class)->forCurrentCustomer($forceRefresh);
     }
 
     #[Computed]
     public function balance(): int
     {
-        return (int) ($this->customer?->wallet?->balance_credits ?? 0);
+        return (int) ($this->shell['credit_balance'] ?? 0);
     }
 
     #[Computed]
     public function monthly(): int
     {
-        return (int) ($this->customer?->servicePlan?->monthly_credits ?? 0);
+        return (int) ($this->shell['monthly_credits'] ?? 0);
     }
 
     #[Computed]
     public function creditsPct(): int
     {
-        return $this->monthly > 0
-            ? min(100, (int) round(($this->balance / $this->monthly) * 100))
-            : 0;
+        return (int) ($this->shell['credits_pct'] ?? 0);
     }
 
     #[Computed]
     public function quotaMb(): int
     {
-        return (int) ($this->customer?->storagePlan?->quota_mb ?? 512);
+        return (int) ($this->shell['storage_quota_mb'] ?? 512);
     }
 
     #[Computed]
     public function usedBytes(): int
     {
-        return (int) ($this->customer?->usage?->storage_used_bytes ?? 0);
+        return (int) (($this->usedMb ?? 0) * 1024 * 1024);
     }
 
     #[Computed]
     public function usedMb(): int
     {
-        return (int) round($this->usedBytes / 1024 / 1024);
+        return (int) ($this->shell['storage_used_mb'] ?? 0);
     }
 
     #[Computed]
     public function storagePct(): int
     {
-        return $this->quotaMb > 0
-            ? min(100, (int) round(($this->usedMb / $this->quotaMb) * 100))
-            : 0;
+        return (int) ($this->shell['storage_pct'] ?? 0);
     }
 
     public function render()

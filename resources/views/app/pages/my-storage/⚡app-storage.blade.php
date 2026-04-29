@@ -997,6 +997,12 @@ class extends Component
             border: 1px solid var(--vz-border-color, var(--bs-border-color));
         }
 
+        .storage-shell .folder-tile .folder-tile-trigger:focus-visible {
+            outline: 2px solid rgba(var(--bs-primary-rgb), .45);
+            outline-offset: 2px;
+            border-radius: .75rem;
+        }
+
         .storage-shell .folder-tile:hover,
         .storage-shell .folder-tile.active {
             transform: translateY(-2px);
@@ -1285,10 +1291,16 @@ class extends Component
                                     @forelse($folderCards as $folder)
                                         <div class="col-xxl-3 col-md-4 col-sm-6">
                                             <div class="card shadow-none folder-tile {{ $path === $folder['path'] ? 'active' : '' }}">
-                                                <div class="card-body">
+                                                <div class="card-body folder-tile-trigger"
+                                                     role="button"
+                                                     tabindex="0"
+                                                     aria-label="{{ __('Open folder :name', ['name' => $folder['label']]) }}"
+                                                     wire:click="navigateTo('{{ $folder['path'] }}')"
+                                                     wire:keydown.enter.prevent="navigateTo('{{ $folder['path'] }}')"
+                                                     wire:keydown.space.prevent="navigateTo('{{ $folder['path'] }}')">
                                                     <div class="d-flex mb-3">
                                                         <div class="flex-grow-1">
-                                                            <button type="button" class="btn btn-sm btn-ghost-primary" wire:click="navigateTo('{{ $folder['path'] }}')">
+                                                            <button type="button" class="btn btn-sm btn-ghost-primary" wire:click.stop="navigateTo('{{ $folder['path'] }}')">
                                                                 {{ __('Open') }}
                                                             </button>
                                                         </div>
@@ -1392,13 +1404,33 @@ class extends Component
                                                     <td>
                                                         <div class="d-flex align-items-center">
                                                             <div class="avatar-xs flex-shrink-0 me-2">
-                                                                <div class="avatar-title bg-light text-muted rounded fs-16">
-                                                                    <i class="{{ $this->fileIcon($file['mime'], $file['extension']) }}"></i>
-                                                                </div>
+                                                                @if($isAudio && $streamUrl)
+                                                                    <a class="avatar-title bg-light text-muted rounded fs-16"
+                                                                       href="{{ $streamUrl }}"
+                                                                       target="_blank"
+                                                                       rel="noopener noreferrer"
+                                                                       onclick="event.stopPropagation()">
+                                                                        <i class="{{ $this->fileIcon($file['mime'], $file['extension']) }}"></i>
+                                                                    </a>
+                                                                @else
+                                                                    <div class="avatar-title bg-light text-muted rounded fs-16">
+                                                                        <i class="{{ $this->fileIcon($file['mime'], $file['extension']) }}"></i>
+                                                                    </div>
+                                                                @endif
                                                             </div>
                                                             <div>
                                                                 <div class="fw-semibold text-truncate" style="max-width: 260px;">
-                                                                    {{ $file['basename'] }}
+                                                                    @if($isAudio && $streamUrl)
+                                                                        <a href="{{ $streamUrl }}"
+                                                                           class="text-body"
+                                                                           target="_blank"
+                                                                           rel="noopener noreferrer"
+                                                                           onclick="event.stopPropagation()">
+                                                                            {{ $file['basename'] }}
+                                                                        </a>
+                                                                    @else
+                                                                        {{ $file['basename'] }}
+                                                                    @endif
                                                                 </div>
                                                                 <div class="small text-muted text-truncate" style="max-width: 260px;">
                                                                     {{ $file['relative_path'] }}

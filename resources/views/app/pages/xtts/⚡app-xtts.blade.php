@@ -2569,7 +2569,8 @@ class extends Component
 
         const blob = await getBlob(url);
         const blobUrl = URL.createObjectURL(blob);
-        S.previewMeta.set(jobId, { url, blobUrl });
+        const existingMeta = S.previewMeta.get(jobId) || {};
+        S.previewMeta.set(jobId, { ...existingMeta, url, blobUrl });
 
         return blobUrl;
     }
@@ -2609,10 +2610,27 @@ class extends Component
     }
 
     function initPreview(jobId, url, isLatest = false) {
-        if (S.previewWS.has(jobId)) return S.previewWS.get(jobId);
+        jobId = String(jobId || '').trim();
+        url = String(url || '').trim();
+
+        if (!jobId || !url) return null;
+
+        const existingWave = document.getElementById('xtts-wave-' + jobId);
+        const existingMeta = S.previewMeta.get(jobId);
+
+        if (S.previewWS.has(jobId)) {
+            const sameContainer = existingMeta?.waveEl && existingWave && existingMeta.waveEl === existingWave && existingMeta.waveEl.isConnected;
+            const sameUrl = String(existingMeta?.url || '') === url;
+
+            if (sameContainer && sameUrl) {
+                return S.previewWS.get(jobId);
+            }
+
+            destroyPreview(jobId);
+        }
 
         const ph = document.getElementById('xtts-ph-' + jobId);
-        const wave = document.getElementById('xtts-wave-' + jobId);
+        const wave = existingWave || document.getElementById('xtts-wave-' + jobId);
         const time = document.getElementById('xtts-time-' + jobId);
 
         if (!wave || !url) return null;
@@ -2645,15 +2663,62 @@ class extends Component
         (async () => {
             try {
                 const blobUrl = await getBlobUrl(jobId, url);
+                const cachedMeta = S.previewMeta.get(jobId) || {};
+                S.previewMeta.set(jobId, { ...cachedMeta, url, waveEl: wave });
                 ws.load(blobUrl);
             } catch (e) {
                 console.warn('[XTTS] Falling back to direct URL', jobId, e);
+                const cachedMeta = S.previewMeta.get(jobId) || {};
+                S.previewMeta.set(jobId, { ...cachedMeta, url, waveEl: wave });
                 ws.load(url);
             }
         })();
 
+        const cachedMeta = S.previewMeta.get(jobId) || {};
+        S.previewMeta.set(jobId, { ...cachedMeta, url, waveEl: wave });
         S.previewWS.set(jobId, ws);
         return ws;
+    }
+
+    function previewButtonEntries() {
+        return Array.from(document.querySelectorAll('.btn-xtts-preview[data-job][data-url]'))
+            .map((btn, index) => ({
+                btn,
+                jobId: String(btn.getAttribute('data-job') || '').trim(),
+                url: String(btn.getAttribute('data-url') || '').trim(),
+                isLatest: btn.getAttribute('data-latest') === '1',
+                rank: Number(btn.getAttribute('data-preload-rank') ?? index),
+            }))
+            .filter((entry) => entry.jobId !== '' && entry.url !== '');
+    }
+
+    function reconcilePreviewInstances() {
+        const entries = previewButtonEntries();
+        const active = new Map(entries.map((entry) => [entry.jobId, entry]));
+
+        Array.from(S.previewWS.keys()).forEach((jobId) => {
+            const entry = active.get(jobId);
+
+            if (!entry) {
+                destroyPreview(jobId);
+                return;
+            }
+
+            const meta = S.previewMeta.get(jobId) || {};
+            const wave = document.getElementById('xtts-wave-' + jobId);
+            const sameContainer = meta.waveEl && wave && meta.waveEl === wave && meta.waveEl.isConnected;
+            const sameUrl = String(meta.url || '') === entry.url;
+
+            if (!sameContainer || !sameUrl) {
+                destroyPreview(jobId);
+            }
+        });
+
+        entries.forEach((entry) => {
+            if (!S.previewWS.has(entry.jobId)) {
+                initPreview(entry.jobId, entry.url, entry.isLatest);
+            }
+        });
     }
 
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Button binding Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -2687,19 +2752,14 @@ class extends Component
 
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Preload + render waveforms eagerly Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     async function preloadAndRenderRecentAudio() {
-        const buttons = Array.from(
-            document.querySelectorAll('.btn-xtts-preview[data-job][data-url]')
-        )
-        .sort((a, b) =>
-            Number(a.getAttribute('data-preload-rank') ?? 9999) -
-            Number(b.getAttribute('data-preload-rank') ?? 9999)
-        )
-        .slice(0, PRELOAD_LIMIT);
+        const buttons = previewButtonEntries()
+            .sort((a, b) => a.rank - b.rank)
+            .slice(0, PRELOAD_LIMIT);
 
         for (const btn of buttons) {
-            const jobId = btn.getAttribute('data-job');
-            const url = btn.getAttribute('data-url');
-            const isLatest = btn.getAttribute('data-latest') === '1';
+            const jobId = btn.jobId;
+            const url = btn.url;
+            const isLatest = btn.isLatest;
 
             if (!jobId || !url) continue;
             if (S.previewWS.has(jobId)) continue;
@@ -2933,6 +2993,8 @@ class extends Component
             spaClear();
             requestAnimationFrame(() => {
                 bindPreviewButtons();
+                reconcilePreviewInstances();
+                preloadAndRenderRecentAudio().catch(() => {});
                 highlightLatestRender();
             });
         });
@@ -2944,6 +3006,8 @@ class extends Component
                 succeed(() => {
                     requestAnimationFrame(() => {
                         bindPreviewButtons();
+                        reconcilePreviewInstances();
+                        preloadAndRenderRecentAudio().catch(() => {});
                         formSave();
                     });
                 });
@@ -2959,6 +3023,8 @@ class extends Component
 
             registerLivewireEvents();
             bindPreviewButtons();
+            reconcilePreviewInstances();
+            preloadAndRenderRecentAudio().catch(() => {});
             spaRestoreIfNeeded();
             formRestoreIfNeeded();
             watchAndPersistForm();

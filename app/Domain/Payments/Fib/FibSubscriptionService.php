@@ -32,20 +32,20 @@ class FibSubscriptionService
             statusCallbackUrl: $callbackUrl,
         );
 
-        Log::info('FIB subscription checkout create request prepared.', [
-            'provider_object_type' => 'subscription',
-            'payment_id' => $payment->id,
-            'payment_uuid' => (string) $payment->uuid,
-            'customer_id' => (int) $payment->customer_id,
-            'provider_reference' => $payment->providerReference(),
-            'fib_environment' => $this->config->environment(),
-            'profile' => 'subscription',
-            'base_url_host' => parse_url($this->config->baseUrl('subscription'), PHP_URL_HOST) ?: null,
-            'token_url_host' => parse_url($this->config->url('subscription', 'token'), PHP_URL_HOST) ?: null,
-            'status_callback_url' => $callbackUrl,
-            'provider_interval' => $request->interval,
-            'vm_hostname' => gethostname() ?: php_uname('n'),
-        ]);
+        // Log::info('FIB subscription checkout create request prepared.', [
+        //     'provider_object_type' => 'subscription',
+        //     'payment_id' => $payment->id,
+        //     'payment_uuid' => (string) $payment->uuid,
+        //     'customer_id' => (int) $payment->customer_id,
+        //     'provider_reference' => $payment->providerReference(),
+        //     'fib_environment' => $this->config->environment(),
+        //     'profile' => 'subscription',
+        //     'base_url_host' => parse_url($this->config->baseUrl('subscription'), PHP_URL_HOST) ?: null,
+        //     'token_url_host' => parse_url($this->config->url('subscription', 'token'), PHP_URL_HOST) ?: null,
+        //     'status_callback_url' => $callbackUrl,
+        //     'provider_interval' => $request->interval,
+        //     'vm_hostname' => gethostname() ?: php_uname('n'),
+        // ]);
 
         $response = $this->client->createSubscription($request);
 
@@ -67,7 +67,15 @@ class FibSubscriptionService
 
     public function hourlyTestingEnabled(): bool
     {
-        return (bool) config('fib.subscription.hourly_testing_enabled', false);
+        if (!(bool) config('fib.subscription.hourly_testing_enabled', false)) {
+            return false;
+        }
+
+        if ((bool) config('payments.fake_enabled', false)) {
+            return true;
+        }
+
+        return app()->environment(['local', 'testing']);
     }
 
     /**

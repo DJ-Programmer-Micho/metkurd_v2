@@ -93,11 +93,14 @@ class AppRenderPayloads
         $textPath = (string) data_get($job->output, 'text.path', '');
         $jsonPath = (string) data_get($job->output, 'json.path', '');
         $inputPath = (string) data_get($job->input, 'file_path', '');
+        $inputMime = strtolower((string) data_get($job->input, 'file_mime', 'application/pdf'));
         $jobId = (string) $job->id;
 
         return [
             'id' => $jobId,
-            'input_name' => (string) data_get($job->input, 'file_name', __('Untitled PDF')),
+            'input_name' => (string) data_get($job->input, 'file_name', __('Untitled document')),
+            'input_mime' => $inputMime,
+            'input_is_pdf' => $inputMime === 'application/pdf',
             'input_url' => $inputPath !== '' ? route('app.renders.ocr.input', [
                 'locale' => $locale,
                 'jobId' => $jobId,
@@ -139,10 +142,13 @@ class AppRenderPayloads
         $jobId = (string) $job->id;
         $textPath = (string) data_get($job->output, 'text.path', '');
         $jsonPath = (string) data_get($job->output, 'json.path', '');
+        $inputMime = strtolower((string) data_get($job->input, 'file_mime', 'application/pdf'));
 
         return [
             'id' => $jobId,
-            'input_name' => (string) data_get($job->input, 'file_name', __('Untitled PDF')),
+            'input_name' => (string) data_get($job->input, 'file_name', __('Untitled document')),
+            'input_mime' => $inputMime,
+            'input_is_pdf' => $inputMime === 'application/pdf',
             'page_range' => (string) data_get($job->input, 'page_range', ''),
             'lang' => (string) data_get($job->input, 'lang', 'ckb'),
             'dpi' => (int) data_get($job->input, 'dpi', 200),

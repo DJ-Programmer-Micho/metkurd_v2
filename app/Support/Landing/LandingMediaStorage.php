@@ -41,7 +41,7 @@ class LandingMediaStorage
             return $this->proxyUrl($normalizedPath);
         }
 
-        return Storage::disk($this->diskName())->url($normalizedPath);
+        return $this->absoluteUrl(Storage::disk($this->diskName())->url($normalizedPath));
     }
 
     public function normalizeStoredPath(?string $path): ?string
@@ -271,5 +271,27 @@ class LandingMediaStorage
             ->implode('/');
 
         return url('media/web/' . $encoded);
+    }
+
+    protected function absoluteUrl(string $path): string
+    {
+        $path = trim($path);
+
+        if ($path === '') {
+            return $path;
+        }
+
+        if ($this->isAbsoluteUrl($path)) {
+            return $path;
+        }
+
+        if (Str::startsWith($path, '//')) {
+            $scheme = (string) parse_url((string) config('app.url', ''), PHP_URL_SCHEME);
+            $scheme = $scheme !== '' ? $scheme : 'https';
+
+            return $scheme . ':' . $path;
+        }
+
+        return url(ltrim($path, '/'));
     }
 }

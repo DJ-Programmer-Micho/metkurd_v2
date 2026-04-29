@@ -4,6 +4,26 @@ $environment = strtolower(trim((string) env('FIB_ENV', 'staging')));
 $environment = $environment === 'production' ? 'production' : 'staging';
 $envSuffix = strtoupper($environment);
 
+$envBool = static function (string $key, bool $default = false): bool {
+    $value = env($key);
+
+    if ($value === null) {
+        return $default;
+    }
+
+    if (is_bool($value)) {
+        return $value;
+    }
+
+    if (is_int($value) || is_float($value)) {
+        return (bool) $value;
+    }
+
+    $parsed = filter_var((string) $value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+    return $parsed ?? $default;
+};
+
 $pick = static function (array $candidates, ?string $default = null, ?string $defaultSource = null): array {
     foreach ($candidates as $source => $value) {
         if (! is_scalar($value)) {
@@ -65,7 +85,7 @@ $subscriptionClientSecret = $pick([
 ]);
 
 return [
-    'enabled' => (bool) env('FIB_ENABLED', false),
+    'enabled' => $envBool('FIB_ENABLED', false),
     'environment' => $environment,
     'realm' => env('FIB_REALM', 'fib-online-shop'),
     'currency' => 'IQD',
@@ -78,7 +98,7 @@ return [
         'max_attempts' => (int) env('FIB_STATUS_SYNC_MAX_ATTEMPTS', 5),
     ],
     'reconciliation' => [
-        'enabled' => (bool) env('FIB_RECONCILIATION_ENABLED', true),
+        'enabled' => $envBool('FIB_RECONCILIATION_ENABLED', true),
         'chunk_size' => (int) env('FIB_RECONCILIATION_CHUNK_SIZE', 100),
         'stale_minutes' => (int) env('FIB_RECONCILIATION_STALE_MINUTES', 5),
     ],
@@ -90,7 +110,7 @@ return [
     'subscription' => [
         'expires_in' => env('FIB_SUBSCRIPTION_EXPIRES_IN', 'PT1H'),
         'trial_period' => env('FIB_SUBSCRIPTION_TRIAL_PERIOD'),
-        'hourly_testing_enabled' => (bool) env('FIB_SUBSCRIPTION_HOURLY_TESTING_ENABLED', false),
+        'hourly_testing_enabled' => $envBool('FIB_SUBSCRIPTION_HOURLY_TESTING_ENABLED', false),
         'intervals' => [
             'monthly' => env('FIB_SUBSCRIPTION_INTERVAL_MONTHLY', 'P1M'),
             'yearly' => env('FIB_SUBSCRIPTION_INTERVAL_YEARLY', 'P1Y'),
@@ -103,7 +123,7 @@ return [
         'retry_sleep_ms' => (int) env('FIB_HTTP_RETRY_SLEEP_MS', 200),
     ],
     'diagnostics' => [
-        'enabled' => (bool) env('FIB_DIAGNOSTICS_ENABLED', false),
+        'enabled' => $envBool('FIB_DIAGNOSTICS_ENABLED', false),
     ],
     'paths' => [
         'token' => env('FIB_TOKEN_PATH', '/auth/realms/{realm}/protocol/openid-connect/token'),

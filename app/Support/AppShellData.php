@@ -18,10 +18,33 @@ class AppShellData
      */
     protected static array $cache = [];
 
+    public static function forgetForCurrentCustomer(): void
+    {
+        $customerId = (int) auth('app')->id();
+
+        if ($customerId > 0) {
+            self::forgetForCustomerId($customerId);
+        }
+    }
+
+    public static function forgetForCustomerId(int $customerId): void
+    {
+        unset(self::$cache[$customerId]);
+
+        if ($customerId <= 0) {
+            return;
+        }
+
+        Cache::forget("app-shell:{$customerId}:access-map");
+        Cache::forget("app-shell:{$customerId}:active-jobs");
+        Cache::forget("app-shell:{$customerId}:usage-summary");
+        Cache::forget("app-shell:{$customerId}:allowed-slots");
+    }
+
     /**
      * @return array<string, mixed>
      */
-    public function forCurrentCustomer(): array
+    public function forCurrentCustomer(bool $forceRefresh = false): array
     {
         $customer = auth('app')->user();
 
@@ -30,6 +53,10 @@ class AppShellData
         }
 
         $customerId = (int) $customer->id;
+
+        if ($forceRefresh) {
+            self::forgetForCustomerId($customerId);
+        }
 
         if (isset(self::$cache[$customerId])) {
             return self::$cache[$customerId];
@@ -54,7 +81,11 @@ class AppShellData
                 : ($customer->storagePlan ?: $customer->activeStorageSubscription?->storagePlan));
         $wallet = $customer->wallet;
         $usage = $customer->usage;
-        $usageSummary = app(CustomerUsageSummaryService::class)->forCustomer($customer);
+        $usageSummary = Cache::remember(
+            "app-shell:{$customerId}:usage-summary",
+            now()->addSeconds(10),
+            fn () => app(CustomerUsageSummaryService::class)->forCustomer($customer)
+        );
 
         $planCode = strtolower((string) ($customer->serviceCode() ?: 'free'));
         $monthlyCredits = data_get($usageSummary, 'credits.monthly', (int) ($servicePlan?->monthly_credits ?? 0));
@@ -62,7 +93,11 @@ class AppShellData
         $quotaMb = data_get($usageSummary, 'storage.quota_mb', (int) ($storageState['current_limit_mb'] ?? $storagePlan?->quota_mb ?? 512));
         $usedBytes = data_get($usageSummary, 'storage.used_bytes', (int) ($storageState['used_bytes'] ?? $usage?->storage_used_bytes ?? 0));
         $usedMb = data_get($usageSummary, 'storage.used_mb', (int) ($storageState['used_mb'] ?? round($usedBytes / 1024 / 1024)));
-        $allowedSlots = app(PlanConcurrencyService::class)->allowedConcurrentJobsForPlan($servicePlan);
+        $allowedSlots = (int) Cache::remember(
+            "app-shell:{$customerId}:allowed-slots",
+            now()->addSeconds(60),
+            fn () => app(PlanConcurrencyService::class)->allowedConcurrentJobsForPlan($servicePlan)
+        );
 
         return self::$cache[$customerId] = [
             'customer' => $customer,

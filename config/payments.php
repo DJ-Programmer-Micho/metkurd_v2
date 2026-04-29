@@ -3,15 +3,35 @@
 use App\Enums\PaymentCardOrigin;
 use App\Enums\PaymentProvider;
 
+$envBool = static function (string $key, bool $default = false): bool {
+    $value = env($key);
+
+    if ($value === null) {
+        return $default;
+    }
+
+    if (is_bool($value)) {
+        return $value;
+    }
+
+    if (is_int($value) || is_float($value)) {
+        return (bool) $value;
+    }
+
+    $parsed = filter_var((string) $value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+    return $parsed ?? $default;
+};
+
 return [
     'default_provider' => env('PAYMENTS_DEFAULT_PROVIDER', PaymentProvider::FIB->value),
-    'fake_enabled' => (bool) env('PAYMENTS_FAKE_ENABLED', true),
+    'fake_enabled' => $envBool('PAYMENTS_FAKE_ENABLED', true),
 
     'providers' => [
         PaymentProvider::FAKE->value => [
             'label' => 'Fake Payments',
             'provider_class' => \App\Services\Payments\Providers\FakePaymentProvider::class,
-            'enabled' => (bool) env('PAYMENTS_FAKE_ENABLED', true),
+            'enabled' => $envBool('PAYMENTS_FAKE_ENABLED', true),
             'supports' => [
                 'one_time' => true,
                 'recurring' => false,
@@ -23,7 +43,7 @@ return [
         PaymentProvider::FIB->value => [
             'label' => 'First Iraqi Bank',
             'provider_class' => \App\Services\Payments\Providers\FibPaymentProvider::class,
-            'enabled' => (bool) env('FIB_ENABLED', false),
+            'enabled' => $envBool('FIB_ENABLED', false),
             'supports' => [
                 'one_time' => true,
                 'recurring' => true,
@@ -40,10 +60,10 @@ return [
         PaymentProvider::AREEBA->value => [
             'label' => 'Areeba Cards',
             'provider_class' => \App\Services\Payments\Providers\AreebaPaymentProvider::class,
-            'enabled' => (bool) env('AREEBA_ENABLED', false),
+            'enabled' => $envBool('AREEBA_ENABLED', false),
             'supports' => [
                 'one_time' => true,
-                'recurring' => (bool) env('AREEBA_SCHEDULE_ENABLED', false),
+                'recurring' => $envBool('AREEBA_SCHEDULE_ENABLED', false),
                 'refund' => true,
                 'cancel' => false,
             ],

@@ -175,31 +175,8 @@
     </div>
 
     <div class="navbar-brand-box">
-        <div class="position-absolute bottom-0 px-3 pb-3" style="min-width: 220px;">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-                <small class="text-muted">{{ __('Credits') }}</small>
-                <small class="fw-semibold">
-                    {{ number_format((int) ($shell['credit_balance'] ?? 0)) }}
-                    /
-                    {{ number_format((int) ($shell['monthly_credits'] ?? 0)) }}
-                </small>
-            </div>
-            <div class="progress" style="height:6px;">
-                <div class="progress-bar" style="width: {{ (int) ($shell['credits_pct'] ?? 0) }}%;"></div>
-            </div>
-
-            <div class="d-flex justify-content-between align-items-center mt-2 mb-1">
-                <small class="text-muted">{{ __('Storage') }}</small>
-                <small class="fw-semibold">
-                    {{ __(':used MB / :total MB', [
-                        'used' => number_format((int) ($shell['storage_used_mb'] ?? 0)),
-                        'total' => number_format((int) ($shell['storage_quota_mb'] ?? 0)),
-                    ]) }}
-                </small>
-            </div>
-            <div class="progress" style="height:6px;">
-                <div class="progress-bar bg-info" style="width: {{ (int) ($shell['storage_pct'] ?? 0) }}%;"></div>
-            </div>
+        <div class="position-absolute bottom-0 pb-3" style="min-width: 220px;">
+            <livewire:partials.components.header-account-chip />
         </div>
     </div>
 
