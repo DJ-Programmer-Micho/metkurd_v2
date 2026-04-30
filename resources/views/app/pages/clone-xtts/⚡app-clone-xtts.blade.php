@@ -1073,7 +1073,7 @@ class extends Component
                 <div class="glass-load {{ $glassClass }} p-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div>
-                            <div class="fw-semibold">{{ __('XTTS Job Status') }}</div>
+                            <div class="fw-semibold">{{ __('Vector Job Status') }}</div>
                             <div class="small text-muted">{{ __('Job ID:') }} {{ $currentJobId ?: '-' }}</div>
                         </div>
                         <span class="badge text-bg-{{ $badge }}">{{ $status }}</span>
@@ -1119,7 +1119,17 @@ class extends Component
                         </div>
 
                         <div class="card-body">
-                            <div class="mb-3">
+                            <div class="mb-1">
+                                <button
+                                        type="button"
+                                        id="cloneXttsTipsButton"
+                                        class="btn btn-outline-info mb-3"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#cloneXttsTipsModal"
+                                    >
+                                        {{ __('Tips') }}
+                                </button>
+                                <br>
                                 <label class="form-label">{{ __('Reference Voice Sample') }}</label>
 
                                 <div wire:ignore>
@@ -1187,6 +1197,50 @@ class extends Component
                                     <button class="btn btn-sm btn-link p-0" wire:click="clearText" type="button">
                                         {{ __('Clear') }}
                                     </button>
+                                </div>
+                                <div class="d-flex gap-2 mt-4 flex-wrap">
+                                    <button
+                                        class="btn {{ $this->canGenerate ? 'btn-primary' : 'btn-danger' }}"
+                                        wire:click="postCloneXtts"
+                                        wire:loading.attr="disabled"
+                                        wire:target="postCloneXtts,referenceAudio"
+                                        @disabled(!$this->canGenerate)
+                                        type="button"
+                                        id="btn-clone-xtts-generate"
+                                    >
+                                        <span wire:loading.remove wire:target="postCloneXtts,referenceAudio">
+                                            {{ $this->canGenerate ? __('Generate') : ($this->generateBlockedReason ?? __('Generate')) }}
+                                        </span>
+
+                                        <span wire:loading wire:target="referenceAudio">
+                                            <span class="spinner-border spinner-border-sm me-1"></span>
+                                            {{ __('Uploading sample...') }}
+                                        </span>
+
+                                        <span wire:loading wire:target="postCloneXtts">
+                                            <span class="spinner-border spinner-border-sm me-1"></span>
+                                            {{ __('Starting...') }}
+                                        </span>
+                                    </button>
+
+                                    <button class="btn btn-outline-secondary" wire:click="resetToDefaults" type="button">
+                                        {{ __('Reset') }}
+                                    </button>
+
+                                    <button
+                                        class="btn btn-outline-danger"
+                                        wire:click="openEliminateModal"
+                                        type="button"
+                                        @disabled(!$currentJobId || $jobFinished)
+                                    >
+                                        {{ __('Eliminate') }}
+                                    </button>
+
+                                    @if($walletBalance < $creditsCost && $creditsCost > 0)
+                                        <span class="small text-danger align-self-center">
+                                            {{ __('Not enough credits for this generation.') }}
+                                        </span>
+                                    @endif
                                 </div>
 
                                 @error('text')
@@ -1293,51 +1347,6 @@ class extends Component
                                     </div>
                                 @endforeach
                             </div>
-
-                            <div class="d-flex gap-2 mt-4 flex-wrap">
-                                <button
-                                    class="btn {{ $this->canGenerate ? 'btn-primary' : 'btn-danger' }}"
-                                    wire:click="postCloneXtts"
-                                    wire:loading.attr="disabled"
-                                    wire:target="postCloneXtts,referenceAudio"
-                                    @disabled(!$this->canGenerate)
-                                    type="button"
-                                    id="btn-clone-xtts-generate"
-                                >
-                                    <span wire:loading.remove wire:target="postCloneXtts,referenceAudio">
-                                        {{ $this->canGenerate ? __('Generate') : ($this->generateBlockedReason ?? __('Generate')) }}
-                                    </span>
-
-                                    <span wire:loading wire:target="referenceAudio">
-                                        <span class="spinner-border spinner-border-sm me-1"></span>
-                                        {{ __('Uploading sample...') }}
-                                    </span>
-
-                                    <span wire:loading wire:target="postCloneXtts">
-                                        <span class="spinner-border spinner-border-sm me-1"></span>
-                                        {{ __('Starting...') }}
-                                    </span>
-                                </button>
-
-                                <button class="btn btn-outline-secondary" wire:click="resetToDefaults" type="button">
-                                    {{ __('Reset') }}
-                                </button>
-
-                                <button
-                                    class="btn btn-outline-danger"
-                                    wire:click="openEliminateModal"
-                                    type="button"
-                                    @disabled(!$currentJobId || $jobFinished)
-                                >
-                                    {{ __('Eliminate') }}
-                                </button>
-
-                                @if($walletBalance < $creditsCost && $creditsCost > 0)
-                                    <span class="small text-danger align-self-center">
-                                        {{ __('Not enough credits for this generation.') }}
-                                    </span>
-                                @endif
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -1431,6 +1440,41 @@ class extends Component
                                     {{ $this->renders->links(data: ['scrollTo' => false]) }}
                                 </div>
                             @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal fade" id="cloneXttsTipsModal" tabindex="-1" aria-labelledby="cloneXttsTipsModalLabel" aria-hidden="true" wire:ignore.self>
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 bg-transparent">
+                <h5 id="cloneXttsTipsModalLabel" class="visually-hidden">{{ __('Tips') }}</h5>
+                <div class="card ribbon-box border shadow-none mb-lg-0">
+                    <div class="card-body text-muted">
+                        <div class="ribbon-three ribbon-three-success"><span>{{ __('Tips') }}</span></div>
+
+                        <div class="table-responsive mt-5">
+                            <table class="table table-sm table-bordered align-middle mb-0">
+                                <tbody>
+                                    <tr>
+                                        <th scope="row" class="w-25">{{ __('Date') }}</th>
+                                        <td>{{ __('1/12/2025') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">{{ __('Time') }}</th>
+                                        <td>{{ __('10:30') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">{{ __('Math') }}</th>
+                                        <td>{{ __('5+5=10') }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="text-end mt-3">
+                            <button type="button" class="btn btn-light" data-bs-dismiss="modal">{{ __('Close') }}</button>
                         </div>
                     </div>
                 </div>

@@ -1106,7 +1106,7 @@ class extends Component
                 <div class="glass-load {{ $glassClass }} p-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div>
-                            <div class="fw-semibold">{{ __('XTTS Job Status') }}</div>
+                            <div class="fw-semibold">{{ __('Apollo Job Status') }}</div>
                             <div class="small text-muted">{{ __('Job ID:') }} {{ $currentJobId ?: '-' }}</div>
                         </div>
                         <span class="badge text-bg-{{ $badge }}">{{ $status }}</span>
@@ -1152,7 +1152,17 @@ class extends Component
                         </div>
 
                         <div class="card-body">
-                            <div class="mt-3">
+                            <div class="mt-1">
+                                <button
+                                        type="button"
+                                        id="xttsTipsButton"
+                                        class="btn btn-outline-info mb-3"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#xttsTipsModal"
+                                    >
+                                        {{ __('Tips') }}
+                                </button>
+                                <br>
                                 <label class="form-label">{{ __('Text') }}</label>
 
                                 <textarea
@@ -1173,8 +1183,45 @@ class extends Component
                                     <button class="btn btn-sm btn-link p-0" wire:click="clearText" type="button">
                                         {{ __('Clear') }}
                                     </button>
-                                </div>
 
+                                    
+                                </div>
+                                <div class="d-flex gap-2 mt-4 flex-wrap">
+                                    <button
+                                        class="btn {{ $this->canGenerate ? 'btn-primary' : 'btn-danger' }}"
+                                        wire:click="postXtts"
+                                        wire:loading.attr="disabled"
+                                        wire:target="postXtts"
+                                        @disabled(!$this->canGenerate)
+                                        type="button"
+                                        id="btn-xtts-generate"
+                                    >
+                                        <span wire:loading.remove wire:target="postXtts">
+                                            {{ $this->canGenerate ? __('Generate') : ($this->generateBlockedReason ?? __('Generate')) }}
+                                        </span>
+                                        <span wire:loading wire:target="postXtts">
+                                            <span class="spinner-border spinner-border-sm me-1"></span>
+                                            {{ __('Starting...') }}
+                                        </span>
+                                    </button>
+
+                                    <button class="btn btn-outline-secondary" wire:click="resetToDefaults" type="button">
+                                        {{ __('Reset') }}
+                                    </button>
+                                    <button
+                                        class="btn btn-outline-danger"
+                                        wire:click="openEliminateModal"
+                                        type="button"
+                                        @disabled(!$currentJobId || $jobFinished)
+                                    >
+                                        {{ __('Eliminate') }}
+                                    </button>
+                                    @if($walletBalance < $creditsCost && $creditsCost > 0)
+                                        <span class="small text-danger align-self-center">
+                                            {{ __('Not enough credits for this generation.') }}
+                                        </span>
+                                    @endif
+                                </div>
                                 @error('text')
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
@@ -1443,44 +1490,6 @@ class extends Component
                                     </div>
                                 @endforeach
                             </div>
-
-                            <div class="d-flex gap-2 mt-4 flex-wrap">
-                                <button
-                                    class="btn {{ $this->canGenerate ? 'btn-primary' : 'btn-danger' }}"
-                                    wire:click="postXtts"
-                                    wire:loading.attr="disabled"
-                                    wire:target="postXtts"
-                                    @disabled(!$this->canGenerate)
-                                    type="button"
-                                    id="btn-xtts-generate"
-                                >
-                                    <span wire:loading.remove wire:target="postXtts">
-                                        {{ $this->canGenerate ? __('Generate') : ($this->generateBlockedReason ?? __('Generate')) }}
-                                    </span>
-                                    <span wire:loading wire:target="postXtts">
-                                        <span class="spinner-border spinner-border-sm me-1"></span>
-                                        {{ __('Starting...') }}
-                                    </span>
-                                </button>
-
-                                <button class="btn btn-outline-secondary" wire:click="resetToDefaults" type="button">
-                                    {{ __('Reset') }}
-                                </button>
-
-                                <button
-                                    class="btn btn-outline-danger"
-                                    wire:click="openEliminateModal"
-                                    type="button"
-                                    @disabled(!$currentJobId || $jobFinished)
-                                >
-                                    {{ __('Eliminate') }}
-                                </button>
-                                @if($walletBalance < $creditsCost && $creditsCost > 0)
-                                    <span class="small text-danger align-self-center">
-                                        {{ __('Not enough credits for this generation.') }}
-                                    </span>
-                                @endif
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -1488,6 +1497,41 @@ class extends Component
         </div>
 
         <livewire:partials.xtts-renders-panel />
+    </div>
+    <div class="modal fade" id="xttsTipsModal" tabindex="-1" aria-labelledby="xttsTipsModalLabel" aria-hidden="true" wire:ignore.self>
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 bg-transparent">
+                <h5 id="xttsTipsModalLabel" class="visually-hidden">{{ __('Tips') }}</h5>
+                <div class="card ribbon-box border shadow-none mb-lg-0">
+                    <div class="card-body text-muted">
+                        <div class="ribbon-three ribbon-three-success"><span>{{ __('Tips') }}</span></div>
+
+                        <div class="table-responsive mt-5">
+                            <table class="table table-sm table-bordered align-middle mb-0">
+                                <tbody>
+                                    <tr>
+                                        <th scope="row" class="w-25">{{ __('Date') }}</th>
+                                        <td>{{ __('1/12/2025') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">{{ __('Time') }}</th>
+                                        <td>{{ __('10:30') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">{{ __('Math') }}</th>
+                                        <td>{{ __('5+5=10') }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="text-end mt-3">
+                            <button type="button" class="btn btn-light" data-bs-dismiss="modal">{{ __('Close') }}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
         @if($showEliminateModal)
         <div class="modal fade show" style="display:block;" tabindex="-1" aria-modal="true" role="dialog">
@@ -2395,6 +2439,10 @@ class extends Component
             togglePreview(code) {
                 const voiceCode = String(code || '');
                 const url = this.previewUrl(voiceCode);
+
+                if (!this.isSelected(voiceCode)) {
+                    this.selectSpeaker(voiceCode);
+                }
 
                 if (!this.hasPreview(voiceCode)) {
                     this.setPreviewError(

@@ -976,7 +976,7 @@ class extends Component
                 <div class="glass-load {{ $glassClass }} p-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div>
-                            <div class="fw-semibold">{{ __('ASR Transcription Status') }}</div>
+                            <div class="fw-semibold">{{ __('NEO Status') }}</div>
                             <div class="small text-muted">{{ __('Job ID:') }} {{ $currentJobId ?: '-' }}</div>
                         </div>
                         <span class="badge text-bg-{{ $badge }} fs-6 px-3 py-2">{{ $status }}</span>

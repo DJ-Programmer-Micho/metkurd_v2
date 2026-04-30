@@ -6,12 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Models\MlJob;
 use App\Support\AppRenderPayloads;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use ZipArchive;
 
 class StemRenderController extends Controller
 {
+    protected int $zipCacheTtlSeconds = 900;
+    protected int $zipPruneAfterSeconds = 3600;
+
     protected function jobOrFail(string $jobId): MlJob
     {
         $job = MlJob::query()
@@ -63,6 +68,194 @@ class StemRenderController extends Controller
         return $track === 'original'
             ? (string) (data_get($job->input, 'audio_disk') ?: data_get($job->output, 'disk', 's3'))
             : (string) data_get($job->output, 'disk', 's3');
+    }
+
+    /**
+     * @return array<int, array{track:string,disk:string,path:string,filename:string}>
+     */
+    protected function resolveZipEntries(MlJob $job): array
+    {
+        $mode = (int) (data_get($job->meta, 'separation_mode') ?: data_get($job->input, 'stems', 4));
+        $tracks = AppRenderPayloads::stemTracks($mode);
+        $entries = [];
+
+        foreach ($tracks as $track) {
+            $path = (string) ($this->resolveTrackPath($job, $track) ?? '');
+            if ($path === '') {
+                continue;
+            }
+
+            $extension = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+            if ($extension === '') {
+                $extension = $this->fallbackExtensionForMime($this->resolveTrackMime($job, $track));
+            }
+
+            $entries[] = [
+                'track' => $track,
+                'disk' => $this->resolveTrackDisk($job, $track),
+                'path' => $path,
+                'filename' => "{$track}.{$extension}",
+            ];
+        }
+
+        return $entries;
+    }
+
+    protected function fallbackExtensionForMime(string $mime): string
+    {
+        $normalized = strtolower($mime);
+
+        return match (true) {
+            str_contains($normalized, 'wav') => 'wav',
+            str_contains($normalized, 'flac') => 'flac',
+            str_contains($normalized, 'ogg') => 'ogg',
+            str_contains($normalized, 'aac') => 'aac',
+            str_contains($normalized, 'mp4'),
+            str_contains($normalized, 'm4a') => 'm4a',
+            default => 'mp3',
+        };
+    }
+
+    /**
+     * @param  array<int, array{track:string,disk:string,path:string,filename:string}>  $entries
+     */
+    protected function zipSignature(MlJob $job, array $entries): string
+    {
+        $payload = [
+            'job_id' => (string) $job->id,
+            'updated_at' => optional($job->updated_at)->timestamp,
+            'finished_at' => optional($job->finished_at)->timestamp,
+            'storage_out_bytes' => (int) ($job->storage_out_bytes ?? 0),
+            'entries' => array_map(static fn (array $entry) => [
+                'disk' => (string) $entry['disk'],
+                'path' => (string) $entry['path'],
+                'filename' => (string) $entry['filename'],
+            ], $entries),
+        ];
+
+        $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+
+        return hash('sha256', $json !== false ? $json : serialize($payload));
+    }
+
+    protected function zipDirectory(): string
+    {
+        $directory = storage_path('app/tmp/stem-zips');
+        File::ensureDirectoryExists($directory);
+
+        return $directory;
+    }
+
+    protected function maybePruneOldZipArtifacts(string $directory): void
+    {
+        // Run lightweight cleanup occasionally so cached artifacts do not grow forever.
+        if (mt_rand(1, 25) !== 1) {
+            return;
+        }
+
+        $files = glob($directory . DIRECTORY_SEPARATOR . 'stem-*.zip');
+        if (!is_array($files)) {
+            return;
+        }
+
+        $expireBefore = time() - max(60, $this->zipPruneAfterSeconds);
+
+        foreach ($files as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
+
+            $mtime = @filemtime($path);
+            if ($mtime !== false && $mtime < $expireBefore) {
+                @unlink($path);
+            }
+        }
+    }
+
+    /**
+     * @param  array<int, array{track:string,disk:string,path:string,filename:string}>  $entries
+     */
+    protected function buildZipArchive(string $zipPath, array $entries, string $jobId): int
+    {
+        $tmpPath = $zipPath . '.tmp';
+
+        if (is_file($tmpPath)) {
+            @unlink($tmpPath);
+        }
+
+        $zip = new ZipArchive();
+        if ($zip->open($tmpPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            return 0;
+        }
+
+        $added = 0;
+
+        foreach ($entries as $entry) {
+            try {
+                if (!Storage::disk($entry['disk'])->exists($entry['path'])) {
+                    continue;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('STEM_ZIP_EXISTS_CHECK_FAIL', [
+                    'job_id' => $jobId,
+                    'disk' => $entry['disk'],
+                    'path' => $entry['path'],
+                    'message' => $e->getMessage(),
+                ]);
+                continue;
+            }
+
+            $stream = null;
+
+            try {
+                $stream = Storage::disk($entry['disk'])->readStream($entry['path']);
+            } catch (\Throwable $e) {
+                Log::warning('STEM_ZIP_READ_STREAM_FAIL', [
+                    'job_id' => $jobId,
+                    'disk' => $entry['disk'],
+                    'path' => $entry['path'],
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            if (!$stream) {
+                continue;
+            }
+
+            try {
+                $contents = stream_get_contents($stream);
+            } finally {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
+
+            if ($contents === false) {
+                continue;
+            }
+
+            if ($zip->addFromString($entry['filename'], $contents)) {
+                $added++;
+            }
+        }
+
+        $zip->close();
+
+        if ($added === 0) {
+            @unlink($tmpPath);
+            return 0;
+        }
+
+        if (is_file($zipPath)) {
+            @unlink($zipPath);
+        }
+
+        if (!@rename($tmpPath, $zipPath)) {
+            @unlink($tmpPath);
+            return 0;
+        }
+
+        return $added;
     }
 
     public function stream(Request $request, string $locale, string $jobId, string $track)
@@ -133,58 +326,35 @@ class StemRenderController extends Controller
     public function zip(string $locale, string $jobId)
     {
         $job = $this->jobOrFail($jobId);
+        $entries = $this->resolveZipEntries($job);
 
-        $mode = (int) (data_get($job->meta, 'separation_mode') ?: data_get($job->input, 'stems', 4));
-        $tracks = $mode === 2
-            ? ['original', 'vocals', 'instrumental']
-            : ['original', 'vocals', 'drums', 'bass', 'other'];
+        abort_if($entries === [], 404, 'No downloadable files are available for this render yet.');
 
-        $files = [];
-        foreach ($tracks as $track) {
-            $path = $this->resolveTrackPath($job, $track);
-            $disk = $this->resolveTrackDisk($job, $track);
+        $signature = $this->zipSignature($job, $entries);
+        $cacheKey = "stem-zip-meta:{$job->id}:{$signature}";
+        $ttlSeconds = max(60, (int) $this->zipCacheTtlSeconds);
+        $zipPath = '';
 
-            if ($path && Storage::disk($disk)->exists($path)) {
-                $files[$track . '.' . pathinfo($path, PATHINFO_EXTENSION)] = [
-                    'disk' => $disk,
-                    'path' => $path,
-                ];
-            }
+        $cachedMeta = Cache::get($cacheKey);
+        if (is_array($cachedMeta)) {
+            $zipPath = (string) ($cachedMeta['path'] ?? '');
         }
 
-        abort_if(empty($files), 404, 'No files available for zip.');
+        if ($zipPath === '' || !is_file($zipPath)) {
+            $directory = $this->zipDirectory();
+            $zipPath = $directory . DIRECTORY_SEPARATOR . "stem-{$job->id}-{$signature}.zip";
 
-        $tmpZip = tempnam(sys_get_temp_dir(), 'stem_zip_') . '.zip';
+            if (!is_file($zipPath)) {
+                $filesAdded = $this->buildZipArchive($zipPath, $entries, (string) $job->id);
+                abort_if($filesAdded === 0, 404, 'No downloadable files are available for this render yet.');
+            }
 
-        $zip = new ZipArchive();
-        if ($zip->open($tmpZip, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-            abort(500, 'Could not create zip.');
+            $this->maybePruneOldZipArtifacts($directory);
         }
 
-        foreach ($files as $filename => $file) {
-            $stream = Storage::disk($file['disk'])->readStream($file['path']);
-            if (!$stream) {
-                continue;
-            }
+        Cache::put($cacheKey, ['path' => $zipPath], now()->addSeconds($ttlSeconds));
 
-            try {
-                $contents = stream_get_contents($stream);
-            } finally {
-                if (is_resource($stream)) {
-                    fclose($stream);
-                }
-            }
-
-            if ($contents !== false) {
-                $zip->addFromString($filename, $contents);
-            }
-        }
-
-        $zip->close();
-
-        return response()
-            ->download($tmpZip, "stem-{$job->id}.zip")
-            ->deleteFileAfterSend(true);
+        return response()->download($zipPath, "stem-{$job->id}.zip");
     }
 
     public function payload(string $locale, string $jobId)

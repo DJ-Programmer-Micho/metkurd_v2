@@ -1473,7 +1473,10 @@ class extends Component
                             @else
                                 <div class="list-group">
                                     @foreach($this->recentRenders as $render)
-                                        <div class="list-group-item render-item stem-render-item {{ $latestFinishedJobId === (string) $render['id'] ? 'stem-render-item--latest' : '' }}">
+                                        <div
+                                            class="list-group-item render-item stem-render-item {{ $latestFinishedJobId === (string) $render['id'] ? 'stem-render-item--latest' : '' }}"
+                                            wire:key="stem-render-{{ $render['id'] }}"
+                                        >
                                             <div class="d-flex justify-content-between align-items-start">
                                                 <div style="min-width:0; flex:1;">
                                                     <button
