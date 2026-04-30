@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Domain\Payments\Enums\PaymentMode;
 use App\Services\Plans\PlanConcurrencyService;
 use Illuminate\Support\Arr;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,6 +19,8 @@ class ServicePlan extends Model
         'code',
         'name',
         'billing_interval',
+        'billing_intervals',
+        'payment_mode',
         'monthly_credits',
         'concurrent_jobs_limit',
         'is_free',
@@ -41,6 +44,7 @@ class ServicePlan extends Model
         'price_usd_yearly' => 'decimal:2',
         'price_iqd_monthly' => 'decimal:0',
         'price_iqd_yearly' => 'decimal:0',
+        'billing_intervals' => 'array',
         'ui_features' => 'array',
         'meta' => 'array',
     ];
@@ -112,6 +116,51 @@ class ServicePlan extends Model
 
         return app(\App\Services\Billing\BillingCurrencyService::class)
             ->legacyUsdAmountToIqd($this->priceUsdForCycle($billingCycle));
+    }
+
+    public function checkoutPaymentMode(): PaymentMode
+    {
+        return PaymentMode::fromValue($this->payment_mode, PaymentMode::RECURRING);
+    }
+
+    public function checkoutPaymentModeValue(): string
+    {
+        return $this->checkoutPaymentMode()->value;
+    }
+
+    public function billingIntervals(): array
+    {
+        $allowed = ['monthly', 'yearly', 'lifetime'];
+        $configured = collect(is_array($this->billing_intervals) ? $this->billing_intervals : [])
+            ->map(fn ($interval) => strtolower(trim((string) $interval)))
+            ->filter(fn (string $interval) => in_array($interval, $allowed, true))
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($configured !== []) {
+            return $configured;
+        }
+
+        $legacy = strtolower(trim((string) ($this->billing_interval ?? 'monthly')));
+
+        if ($legacy === 'lifetime') {
+            return ['lifetime'];
+        }
+
+        if (in_array($legacy, ['monthly', 'yearly'], true)) {
+            return ['monthly', 'yearly'];
+        }
+
+        return ['monthly'];
+    }
+
+    public function supportsBillingInterval(string $cycle): bool
+    {
+        $cycle = strtolower(trim($cycle));
+        $normalized = $cycle === 'hourly' ? 'monthly' : $cycle;
+
+        return in_array($normalized, $this->billingIntervals(), true);
     }
 
     public function localizedUiFeatures(?string $locale = null): array

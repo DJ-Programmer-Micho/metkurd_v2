@@ -8,6 +8,7 @@ use App\Services\Billing\BillingCurrencyService;
 use App\Services\Billing\CustomerBillingStateService;
 use App\Services\Billing\ScheduleStoragePlanCancellation;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -95,6 +96,9 @@ class extends Component
                     'id' => (int) $plan->id,
                     'code' => (string) $plan->code,
                     'name' => (string) $plan->name,
+                    'payment_mode' => $plan->checkoutPaymentModeValue(),
+                    'billing_intervals' => $plan->billingIntervals(),
+                    'billing_interval' => (string) ($plan->billing_interval ?? 'monthly'),
                     'quota_mb' => (int) ($plan->quota_mb ?? 0),
                     'price_iqd' => $priceIqd,
                     'price_display' => $currency->priceDataForBaseAmountIqd($priceIqd, $customer),
@@ -126,9 +130,31 @@ class extends Component
         $this->currentPlanEndsAtLabel = $this->formatDateLabel($state['period_ends_at'] ?? null);
     }
 
-    public function openConfirm(int $planId): void
+    public function openConfirm(int $planId, string $billingCycle = 'monthly'): void
     {
+        $selectedPlan = collect($this->plans)->firstWhere('id', $planId);
+
+        if (! is_array($selectedPlan)) {
+            return;
+        }
+
+        $resolvedCycle = $this->normalizeBillingCycle($billingCycle);
+
+        if (! $this->planSupportsCycle($selectedPlan, $resolvedCycle)) {
+            if ($this->planSupportsCycle($selectedPlan, 'monthly')) {
+                $resolvedCycle = 'monthly';
+            } elseif ($this->planSupportsCycle($selectedPlan, 'yearly')) {
+                $resolvedCycle = 'yearly';
+            } else {
+                $this->messageType = 'danger';
+                $this->message = __('This billing cycle is not available for the selected storage plan.');
+
+                return;
+            }
+        }
+
         $this->selectedPlanId = $planId;
+        $this->billingCycle = $this->normalizeBillingCycle($resolvedCycle);
         $this->message = '';
         $this->messageType = 'info';
         $this->showConfirm = true;
@@ -227,6 +253,8 @@ class extends Component
             return;
         }
 
+        $billingCycle = $this->resolveStorageBillingCycle($selectedPlan, $this->billingCycle);
+
         $this->processing = true;
         $this->message = '';
         $this->messageType = 'info';
@@ -235,7 +263,7 @@ class extends Component
             $payment = app(CreateStorageSubscriptionPayment::class)->handle(
                 $customer,
                 (int) $this->selectedPlanId,
-                $this->billingCycle,
+                $billingCycle,
             );
 
             $this->showConfirm = false;
@@ -248,8 +276,15 @@ class extends Component
             $this->messageType = 'danger';
             $this->message = collect($exception->errors())->flatten()->first() ?: __('Could not start the payment.');
         } catch (\Throwable $exception) {
+            Log::error('Failed to start storage plan checkout.', [
+                'customer_id' => (int) ($customer?->id ?? 0),
+                'storage_plan_id' => (int) $this->selectedPlanId,
+                'billing_cycle' => (string) $billingCycle,
+                'message' => $exception->getMessage(),
+                'exception' => $exception,
+            ]);
             $this->messageType = 'danger';
-            $this->message = __('Failed to start the payment: :message', ['message' => $exception->getMessage()]);
+            $this->message = __('Failed to start the payment right now. Please try again shortly.');
         } finally {
             $this->processing = false;
         }
@@ -293,7 +328,7 @@ class extends Component
     protected function normalizeBillingCycle(?string $cycle): string
     {
         $cycle = strtolower(trim((string) $cycle));
-        $allowed = ['monthly'];
+        $allowed = ['monthly', 'yearly'];
 
         if ($this->hourlyTestingEnabled) {
             $allowed[] = 'hourly';
@@ -302,12 +337,85 @@ class extends Component
         return in_array($cycle, $allowed, true) ? $cycle : 'monthly';
     }
 
+    protected function resolveStorageBillingCycle(array $plan, ?string $requestedCycle = null): string
+    {
+        $requested = $this->normalizeBillingCycle($requestedCycle);
+
+        if ($this->planSupportsCycle($plan, $requested)) {
+            return $requested;
+        }
+
+        foreach (['monthly', 'yearly'] as $fallback) {
+            if ($this->planSupportsCycle($plan, $fallback)) {
+                return $fallback;
+            }
+        }
+
+        throw \Illuminate\Validation\ValidationException::withMessages([
+            'billing_cycle' => __('This billing cycle is not available for the selected storage plan.'),
+        ]);
+    }
+
+    protected function planSupportsCycle(array $plan, string $cycle): bool
+    {
+        $normalized = strtolower(trim($cycle));
+        $normalized = $normalized === 'hourly' ? 'monthly' : $normalized;
+        $allowed = ['monthly', 'yearly'];
+
+        if (! in_array($normalized, $allowed, true)) {
+            return false;
+        }
+
+        $intervals = collect(data_get($plan, 'billing_intervals', []))
+            ->map(fn ($interval) => strtolower(trim((string) $interval)))
+            ->filter(fn (string $interval) => in_array($interval, $allowed, true))
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($intervals === []) {
+            $legacy = strtolower(trim((string) data_get($plan, 'billing_interval', 'monthly')));
+            $intervals = in_array($legacy, $allowed, true) ? [$legacy] : ['monthly'];
+        }
+
+        return in_array($normalized, $intervals, true);
+    }
+
 };
 ?>
 
 <x-slot:title>{{ __('Storage Plan') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div>
+@php
+    $storagePlanCollection = collect($plans);
+    $extractIntervals = static function (array $plan): array {
+        $allowed = ['monthly', 'yearly'];
+        $intervals = collect($plan['billing_intervals'] ?? [])
+            ->map(fn ($interval) => strtolower(trim((string) $interval)))
+            ->filter(fn (string $interval) => in_array($interval, $allowed, true))
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($intervals === []) {
+            $legacy = strtolower(trim((string) ($plan['billing_interval'] ?? 'monthly')));
+            $intervals = in_array($legacy, $allowed, true) ? [$legacy] : ['monthly'];
+        }
+
+        return $intervals;
+    };
+    $monthlyStoragePlanCount = $storagePlanCollection
+        ->filter(fn (array $plan) => in_array('monthly', $extractIntervals($plan), true))
+        ->count();
+    $yearlyStoragePlanCount = $storagePlanCollection
+        ->filter(fn (array $plan) => in_array('yearly', $extractIntervals($plan), true))
+        ->count();
+    $defaultStorageBillingCycle = $monthlyStoragePlanCount > 0
+        ? 'monthly'
+        : ($yearlyStoragePlanCount > 0 ? 'yearly' : 'monthly');
+@endphp
+
+<div x-data="{ billingCycle: @js($defaultStorageBillingCycle) }">
     <div class="row justify-content-center mt-4">
         <div class="col-lg-8">
             <div class="text-center mb-4 pb-2">
@@ -365,22 +473,32 @@ class extends Component
                         <div class="fw-semibold">{{ __('Hourly renewal is enabled for testing only.') }}</div>
                         <div class="small mt-1">{{ __('This keeps the existing storage plan price but uses a fast hourly recurring interval so renewals and cancel-at-period-end behavior can be verified quickly.') }}</div>
                     </div>
+                @endif
 
-                    <div class="d-flex justify-content-center mt-4">
-                        <div class="btn-group" role="group" aria-label="{{ __('Billing cycle') }}">
+                <div class="d-flex justify-content-center mt-4">
+                    <div class="btn-group flex-wrap" role="group" aria-label="{{ __('Billing cycle') }}">
+                        <button type="button"
+                                class="btn"
+                                :class="billingCycle === 'monthly' ? 'btn-primary' : 'btn-outline-primary'"
+                                x-on:click="billingCycle = 'monthly'">
+                            {{ __('Monthly') }}
+                        </button>
+                        <button type="button"
+                                class="btn"
+                                :class="billingCycle === 'yearly' ? 'btn-primary' : 'btn-outline-primary'"
+                                x-on:click="billingCycle = 'yearly'">
+                            {{ __('Yearly') }}
+                        </button>
+                        @if($hourlyTestingEnabled)
                             <button type="button"
-                                    class="btn {{ $billingCycle === 'monthly' ? 'btn-primary' : 'btn-outline-primary' }}"
-                                    wire:click="$set('billingCycle', 'monthly')">
-                                {{ __('Monthly') }}
-                            </button>
-                            <button type="button"
-                                    class="btn {{ $billingCycle === 'hourly' ? 'btn-primary' : 'btn-outline-primary' }}"
-                                    wire:click="$set('billingCycle', 'hourly')">
+                                    class="btn"
+                                    :class="billingCycle === 'hourly' ? 'btn-primary' : 'btn-outline-primary'"
+                                    x-on:click="billingCycle = 'hourly'">
                                 {{ __('Hourly Test') }}
                             </button>
-                        </div>
+                        @endif
                     </div>
-                @endif
+                </div>
             </div>
         </div>
     </div>
@@ -388,16 +506,39 @@ class extends Component
     <div class="row">
         @foreach($plans as $p)
             @php
+                $planMode = strtolower((string) ($p['payment_mode'] ?? 'one_time'));
+                $planIntervals = $extractIntervals($p);
+                $supportsMonthly = in_array('monthly', $planIntervals, true);
+                $supportsYearly = in_array('yearly', $planIntervals, true);
+                $isManualPayment = $planMode === 'one_time';
+                $isAutoRenewal = $planMode === 'recurring';
+                $showInMonthlyTab = $supportsMonthly;
+                $showInYearlyTab = $supportsYearly;
+                $showInHourlyTab = $hourlyTestingEnabled && $supportsMonthly && $isAutoRenewal;
                 $showLocalPrice = (bool) data_get($p, 'price_display.has_localized_estimate', false);
+                $confirmCycleLiteral = "(billingCycle === 'hourly' ? 'hourly' : billingCycle)";
             @endphp
 
-            <div class="col-xxl-3 col-lg-6">
+            <div class="col-xxl-3 col-lg-6"
+                 x-show="(billingCycle === 'monthly' && @js($showInMonthlyTab))
+                      || (billingCycle === 'yearly' && @js($showInYearlyTab))
+                      || (billingCycle === 'hourly' && @js($showInHourlyTab))">
                 <div class="card pricing-box {{ $p['is_current'] ? 'border border-success shadow-sm' : '' }}">
                     <div class="card-body bg-light m-2 p-4">
                         <div class="d-flex align-items-center mb-3">
                             <div class="flex-grow-1">
                                 <h5 class="mb-0">{{ $p['name'] }}</h5>
                                 <div class="text-muted fs-12">{{ strtoupper($p['code']) }}</div>
+                                <span class="badge bg-soft-secondary text-secondary mt-2"
+                                      x-text="billingCycle === 'yearly' ? @js(__('Yearly')) : @js(__('Monthly'))">
+                                    {{ __('Monthly') }}
+                                </span>
+                                @if($isAutoRenewal)
+                                    <span class="badge bg-soft-primary text-primary mt-2">{{ __('Auto Renewal') }}</span>
+                                @else
+                                    <span class="badge bg-soft-warning text-warning mt-2">{{ __('Manual Payment') }}</span>
+                                    <span class="badge bg-soft-secondary text-secondary mt-2">{{ __('No Auto-Renew') }}</span>
+                                @endif
                                 @if($p['cancellation_scheduled'])
                                     <span class="badge bg-soft-warning text-warning mt-2">{{ __('Cancellation Scheduled') }}</span>
                                 @endif
@@ -406,7 +547,16 @@ class extends Component
                                 <div class="fw-semibold">{{ number_format($p['quota_mb']) }} MB</div>
                                 <div class="text-muted fs-12">{{ __('quota') }}</div>
                                 <div class="fw-semibold mt-2">{{ data_get($p, 'price_display.iqd_label') }}</div>
-                                <div class="text-muted fs-12">{{ $billingCycle === 'hourly' ? __('per test hour') : __('per month') }}</div>
+                                <div class="text-muted fs-12"
+                                     x-text="billingCycle === 'hourly' ? @js(__('per test hour')) : (billingCycle === 'yearly' ? @js(__('per year')) : @js(__('per month')))">
+                                    {{ __('per month') }}
+                                </div>
+                                @if($isManualPayment)
+                                    <div class="text-muted fs-12"
+                                         x-text="billingCycle === 'yearly' ? @js(__('Pay manually each year')) : @js(__('Pay manually each month'))">
+                                        {{ __('Pay manually each month') }}
+                                    </div>
+                                @endif
                                 @if($showLocalPrice)
                                     <div class="text-muted fs-12 mt-1">{{ data_get($p, 'price_display.estimated_label') }}</div>
                                 @endif
@@ -439,7 +589,7 @@ class extends Component
                                 </div>
                             @else
                                 <button class="btn btn-info w-100"
-                                        wire:click="openConfirm({{ $p['id'] }})"
+                                        x-on:click="$wire.openConfirm({{ $p['id'] }}, {!! $confirmCycleLiteral !!})"
                                         wire:loading.attr="disabled"
                                         wire:target="openConfirm">
                                     {{ __('Change Plan') }}
@@ -450,12 +600,29 @@ class extends Component
                 </div>
             </div>
         @endforeach
+        <div class="col-12" x-show="billingCycle === 'monthly' && @js($monthlyStoragePlanCount === 0)">
+            <div class="alert alert-light border text-center text-muted mb-0">
+                {{ __('No Monthly storage plans are currently available.') }}
+            </div>
+        </div>
+        <div class="col-12" x-show="billingCycle === 'yearly' && @js($yearlyStoragePlanCount === 0)">
+            <div class="alert alert-light border text-center text-muted mb-0">
+                {{ __('No Yearly storage plans are currently available.') }}
+            </div>
+        </div>
     </div>
 
     @if($showConfirm)
         @php
             $selected = collect($plans)->firstWhere('id', $selectedPlanId);
             $selectedDisplay = is_array($selected) ? ($selected['price_display'] ?? null) : null;
+            $selectedPaymentMode = strtolower((string) data_get($selected, 'payment_mode', 'recurring'));
+            $selectedUsesRecurring = $selectedPaymentMode === 'recurring';
+            $selectedBillingCycleLabel = match ($billingCycle) {
+                'hourly' => __('Hourly Test'),
+                'yearly' => __('Yearly'),
+                default => __('Monthly'),
+            };
         @endphp
 
         <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
@@ -475,8 +642,17 @@ class extends Component
                             </p>
                             <p class="mb-2">
                                 {{ __('Billing cycle:') }}
-                                <b>{{ $billingCycle === 'hourly' ? __('Hourly Test') : __('Monthly') }}</b>
+                                <b>{{ $selectedBillingCycleLabel }}</b>
                             </p>
+                            <p class="mb-2">
+                                {{ __('Renewal type:') }}
+                                <b>{{ $selectedUsesRecurring ? __('Auto Renewal') : __('Manual Payment') }}</b>
+                            </p>
+                            @if(! $selectedUsesRecurring)
+                                <p class="mb-2 text-muted small">
+                                    {{ $billingCycle === 'yearly' ? __('Pay manually each year') : __('Pay manually each month') }}
+                                </p>
+                            @endif
                             <p class="mb-2">
                                 {{ __('New quota:') }}
                                 <b>{{ number_format($selected['quota_mb']) }} MB</b>
@@ -505,9 +681,15 @@ class extends Component
 
                         <div class="alert alert-warning mt-3 mb-0">
                             <div class="fw-semibold mb-2">{{ __('Next step: complete payment in First Iraqi Bank') }}</div>
-                            <div>{{ __('We will open a dedicated FIB subscription page with QR scan, manual code entry, automatic status refresh, and cancel controls.') }}</div>
+                            <div>
+                                {{ $selectedUsesRecurring
+                                    ? __('We will open a dedicated FIB subscription page with QR scan, manual code entry, automatic status refresh, and cancel controls.')
+                                    : __('We will open a dedicated FIB payment page with QR scan, manual code entry, and automatic status refresh.') }}
+                            </div>
                             <div class="small mt-2">
-                                {{ __('Storage subscriptions now use the dedicated FIB recurring subscription API, while downgrade and over-quota handling remain server-side after confirmation.') }}
+                                {{ $selectedUsesRecurring
+                                    ? __('Storage subscriptions now use the dedicated FIB recurring subscription API, while downgrade and over-quota handling remain server-side after confirmation.')
+                                    : __('This storage plan is currently configured for manual payment. Auto-renew is disabled, and you can renew again from this page when the billing period ends.') }}
                             </div>
                         </div>
                     </div>
@@ -520,7 +702,7 @@ class extends Component
                             @if($processing)
                                 {{ __('Preparing...') }}
                             @else
-                                {{ __('Open FIB Subscription') }}
+                                {{ $selectedUsesRecurring ? __('Open FIB Subscription') : __('Open FIB Payment') }}
                             @endif
                         </button>
                     </div>

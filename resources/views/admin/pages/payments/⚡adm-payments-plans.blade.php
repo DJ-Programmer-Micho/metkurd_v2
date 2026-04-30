@@ -84,7 +84,7 @@ class extends Component
                 <div class="col-xl-5">
                     <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search plan name, code, or billing interval...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search plan name, code, or billing cycle...') }}">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
@@ -163,7 +163,19 @@ class extends Component
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold">{{ $plan->name }}</span>
                                         <span class="text-muted small">{{ $plan->code }}</span>
-                                        <span class="text-muted small">{{ __('Billing interval: :value', ['value' => ucfirst($plan->billing_interval)]) }}</span>
+                                        @php
+                                            $billingCyclesLabel = collect($plan->billingIntervals())
+                                                ->map(fn (string $cycle) => __(
+                                                    match ($cycle) {
+                                                        'yearly' => 'Yearly',
+                                                        'lifetime' => 'Lifetime',
+                                                        default => 'Monthly',
+                                                    }
+                                                ))
+                                                ->join(', ');
+                                        @endphp
+                                        <span class="text-muted small">{{ __('Billing cycles: :value', ['value' => $billingCyclesLabel]) }}</span>
+                                        <span class="text-muted small">{{ __('Payment mode: :value', ['value' => __($plan->checkoutPaymentMode()->label())]) }}</span>
                                         <span class="text-muted small">{{ __('Priority :value', ['value' => number_format((int) ($plan->sort_order ?? 0))]) }}</span>
                                     </div>
                                 </td>
@@ -246,7 +258,7 @@ class extends Component
                 <div class="modal-header">
                     <div>
                         <h5 class="modal-title mb-1">{{ $editingPlanId ? __('Edit Service Plan') : __('Create Service Plan') }}</h5>
-                        <p class="text-muted mb-0">{{ __('Adjust credits, concurrent job capacity, billing interval, and plan pricing from one form.') }}</p>
+                        <p class="text-muted mb-0">{{ __('Adjust credits, concurrent job capacity, billing cycles, and plan pricing from one form.') }}</p>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetPlanForm"></button>
                 </div>
@@ -265,13 +277,33 @@ class extends Component
                                 @error('name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Billing Interval') }}</label>
-                                <select class="form-select @error('billingInterval') is-invalid @enderror" wire:model.defer="billingInterval">
-                                    <option value="monthly">{{ __('Monthly') }}</option>
-                                    <option value="yearly">{{ __('Yearly') }}</option>
-                                    <option value="lifetime">{{ __('Lifetime') }}</option>
+                                <label class="form-label d-block mb-2">{{ __('Available Billing Cycles') }}</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="planBillingCycleMonthly" value="monthly" wire:model.defer="billingIntervals">
+                                    <label class="form-check-label" for="planBillingCycleMonthly">{{ __('Monthly') }}</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="planBillingCycleYearly" value="yearly" wire:model.defer="billingIntervals">
+                                    <label class="form-check-label" for="planBillingCycleYearly">{{ __('Yearly') }}</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="planBillingCycleLifetime" value="lifetime" wire:model.defer="billingIntervals">
+                                    <label class="form-check-label" for="planBillingCycleLifetime">{{ __('Lifetime') }}</label>
+                                </div>
+                                <div class="form-text">{{ __('Select where this plan should appear on the customer pricing page.') }}</div>
+                                @error('billingIntervals') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
+                                @if($errors->has('billingIntervals.*'))
+                                    <div class="text-danger small mt-1">{{ $errors->first('billingIntervals.*') }}</div>
+                                @endif
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">{{ __('Payment Mode') }}</label>
+                                <select class="form-select @error('paymentMode') is-invalid @enderror" wire:model.defer="paymentMode">
+                                    <option value="one_time">{{ __('Manual Payment') }}</option>
+                                    <option value="recurring">{{ __('Auto Renewal') }}</option>
                                 </select>
-                                @error('billingInterval') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                <div class="form-text">{{ __('Manual Payment uses gateway checkout with no auto-renew.') }}</div>
+                                @error('paymentMode') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">{{ __('Monthly Credits') }}</label>

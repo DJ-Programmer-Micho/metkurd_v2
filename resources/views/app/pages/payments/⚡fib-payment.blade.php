@@ -244,10 +244,14 @@ class extends Component
             );
         }
 
-        $isRecurring = ($payment->payment_mode ?? PaymentMode::ONE_TIME) === PaymentMode::RECURRING;
-        $billingCycle = $isRecurring
-            ? strtolower((string) data_get($snapshot, 'billing_cycle', 'monthly'))
-            : null;
+        $resolvedPaymentMode = PaymentMode::fromValue($payment->payment_mode ?? null, PaymentMode::ONE_TIME);
+        $isRecurring = $resolvedPaymentMode->isRecurring();
+        $billingCycle = strtolower((string) data_get($snapshot, 'billing_cycle', ''));
+        $billingCycle = $billingCycle !== '' ? $billingCycle : null;
+
+        if ($purchaseType === PurchaseType::ADDON_CREDITS) {
+            $billingCycle = null;
+        }
         $provider = strtolower(trim((string) ($payment->provider?->value ?? $payment->provider ?? 'fib')));
 
         return new CouponContext(
@@ -434,6 +438,10 @@ class extends Component
         && ! in_array($cancelResult, ['already_scheduled', 'already_canceled', 'non_cancelable'], true)
         && (! $isSubscriptionCheckout || $knownProviderStatus === null || $fibSubscriptions->isCancelableProviderStatus($knownProviderStatus));
     $showRefresh = in_array($payment->status->value, ['awaiting_customer_action', 'pending'], true);
+    $resolvedPaymentMode = \App\Domain\Payments\Enums\PaymentMode::fromValue($payment->payment_mode ?? null, \App\Domain\Payments\Enums\PaymentMode::ONE_TIME);
+    $paymentModeDescription = $payment->purchase_type->value === 'addon_credits'
+        ? __('One-time purchase')
+        : __($resolvedPaymentMode->description((string) data_get($snapshot, 'billing_cycle', '')));
 @endphp
 <script src="https://cdn.lordicon.com/lordicon.js"></script>
 <div class="row justify-content-center mt-4"
@@ -578,7 +586,10 @@ class extends Component
                                 <dd class="col-sm-7">{{ $providerObjectLabel }}</dd>
 
                                 <dt class="col-sm-5 text-muted">{{ __('Payment Mode') }}</dt>
-                                <dd class="col-sm-7">{{ $payment->payment_mode->value === 'recurring' ? __('Recurring') : __('One-Time') }}</dd>
+                                <dd class="col-sm-7">{{ __($resolvedPaymentMode->label()) }}</dd>
+
+                                <dt class="col-sm-5 text-muted">{{ __('Renewal') }}</dt>
+                                <dd class="col-sm-7">{{ $paymentModeDescription }}</dd>
 
                                 <dt class="col-sm-5 text-muted">{{ __('Amount To Pay') }}</dt>
                                 <dd class="col-sm-7">{{ $displayPrimary }}</dd>
@@ -636,11 +647,15 @@ class extends Component
 
                             @if ($payment->purchase_type->value === 'plan_subscription')
                                 <div class="mt-3 small text-muted">
-                                    {{ __('Your plan access updates automatically after the server confirms the subscription status.') }}
+                                    {{ $isSubscriptionCheckout
+                                        ? __('Your plan access updates automatically after the server confirms the subscription status.')
+                                        : __('Your plan access updates automatically after the server confirms the payment status.') }}
                                 </div>
                             @elseif ($payment->purchase_type->value === 'storage_subscription')
                                 <div class="mt-3 small text-muted">
-                                    {{ __('Your storage entitlement updates automatically after the server confirms the recurring subscription state.') }}
+                                    {{ $isSubscriptionCheckout
+                                        ? __('Your storage entitlement updates automatically after the server confirms the recurring subscription state.')
+                                        : __('Your storage entitlement updates automatically after the server confirms the payment status.') }}
                                 </div>
                             @else
                                 <div class="mt-3 small text-muted">

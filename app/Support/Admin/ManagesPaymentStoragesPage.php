@@ -2,9 +2,11 @@
 
 namespace App\Support\Admin;
 
+use App\Domain\Payments\Enums\PaymentMode;
 use App\Models\CustomerStorageSubscription;
 use App\Models\StoragePlan;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
 
@@ -30,6 +32,8 @@ trait ManagesPaymentStoragesPage
 
     public string $code = '';
     public string $name = '';
+    public string $paymentMode = 'recurring';
+    public array $billingIntervals = ['monthly'];
     public $quotaMb = '';
     public $priceIqd = '';
     public bool $isActive = true;
@@ -82,6 +86,9 @@ trait ManagesPaymentStoragesPage
         return [
             'code' => 'required|string|max:40|alpha_dash|unique:storage_plans,code,' . ($this->editingStorageId ?? 'NULL') . ',id',
             'name' => 'required|string|max:80',
+            'paymentMode' => 'required|string|in:one_time,recurring',
+            'billingIntervals' => 'required|array|min:1',
+            'billingIntervals.*' => 'required|string|in:monthly,yearly',
             'quotaMb' => 'required|integer|min:1',
             'priceIqd' => 'required|integer|min:0',
             'sortOrder' => 'nullable|integer|min:0|max:65535',
@@ -139,12 +146,23 @@ trait ManagesPaymentStoragesPage
             ->selectRaw("({$priceIqdSql}) * COALESCE(storage_active_subscribers.active_subscribers, 0) as estimated_revenue");
 
         $search = trim($this->search);
+        $hasPaymentModeColumn = $this->tableHasColumn('storage_plans', 'payment_mode');
+        $hasBillingIntervalsColumn = $this->tableHasColumn('storage_plans', 'billing_intervals');
+        $normalizedSearch = strtolower($search);
 
         if ($search !== '') {
-            $query->where(function (Builder $builder) use ($search) {
+            $query->where(function (Builder $builder) use ($search, $hasPaymentModeColumn, $hasBillingIntervalsColumn, $normalizedSearch) {
                 $builder
                     ->where('storage_plans.name', 'like', "%{$search}%")
                     ->orWhere('storage_plans.code', 'like', "%{$search}%");
+
+                if ($hasPaymentModeColumn) {
+                    $builder->orWhere('storage_plans.payment_mode', 'like', "%{$search}%");
+                }
+
+                if ($hasBillingIntervalsColumn && in_array($normalizedSearch, ['monthly', 'yearly'], true)) {
+                    $builder->orWhereJsonContains('storage_plans.billing_intervals', $normalizedSearch);
+                }
             });
         }
 
@@ -188,6 +206,8 @@ trait ManagesPaymentStoragesPage
         $this->editingStorageId = $plan->id;
         $this->code = (string) $plan->code;
         $this->name = (string) $plan->name;
+        $this->paymentMode = $plan->checkoutPaymentModeValue();
+        $this->billingIntervals = $plan->billingIntervals();
         $this->quotaMb = (int) ($plan->quota_mb ?? 0);
         $this->priceIqd = (string) ((int) $plan->priceIqdAmount());
         $this->isActive = (bool) $plan->is_active;
@@ -201,11 +221,13 @@ trait ManagesPaymentStoragesPage
     public function saveStoragePlan(): void
     {
         $validated = $this->validate($this->storageFormRules());
+        $billingIntervals = $this->normalizeStorageBillingIntervals($validated['billingIntervals'] ?? []);
         $priceIqd = max(0, (int) $validated['priceIqd']);
 
         $plan = $this->editingStorageId
             ? StoragePlan::query()->findOrFail($this->editingStorageId)
             : new StoragePlan();
+        $originalMode = $plan->checkoutPaymentMode();
         $payload = [
             'code' => $validated['code'],
             'name' => $validated['name'],
@@ -219,14 +241,41 @@ trait ManagesPaymentStoragesPage
             $payload['price_iqd'] = $priceIqd;
         }
 
+        if ($this->tableHasColumn('storage_plans', 'payment_mode')) {
+            $payload['payment_mode'] = PaymentMode::fromValue(
+                $validated['paymentMode'] ?? null,
+                PaymentMode::RECURRING
+            )->value;
+        }
+
+        if ($this->tableHasColumn('storage_plans', 'billing_intervals')) {
+            $payload['billing_intervals'] = $billingIntervals;
+        }
+
         $plan->fill($payload);
         $plan->save();
+        $updatedMode = $plan->checkoutPaymentMode();
 
         $this->dispatch(
             'alert',
             type: 'success',
             message: $this->editingStorageId ? __('Storage plan updated successfully.') : __('Storage plan created successfully.')
         );
+
+        if ($this->editingStorageId && $originalMode !== $updatedMode) {
+            Log::warning('Storage plan payment mode changed. Existing subscriptions are not modified; only future checkouts use the new mode.', [
+                'storage_plan_id' => (int) $plan->id,
+                'storage_plan_code' => (string) $plan->code,
+                'previous_mode' => $originalMode->value,
+                'new_mode' => $updatedMode->value,
+            ]);
+
+            $this->dispatch(
+                'alert',
+                type: 'warning',
+                message: __('Payment mode changes affect only future purchases. Existing subscriptions and payment records stay unchanged.')
+            );
+        }
 
         $this->resetStorageForm();
         $this->dispatch('payments-storage:modal-hide', id: 'paymentStorageModal');
@@ -279,6 +328,8 @@ trait ManagesPaymentStoragesPage
         $this->editingStorageId = null;
         $this->code = '';
         $this->name = '';
+        $this->paymentMode = PaymentMode::RECURRING->value;
+        $this->billingIntervals = ['monthly'];
         $this->quotaMb = '';
         $this->priceIqd = '';
         $this->isActive = true;
@@ -291,5 +342,18 @@ trait ManagesPaymentStoragesPage
     {
         $this->deleteStorageId = null;
         $this->deleteStorageLabel = '';
+    }
+
+    protected function normalizeStorageBillingIntervals(array $intervals): array
+    {
+        $allowed = ['monthly', 'yearly'];
+        $normalized = collect($intervals)
+            ->map(fn ($interval) => strtolower(trim((string) $interval)))
+            ->filter(fn (string $interval) => in_array($interval, $allowed, true))
+            ->unique()
+            ->values()
+            ->all();
+
+        return $normalized !== [] ? $normalized : ['monthly'];
     }
 }

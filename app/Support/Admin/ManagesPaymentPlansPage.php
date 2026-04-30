@@ -2,10 +2,12 @@
 
 namespace App\Support\Admin;
 
+use App\Domain\Payments\Enums\PaymentMode;
 use App\Models\CreditOrder;
 use App\Models\CustomerServiceSubscription;
 use App\Models\ServicePlan;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
 
@@ -34,7 +36,8 @@ trait ManagesPaymentPlansPage
 
     public string $code = '';
     public string $name = '';
-    public string $billingInterval = 'monthly';
+    public array $billingIntervals = ['monthly'];
+    public string $paymentMode = 'recurring';
     public $monthlyCredits = '';
     public $concurrentJobsLimit = 2;
     public $priceIqdMonthly = '';
@@ -98,7 +101,9 @@ trait ManagesPaymentPlansPage
         return [
             'code' => 'required|string|max:50|alpha_dash|unique:service_plans,code,' . ($this->editingPlanId ?? 'NULL') . ',id',
             'name' => 'required|string|max:120',
-            'billingInterval' => 'required|string|in:monthly,yearly,lifetime',
+            'billingIntervals' => 'required|array|min:1',
+            'billingIntervals.*' => 'required|string|in:monthly,yearly,lifetime',
+            'paymentMode' => 'required|string|in:one_time,recurring',
             'monthlyCredits' => 'required|integer|min:0',
             'concurrentJobsLimit' => 'required|integer|min:1|max:65535',
             'priceIqdMonthly' => 'nullable|integer|min:0',
@@ -170,13 +175,24 @@ trait ManagesPaymentPlansPage
             ->selectRaw('plan_revenue.last_order_at as last_order_at');
 
         $search = trim($this->search);
+        $hasPaymentModeColumn = $this->tableHasColumn('service_plans', 'payment_mode');
+        $hasBillingIntervalsColumn = $this->tableHasColumn('service_plans', 'billing_intervals');
+        $normalizedSearch = strtolower($search);
 
         if ($search !== '') {
-            $query->where(function (Builder $builder) use ($search) {
+            $query->where(function (Builder $builder) use ($search, $hasPaymentModeColumn, $hasBillingIntervalsColumn, $normalizedSearch) {
                 $builder
                     ->where('service_plans.name', 'like', "%{$search}%")
                     ->orWhere('service_plans.code', 'like', "%{$search}%")
                     ->orWhere('service_plans.billing_interval', 'like', "%{$search}%");
+
+                if ($hasPaymentModeColumn) {
+                    $builder->orWhere('service_plans.payment_mode', 'like', "%{$search}%");
+                }
+
+                if ($hasBillingIntervalsColumn && in_array($normalizedSearch, ['monthly', 'yearly', 'lifetime'], true)) {
+                    $builder->orWhereJsonContains('service_plans.billing_intervals', $normalizedSearch);
+                }
             });
         }
 
@@ -226,7 +242,8 @@ trait ManagesPaymentPlansPage
         $this->editingPlanId = $plan->id;
         $this->code = (string) $plan->code;
         $this->name = (string) $plan->name;
-        $this->billingInterval = (string) $plan->billing_interval;
+        $this->billingIntervals = $plan->billingIntervals();
+        $this->paymentMode = $plan->checkoutPaymentModeValue();
         $this->monthlyCredits = (int) ($plan->monthly_credits ?? 0);
         $this->concurrentJobsLimit = (int) ($plan->concurrent_jobs_limit ?? 2);
         $this->priceIqdMonthly = (string) ((int) $plan->priceIqdForCycle('monthly'));
@@ -245,6 +262,8 @@ trait ManagesPaymentPlansPage
     public function savePlan(): void
     {
         $validated = $this->validate($this->planFormRules());
+        $billingIntervals = $this->normalizePlanBillingIntervals($validated['billingIntervals'] ?? []);
+        $primaryBillingInterval = $this->primaryPlanBillingInterval($billingIntervals);
         $uiFeatures = $this->decodeJsonTextarea($validated['uiFeaturesJson'] ?? '', 'uiFeaturesJson');
         $meta = $this->decodeJsonTextarea($validated['metaJson'] ?? '', 'metaJson');
         $priceIqdMonthly = (int) (($validated['priceIqdMonthly'] !== '' && $validated['priceIqdMonthly'] !== null) ? $validated['priceIqdMonthly'] : 0);
@@ -253,10 +272,11 @@ trait ManagesPaymentPlansPage
         $plan = $this->editingPlanId
             ? ServicePlan::query()->findOrFail($this->editingPlanId)
             : new ServicePlan();
+        $originalMode = $plan->checkoutPaymentMode();
         $payload = [
             'code' => $validated['code'],
             'name' => $validated['name'],
-            'billing_interval' => $validated['billingInterval'],
+            'billing_interval' => $primaryBillingInterval,
             'monthly_credits' => (int) $validated['monthlyCredits'],
             'concurrent_jobs_limit' => (int) $validated['concurrentJobsLimit'],
             'price_usd_monthly' => $this->usdReferenceAmount($priceIqdMonthly),
@@ -267,6 +287,17 @@ trait ManagesPaymentPlansPage
             'ui_features' => $uiFeatures,
             'meta' => $meta,
         ];
+
+        if ($this->tableHasColumn('service_plans', 'payment_mode')) {
+            $payload['payment_mode'] = PaymentMode::fromValue(
+                $validated['paymentMode'] ?? null,
+                PaymentMode::RECURRING
+            )->value;
+        }
+
+        if ($this->tableHasColumn('service_plans', 'billing_intervals')) {
+            $payload['billing_intervals'] = $billingIntervals;
+        }
 
         if ($this->tableHasColumn('service_plans', 'price_iqd_monthly')) {
             $payload['price_iqd_monthly'] = $priceIqdMonthly;
@@ -292,12 +323,28 @@ trait ManagesPaymentPlansPage
         }
 
         $plan->save();
+        $updatedMode = $plan->checkoutPaymentMode();
 
         $this->dispatch(
             'alert',
             type: 'success',
             message: $this->editingPlanId ? __('Service plan updated successfully.') : __('Service plan created successfully.')
         );
+
+        if ($this->editingPlanId && $originalMode !== $updatedMode) {
+            Log::warning('Service plan payment mode changed. Existing subscriptions are not modified; only future checkouts use the new mode.', [
+                'service_plan_id' => (int) $plan->id,
+                'service_plan_code' => (string) $plan->code,
+                'previous_mode' => $originalMode->value,
+                'new_mode' => $updatedMode->value,
+            ]);
+
+            $this->dispatch(
+                'alert',
+                type: 'warning',
+                message: __('Payment mode changes affect only future purchases. Existing subscriptions and payment records stay unchanged.')
+            );
+        }
 
         $this->resetPlanForm();
         $this->dispatch('payments-plans:modal-hide', id: 'paymentPlanModal');
@@ -358,7 +405,8 @@ trait ManagesPaymentPlansPage
         $this->editingPlanId = null;
         $this->code = '';
         $this->name = '';
-        $this->billingInterval = 'monthly';
+        $this->billingIntervals = ['monthly'];
+        $this->paymentMode = PaymentMode::RECURRING->value;
         $this->monthlyCredits = '';
         $this->concurrentJobsLimit = 2;
         $this->priceIqdMonthly = '';
@@ -376,5 +424,31 @@ trait ManagesPaymentPlansPage
     {
         $this->deletePlanId = null;
         $this->deletePlanLabel = '';
+    }
+
+    protected function normalizePlanBillingIntervals(array $intervals): array
+    {
+        $allowed = ['monthly', 'yearly', 'lifetime'];
+        $normalized = collect($intervals)
+            ->map(fn ($interval) => strtolower(trim((string) $interval)))
+            ->filter(fn (string $interval) => in_array($interval, $allowed, true))
+            ->unique()
+            ->values()
+            ->all();
+
+        return $normalized !== [] ? $normalized : ['monthly'];
+    }
+
+    protected function primaryPlanBillingInterval(array $intervals): string
+    {
+        $intervals = $this->normalizePlanBillingIntervals($intervals);
+
+        foreach (['monthly', 'yearly', 'lifetime'] as $preferred) {
+            if (in_array($preferred, $intervals, true)) {
+                return $preferred;
+            }
+        }
+
+        return 'monthly';
     }
 }

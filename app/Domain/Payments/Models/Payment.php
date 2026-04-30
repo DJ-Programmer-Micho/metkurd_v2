@@ -200,4 +200,9 @@ class Payment extends Model
             ? ($this->provider_subscription_status ?: $this->provider_status)
             : ($this->provider_payment_status ?: $this->provider_status);
     }
+
+    public function resolvedPaymentMode(PaymentMode $fallback = PaymentMode::ONE_TIME): PaymentMode
+    {
+        return PaymentMode::fromValue($this->payment_mode, $fallback);
+    }
 }

@@ -19,8 +19,8 @@ use App\Services\Coupons\CouponContext;
 use App\Services\Coupons\CouponRedemptionService;
 use App\Services\Coupons\CouponService;
 use App\Services\Payments\CheckoutAuthorizationService;
-use App\Services\Payments\PaymentMethodCatalog;
 use App\Services\Payments\PaymentFeeCalculator;
+use App\Services\Payments\PaymentMethodCatalog;
 use App\Support\TelegramSubscriptionLifecycleNotifier;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -31,6 +31,7 @@ class CreateStorageSubscriptionPayment
 {
     public function __construct(
         protected \App\Domain\Payments\Fib\FibSubscriptionService $fib,
+        protected \App\Domain\Payments\Fib\FibOneTimePaymentService $oneTimeFib,
         protected BillingCurrencyService $currency,
         protected PaymentFeeCalculator $fees,
         protected PaymentEventRecorder $events,
@@ -48,9 +49,9 @@ class CreateStorageSubscriptionPayment
         string $billingCycle = 'monthly',
         ?string $couponCode = null,
         ?string $paymentMethodCode = null,
-    ): Payment
-    {
+    ): Payment {
         $plan = StoragePlan::query()->where('is_active', true)->findOrFail($planId);
+        $paymentMode = $plan->checkoutPaymentMode();
         $currentPlan = $customer->currentStoragePlan();
 
         if ((int) ($currentPlan?->id ?? 0) === (int) $plan->id) {
@@ -66,9 +67,11 @@ class CreateStorageSubscriptionPayment
                 PaymentPurposeType::STORAGE_PLAN,
                 'IQD',
             )
-            : $this->resolveDefaultRecurringMethod();
+            : ($paymentMode->isRecurring()
+                ? $this->resolveDefaultRecurringMethod()
+                : $this->resolveDefaultOneTimeMethod());
 
-        if (! (bool) ($paymentMethod->supports_recurring ?? false)) {
+        if ($paymentMode->isRecurring() && ! (bool) ($paymentMethod->supports_recurring ?? false)) {
             throw ValidationException::withMessages([
                 'payment_method' => __('The selected payment method does not support recurring storage subscriptions.'),
             ]);
@@ -85,11 +88,13 @@ class CreateStorageSubscriptionPayment
 
         if ($provider !== PaymentProvider::FIB) {
             throw ValidationException::withMessages([
-                'payment_method' => __('The selected payment method is not enabled yet for recurring storage subscriptions. Please use FIB for now.'),
+                'payment_method' => $paymentMode->isRecurring()
+                    ? __('The selected payment method is not enabled yet for recurring storage subscriptions. Please use FIB for now.')
+                    : __('The selected payment method is not enabled yet for manual storage payment. Please use FIB for now.'),
             ]);
         }
 
-        $billingCycle = $this->fib->normalizeBillingCycle($billingCycle, ['monthly', 'hourly']);
+        $billingCycle = $this->resolveBillingCycle($billingCycle, $plan, $paymentMode);
         $originalBaseAmountIqd = $plan->priceIqdAmount();
         $couponContext = new CouponContext(
             customer: $customer,
@@ -100,7 +105,7 @@ class CreateStorageSubscriptionPayment
             itemCode: (string) $plan->code,
             originalAmountIqd: $originalBaseAmountIqd,
             billingCycle: $billingCycle,
-            isRecurring: true,
+            isRecurring: $paymentMode->isRecurring(),
         );
         $resolvedCoupon = $this->coupons->resolveForCheckout($couponCode, $couponContext);
         $couponPricing = $resolvedCoupon['pricing'] ?? null;
@@ -114,7 +119,10 @@ class CreateStorageSubscriptionPayment
         $discountDisplay = $discountAmountIqd > 0
             ? $this->currency->priceDataForBaseAmountIqd($discountAmountIqd, $customer)
             : null;
-        $payment = DB::transaction(function () use ($customer, $plan, $provider, $paymentMethod, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay) {
+        $providerObjectType = $paymentMode->isRecurring()
+            ? PaymentProviderObjectType::SUBSCRIPTION
+            : PaymentProviderObjectType::PAYMENT;
+        $payment = DB::transaction(function () use ($customer, $plan, $provider, $paymentMethod, $paymentMode, $providerObjectType, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay) {
             $payment = Payment::create([
                 'uuid' => (string) Str::uuid(),
                 'customer_id' => $customer->id,
@@ -122,8 +130,8 @@ class CreateStorageSubscriptionPayment
                 'coupon_code' => data_get($resolvedCoupon, 'coupon.code'),
                 'provider' => $provider,
                 'purchase_type' => PurchaseType::STORAGE_SUBSCRIPTION,
-                'payment_mode' => PaymentMode::RECURRING,
-                'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
+                'payment_mode' => $paymentMode,
+                'provider_object_type' => $providerObjectType,
                 'status' => PaymentStatus::PENDING,
                 'local_reference' => $this->localReference('STORAGE'),
                 'idempotency_key' => (string) Str::uuid(),
@@ -156,14 +164,16 @@ class CreateStorageSubscriptionPayment
                         'provider_interval' => $this->fib->intervalForCycle('hourly'),
                         'price_source_cycle' => 'monthly',
                     ] : null,
-                    'renewal_strategy' => PaymentRecurringStrategy::PROVIDER_SCHEDULE->value,
+                    'renewal_strategy' => $paymentMode->isRecurring()
+                        ? PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
+                        : PaymentRecurringStrategy::MANUAL_RENEWAL->value,
                 ],
                 'meta' => [
                     'locale' => app()->getLocale(),
                     'fee_quote' => $feeQuote,
                     'payment_method_code' => (string) $paymentMethod->code,
                     'payment_driver' => (string) $paymentMethod->driver,
-                    'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
+                    'provider_object_type' => $providerObjectType->value,
                     'coupon' => $couponPricing,
                 ],
                 'purchasable_type' => StoragePlan::class,
@@ -189,6 +199,13 @@ class CreateStorageSubscriptionPayment
             return $payment;
         });
 
+        return $paymentMode->isRecurring()
+            ? $this->initializeRecurringFibPayment($payment)
+            : $this->initializeOneTimeFibPayment($payment);
+    }
+
+    protected function initializeRecurringFibPayment(Payment $payment): Payment
+    {
         try {
             $result = $this->fib->createSubscription($payment);
 
@@ -266,6 +283,94 @@ class CreateStorageSubscriptionPayment
                 ],
             ]);
 
+            $this->logCheckoutInitializationFailure($payment, PaymentMode::RECURRING, $exception);
+
+            throw $exception;
+        }
+    }
+
+    protected function initializeOneTimeFibPayment(Payment $payment): Payment
+    {
+        try {
+            $result = $this->oneTimeFib->createPayment(
+                $payment,
+                route('payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $payment])
+            );
+
+            /** @var \App\Domain\Payments\Data\FibCreatePaymentRequestData $request */
+            $request = $result['request'];
+            /** @var \App\Domain\Payments\Data\FibCreatePaymentResponseData $response */
+            $response = $result['response'];
+
+            $payment->forceFill([
+                'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
+                'provider_status' => 'UNPAID',
+                'provider_payment_status' => 'UNPAID',
+                'fib_payment_id' => $response->paymentId,
+                'readable_code' => $response->readableCode,
+                'qr_code' => $response->qrCode,
+                'provider_links' => $response->providerLinks,
+                'valid_until' => $response->validUntil,
+                'create_payload' => $request->toArray(),
+                'create_response' => $response->raw,
+            ])->save();
+
+            $event = $this->events->record($payment, [
+                'event_type' => 'provider_payment_created',
+                'source' => 'customer_checkout',
+                'event_key' => 'provider-payment-created:' . $payment->id,
+                'before_status' => PaymentStatus::PENDING->value,
+                'after_status' => PaymentStatus::AWAITING_CUSTOMER_ACTION->value,
+                'payload' => $response->raw,
+                'meta' => [
+                    'provider_object_type' => PaymentProviderObjectType::PAYMENT->value,
+                    'create_payload' => $request->toArray(),
+                ],
+            ]);
+
+            if ($event->wasRecentlyCreated) {
+                $snapshot = $payment->snapshot();
+                $this->telegramLifecycleNotifier->sendCheckout(
+                    __('FIB checkout created'),
+                    [
+                        'Type' => 'storage_plan',
+                        'Customer ID' => $payment->customer_id,
+                        'Username' => $payment->customer?->username,
+                        'Storage plan' => (string) data_get($snapshot, 'name', ''),
+                        'Storage code' => (string) data_get($snapshot, 'code', ''),
+                        'Billing cycle' => (string) data_get($snapshot, 'billing_cycle', ''),
+                        'Gross amount' => (string) data_get($snapshot, 'display.iqd_label', ''),
+                        'Provider ref' => $payment->providerReference(),
+                        'Payment UUID' => (string) $payment->uuid,
+                    ],
+                    'FIB storage checkout'
+                );
+            }
+
+            $this->redemptions->markApplied($payment);
+
+            return $payment->fresh();
+        } catch (\Throwable $exception) {
+            $payment->forceFill([
+                'status' => PaymentStatus::FAILED,
+                'status_reason' => $exception->getMessage(),
+            ])->save();
+
+            $this->redemptions->releaseForPayment($payment, 'provider_create_failed');
+
+            $this->events->record($payment, [
+                'event_type' => 'provider_payment_create_failed',
+                'source' => 'customer_checkout',
+                'before_status' => PaymentStatus::PENDING->value,
+                'after_status' => PaymentStatus::FAILED->value,
+                'meta' => [
+                    'provider_object_type' => PaymentProviderObjectType::PAYMENT->value,
+                    'message' => $exception->getMessage(),
+                ],
+            ]);
+
+            $this->logCheckoutInitializationFailure($payment, PaymentMode::ONE_TIME, $exception);
+
             throw $exception;
         }
     }
@@ -318,5 +423,87 @@ class CreateStorageSubscriptionPayment
         $fallback = $methods->first();
 
         return $fallback;
+    }
+
+    protected function resolveDefaultOneTimeMethod(): PaymentMethod
+    {
+        $methods = $this->paymentMethods
+            ->availableForPurpose(PaymentPurposeType::STORAGE_PLAN, 'IQD')
+            ->values();
+
+        if ($methods->isEmpty()) {
+            throw ValidationException::withMessages([
+                'payment_method' => __('No manual payment method is currently available for storage purchases.'),
+            ]);
+        }
+
+        $preferred = strtolower(trim((string) config('payments.default_provider', '')));
+
+        if ($preferred !== '') {
+            $preferredMethod = $methods->first(fn (PaymentMethod $method) => $method->code === $preferred || $method->driver === $preferred);
+
+            if ($preferredMethod instanceof PaymentMethod) {
+                return $preferredMethod;
+            }
+
+            /** @var PaymentMethod|null $fallback */
+            $fallback = $methods->first();
+            Log::warning('Configured payment default provider is unavailable for storage manual-payment checkout; using fallback method.', [
+                'preferred_provider' => $preferred,
+                'purpose_type' => PaymentPurposeType::STORAGE_PLAN->value,
+                'fallback_method_code' => $fallback?->code,
+                'fallback_method_driver' => $fallback?->driver,
+                'available_method_codes' => $methods->map(fn (PaymentMethod $method): string => (string) $method->code)->values()->all(),
+            ]);
+        }
+
+        $fibMethod = $methods->first(fn (PaymentMethod $method) => $method->code === 'fib' || $method->driver === 'fib');
+
+        if ($fibMethod instanceof PaymentMethod) {
+            return $fibMethod;
+        }
+
+        /** @var PaymentMethod $fallback */
+        $fallback = $methods->first();
+
+        return $fallback;
+    }
+
+    protected function resolveBillingCycle(string $billingCycle, StoragePlan $plan, PaymentMode $paymentMode): string
+    {
+        $normalized = $paymentMode->isRecurring()
+            ? $this->fib->normalizeBillingCycle($billingCycle, ['monthly', 'yearly', 'hourly'])
+            : $this->normalizeOneTimeBillingCycle($billingCycle);
+
+        $supportCycle = $normalized === 'hourly' ? 'monthly' : $normalized;
+
+        if (! $plan->supportsBillingInterval($supportCycle)) {
+            throw ValidationException::withMessages([
+                'billing_cycle' => __('This billing cycle is not available for the selected storage plan.'),
+            ]);
+        }
+
+        return $normalized;
+    }
+
+    protected function normalizeOneTimeBillingCycle(string $billingCycle): string
+    {
+        $normalized = strtolower(trim($billingCycle));
+
+        return in_array($normalized, ['monthly', 'yearly'], true) ? $normalized : 'monthly';
+    }
+
+    protected function logCheckoutInitializationFailure(Payment $payment, PaymentMode $mode, \Throwable $exception): void
+    {
+        Log::error('Failed to initialize storage checkout with FIB.', [
+            'payment_id' => (int) $payment->id,
+            'payment_uuid' => (string) $payment->uuid,
+            'customer_id' => (int) $payment->customer_id,
+            'payment_mode' => $mode->value,
+            'provider_object_type' => (string) ($payment->provider_object_type?->value ?? ''),
+            'provider' => (string) ($payment->provider?->value ?? ''),
+            'message' => $exception->getMessage(),
+            'exception' => $exception,
+        ]);
     }
 }

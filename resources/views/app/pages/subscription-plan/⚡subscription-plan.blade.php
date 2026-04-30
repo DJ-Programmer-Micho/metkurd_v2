@@ -8,6 +8,7 @@ use App\Services\Billing\BillingCurrencyService;
 use App\Services\Billing\CustomerBillingStateService;
 use App\Services\Billing\ScheduleServicePlanCancellation;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -90,7 +91,9 @@ class extends Component
                     'id' => (int) $plan->id,
                     'code' => (string) $plan->code,
                     'name' => (string) $plan->name,
+                    'billing_intervals' => $plan->billingIntervals(),
                     'billing_interval' => (string) ($plan->billing_interval ?? 'monthly'),
+                    'payment_mode' => $plan->checkoutPaymentModeValue(),
                     'monthly_credits' => (int) ($plan->monthly_credits ?? 0),
                     'is_free' => (bool) ($plan->is_free ?? false),
                     'price_iqd_monthly' => $plan->priceIqdForCycle('monthly'),
@@ -121,8 +124,31 @@ class extends Component
 
     public function openConfirm(int $planId, string $billingCycle = 'monthly'): void
     {
+        $selectedPlan = collect($this->plans)->firstWhere('id', $planId);
+
+        if (! is_array($selectedPlan)) {
+            return;
+        }
+
+        $resolvedCycle = $this->normalizeBillingCycle($billingCycle);
+
+        if (! $this->planSupportsCycle($selectedPlan, $resolvedCycle)) {
+            if ($this->planSupportsCycle($selectedPlan, 'monthly')) {
+                $resolvedCycle = 'monthly';
+            } elseif ($this->planSupportsCycle($selectedPlan, 'yearly')) {
+                $resolvedCycle = 'yearly';
+            } elseif ($this->planSupportsCycle($selectedPlan, 'lifetime')) {
+                $resolvedCycle = 'lifetime';
+            } else {
+                $this->messageType = 'danger';
+                $this->message = __('This billing cycle is not available for the selected plan.');
+
+                return;
+            }
+        }
+
         $this->selectedPlanId = $planId;
-        $this->billingCycle = $this->normalizeBillingCycle($billingCycle);
+        $this->billingCycle = $resolvedCycle;
         $this->selectedBillingCycle = $this->billingCycle;
         $this->message = '';
         $this->messageType = 'info';
@@ -242,8 +268,15 @@ class extends Component
             $this->messageType = 'danger';
             $this->message = collect($exception->errors())->flatten()->first() ?: __('Could not start the payment.');
         } catch (\Throwable $exception) {
+            Log::error('Failed to start service plan checkout.', [
+                'customer_id' => (int) ($customer?->id ?? 0),
+                'service_plan_id' => (int) $this->selectedPlanId,
+                'billing_cycle' => $billingCycle,
+                'message' => $exception->getMessage(),
+                'exception' => $exception,
+            ]);
             $this->messageType = 'danger';
-            $this->message = __('Failed to start the payment: :message', ['message' => $exception->getMessage()]);
+            $this->message = __('Failed to start the payment right now. Please try again shortly.');
         } finally {
             $this->processing = false;
         }
@@ -291,13 +324,46 @@ class extends Component
 
     public function resolvePlanBillingCycle(array $plan, ?string $requestedCycle = null): string
     {
-        $planInterval = strtolower((string) ($plan['billing_interval'] ?? 'monthly'));
+        $requested = $this->normalizeBillingCycle($requestedCycle);
 
-        if ($planInterval === 'lifetime') {
-            return 'lifetime';
+        if ($this->planSupportsCycle($plan, $requested)) {
+            return $requested;
         }
 
-        return $this->normalizeBillingCycle($requestedCycle);
+        foreach (['monthly', 'yearly', 'lifetime'] as $fallback) {
+            if ($this->planSupportsCycle($plan, $fallback)) {
+                return $fallback;
+            }
+        }
+
+        throw \Illuminate\Validation\ValidationException::withMessages([
+            'billing_cycle' => __('This billing cycle is not available for the selected plan.'),
+        ]);
+    }
+
+    public function planSupportsCycle(array $plan, string $cycle): bool
+    {
+        $normalized = strtolower(trim($cycle));
+        $normalized = $normalized === 'hourly' ? 'monthly' : $normalized;
+        $allowed = ['monthly', 'yearly', 'lifetime'];
+
+        if (! in_array($normalized, $allowed, true)) {
+            return false;
+        }
+
+        $intervals = collect(data_get($plan, 'billing_intervals', []))
+            ->map(fn ($interval) => strtolower(trim((string) $interval)))
+            ->filter(fn (string $interval) => in_array($interval, $allowed, true))
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($intervals === []) {
+            $legacy = strtolower(trim((string) data_get($plan, 'billing_interval', 'monthly')));
+            $intervals = in_array($legacy, $allowed, true) ? [$legacy] : ['monthly'];
+        }
+
+        return in_array($normalized, $intervals, true);
     }
 
     public function billingCycleLabel(string $cycle): string
@@ -343,7 +409,36 @@ class extends Component
 
 <x-slot:title>{{ __('Subscription Plan') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div x-data="{ billingCycle: @js($billingCycle) }">
+@php
+    $planCollection = collect($plans);
+    $extractIntervals = static function (array $plan): array {
+        $allowed = ['monthly', 'yearly', 'lifetime'];
+        $intervals = collect($plan['billing_intervals'] ?? [])
+            ->map(fn ($interval) => strtolower(trim((string) $interval)))
+            ->filter(fn (string $interval) => in_array($interval, $allowed, true))
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($intervals === []) {
+            $legacy = strtolower(trim((string) ($plan['billing_interval'] ?? 'monthly')));
+            $intervals = in_array($legacy, $allowed, true) ? [$legacy] : ['monthly'];
+        }
+
+        return $intervals;
+    };
+    $monthlyPlanCount = $planCollection
+        ->filter(fn (array $plan) => in_array('monthly', $extractIntervals($plan), true) || in_array('lifetime', $extractIntervals($plan), true))
+        ->count();
+    $yearlyPlanCount = $planCollection
+        ->filter(fn (array $plan) => in_array('yearly', $extractIntervals($plan), true) || in_array('lifetime', $extractIntervals($plan), true))
+        ->count();
+    $defaultBillingCycle = $monthlyPlanCount > 0
+        ? 'monthly'
+        : ($yearlyPlanCount > 0 ? 'yearly' : 'monthly');
+@endphp
+
+<div x-data="{ billingCycle: @js($defaultBillingCycle) }">
     <div class="row justify-content-center mt-4">
         <div class="col-lg-8">
             <div class="text-center mb-4 pb-2">
@@ -440,8 +535,17 @@ class extends Component
             <div class="row justify-content-center">
                 @foreach($plans as $p)
                     @php
-                        $planInterval = strtolower((string) ($p['billing_interval'] ?? 'monthly'));
-                        $isLifetimePlan = $planInterval === 'lifetime';
+                        $planMode = strtolower((string) ($p['payment_mode'] ?? 'one_time'));
+                        $planIntervals = $extractIntervals($p);
+                        $supportsMonthly = in_array('monthly', $planIntervals, true);
+                        $supportsYearly = in_array('yearly', $planIntervals, true);
+                        $supportsLifetime = in_array('lifetime', $planIntervals, true);
+                        $isManualPayment = $planMode === 'one_time';
+                        $isAutoRenewal = $planMode === 'recurring';
+                        $isLifetimeOnlyPlan = $supportsLifetime && ! $supportsMonthly && ! $supportsYearly;
+                        $showInMonthlyTab = $supportsMonthly || $supportsLifetime;
+                        $showInYearlyTab = $supportsYearly || $supportsLifetime;
+                        $showInHourlyTab = $hourlyTestingEnabled && $supportsMonthly && $isAutoRenewal;
                         $monthlyPrice = (string) data_get($p, 'display_monthly.display_label', data_get($p, 'display_monthly.iqd_label', ''));
                         $yearlyPrice = (string) data_get($p, 'display_yearly.display_label', data_get($p, 'display_yearly.iqd_label', ''));
                         $hourlyPrice = (string) data_get($p, 'display_hourly.display_label', data_get($p, 'display_hourly.iqd_label', ''));
@@ -451,9 +555,15 @@ class extends Component
                         $showMonthlyBase = (bool) data_get($p, 'display_monthly.has_localized_estimate', false);
                         $showYearlyBase = (bool) data_get($p, 'display_yearly.has_localized_estimate', false);
                         $showHourlyBase = (bool) data_get($p, 'display_hourly.has_localized_estimate', false);
+                        $confirmCycleLiteral = $isLifetimeOnlyPlan
+                            ? "'lifetime'"
+                            : "(billingCycle === 'hourly' ? 'hourly' : billingCycle)";
                     @endphp
 
-                    <div class="col-xl-3 col-lg-4 col-md-6">
+                    <div class="col-xl-3 col-lg-4 col-md-6"
+                         x-show="(billingCycle === 'monthly' && @js($showInMonthlyTab))
+                              || (billingCycle === 'yearly' && @js($showInYearlyTab))
+                              || (billingCycle === 'hourly' && @js($showInHourlyTab))">
                         <div class="card pricing-box {{ $p['is_current'] ? 'border border-success shadow-sm' : '' }}">
                             <div class="card-body p-4 m-2">
                                 <div class="d-flex align-items-start">
@@ -471,29 +581,42 @@ class extends Component
                                             <span class="badge bg-soft-warning text-warning">{{ __('Cancellation Scheduled') }}</span>
                                         @endif
 
-                                        @if($isLifetimePlan)
+                                        @if($isLifetimeOnlyPlan)
                                             <span class="badge bg-soft-secondary text-secondary">{{ __('Lifetime') }}</span>
                                         @else
                                             <span class="badge bg-soft-secondary text-secondary"
-                                                  x-text="billingCycle === 'yearly' ? @js(__('Yearly')) : (billingCycle === 'hourly' ? @js(__('Hourly Test')) : @js(__('Monthly')))">
+                                                  x-text="billingCycle === 'yearly' ? @js(__('Yearly')) : @js(__('Monthly'))">
                                                 {{ __('Monthly') }}
                                             </span>
+                                        @endif
+
+                                        @if($isAutoRenewal)
+                                            <span class="badge bg-soft-primary text-primary">{{ __('Auto Renewal') }}</span>
+                                        @else
+                                            <span class="badge bg-soft-warning text-warning">{{ __('Manual Payment') }}</span>
+                                            <span class="badge bg-soft-secondary text-secondary">{{ __('No Auto-Renew') }}</span>
                                         @endif
                                     </div>
 
                                     <div class="ms-auto text-end">
                                         <div class="fw-semibold">{{ number_format($p['monthly_credits']) }} {{ __('credits') }}</div>
-                                        @if($isLifetimePlan)
+                                        @if($isLifetimeOnlyPlan)
                                             <div class="text-muted fs-12">{{ __('lifetime plan') }}</div>
                                         @else
                                             <div class="text-muted fs-12"
-                                                 x-text="billingCycle === 'yearly' ? @js(__('per year plan')) : (billingCycle === 'hourly' ? @js(__('per test hour')) : @js(__('per month')))">
+                                                 x-text="billingCycle === 'hourly' ? @js(__('per test hour')) : (billingCycle === 'yearly' ? @js(__('per year')) : @js(__('per month')))">
                                                 {{ __('per month') }}
+                                            </div>
+                                        @endif
+                                        @if($isManualPayment && ! $isLifetimeOnlyPlan)
+                                            <div class="text-muted fs-12"
+                                                 x-text="billingCycle === 'yearly' ? @js(__('Pay manually each year')) : @js(__('Pay manually each month'))">
+                                                {{ __('Pay manually each month') }}
                                             </div>
                                         @endif
 
                                         @if(!$p['is_free'])
-                                            @if($isLifetimePlan)
+                                            @if($isLifetimeOnlyPlan)
                                                 <div class="mt-1 text-muted fs-12">{{ $monthlyPrice }}</div>
                                                 @if($showMonthlyBase)
                                                     <div class="mt-1 text-muted fs-12">{{ $monthlyBase }}</div>
@@ -551,7 +674,7 @@ class extends Component
                                         </div>
                                     @else
                                         <button class="btn btn-info w-100"
-                                                x-on:click="$wire.openConfirm({{ $p['id'] }}, billingCycle)"
+                                                x-on:click="$wire.openConfirm({{ $p['id'] }}, {!! $confirmCycleLiteral !!})"
                                                 wire:loading.attr="disabled"
                                                 wire:target="openConfirm">
                                             {{ __('Change Plan') }}
@@ -562,6 +685,16 @@ class extends Component
                         </div>
                     </div>
                 @endforeach
+                <div class="col-12" x-show="billingCycle === 'monthly' && @js($monthlyPlanCount === 0)">
+                    <div class="alert alert-light border text-center text-muted mb-0">
+                        {{ __('No Monthly plans are currently available.') }}
+                    </div>
+                </div>
+                <div class="col-12" x-show="billingCycle === 'yearly' && @js($yearlyPlanCount === 0)">
+                    <div class="alert alert-light border text-center text-muted mb-0">
+                        {{ __('No Yearly plans are currently available.') }}
+                    </div>
+                </div>
             </div>
 
             @if($showConfirm)
@@ -579,6 +712,8 @@ class extends Component
                             default => $selected['display_monthly'] ?? null,
                         }
                         : null;
+                    $selectedPaymentMode = strtolower((string) data_get($selected, 'payment_mode', 'recurring'));
+                    $selectedUsesRecurring = $selectedPaymentMode === 'recurring';
                 @endphp
 
                 <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
@@ -600,6 +735,15 @@ class extends Component
                                         {{ __('Billing cycle:') }}
                                         <b>{{ $selectedBillingIntervalLabel }}</b>
                                     </p>
+                                    <p class="mb-2">
+                                        {{ __('Renewal type:') }}
+                                        <b>{{ $selectedUsesRecurring ? __('Auto Renewal') : __('Manual Payment') }}</b>
+                                    </p>
+                                    @if(! $selectedUsesRecurring && $selectedCycle !== 'lifetime')
+                                        <p class="mb-2 text-muted small">
+                                            {{ $selectedCycle === 'yearly' ? __('Pay manually each year') : __('Pay manually each month') }}
+                                        </p>
+                                    @endif
                                     <p class="mb-2">
                                         {{ __('New monthly subscription credits:') }}
                                         <b>{{ number_format($selected['monthly_credits']) }}</b>
@@ -629,9 +773,15 @@ class extends Component
 
                                 <div class="alert alert-warning mt-3 mb-0">
                                     <div class="fw-semibold mb-2">{{ __('Next step: complete payment in First Iraqi Bank') }}</div>
-                                    <div>{{ __('We will open a dedicated FIB subscription page with QR scan, manual code entry, automatic status refresh, and cancel controls.') }}</div>
+                                    <div>
+                                        {{ $selectedUsesRecurring
+                                            ? __('We will open a dedicated FIB subscription page with QR scan, manual code entry, automatic status refresh, and cancel controls.')
+                                            : __('We will open a dedicated FIB payment page with QR scan, manual code entry, and automatic status refresh.') }}
+                                    </div>
                                     <div class="small mt-2">
-                                        {{ __('Plan subscriptions now use the dedicated FIB recurring subscription API, while local entitlement activation stays server-side and idempotent.') }}
+                                        {{ $selectedUsesRecurring
+                                            ? __('Plan subscriptions now use the dedicated FIB recurring subscription API, while local entitlement activation stays server-side and idempotent.')
+                                            : __('This plan is currently configured for manual payment. Auto-renew is disabled, and you can renew again from this page when the billing period ends.') }}
                                     </div>
                                 </div>
                             </div>
@@ -644,7 +794,7 @@ class extends Component
                                     @if($processing)
                                         {{ __('Preparing...') }}
                                     @else
-                                        {{ __('Open FIB Subscription') }}
+                                        {{ $selectedUsesRecurring ? __('Open FIB Subscription') : __('Open FIB Payment') }}
                                     @endif
                                 </button>
                             </div>

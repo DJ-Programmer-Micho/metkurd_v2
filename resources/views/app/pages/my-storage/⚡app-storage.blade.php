@@ -155,6 +155,7 @@ class extends Component
                     'id' => (int) $plan->id,
                     'code' => (string) $plan->code,
                     'name' => (string) $plan->name,
+                    'payment_mode' => $plan->checkoutPaymentModeValue(),
                     'quota_mb' => (int) ($plan->quota_mb ?? 0),
                     'price_iqd' => $priceIqd,
                     'price_display' => $currency->priceDataForBaseAmountIqd($priceIqd, $customer),
@@ -169,12 +170,12 @@ class extends Component
 
         $this->storagePaymentMethods = $methodCatalog
             ->availableForPurpose(PaymentPurposeType::STORAGE_PLAN, 'IQD')
-            ->filter(fn ($method) => (bool) ($method->supports_recurring ?? false))
             ->map(fn ($method) => [
                 'code' => (string) $method->code,
                 'driver' => (string) $method->driver,
                 'name' => (string) $method->name,
                 'description' => filled($method->description) ? (string) $method->description : null,
+                'supports_recurring' => (bool) ($method->supports_recurring ?? false),
             ])
             ->values()
             ->all();
@@ -318,17 +319,31 @@ class extends Component
         $selectedMethod = collect($this->storagePaymentMethods)
             ->firstWhere('code', strtolower(trim((string) $this->selectedStoragePaymentMethod)));
         $selectedDriver = strtolower(trim((string) data_get($selectedMethod, 'driver')));
+        $selectedSupportsRecurring = (bool) data_get($selectedMethod, 'supports_recurring', false);
+        $selectedPlanMode = strtolower((string) data_get($selectedPlan, 'payment_mode', 'recurring'));
+        $selectedUsesRecurring = $selectedPlanMode === 'recurring';
 
         if ($selectedDriver === '') {
             $this->storagePlanMessageType = 'danger';
-            $this->storagePlanMessage = __('No recurring payment method is currently available for storage plans.');
+            $this->storagePlanMessage = $selectedUsesRecurring
+                ? __('No recurring payment method is currently available for storage plans.')
+                : __('No manual payment method is currently available for storage plans.');
+
+            return null;
+        }
+
+        if ($selectedUsesRecurring && ! $selectedSupportsRecurring) {
+            $this->storagePlanMessageType = 'warning';
+            $this->storagePlanMessage = __('The selected payment method does not support recurring storage subscriptions.');
 
             return null;
         }
 
         if ($selectedDriver !== 'fib') {
             $this->storagePlanMessageType = 'warning';
-            $this->storagePlanMessage = __('The selected payment method is not enabled yet for recurring storage subscriptions. Please choose FIB for now.');
+            $this->storagePlanMessage = $selectedUsesRecurring
+                ? __('The selected payment method is not enabled yet for recurring storage subscriptions. Please choose FIB for now.')
+                : __('The selected payment method is not enabled yet for manual storage payment. Please choose FIB for now.');
 
             return null;
         }
@@ -356,8 +371,16 @@ class extends Component
             $this->storagePlanMessageType = 'danger';
             $this->storagePlanMessage = collect($exception->errors())->flatten()->first() ?: __('Could not start the storage subscription checkout.');
         } catch (\Throwable $exception) {
+            Log::error('Failed to start storage checkout from my-storage page.', [
+                'customer_id' => (int) ($customer?->id ?? 0),
+                'storage_plan_id' => (int) $this->selectedStoragePlanId,
+                'payment_method' => (string) $this->selectedStoragePaymentMethod,
+                'billing_cycle' => (string) $this->storageBillingCycle,
+                'message' => $exception->getMessage(),
+                'exception' => $exception,
+            ]);
             $this->storagePlanMessageType = 'danger';
-            $this->storagePlanMessage = __('Failed to start the storage subscription checkout: :message', ['message' => $exception->getMessage()]);
+            $this->storagePlanMessage = __('Failed to start the storage checkout right now. Please try again shortly.');
         } finally {
             $this->processingStoragePlan = false;
         }
@@ -1571,7 +1594,7 @@ class extends Component
                                                 </select>
                                             @else
                                                 <div class="alert alert-warning mb-0 py-2">
-                                                    {{ __('No recurring payment method is currently available for storage subscriptions.') }}
+                                                    {{ __('No payment method is currently available for storage subscriptions.') }}
                                                 </div>
                                             @endif
                                         </div>
@@ -1832,6 +1855,8 @@ class extends Component
                 $selectedStorageDisplay = is_array($selectedStoragePlan) ? ($selectedStoragePlan['price_display'] ?? null) : null;
                 $selectedStorageMethod = collect($storagePaymentMethods)->firstWhere('code', strtolower(trim((string) $selectedStoragePaymentMethod)));
                 $selectedStorageDriver = strtolower(trim((string) data_get($selectedStorageMethod, 'driver')));
+                $selectedStorageMode = strtolower((string) data_get($selectedStoragePlan, 'payment_mode', 'recurring'));
+                $selectedStorageUsesRecurring = $selectedStorageMode === 'recurring';
             @endphp
 
             <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
@@ -1882,11 +1907,24 @@ class extends Component
 
                             <div class="alert alert-warning mt-3 mb-0">
                                 @if($selectedStorageDriver === 'fib')
-                                    <div class="fw-semibold mb-2">{{ __('Next step: complete recurring checkout in First Iraqi Bank') }}</div>
-                                    <div>{{ __('We will open a dedicated FIB subscription page with QR scan, manual code entry, automatic status refresh, and cancel controls.') }}</div>
+                                    @if($selectedStorageUsesRecurring)
+                                        <div class="fw-semibold mb-2">{{ __('Next step: complete recurring checkout in First Iraqi Bank') }}</div>
+                                        <div>{{ __('We will open a dedicated FIB subscription page with QR scan, manual code entry, automatic status refresh, and cancel controls.') }}</div>
+                                    @else
+                                        <div class="fw-semibold mb-2">{{ __('Next step: complete manual payment in First Iraqi Bank') }}</div>
+                                        <div>{{ __('We will open a dedicated FIB payment page with QR scan, manual code entry, and automatic status refresh.') }}</div>
+                                    @endif
                                 @else
-                                    <div class="fw-semibold mb-2">{{ __('Selected provider is not yet active for storage recurring checkout') }}</div>
-                                    <div>{{ __('Please use FIB until additional recurring providers are enabled.') }}</div>
+                                    <div class="fw-semibold mb-2">
+                                        {{ $selectedStorageUsesRecurring
+                                            ? __('Selected provider is not yet active for storage recurring checkout')
+                                            : __('Selected provider is not yet active for manual storage payment') }}
+                                    </div>
+                                    <div>
+                                        {{ $selectedStorageUsesRecurring
+                                            ? __('Please use FIB until additional recurring providers are enabled.')
+                                            : __('Please use FIB until additional manual-payment providers are enabled.') }}
+                                    </div>
                                 @endif
                             </div>
                         </div>
@@ -1903,7 +1941,7 @@ class extends Component
                                 @if($processingStoragePlan)
                                     {{ __('Preparing...') }}
                                 @else
-                                    {{ __('Open Subscription Checkout') }}
+                                    {{ $selectedStorageUsesRecurring ? __('Open Subscription Checkout') : __('Open Payment Checkout') }}
                                 @endif
                             </button>
                         </div>
