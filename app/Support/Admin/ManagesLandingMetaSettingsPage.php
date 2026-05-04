@@ -3,6 +3,7 @@
 namespace App\Support\Admin;
 
 use App\Support\Landing\SiteMetaSettingsRepository;
+use Illuminate\Validation\ValidationException;
 
 trait ManagesLandingMetaSettingsPage
 {
@@ -45,11 +46,16 @@ trait ManagesLandingMetaSettingsPage
             'appIcon192Upload' => ['nullable', 'image', 'max:2048'],
             'appIcon512Upload' => ['nullable', 'image', 'max:2048'],
             'appleTouchIconUpload' => ['nullable', 'image', 'max:2048'],
-            'ogImageUpload' => ['nullable', 'image', 'max:5120'],
-            'twitterImageUpload' => ['nullable', 'image', 'max:5120'],
+            'ogImageUpload' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:5120'],
+            'twitterImageUpload' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:5120'],
         ]);
 
-        $this->metaRepository()->save([
+        $this->validateSocialPreviewUpload('ogImageUpload', __('Open Graph image'));
+        $this->validateSocialPreviewUpload('twitterImageUpload', __('Twitter image'));
+
+        $repository = $this->metaRepository();
+
+        $repository->save([
             'default_meta_title' => $this->defaultMetaTitle,
             'default_meta_description' => $this->defaultMetaDescription,
             'default_og_title' => $this->defaultOgTitle,
@@ -63,6 +69,7 @@ trait ManagesLandingMetaSettingsPage
             'og_image_upload' => $this->ogImageUpload,
             'twitter_image_upload' => $this->twitterImageUpload,
         ]);
+        $repository->refreshRuntimeCache();
 
         $this->reloadMetaSettings();
         $this->dispatch('alert', type: 'success', message: __('Global meta settings saved successfully.'));
@@ -102,5 +109,61 @@ trait ManagesLandingMetaSettingsPage
     protected function metaRepository(): SiteMetaSettingsRepository
     {
         return app(SiteMetaSettingsRepository::class);
+    }
+
+    protected function validateSocialPreviewUpload(string $field, string $label): void
+    {
+        $upload = $this->{$field} ?? null;
+
+        if (! is_object($upload) || ! method_exists($upload, 'getRealPath')) {
+            return;
+        }
+
+        $realPath = $upload->getRealPath();
+        if (! is_string($realPath) || trim($realPath) === '') {
+            return;
+        }
+
+        $imageSize = @getimagesize($realPath);
+        if (! is_array($imageSize)) {
+            throw ValidationException::withMessages([
+                $field => __(
+                    ':label must be a valid PNG, JPG, or WEBP file.',
+                    ['label' => $label]
+                ),
+            ]);
+        }
+
+        $width = (int) ($imageSize[0] ?? 0);
+        $height = (int) ($imageSize[1] ?? 0);
+
+        if ($width < 600 || $height < 315) {
+            throw ValidationException::withMessages([
+                $field => __(
+                    ':label is too small. Use at least 600x315 (1200x630 recommended).',
+                    ['label' => $label]
+                ),
+            ]);
+        }
+
+        $ratio = $height > 0 ? ($width / $height) : 0.0;
+
+        if ($width <= $height || $ratio < 1.4 || $ratio > 2.2) {
+            throw ValidationException::withMessages([
+                $field => __(
+                    ':label must be a wide social image. Use around 1200x630 (1.91:1).',
+                    ['label' => $label]
+                ),
+            ]);
+        }
+
+        if (($width <= 512 && $height <= 512) || abs($ratio - 1.0) <= 0.1) {
+            throw ValidationException::withMessages([
+                $field => __(
+                    ':label looks like an icon. Upload a social preview image (1200x630 recommended).',
+                    ['label' => $label]
+                ),
+            ]);
+        }
     }
 }

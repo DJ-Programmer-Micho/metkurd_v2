@@ -126,8 +126,8 @@ class extends Component
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">{{ __('Default Open Graph Image') }}</label>
-                        <input type="file" class="form-control @error('ogImageUpload') is-invalid @enderror" wire:model="ogImageUpload" accept="image/*">
-                        <div class="form-text">{{ __('Shown when pages are shared in chat apps and social feeds.') }}</div>
+                        <input type="file" class="form-control @error('ogImageUpload') is-invalid @enderror" wire:model="ogImageUpload" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
+                        <div class="form-text">{{ __('Shown when pages are shared in chat apps and social feeds. Use PNG/JPG/WEBP, around 1200x630, and avoid favicon/app-icon style images.') }}</div>
                         @error('ogImageUpload') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         @if($ogImagePath && $metaRepository->publicUrl($ogImagePath))
                             <small class="text-muted d-block mt-2">{{ $ogImagePath }}</small>
@@ -136,8 +136,8 @@ class extends Component
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">{{ __('Default Twitter/X Image') }}</label>
-                        <input type="file" class="form-control @error('twitterImageUpload') is-invalid @enderror" wire:model="twitterImageUpload" accept="image/*">
-                        <div class="form-text">{{ __('Used by Twitter/X cards when no page-specific image is set.') }}</div>
+                        <input type="file" class="form-control @error('twitterImageUpload') is-invalid @enderror" wire:model="twitterImageUpload" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
+                        <div class="form-text">{{ __('Used by Twitter/X cards when no page-specific image is set. Use PNG/JPG/WEBP, around 1200x630, and avoid icon-like uploads.') }}</div>
                         @error('twitterImageUpload') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         @if($twitterImagePath && $metaRepository->publicUrl($twitterImagePath))
                             <small class="text-muted d-block mt-2">{{ $twitterImagePath }}</small>

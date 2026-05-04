@@ -67,12 +67,31 @@ it('stores site meta uploads on the configured shared media disk', function () {
 
     $setting = SiteMetaSetting::query()->where('key', 'meta.favicon_path')->firstOrFail();
     $storedPath = trim((string) data_get($setting->value, 'value', ''));
+    $resolvedUrl = app(SiteMetaSettingsRepository::class)->publicUrl('/storage/' . $storedPath);
 
     expect($storedPath)->toStartWith('web-setting/site-meta/favicon-')
-        ->and(app(LandingMediaStorage::class)->publicUrl('/storage/' . $storedPath))
-        ->toBe(url('media/web/' . $storedPath));
+        ->and($resolvedUrl)->toStartWith(url('media/web/' . $storedPath))
+        ->and($resolvedUrl)->toContain('?v=');
 
     Storage::disk('s3')->assertExists($storedPath);
+});
+
+it('does not return a public url for missing site meta assets', function () {
+    $url = app(SiteMetaSettingsRepository::class)->publicUrl('web-setting/site-meta/missing-og-image.png');
+
+    expect($url)->toBeNull();
+});
+
+it('returns image metadata for stored site meta assets', function () {
+    $upload = UploadedFile::fake()->image('og-image.png', 1200, 630);
+    Storage::disk('s3')->putFileAs('web-setting/site-meta', $upload, 'og-image-test.png');
+
+    $meta = app(SiteMetaSettingsRepository::class)->imageMetadata('web-setting/site-meta/og-image-test.png');
+
+    expect($meta)->not->toBeNull()
+        ->and(data_get($meta, 'width'))->toBe(1200)
+        ->and(data_get($meta, 'height'))->toBe(630)
+        ->and((string) data_get($meta, 'mime_type'))->toContain('image/');
 });
 
 it('serves public landing media through app route for private buckets', function () {

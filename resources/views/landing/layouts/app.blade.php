@@ -55,6 +55,31 @@
             ? $value
             : url(ltrim($value, '/'));
     };
+    $localImageMeta = static function (?string $path): ?array {
+        $path = trim((string) $path);
+
+        if ($path === '' || Str::startsWith($path, ['http://', 'https://'])) {
+            return null;
+        }
+
+        $fullPath = public_path(ltrim($path, '/'));
+        if (! is_file($fullPath)) {
+            return null;
+        }
+
+        $info = @getimagesize($fullPath);
+        if (! is_array($info)) {
+            return null;
+        }
+
+        $mimeType = is_string($info['mime'] ?? null) ? trim((string) $info['mime']) : null;
+
+        return [
+            'mime_type' => $mimeType !== '' ? $mimeType : null,
+            'width' => isset($info[0]) ? (int) $info[0] : null,
+            'height' => isset($info[1]) ? (int) $info[1] : null,
+        ];
+    };
 
     $settingsDefaultMetaTitle = $sanitizeMeta($metaSettings->defaultMetaTitle());
     $settingsDefaultMetaDescription = $sanitizeMeta($metaSettings->defaultMetaDescription());
@@ -75,19 +100,48 @@
     $pageKeywords = $sanitizeMeta($keywords) ?: $siteKeywords;
     $canonicalUrl = $absolutePageUrl($canonical) ?: url()->current();
 
-    $fallbackFavicon = app()->bound('logo_1024_tran_black')
-        ? asset(app('logo_1024_tran_black'))
-        : (app()->bound('logo_1024') ? asset(app('logo_1024')) : asset('favicon.ico'));
+    $safeFallbackFaviconPath = app()->bound('logo_57')
+        ? app('logo_57')
+        : '/app/logo/logo_icon_xml/57.png';
+    $safeFallbackSocialPath = app()->bound('logo_1024_tran')
+        ? app('logo_1024_tran')
+        : (app()->bound('logo_1024') ? app('logo_1024') : '/app/logo/black_logo.png');
+    $fallbackFavicon = $absoluteAssetUrl($safeFallbackFaviconPath) ?: asset('app/logo/logo_icon_xml/57.png');
     $favicon = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->faviconPath())) ?: $fallbackFavicon;
     $appleTouchIcon = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appleTouchIconPath())) ?: $favicon;
     $appIcon192 = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appIcon192Path())) ?: null;
     $appIcon512 = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appIcon512Path())) ?: null;
-    $defaultLogo = $appIcon512
-        ?: (app()->bound('logo_1024') ? asset(app('logo_1024')) : $fallbackFavicon);
-    $defaultOgImage = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->ogImagePath())) ?: $defaultLogo;
-    $defaultTwitterImage = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->twitterImagePath())) ?: $defaultOgImage;
-    $pageImage = $absoluteAssetUrl($image) ?: $defaultOgImage;
-    $twitterImage = $absoluteAssetUrl($image) ?: $defaultTwitterImage;
+    $safeFallbackSocialImage = $absoluteAssetUrl($safeFallbackSocialPath) ?: $fallbackFavicon;
+    $configuredOgImagePath = $metaSettings->ogImagePath();
+    $configuredTwitterImagePath = $metaSettings->twitterImagePath();
+    $configuredOgImage = $absoluteAssetUrl($metaSettings->publicUrl($configuredOgImagePath));
+    $configuredTwitterImage = $absoluteAssetUrl($metaSettings->publicUrl($configuredTwitterImagePath));
+    $defaultOgImage = $configuredOgImage ?: ($configuredTwitterImage ?: $safeFallbackSocialImage);
+    $defaultTwitterImage = $configuredTwitterImage ?: $defaultOgImage;
+    $imageOverrideInput = trim((string) $image);
+    $imageOverrideUrl = $absoluteAssetUrl($image);
+    $pageImage = $imageOverrideUrl ?: $defaultOgImage;
+    $twitterImage = $imageOverrideUrl ?: $defaultTwitterImage;
+    $pageImageMetadata = null;
+    if ($imageOverrideInput !== '') {
+        $pageImageMetadata = filter_var($imageOverrideInput, FILTER_VALIDATE_URL)
+            ? null
+            : $localImageMeta($imageOverrideInput);
+    }
+    if ($pageImageMetadata === null && is_string($configuredOgImagePath) && trim($configuredOgImagePath) !== '') {
+        $pageImageMetadata = $metaSettings->imageMetadata($configuredOgImagePath);
+    }
+    if ($pageImageMetadata === null && is_string($configuredTwitterImagePath) && trim($configuredTwitterImagePath) !== '') {
+        $pageImageMetadata = $metaSettings->imageMetadata($configuredTwitterImagePath);
+    }
+    if ($pageImageMetadata === null) {
+        $pageImageMetadata = $localImageMeta($safeFallbackSocialPath);
+    }
+    $pageImageMimeType = is_string(data_get($pageImageMetadata, 'mime_type'))
+        ? trim((string) data_get($pageImageMetadata, 'mime_type'))
+        : '';
+    $pageImageWidth = (int) data_get($pageImageMetadata, 'width', 0);
+    $pageImageHeight = (int) data_get($pageImageMetadata, 'height', 0);
     $pageImageAlt = $rawTitle !== '' ? $rawTitle : $defaultImageAlt;
     $ogTitle = $rawTitle !== '' ? $pageTitle : ($settingsDefaultOgTitle !== '' ? $settingsDefaultOgTitle : $pageTitle);
     $ogDescription = $rawDescription !== '' ? $pageDescription : ($settingsDefaultOgDescription !== '' ? $settingsDefaultOgDescription : $pageDescription);
@@ -122,7 +176,7 @@
     $organizationId = url('/') . '#organization';
     $websiteId = url('/') . '#website';
     $webpageId = $canonicalUrl . '#webpage';
-    $organizationLogo = $appIcon512 ?: $defaultLogo;
+    $organizationLogo = $appIcon512 ?: ($configuredOgImage ?: $safeFallbackSocialImage);
 
     $structuredData = [
         '@context' => 'https://schema.org',
@@ -223,6 +277,15 @@
     <meta property="og:url" content="{{ $canonicalUrl }}">
     <meta property="og:image" content="{{ $pageImage }}">
     <meta property="og:image:secure_url" content="{{ $pageImage }}">
+    @if($pageImageMimeType !== '')
+        <meta property="og:image:type" content="{{ $pageImageMimeType }}">
+    @endif
+    @if($pageImageWidth > 0)
+        <meta property="og:image:width" content="{{ $pageImageWidth }}">
+    @endif
+    @if($pageImageHeight > 0)
+        <meta property="og:image:height" content="{{ $pageImageHeight }}">
+    @endif
     <meta property="og:image:alt" content="{{ $pageImageAlt }}">
 
     {{-- Twitter/X cards reuse the same canonical metadata for cleaner sharing. --}}
