@@ -115,20 +115,24 @@ trait ManagesLandingMetaSettingsPage
     {
         $upload = $this->{$field} ?? null;
 
-        if (! is_object($upload) || ! method_exists($upload, 'getRealPath')) {
+        if (! is_object($upload)) {
             return;
         }
 
-        $realPath = $upload->getRealPath();
-        if (! is_string($realPath) || trim($realPath) === '') {
-            return;
+        $imageSize = null;
+        if (method_exists($upload, 'dimensions')) {
+            $imageSize = $upload->dimensions();
+        } elseif (method_exists($upload, 'getRealPath')) {
+            $realPath = $upload->getRealPath();
+            if (is_string($realPath) && trim($realPath) !== '') {
+                $imageSize = @getimagesize($realPath);
+            }
         }
 
-        $imageSize = @getimagesize($realPath);
         if (! is_array($imageSize)) {
             throw ValidationException::withMessages([
                 $field => __(
-                    ':label must be a valid PNG, JPG, or WEBP file.',
+                    ':label could not be processed. Please re-upload a PNG, JPG, or WEBP image.',
                     ['label' => $label]
                 ),
             ]);
