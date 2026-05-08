@@ -59,12 +59,7 @@ trait ManagesCustomerRegisterPage
             return;
         }
 
-        $customer = Customer::query()
-            ->with([
-                'activeServiceSubscription:id,customer_id,service_plan_id',
-                'activeStorageSubscription:id,customer_id,storage_plan_id',
-            ])
-            ->find((int) $this->customerFilter);
+        $customer = Customer::query()->find((int) $this->customerFilter);
 
         $this->prefillManualAdjustmentsFromCustomer($customer);
     }
@@ -201,7 +196,19 @@ trait ManagesCustomerRegisterPage
                 'creditOrders.servicePlan:id,code,name',
                 'creditOrders.creditProduct:id,code,name,credits_amount',
                 'serviceSubscriptions' => fn ($subscriptionQuery) => $subscriptionQuery->with(['servicePlan:id,code,name', 'previousServicePlan:id,code,name'])->latest()->limit(6),
-                'activeStorageSubscription:id,customer_id,storage_plan_id,status,source,cycle_started_on,cycle_ends_on,next_renewal_on,auto_renew,starts_at,ends_at',
+                'activeStorageSubscription' => fn ($subscriptionQuery) => $subscriptionQuery->select(
+                    'customer_storage_subscriptions.id',
+                    'customer_storage_subscriptions.customer_id',
+                    'customer_storage_subscriptions.storage_plan_id',
+                    'customer_storage_subscriptions.status',
+                    'customer_storage_subscriptions.source',
+                    'customer_storage_subscriptions.cycle_started_on',
+                    'customer_storage_subscriptions.cycle_ends_on',
+                    'customer_storage_subscriptions.next_renewal_on',
+                    'customer_storage_subscriptions.auto_renew',
+                    'customer_storage_subscriptions.starts_at',
+                    'customer_storage_subscriptions.ends_at'
+                ),
                 'activeStorageSubscription.storagePlan:id,code,name,quota_mb',
                 'storageSubscriptions' => fn ($subscriptionQuery) => $subscriptionQuery->with(['storagePlan:id,code,name,quota_mb'])->latest()->limit(6),
                 'mlJobs' => fn ($jobQuery) => $this->scopeJobs($jobQuery)->with(['tool:id,code,name', 'toolAction:id,tool_code,action_code,full_code,name'])->latest()->limit(5),
@@ -231,12 +238,7 @@ trait ManagesCustomerRegisterPage
     public function focusCustomer(int $customerId): void
     {
         $this->customerFilter = (string) $customerId;
-        $customer = Customer::query()
-            ->with([
-                'activeServiceSubscription:id,customer_id,service_plan_id',
-                'activeStorageSubscription:id,customer_id,storage_plan_id',
-            ])
-            ->find($customerId);
+        $customer = Customer::query()->find($customerId);
 
         $this->prefillManualAdjustmentsFromCustomer($customer);
     }
