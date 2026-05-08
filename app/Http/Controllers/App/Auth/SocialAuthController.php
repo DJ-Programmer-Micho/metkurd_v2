@@ -4,6 +4,7 @@ namespace App\Http\Controllers\App\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Services\Analytics\ConversionTrackingService;
 use App\Services\Auth\CustomerSocialAuthService;
 use App\Support\TelegramRegistrationNotifier;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +15,7 @@ class SocialAuthController extends Controller
 {
     public function __construct(
         protected CustomerSocialAuthService $socialAuth,
+        protected ConversionTrackingService $conversionTracking,
     ) {
     }
 
@@ -86,6 +88,16 @@ class SocialAuthController extends Controller
 
         if (! $customerExistedBeforeCallback) {
             TelegramRegistrationNotifier::sendUnverifiedIfNeeded($customer, $provider);
+
+            try {
+                $this->conversionTracking->queueSignupConversion($customer, $provider);
+            } catch (\Throwable $e) {
+                Log::warning('Social signup conversion session flag could not be queued.', [
+                    'customer_id' => (int) $customer->id,
+                    'provider' => $provider,
+                    'message' => $e->getMessage(),
+                ]);
+            }
         }
 
         if ($nextVerificationRoute = $customer->nextVerificationRouteName()) {

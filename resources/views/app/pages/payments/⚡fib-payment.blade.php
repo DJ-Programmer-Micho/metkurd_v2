@@ -11,6 +11,7 @@ use App\Domain\Payments\Models\Payment;
 use App\Models\CreditProduct;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
+use App\Services\Analytics\ConversionTrackingService;
 use App\Services\Billing\BillingCurrencyService;
 use App\Services\Coupons\CouponContext;
 use App\Services\Coupons\CouponService;
@@ -317,6 +318,7 @@ class extends Component
     {
         $payment = $this->payment->fresh(['customer.profile']) ?? $this->payment;
         $snapshot = $payment->snapshot();
+        $purchaseConversionPayload = app(ConversionTrackingService::class)->preparePurchaseConversionPayload($payment);
         $links = $payment->appLinks();
         $shouldPoll = in_array($payment->status->value, ['pending', 'awaiting_customer_action'], true);
         $status = $payment->status->value;
@@ -339,6 +341,7 @@ class extends Component
         return view('app.pages.payments.⚡fib-payment', [
             'payment' => $payment,
             'snapshot' => $snapshot,
+            'purchaseConversionPayload' => $purchaseConversionPayload,
             'links' => $links,
             'shouldPoll' => $shouldPoll,
             'statusEndpoint' => route('payments.fib.status', [
@@ -443,6 +446,23 @@ class extends Component
         ? __('One-time purchase')
         : __($resolvedPaymentMode->description((string) data_get($snapshot, 'billing_cycle', '')));
 @endphp
+
+@if (is_array($purchaseConversionPayload))
+    @push('scripts')
+        <script>
+            (() => {
+                const payload = @json($purchaseConversionPayload);
+                if (!payload || typeof payload !== 'object') {
+                    return;
+                }
+
+                window.dataLayer = window.dataLayer || [];
+                window.dataLayer.push(payload);
+            })();
+        </script>
+    @endpush
+@endif
+
 <script src="https://cdn.lordicon.com/lordicon.js"></script>
 <div class="row justify-content-center mt-4"
      data-payment-status-polling="{{ $shouldPoll ? 'active' : 'stopped' }}"
@@ -867,16 +887,15 @@ class extends Component
                 const latestStatus = String(payload.status || '').toLowerCase();
                 const currentStatus = String(wrapper.getAttribute('data-payment-current-status') || '').toLowerCase();
                 const isTerminal = Boolean(payload.is_terminal);
-                const isSuccess = Boolean(payload.is_success);
                 const providerStatus = String(payload.provider_status || '').trim();
 
                 if (latestStatus !== '' && latestStatus !== currentStatus) {
-                    refreshUi(isSuccess ? String(payload.redirect_url || '') : '');
+                    refreshUi('');
                     return;
                 }
 
                 if (isTerminal) {
-                    refreshUi(isSuccess ? String(payload.redirect_url || '') : '');
+                    refreshUi('');
 
                     return;
                 }

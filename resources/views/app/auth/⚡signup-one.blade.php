@@ -13,6 +13,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use App\Models\Customer;
 use App\Models\CustomerProfile;
+use App\Services\Analytics\ConversionTrackingService;
 use App\Support\RegistrationPhoneCountryManager;
 use App\Support\TelegramRegistrationNotifier;
 
@@ -140,6 +141,16 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
         Auth::guard('app')->login($customer);
         request()->session()->regenerate();
+
+        try {
+            app(ConversionTrackingService::class)->queueSignupConversion($customer, 'email_form');
+        } catch (\Throwable $e) {
+            Log::warning('Signup conversion session flag could not be queued.', [
+                'customer_id' => (int) $customer->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
         $this->resetTurnstileChallenge();
 
         $this->dispatch('alert', type: 'success', message: __('Account created! Please verify your email.'));

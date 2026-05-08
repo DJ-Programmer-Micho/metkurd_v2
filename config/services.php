@@ -85,6 +85,11 @@ return [
         'client_secret' => env('GITHUB_CLIENT_SECRET'),
         'redirect' => env('GITHUB_REDIRECT_URI'),
     ],
+    'gtm' => [
+        'enabled' => filter_var(env('GTM_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'container_id' => env('GTM_CONTAINER_ID'),
+        'debug' => filter_var(env('GTM_DEBUG', false), FILTER_VALIDATE_BOOL),
+    ],
     'turnstile' => [
         'site_key' => env('TURNSTILE_SITE_KEY'),
         'secret_key' => env('TURNSTILE_SECRET_KEY'),

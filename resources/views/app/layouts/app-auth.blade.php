@@ -15,6 +15,21 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    @php
+        $gtmEnabled = (bool) config('services.gtm.enabled');
+        $gtmContainerId = trim((string) config('services.gtm.container_id'));
+    @endphp
+    @if ($gtmEnabled && $gtmContainerId !== '')
+        <!-- Google Tag Manager -->
+        <script>
+            (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+            new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+            j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+            'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+            })(window,document,'script','dataLayer',@js($gtmContainerId));
+        </script>
+        <!-- End Google Tag Manager -->
+    @endif
 
     {{-- <link rel="stylesheet" href="{{ asset('main/assets/vendor/line-awesome/line-awesome/line-awesome/css/line-awesome.min.css') }}"> --}}
     <link href="{{ asset('app/libs/swiper/swiper-bundle.min.css') }}" rel="stylesheet" type="text/css" />
@@ -61,6 +76,12 @@
 </head>
 
 <body>
+@if ($gtmEnabled && $gtmContainerId !== '')
+    <!-- Google Tag Manager (noscript) -->
+    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id={{ $gtmContainerId }}"
+    height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+    <!-- End Google Tag Manager (noscript) -->
+@endif
 <div class="auth-page-wrapper auth-bg-cover py-5 d-flex justify-content-center align-items-center min-vh-100">
     <div class="bg-overlay"></div>
 

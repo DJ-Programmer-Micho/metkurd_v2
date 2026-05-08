@@ -2,6 +2,7 @@
 
 use App\Models\Customer;
 use App\Models\MlJob;
+use App\Services\Analytics\ConversionTrackingService;
 use App\Support\AppShellData;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -16,9 +17,11 @@ new
 class extends Component
 {
     public int $refreshTick = 0;
+    public ?array $signupConversionPayload = null;
 
     public function mount(): void
     {
+        $this->signupConversionPayload = app(ConversionTrackingService::class)->consumeSignupConversionPayload();
         $this->refreshDashboard();
     }
 
@@ -590,12 +593,29 @@ class extends Component
     $quickActions = $this->quickActions();
     $runningJobs = $this->runningJobs();
     $recentJobs = $this->recentJobs();
+    $signupConversionPayload = is_array($this->signupConversionPayload) ? $this->signupConversionPayload : null;
     $toolTotal = max(1, (int) $toolBreakdown->sum('jobs'));
     $servicePlan = $customer?->servicePlan ?: $customer?->activeServiceSubscription?->servicePlan;
     $storagePlan = $customer?->storagePlan ?: $customer?->activeStorageSubscription?->storagePlan;
 @endphp
 
 <x-slot:title>{{ __('Dashboard') }} | {{ __('MET KURD') }}</x-slot:title>
+
+@if ($signupConversionPayload !== null)
+    @push('scripts')
+        <script>
+            (() => {
+                const payload = @json($signupConversionPayload);
+                if (!payload || typeof payload !== 'object') {
+                    return;
+                }
+
+                window.dataLayer = window.dataLayer || [];
+                window.dataLayer.push(payload);
+            })();
+        </script>
+    @endpush
+@endif
 
 <div class="mk-home-dashboard" wire:poll.visible.30000ms="refreshDashboard">
     <style>
