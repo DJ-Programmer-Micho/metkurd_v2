@@ -38,6 +38,9 @@ body{
   overflow-x:hidden;
   max-width:100%;
 }
+.h1, .h2, .h3, .h4, .h5, .h6, h1, h2, h3, h4, h5, h6 {
+  color: var(--text);
+}
 [data-theme="light"] body{
   background:
     radial-gradient(circle at 15% 20%, rgba(124,92,255,.12), transparent 22%),

@@ -9,9 +9,37 @@ new #[Layout('landing::layouts.app')] class extends Component
 };
 ?>
 
+@php
+    $locale = app()->getLocale();
+    $breadcrumbSchema = [
+        '@context' => 'https://schema.org',
+        '@type' => 'BreadcrumbList',
+        'itemListElement' => [
+            [
+                '@type' => 'ListItem',
+                'position' => 1,
+                'name' => LandingContent::text('nav.home'),
+                'item' => route('landing.home', ['locale' => $locale]),
+            ],
+            [
+                '@type' => 'ListItem',
+                'position' => 2,
+                'name' => LandingContent::text('tools_page.title'),
+                'item' => route('landing.tools', ['locale' => $locale]),
+            ],
+        ],
+    ];
+@endphp
+
 <x-slot:title>{{ LandingContent::text('tools_page.meta.title') }}</x-slot:title>
 <x-slot:description>{{ LandingContent::text('tools_page.meta.description') }}</x-slot:description>
 <x-slot:keywords>{{ LandingContent::text('tools_page.meta.keywords') }}</x-slot:keywords>
+
+@push('meta')
+    <script type="application/ld+json">
+        @json($breadcrumbSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+    </script>
+@endpush
 
 <div>
     <section class="hero py-5 mt-5">

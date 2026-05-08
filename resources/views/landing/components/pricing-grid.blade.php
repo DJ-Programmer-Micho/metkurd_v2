@@ -188,9 +188,9 @@ new class extends Component
     @endif
 
     <div class="text-center text-muted-soft small mb-4">
-        {{ __('Pricing display resolved for: :currency', ['currency' => $resolvedDisplayCurrency]) }}
+        {{ LandingContent::text('pricing_page.currency_notice', ['currency' => $resolvedDisplayCurrency]) }}
         @if($resolvedDisplayCurrency !== 'IQD')
-            <span>{{ __('Billing source remains IQD.') }}</span>
+            <span>{{ LandingContent::text('pricing_page.base_currency_notice') }}</span>
         @endif
     </div>
 
@@ -210,7 +210,7 @@ new class extends Component
                 $monthlyBase = (string) data_get($plan, 'display_monthly.iqd_label', 'IQD 0');
                 $yearlyBase = (string) data_get($plan, 'display_yearly.iqd_label', 'IQD 0');
                 $features = (array) ($plan['features'] ?? []);
-                $cta = $plan['cta'] ?? 'Get Started';
+                $cta = $plan['cta'] ?? LandingContent::text('common.get_started');
             @endphp
             <div class="col-lg-3 col-md-6 d-flex">
                 <article class="price-card glass-card reveal h-100 d-flex flex-column {{ $isFeatured ? 'recommended' : '' }}">
@@ -223,7 +223,11 @@ new class extends Component
                     <div class="pricing-card-copy">
                         <h3 class="pricing-card-title">{{ __($title) }}</h3>
                         <p class="text-muted-soft mb-0 pricing-card-summary">
-                            {{ __($summary ?: 'Includes :credits monthly credits and :actions enabled actions.', ['credits' => number_format($monthlyCredits), 'actions' => $allowedActions]) }}
+                            @if(is_string($summary) && trim($summary) !== '')
+                                {{ __($summary) }}
+                            @else
+                                {{ LandingContent::text('pricing_page.summary_fallback', ['credits' => number_format($monthlyCredits), 'actions' => $allowedActions]) }}
+                            @endif
                         </p>
                     </div>
 
@@ -255,10 +259,10 @@ new class extends Component
                             {{-- @if($showBaseNote)
                                 <p
                                     class="text-muted-soft small mb-0"
-                                    data-monthly="{{ __('Base billing: :amount', ['amount' => $monthlyBase]) }}"
-                                    data-yearly="{{ __('Base billing: :amount', ['amount' => $yearlyBase]) }}"
+                                    data-monthly="{{ LandingContent::text('common.base_billing_note', ['amount' => $monthlyBase]) }}"
+                                    data-yearly="{{ LandingContent::text('common.base_billing_note', ['amount' => $yearlyBase]) }}"
                                 >
-                                    {{ __('Base billing: :amount', ['amount' => $monthlyBase]) }}
+                                    {{ LandingContent::text('common.base_billing_note', ['amount' => $monthlyBase]) }}
                                 </p>
                             @endif --}}
                         </div>
@@ -289,10 +293,10 @@ new class extends Component
                 <div class="text-center mb-4 reveal">
                     <span class="section-badge mb-3">
                         <i class="bi bi-hdd-stack"></i>
-                        {{ __('Storage Pricing') }}
+                        {{ LandingContent::text('pricing_page.storage_badge') }}
                     </span>
-                    <h3 class="section-title h2">{{ __('Storage upgrades') }}</h3>
-                    <p class="lead-soft mx-auto">{{ __('Flexible storage packs priced from the same canonical IQD billing catalog.') }}</p>
+                    <h3 class="section-title h2">{{ LandingContent::text('pricing_page.storage_title') }}</h3>
+                    <p class="lead-soft mx-auto">{{ LandingContent::text('pricing_page.storage_copy') }}</p>
                 </div>
 
                 <div class="row g-4 justify-content-center mb-5">
@@ -311,11 +315,11 @@ new class extends Component
                                 <div class="pricing-card-price-block">
                                     <div class="plan-price">
                                         <span class="pricing-plan-amount">{{ $priceLabel }}</span>
-                                        <small class="pricing-plan-period">{{ __('one-time') }}</small>
+                                        <small class="pricing-plan-period">{{ LandingContent::text('common.one_time') }}</small>
                                     </div>
                                     <div class="pricing-card-meta">
                                         @if((bool) data_get($plan, 'display_price.has_localized_estimate', false))
-                                            <p class="text-muted-soft small mb-0">{{ __('Base billing: :amount', ['amount' => $baseLabel]) }}</p>
+                                            <p class="text-muted-soft small mb-0">{{ LandingContent::text('common.base_billing_note', ['amount' => $baseLabel]) }}</p>
                                         @endif
                                     </div>
                                 </div>
@@ -329,7 +333,7 @@ new class extends Component
                                 </ul>
                                 <div class="pricing-card-actions mt-auto pt-4">
                                     <a class="btn btn-outline-soft w-100" href="{{ $ctaHref }}" wire:navigate>
-                                        {{ __('Get Started') }}
+                                        {{ LandingContent::text('common.get_started') }}
                                     </a>
                                 </div>
                             </article>
@@ -342,10 +346,10 @@ new class extends Component
                 <div class="text-center mb-4 reveal">
                     <span class="section-badge mb-3">
                         <i class="bi bi-lightning-charge"></i>
-                        {{ __('Add-on Pricing') }}
+                        {{ LandingContent::text('pricing_page.addons_badge') }}
                     </span>
-                    <h3 class="section-title h2">{{ __('Credit top-ups') }}</h3>
-                    <p class="lead-soft mx-auto">{{ __('One-time add-on packs for extra credits whenever your team needs more throughput.') }}</p>
+                    <h3 class="section-title h2">{{ LandingContent::text('pricing_page.addons_title') }}</h3>
+                    <p class="lead-soft mx-auto">{{ LandingContent::text('pricing_page.addons_copy') }}</p>
                 </div>
 
                 <div class="row g-4 justify-content-center">
@@ -368,11 +372,11 @@ new class extends Component
                                 <div class="pricing-card-price-block">
                                     <div class="plan-price">
                                         <span class="pricing-plan-amount">{{ $priceLabel }}</span>
-                                        <small class="pricing-plan-period">{{ __('one-time') }}</small>
+                                        <small class="pricing-plan-period">{{ LandingContent::text('common.one_time') }}</small>
                                     </div>
                                     <div class="pricing-card-meta">
                                         @if((bool) data_get($product, 'display_price.has_localized_estimate', false))
-                                            <p class="text-muted-soft small mb-0">{{ __('Base billing: :amount', ['amount' => $baseLabel]) }}</p>
+                                            <p class="text-muted-soft small mb-0">{{ LandingContent::text('common.base_billing_note', ['amount' => $baseLabel]) }}</p>
                                         @endif
                                     </div>
                                 </div>
@@ -386,7 +390,7 @@ new class extends Component
                                 </ul>
                                 <div class="pricing-card-actions mt-auto pt-4">
                                     <a class="btn btn-outline-soft w-100" href="{{ $ctaHref }}" wire:navigate>
-                                        {{ __('Get Started') }}
+                                        {{ LandingContent::text('common.get_started') }}
                                     </a>
                                 </div>
                             </article>

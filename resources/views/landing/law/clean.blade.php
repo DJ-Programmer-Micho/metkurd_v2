@@ -16,13 +16,16 @@
     $supportedLocales = array_keys(LandingContent::section('locales'));
     $localeMeta = [
         'en' => ['og' => 'en_US', 'hreflang' => 'en'],
-        'ar' => ['og' => 'ar_IQ', 'hreflang' => 'ar-IQ'],
-        'ku' => ['og' => 'ku_IQ', 'hreflang' => 'ku-IQ'],
+        'ar' => ['og' => 'ar_IQ', 'hreflang' => 'ar'],
+        'ku' => ['og' => 'ku_IQ', 'hreflang' => 'ku'],
     ];
 
     $siteName = LandingContent::text('site.name');
     $siteTagline = LandingContent::text('site.tagline');
     $siteAuthor = LandingContent::text('site.author');
+    $siteFounderName = LandingContent::text('site.founder_name');
+    $siteCoFounderName = LandingContent::text('site.cofounder_name');
+    $siteOrigin = LandingContent::text('site.origin');
     $siteDescription = LandingContent::text('site.meta_description');
     $siteKeywords = LandingContent::text('site.meta_keywords');
     $siteSubject = LandingContent::text('site.subject');
@@ -69,7 +72,7 @@
         ? $settingsDefaultMetaTitle
         : trim($siteName . ($siteTagline !== '' ? ' | ' . $siteTagline : ''));
     $pageTitle = $rawTitle !== ''
-        ? (Str::endsWith($rawTitle, ' | ' . $siteName) || $rawTitle === $siteName ? $rawTitle : $rawTitle . ' | ' . $siteName)
+        ? (Str::endsWith($rawTitle, ' | ' . $siteName) || $rawTitle === $siteName || Str::contains($rawTitle, $siteName) ? $rawTitle : $rawTitle . ' | ' . $siteName)
         : $defaultTitle;
     $pageDescription = $rawDescription ?: ($settingsDefaultMetaDescription !== '' ? $settingsDefaultMetaDescription : $siteDescription);
     $pageKeywords = $sanitizeMeta($keywords) ?: $siteKeywords;
@@ -132,9 +135,24 @@
                 '@id' => $organizationId,
                 'name' => $siteName,
                 'alternateName' => $siteTagline,
+                'slogan' => $siteTagline,
                 'url' => url('/'),
                 'description' => $siteDescription,
                 'email' => $authorEmail !== '' ? $authorEmail : null,
+                'founder' => array_values(array_filter([
+                    $siteFounderName !== '' ? [
+                        '@type' => 'Person',
+                        'name' => $siteFounderName,
+                    ] : null,
+                    $siteCoFounderName !== '' ? [
+                        '@type' => 'Person',
+                        'name' => $siteCoFounderName,
+                    ] : null,
+                ])),
+                'foundingLocation' => $siteOrigin !== '' ? [
+                    '@type' => 'Place',
+                    'name' => $siteOrigin,
+                ] : null,
                 'logo' => [
                     '@type' => 'ImageObject',
                     'url' => $organizationLogo,
@@ -280,12 +298,12 @@
                     <img
                         class="brand-logo brand-logo--dark"
                         src="{{ asset(app('logo_1024_tran_black')) }}"
-                        alt="{{ __('METKURD') }}"
+                        alt="{{ __('MetKurd AI') }}"
                     >
                     <img
                         class="brand-logo brand-logo--light"
                         src="{{ asset(app('logo_1024_tran')) }}"
-                        alt="{{ __('METKURD') }}"
+                        alt="{{ __('MetKurd AI') }}"
                     >
                 </span>
                 <span>{{ LandingContent::text('site.name') }}</span>

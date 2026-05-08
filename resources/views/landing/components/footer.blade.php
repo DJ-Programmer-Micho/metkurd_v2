@@ -14,7 +14,27 @@ new class extends Component
     #[Computed]
     public function resourceLinks(): array
     {
-        return collect(app(LandingToolPageCatalog::class)->listForLocale(app()->getLocale()))
+        $locale = app()->getLocale();
+        $pages = [
+            [
+                'label' => LandingContent::text('nav.overview'),
+                'href' => route('landing.overview', ['locale' => $locale]),
+            ],
+            [
+                'label' => LandingContent::text('nav.research_development'),
+                'href' => route('landing.research-development', ['locale' => $locale]),
+            ],
+            [
+                'label' => LandingContent::text('nav.kurdish_ai_challenges'),
+                'href' => route('landing.kurdish-ai-challenges', ['locale' => $locale]),
+            ],
+            [
+                'label' => LandingContent::text('nav.how_built'),
+                'href' => route('landing.how-built', ['locale' => $locale]),
+            ],
+        ];
+
+        $toolLinks = collect(app(LandingToolPageCatalog::class)->listForLocale($locale))
             ->take(3)
             ->map(function (array $tool) {
                 $slug = trim((string) ($tool['slug'] ?? ''));
@@ -34,6 +54,8 @@ new class extends Component
             ->filter()
             ->values()
             ->all();
+
+        return array_values(array_merge($pages, $toolLinks));
     }
 
     #[Computed]
@@ -131,12 +153,12 @@ new class extends Component
                         <img
                             class="brand-logo brand-logo--dark"
                             src="{{ asset(app('logo_1024_tran_black')) }}"
-                            alt="{{ __('METKURD') }}"
+                            alt="{{ LandingContent::text('site.name') }}"
                         >
                         <img
                             class="brand-logo brand-logo--light"
                             src="{{ asset(app('logo_1024_tran')) }}"
-                            alt="{{ __('METKURD') }}"
+                            alt="{{ LandingContent::text('site.name') }}"
                         >
                     </span>
                     <strong>{{ LandingContent::text('site.name') }}</strong>

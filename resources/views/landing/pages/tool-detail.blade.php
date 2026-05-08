@@ -24,9 +24,12 @@ new #[Layout('landing::layouts.app')] class extends Component
 @php
     $tool = $this->tool;
     $canonicalSlug = (string) data_get($tool, 'slug', request()->route('slug'));
-    $title = (string) data_get($tool, 'title', __('Tool'));
+    $title = (string) data_get($tool, 'title', LandingContent::text('tool_detail.fallback_title'));
+    $description = (string) data_get($tool, 'meta_description', LandingContent::text('site.meta_description'));
     $toolSquareImage = (string) data_get($tool, 'square_image_url', '');
     $featureCards = (array) data_get($tool, 'feature_cards', []);
+    $locale = app()->getLocale();
+    $toolUrl = route('landing.tools.show', ['locale' => $locale, 'slug' => $canonicalSlug]);
 
     if ($featureCards === []) {
         $featureCards = collect((array) data_get($tool, 'feature_bullets', []))
@@ -40,11 +43,67 @@ new #[Layout('landing::layouts.app')] class extends Component
             ])
             ->all();
     }
+
+    $breadcrumbSchema = [
+        '@context' => 'https://schema.org',
+        '@type' => 'BreadcrumbList',
+        'itemListElement' => [
+            [
+                '@type' => 'ListItem',
+                'position' => 1,
+                'name' => LandingContent::text('nav.home'),
+                'item' => route('landing.home', ['locale' => $locale]),
+            ],
+            [
+                '@type' => 'ListItem',
+                'position' => 2,
+                'name' => LandingContent::text('nav.tools'),
+                'item' => route('landing.tools', ['locale' => $locale]),
+            ],
+            [
+                '@type' => 'ListItem',
+                'position' => 3,
+                'name' => $title,
+                'item' => $toolUrl,
+            ],
+        ],
+    ];
+
+    $softwareSchema = [
+        '@context' => 'https://schema.org',
+        '@type' => 'SoftwareApplication',
+        'name' => $title,
+        'applicationCategory' => 'BusinessApplication',
+        'operatingSystem' => 'Web',
+        'inLanguage' => $locale,
+        'description' => $description,
+        'url' => $toolUrl,
+        'brand' => [
+            '@type' => 'Brand',
+            'name' => LandingContent::text('site.name'),
+        ],
+        'offers' => [
+            '@type' => 'Offer',
+            'price' => '0',
+            'priceCurrency' => 'IQD',
+            'availability' => 'https://schema.org/InStock',
+            'url' => route('landing.pricing', ['locale' => $locale]),
+        ],
+    ];
 @endphp
 
 <x-slot:title>{{ data_get($tool, 'meta_title', $title) }}</x-slot:title>
-<x-slot:description>{{ data_get($tool, 'meta_description', LandingContent::text('site.meta_description')) }}</x-slot:description>
+<x-slot:description>{{ $description }}</x-slot:description>
 <x-slot:canonical>{{ route('landing.tools.show', ['locale' => app()->getLocale(), 'slug' => $canonicalSlug]) }}</x-slot:canonical>
+
+@push('meta')
+    <script type="application/ld+json">
+        @json($breadcrumbSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+    </script>
+    <script type="application/ld+json">
+        @json($softwareSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+    </script>
+@endpush
 
 <div>
     <section class="hero py-5 mt-5">
@@ -121,7 +180,7 @@ new #[Layout('landing::layouts.app')] class extends Component
                     <div class="policy-card glass-card reveal">
                         <span class="section-badge mb-3">
                             <i class="bi bi-briefcase"></i>
-                            {{ data_get($tool, 'use_cases_title', __('Use cases')) }}
+                            {{ data_get($tool, 'use_cases_title', LandingContent::text('tool_detail.use_cases_title')) }}
                         </span>
                         <ul class="check-list">
                             @foreach((array) data_get($tool, 'use_cases', []) as $useCase)

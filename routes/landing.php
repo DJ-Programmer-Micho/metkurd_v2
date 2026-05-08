@@ -35,6 +35,10 @@ Route::prefix('{locale}')
         Route::livewire('/tools/{slug}', 'landing::pages.tool-detail')->name('landing.tools.show');
         Route::livewire('/pricing', 'landing::pages.pricing')->name('landing.pricing');
         Route::livewire('/contact', 'landing::pages.contact')->name('landing.contact');
+        Route::livewire('/metkurd-ai-overview', 'landing::pages.overview')->name('landing.overview');
+        Route::livewire('/research-development', 'landing::pages.research-development')->name('landing.research-development');
+        Route::livewire('/kurdish-ai-challenges', 'landing::pages.kurdish-ai-challenges')->name('landing.kurdish-ai-challenges');
+        Route::livewire('/how-metkurd-ai-was-built', 'landing::pages.how-built')->name('landing.how-built');
         Route::livewire('/privacy', 'landing::pages.privacy')->name('landing.privacy');
         Route::livewire('/terms', 'landing::pages.terms')->name('landing.terms');
     });

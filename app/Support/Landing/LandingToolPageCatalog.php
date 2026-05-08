@@ -239,6 +239,7 @@ class LandingToolPageCatalog
             'ctts', 'clone-tts', 'clone-xtts' => 'clone_tts',
             'asr', 'wasr', 'qasr' => 'asr',
             'ocr' => 'ocr',
+            'tran', 'translation', 'translate', 'trans-ckb' => 'tran',
             'stem' => 'stem',
             default => null,
         };
@@ -249,7 +250,7 @@ class LandingToolPageCatalog
      */
     protected function fallbackToolCodes(): array
     {
-        return ['tts', 'clone_tts', 'asr', 'ocr', 'stem'];
+        return ['tts', 'clone_tts', 'asr', 'ocr', 'tran', 'stem'];
     }
 
     protected function canonicalFallbackSlug(string $toolCode): string

@@ -76,11 +76,39 @@ trait ManagesLandingTranslationsPage
             ->pluck('section')
             ->filter()
             ->unique()
-            ->sort()
             ->values()
             ->all();
 
-        return $sections;
+        $ordered = [];
+        $known = $this->sectionLabelMap();
+
+        foreach (array_keys($known) as $sectionKey) {
+            if (in_array($sectionKey, $sections, true)) {
+                $ordered[] = $sectionKey;
+            }
+        }
+
+        $remaining = array_values(array_diff($sections, $ordered));
+        sort($remaining, SORT_NATURAL);
+
+        return array_values(array_merge($ordered, $remaining));
+    }
+
+    #[Computed]
+    public function sectionLabels(): array
+    {
+        return $this->sectionLabelMap();
+    }
+
+    public function sectionLabel(string $section): string
+    {
+        $labels = $this->sectionLabelMap();
+
+        if (isset($labels[$section])) {
+            return $labels[$section];
+        }
+
+        return ucfirst(str_replace('_', ' ', $section));
     }
 
     #[Computed]
@@ -155,5 +183,30 @@ trait ManagesLandingTranslationsPage
     protected function translationManager(): LandingTranslationManager
     {
         return app(LandingTranslationManager::class);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function sectionLabelMap(): array
+    {
+        return [
+            'general_brand' => 'General Brand',
+            'homepage' => 'Homepage',
+            'tools' => 'Tools',
+            'faq' => 'FAQ',
+            'pricing' => 'Pricing',
+            'trust_privacy' => 'Trust & Privacy',
+            'voice_cloning_safety' => 'Voice Cloning Safety',
+            'research_development' => 'Research & Development',
+            'kurdish_ai_challenges' => 'Kurdish AI Challenges',
+            'how_built' => 'How MetKurd AI Was Built',
+            'overview' => 'MetKurd AI Overview',
+            'seo_metadata' => 'SEO Metadata',
+            'schema_content' => 'Schema Content',
+            'breadcrumbs' => 'Breadcrumbs',
+            'buttons_cta' => 'Buttons / CTA',
+            'contact' => 'Contact',
+        ];
     }
 }

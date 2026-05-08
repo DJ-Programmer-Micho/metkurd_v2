@@ -28,7 +28,7 @@
     <meta name="theme-color" content="#cc0022">
     <meta name="publisher" content="MET IRAQ">
     <meta name="mobile-web-app-title" content="{{ __('MET KURD') }}">
-    <meta name="author" content="Michel Shabo">
+    <meta name="author" content="Michel Mikhael">
     <meta name="robots" content="index, follow">
 
     <link rel="shortcut icon" href="{{ app('logo_1024_tran') }}">

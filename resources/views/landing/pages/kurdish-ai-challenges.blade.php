@@ -10,8 +10,9 @@ new #[Layout('landing::layouts.app')] class extends Component
 ?>
 
 @php
-    $cards = LandingContent::section('terms_page.cards');
     $locale = app()->getLocale();
+    $sections = LandingContent::section('kurdish_ai_challenges_page.sections');
+
     $breadcrumbSchema = [
         '@context' => 'https://schema.org',
         '@type' => 'BreadcrumbList',
@@ -25,16 +26,16 @@ new #[Layout('landing::layouts.app')] class extends Component
             [
                 '@type' => 'ListItem',
                 'position' => 2,
-                'name' => LandingContent::text('terms_page.title'),
-                'item' => route('landing.terms', ['locale' => $locale]),
+                'name' => LandingContent::text('kurdish_ai_challenges_page.title'),
+                'item' => route('landing.kurdish-ai-challenges', ['locale' => $locale]),
             ],
         ],
     ];
 @endphp
 
-<x-slot:title>{{ LandingContent::text('terms_page.meta.title') }}</x-slot:title>
-<x-slot:description>{{ LandingContent::text('terms_page.meta.description') }}</x-slot:description>
-<x-slot:keywords>{{ LandingContent::text('terms_page.meta.keywords') }}</x-slot:keywords>
+<x-slot:title>{{ LandingContent::text('kurdish_ai_challenges_page.meta.title') }}</x-slot:title>
+<x-slot:description>{{ LandingContent::text('kurdish_ai_challenges_page.meta.description') }}</x-slot:description>
+<x-slot:keywords>{{ LandingContent::text('kurdish_ai_challenges_page.meta.keywords') }}</x-slot:keywords>
 
 @push('meta')
     <script type="application/ld+json">
@@ -43,15 +44,15 @@ new #[Layout('landing::layouts.app')] class extends Component
 @endpush
 
 <div>
-    <section class="hero py-5">
+    <section class="hero py-5 mt-5">
         <div class="container">
             <div class="text-center reveal">
                 <span class="hero-badge mb-3">
-                    <i class="bi bi-file-earmark-text"></i>
-                    {{ LandingContent::text('terms_page.badge') }}
+                    <i class="bi bi-exclamation-circle"></i>
+                    {{ LandingContent::text('kurdish_ai_challenges_page.badge') }}
                 </span>
-                <h1 class="display-hero mb-3">{{ LandingContent::text('terms_page.title') }}</h1>
-                <p class="lead-soft mx-auto">{{ LandingContent::text('terms_page.lead') }}</p>
+                <h1 class="display-hero mb-3">{{ LandingContent::text('kurdish_ai_challenges_page.title') }}</h1>
+                <p class="lead-soft mx-auto">{{ LandingContent::text('kurdish_ai_challenges_page.lead') }}</p>
             </div>
         </div>
     </section>
@@ -59,11 +60,11 @@ new #[Layout('landing::layouts.app')] class extends Component
     <section class="section pt-0">
         <div class="container">
             <div class="row g-4">
-                @foreach((array) $cards as $card)
+                @foreach((array) $sections as $section)
                     <div class="col-md-6">
-                        <div class="policy-card glass-card reveal">
-                            <h3>{{ $card['title'] }}</h3>
-                            <p class="text-muted-soft mb-0">{{ $card['copy'] }}</p>
+                        <div class="policy-card glass-card reveal h-100">
+                            <h2 class="h4 mb-3">{{ $section['title'] }}</h2>
+                            <p class="text-muted-soft mb-0">{{ $section['copy'] }}</p>
                         </div>
                     </div>
                 @endforeach

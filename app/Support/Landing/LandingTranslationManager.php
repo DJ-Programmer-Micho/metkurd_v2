@@ -273,18 +273,127 @@ class LandingTranslationManager
 
     protected function sectionForKey(string $key): string
     {
-        $root = strtolower((string) strtok($key, '.'));
+        $normalized = strtolower(trim($key));
 
-        return match (true) {
-            str_starts_with($root, 'home') => 'home',
-            str_starts_with($root, 'pricing') || str_starts_with($root, 'plans') => 'pricing',
-            str_starts_with($root, 'contact') => 'contact',
-            str_starts_with($root, 'tool') => 'tools',
-            str_starts_with($root, 'footer') => 'footer',
-            str_starts_with($root, 'nav') => 'navbar',
-            str_starts_with($root, 'site') || str_starts_with($root, 'meta') => 'seo',
-            default => $root !== '' ? $root : 'general',
-        };
+        if ($normalized === '') {
+            return 'general_brand';
+        }
+
+        if (
+            str_contains($normalized, '.faq_heading.')
+            || str_contains($normalized, '.faqs.')
+        ) {
+            return 'faq';
+        }
+
+        if (
+            str_ends_with($normalized, '.primary_cta')
+            || str_ends_with($normalized, '.secondary_cta')
+            || str_starts_with($normalized, 'plans.') && str_ends_with($normalized, '.cta')
+            || str_starts_with($normalized, 'common.')
+            || in_array($normalized, ['nav.get_started', 'nav.sign_in'], true)
+        ) {
+            return 'buttons_cta';
+        }
+
+        if (
+            str_contains($normalized, '.meta.')
+            || str_contains($normalized, '_meta_')
+            || str_starts_with($normalized, 'site.meta_')
+            || in_array($normalized, ['site.robots', 'site.theme_color', 'site.type'], true)
+        ) {
+            return 'seo_metadata';
+        }
+
+        if (
+            str_starts_with($normalized, 'pricing_page.offer_')
+            || str_starts_with($normalized, 'site.subject')
+            || str_starts_with($normalized, 'site.author')
+            || str_starts_with($normalized, 'site.founder_')
+            || str_starts_with($normalized, 'site.cofounder_')
+            || str_starts_with($normalized, 'site.origin')
+        ) {
+            return 'schema_content';
+        }
+
+        if (
+            in_array($normalized, [
+                'nav.home',
+                'nav.tools',
+                'nav.pricing',
+                'nav.contact',
+                'nav.overview',
+                'nav.research_development',
+                'nav.kurdish_ai_challenges',
+                'nav.how_built',
+                'nav.privacy',
+                'nav.terms',
+            ], true)
+        ) {
+            return 'breadcrumbs';
+        }
+
+        if (
+            str_starts_with($normalized, 'tool_pages.clone_tts.features.2.')
+            || str_starts_with($normalized, 'terms_page.cards.1.')
+        ) {
+            return 'voice_cloning_safety';
+        }
+
+        if (str_starts_with($normalized, 'research_development_page.')) {
+            return 'research_development';
+        }
+
+        if (str_starts_with($normalized, 'kurdish_ai_challenges_page.')) {
+            return 'kurdish_ai_challenges';
+        }
+
+        if (str_starts_with($normalized, 'how_built_page.')) {
+            return 'how_built';
+        }
+
+        if (str_starts_with($normalized, 'overview_page.')) {
+            return 'overview';
+        }
+
+        if (str_starts_with($normalized, 'home.')) {
+            return 'homepage';
+        }
+
+        if (str_starts_with($normalized, 'pricing_page.') || str_starts_with($normalized, 'plans.')) {
+            return 'pricing';
+        }
+
+        if (str_starts_with($normalized, 'tools_page.')
+            || str_starts_with($normalized, 'tool_catalog.')
+            || str_starts_with($normalized, 'tool_pages.')
+            || str_starts_with($normalized, 'tool_detail.')
+        ) {
+            return 'tools';
+        }
+
+        if (
+            str_starts_with($normalized, 'privacy_page.')
+            || str_starts_with($normalized, 'terms_page.')
+            || str_starts_with($normalized, 'footer.status_')
+        ) {
+            return 'trust_privacy';
+        }
+
+        if (str_starts_with($normalized, 'contact_page.')) {
+            return 'contact';
+        }
+
+        if (
+            str_starts_with($normalized, 'site.')
+            || str_starts_with($normalized, 'locales.')
+            || str_starts_with($normalized, 'nav.')
+            || str_starts_with($normalized, 'footer.')
+            || str_starts_with($normalized, 'google_review.')
+        ) {
+            return 'general_brand';
+        }
+
+        return 'general_brand';
     }
 }
-

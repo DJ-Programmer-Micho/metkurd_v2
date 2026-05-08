@@ -82,12 +82,12 @@ new class extends Component
                     <img
                         class="brand-logo brand-logo--dark"
                         src="{{ asset(app('logo_1024_tran_black')) }}"
-                        alt="{{ __('METKURD') }}"
+                        alt="{{ LandingContent::text('site.name') }}"
                     >
                     <img
                         class="brand-logo brand-logo--light"
                         src="{{ asset(app('logo_1024_tran')) }}"
-                        alt="{{ __('METKURD') }}"
+                        alt="{{ LandingContent::text('site.name') }}"
                     >
                 </span>
                 <span>{{ LandingContent::text('site.name') }}</span>

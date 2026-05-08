@@ -10,8 +10,9 @@ new #[Layout('landing::layouts.app')] class extends Component
 ?>
 
 @php
-    $cards = LandingContent::section('terms_page.cards');
     $locale = app()->getLocale();
+    $timeline = LandingContent::section('how_built_page.timeline');
+
     $breadcrumbSchema = [
         '@context' => 'https://schema.org',
         '@type' => 'BreadcrumbList',
@@ -25,16 +26,16 @@ new #[Layout('landing::layouts.app')] class extends Component
             [
                 '@type' => 'ListItem',
                 'position' => 2,
-                'name' => LandingContent::text('terms_page.title'),
-                'item' => route('landing.terms', ['locale' => $locale]),
+                'name' => LandingContent::text('how_built_page.title'),
+                'item' => route('landing.how-built', ['locale' => $locale]),
             ],
         ],
     ];
 @endphp
 
-<x-slot:title>{{ LandingContent::text('terms_page.meta.title') }}</x-slot:title>
-<x-slot:description>{{ LandingContent::text('terms_page.meta.description') }}</x-slot:description>
-<x-slot:keywords>{{ LandingContent::text('terms_page.meta.keywords') }}</x-slot:keywords>
+<x-slot:title>{{ LandingContent::text('how_built_page.meta.title') }}</x-slot:title>
+<x-slot:description>{{ LandingContent::text('how_built_page.meta.description') }}</x-slot:description>
+<x-slot:keywords>{{ LandingContent::text('how_built_page.meta.keywords') }}</x-slot:keywords>
 
 @push('meta')
     <script type="application/ld+json">
@@ -43,27 +44,28 @@ new #[Layout('landing::layouts.app')] class extends Component
 @endpush
 
 <div>
-    <section class="hero py-5">
+    <section class="hero py-5 mt-5">
         <div class="container">
             <div class="text-center reveal">
                 <span class="hero-badge mb-3">
-                    <i class="bi bi-file-earmark-text"></i>
-                    {{ LandingContent::text('terms_page.badge') }}
+                    <i class="bi bi-diagram-3"></i>
+                    {{ LandingContent::text('how_built_page.badge') }}
                 </span>
-                <h1 class="display-hero mb-3">{{ LandingContent::text('terms_page.title') }}</h1>
-                <p class="lead-soft mx-auto">{{ LandingContent::text('terms_page.lead') }}</p>
+                <h1 class="display-hero mb-3">{{ LandingContent::text('how_built_page.title') }}</h1>
+                <p class="lead-soft mx-auto">{{ LandingContent::text('how_built_page.lead') }}</p>
             </div>
         </div>
     </section>
 
     <section class="section pt-0">
         <div class="container">
-            <div class="row g-4">
-                @foreach((array) $cards as $card)
-                    <div class="col-md-6">
-                        <div class="policy-card glass-card reveal">
-                            <h3>{{ $card['title'] }}</h3>
-                            <p class="text-muted-soft mb-0">{{ $card['copy'] }}</p>
+            <div class="d-grid gap-4">
+                @foreach((array) $timeline as $index => $step)
+                    <div class="step-item glass-card p-4 reveal">
+                        <div class="step-number">{{ $index + 1 }}</div>
+                        <div>
+                            <h2 class="h4 mb-2">{{ $step['title'] }}</h2>
+                            <p class="text-muted-soft mb-0">{{ $step['copy'] }}</p>
                         </div>
                     </div>
                 @endforeach

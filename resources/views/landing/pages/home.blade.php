@@ -29,11 +29,52 @@ new #[Layout('landing::layouts.app')] class extends Component
     $faqHeading = LandingContent::section('home.faq_heading');
     $faqs = LandingContent::section('home.faqs');
     $demoSampleText = LandingContent::text('home.demo.sample_text');
+
+    $faqSchema = [
+        '@context' => 'https://schema.org',
+        '@type' => 'FAQPage',
+        'mainEntity' => collect((array) $faqs)
+            ->map(function (array $faq) {
+                return [
+                    '@type' => 'Question',
+                    'name' => (string) ($faq['title'] ?? ''),
+                    'acceptedAnswer' => [
+                        '@type' => 'Answer',
+                        'text' => (string) ($faq['copy'] ?? ''),
+                    ],
+                ];
+            })
+            ->filter(fn (array $item) => trim((string) ($item['name'] ?? '')) !== '')
+            ->values()
+            ->all(),
+    ];
+
+    $breadcrumbSchema = [
+        '@context' => 'https://schema.org',
+        '@type' => 'BreadcrumbList',
+        'itemListElement' => [
+            [
+                '@type' => 'ListItem',
+                'position' => 1,
+                'name' => LandingContent::text('nav.home'),
+                'item' => route('landing.home', ['locale' => $locale]),
+            ],
+        ],
+    ];
 @endphp
 
 <x-slot:title>{{ LandingContent::text('home.meta.title') }}</x-slot:title>
 <x-slot:description>{{ LandingContent::text('home.meta.description') }}</x-slot:description>
 <x-slot:keywords>{{ LandingContent::text('home.meta.keywords') }}</x-slot:keywords>
+
+@push('meta')
+    <script type="application/ld+json">
+        @json($faqSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+    </script>
+    <script type="application/ld+json">
+        @json($breadcrumbSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+    </script>
+@endpush
 
 <div>
     <section class="hero">
@@ -318,7 +359,7 @@ new #[Layout('landing::layouts.app')] class extends Component
     <section class="section">
         <div class="container">
             <div class="row g-4 align-items-stretch">
-                <div class="col-lg-5">
+                <div class="col-lg-12">
                     <div class="testimonial-card glass-card reveal h-100">
                         <span class="section-badge mb-3">
                             <i class="bi bi-chat-quote"></i>
@@ -332,7 +373,7 @@ new #[Layout('landing::layouts.app')] class extends Component
                     </div>
                 </div>
 
-                <div class="col-lg-7">
+                <div class="col-lg-12">
                     <div class="glass-card p-4 reveal h-100">
                         <span class="section-badge mb-3">
                             <i class="bi bi-question-circle"></i>
@@ -340,7 +381,7 @@ new #[Layout('landing::layouts.app')] class extends Component
                         </span>
                         <div class="row g-4">
                             @foreach((array) $faqs as $faq)
-                                <div class="col-md-6">
+                                <div class="col-12 col-sm-6 col-md-4">
                                     <div class="faq-item glass-card">
                                         <h4>{{ $faq['title'] }}</h4>
                                         <p class="text-muted-soft mb-0">{{ $faq['copy'] }}</p>
