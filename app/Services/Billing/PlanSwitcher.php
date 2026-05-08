@@ -231,7 +231,7 @@ class PlanSwitcher
     {
         return DB::transaction(function () use ($customer, $storagePlanId, $meta) {
             $plan = StoragePlan::where('is_active', true)->findOrFail($storagePlanId);
-            $billingCycle = $this->normalizeBillingCycle((string) ($meta['billing_cycle'] ?? 'monthly'), ['monthly', 'hourly']);
+            $billingCycle = $this->normalizeBillingCycle((string) ($meta['billing_cycle'] ?? 'monthly'), ['monthly', 'yearly', 'hourly']);
             $catalogAmountIqd = $plan->priceIqdAmount();
             $originalAmountIqd = (int) ($meta['original_amount_iqd'] ?? $catalogAmountIqd);
             $amountIqd = (int) ($meta['base_amount_iqd'] ?? $meta['discounted_amount_iqd'] ?? $catalogAmountIqd);

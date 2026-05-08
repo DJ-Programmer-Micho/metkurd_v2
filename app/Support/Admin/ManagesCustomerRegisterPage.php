@@ -2,8 +2,16 @@
 
 namespace App\Support\Admin;
 
+use App\Enums\PaymentRecurringStrategy;
+use App\Models\CreditProduct;
 use App\Models\Customer;
+use App\Models\ServicePlan;
+use App\Models\StoragePlan;
+use App\Services\Billing\PlanSwitcher;
+use App\Services\Payments\AddonPurchaseService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
 
@@ -30,6 +38,36 @@ trait ManagesCustomerRegisterPage
     public string $customerFilter = 'all';
 
     public int $perPage = 12;
+
+    public string $servicePlanAdjustmentId = '';
+    public string $servicePlanBillingCycle = 'monthly';
+    public string $servicePlanProviderRef = '';
+    public string $servicePlanAdjustmentNote = '';
+
+    public string $storagePlanAdjustmentId = '';
+    public string $storagePlanBillingCycle = 'monthly';
+    public string $storagePlanProviderRef = '';
+    public string $storagePlanAdjustmentNote = '';
+
+    public string $addonProductAdjustmentId = '';
+    public string $addonProviderRef = '';
+    public string $addonAdjustmentNote = '';
+
+    public function mount(): void
+    {
+        if ($this->customerFilter === 'all') {
+            return;
+        }
+
+        $customer = Customer::query()
+            ->with([
+                'activeServiceSubscription:id,customer_id,service_plan_id',
+                'activeStorageSubscription:id,customer_id,storage_plan_id',
+            ])
+            ->find((int) $this->customerFilter);
+
+        $this->prefillManualAdjustmentsFromCustomer($customer);
+    }
 
     public function updatingSearch(): void
     {
@@ -64,6 +102,7 @@ trait ManagesCustomerRegisterPage
         $this->countryFilter = 'all';
         $this->joinedFilter = 'all';
         $this->customerFilter = 'all';
+        $this->resetManualAdjustmentForms();
         $this->resetPage();
     }
 
@@ -100,6 +139,55 @@ trait ManagesCustomerRegisterPage
     }
 
     #[Computed]
+    public function registerServicePlanOptions()
+    {
+        return ServicePlan::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get([
+                'id',
+                'code',
+                'name',
+                'monthly_credits',
+                'price_iqd_monthly',
+                'price_iqd_yearly',
+            ]);
+    }
+
+    #[Computed]
+    public function registerStoragePlanOptions()
+    {
+        return StoragePlan::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get([
+                'id',
+                'code',
+                'name',
+                'quota_mb',
+                'price_iqd',
+            ]);
+    }
+
+    #[Computed]
+    public function registerAddonOptions()
+    {
+        return CreditProduct::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get([
+                'id',
+                'code',
+                'name',
+                'credits_amount',
+                'price_iqd',
+            ]);
+    }
+
+    #[Computed]
     public function selectedCustomer()
     {
         if ($this->customerFilter === 'all') {
@@ -107,13 +195,35 @@ trait ManagesCustomerRegisterPage
         }
 
         return $this->customersOverviewQuery()
-            ->withCount(['customerFiles', 'serviceSubscriptions'])
+            ->withCount(['customerFiles', 'serviceSubscriptions', 'storageSubscriptions'])
             ->with([
                 'creditOrders' => fn ($orderQuery) => $this->scopePaidOrders($orderQuery)->latest()->limit(6),
                 'creditOrders.servicePlan:id,code,name',
                 'creditOrders.creditProduct:id,code,name,credits_amount',
                 'serviceSubscriptions' => fn ($subscriptionQuery) => $subscriptionQuery->with(['servicePlan:id,code,name', 'previousServicePlan:id,code,name'])->latest()->limit(6),
+                'activeStorageSubscription:id,customer_id,storage_plan_id,status,source,cycle_started_on,cycle_ends_on,next_renewal_on,auto_renew,starts_at,ends_at',
+                'activeStorageSubscription.storagePlan:id,code,name,quota_mb',
+                'storageSubscriptions' => fn ($subscriptionQuery) => $subscriptionQuery->with(['storagePlan:id,code,name,quota_mb'])->latest()->limit(6),
                 'mlJobs' => fn ($jobQuery) => $this->scopeJobs($jobQuery)->with(['tool:id,code,name', 'toolAction:id,tool_code,action_code,full_code,name'])->latest()->limit(5),
+                'payments' => fn ($paymentQuery) => $paymentQuery
+                    ->select([
+                        'id',
+                        'uuid',
+                        'customer_id',
+                        'provider',
+                        'purchase_type',
+                        'payment_mode',
+                        'status',
+                        'amount',
+                        'currency',
+                        'fib_payment_id',
+                        'fib_subscription_id',
+                        'paid_at',
+                        'fulfilled_at',
+                        'created_at',
+                    ])
+                    ->latest()
+                    ->limit(8),
             ])
             ->find((int) $this->customerFilter);
     }
@@ -121,10 +231,293 @@ trait ManagesCustomerRegisterPage
     public function focusCustomer(int $customerId): void
     {
         $this->customerFilter = (string) $customerId;
+        $customer = Customer::query()
+            ->with([
+                'activeServiceSubscription:id,customer_id,service_plan_id',
+                'activeStorageSubscription:id,customer_id,storage_plan_id',
+            ])
+            ->find($customerId);
+
+        $this->prefillManualAdjustmentsFromCustomer($customer);
     }
 
     public function clearFocusedCustomer(): void
     {
         $this->customerFilter = 'all';
+        $this->resetManualAdjustmentForms();
+    }
+
+    public function applyServicePlanAdjustment(): void
+    {
+        $customer = $this->resolveFocusedCustomer();
+
+        if (!$customer) {
+            return;
+        }
+
+        $validated = $this->validate([
+            'servicePlanAdjustmentId' => 'required|integer',
+            'servicePlanBillingCycle' => 'required|string|in:monthly,yearly',
+            'servicePlanProviderRef' => 'nullable|string|max:191',
+            'servicePlanAdjustmentNote' => 'required|string|min:10|max:500',
+        ]);
+
+        $plan = ServicePlan::query()
+            ->where('is_active', true)
+            ->find((int) $validated['servicePlanAdjustmentId']);
+
+        if (!$plan) {
+            $this->dispatch('alert', type: 'error', message: __('Selected service plan is inactive or unavailable.'));
+
+            return;
+        }
+
+        $billingCycle = (string) $validated['servicePlanBillingCycle'];
+
+        if (!$plan->supportsBillingInterval($billingCycle)) {
+            $this->dispatch(
+                'alert',
+                type: 'error',
+                message: __('This billing cycle is not enabled for the selected service plan.')
+            );
+
+            return;
+        }
+
+        $providerRef = $this->normalizedAdminProviderRef((string) ($validated['servicePlanProviderRef'] ?? ''), 'ADMIN-PLAN');
+        $adminNote = trim((string) $validated['servicePlanAdjustmentNote']);
+        $activeUntil = $billingCycle === 'yearly' ? now()->addYear() : now()->addMonth();
+
+        app(PlanSwitcher::class)->switchServicePlan($customer, (int) $plan->id, [
+            'provider' => 'admin_manual',
+            'provider_ref' => $providerRef,
+            'payment_method' => 'admin_manual',
+            'billing_cycle' => $billingCycle,
+            'renewal_strategy' => PaymentRecurringStrategy::PROVIDER_SCHEDULE->value,
+            'paid_at' => now(),
+            'active_until' => $activeUntil,
+            'ui' => 'admin.customers.register',
+            'admin_adjustment' => true,
+            'admin_id' => auth('admin')->id(),
+            'admin_note' => $adminNote,
+        ]);
+
+        Log::info('Admin applied manual service plan adjustment.', [
+            'admin_id' => auth('admin')->id(),
+            'customer_id' => $customer->id,
+            'service_plan_id' => $plan->id,
+            'service_plan_code' => $plan->code,
+            'billing_cycle' => $billingCycle,
+            'provider_ref' => $providerRef,
+        ]);
+
+        $this->servicePlanProviderRef = '';
+        $this->servicePlanAdjustmentNote = '';
+        $this->servicePlanAdjustmentId = (string) $plan->id;
+
+        $this->dispatch('alert', type: 'success', message: __('Service plan updated successfully for this customer.'));
+    }
+
+    public function applyStoragePlanAdjustment(): void
+    {
+        $customer = $this->resolveFocusedCustomer();
+
+        if (!$customer) {
+            return;
+        }
+
+        $validated = $this->validate([
+            'storagePlanAdjustmentId' => 'required|integer',
+            'storagePlanBillingCycle' => 'required|string|in:monthly,yearly',
+            'storagePlanProviderRef' => 'nullable|string|max:191',
+            'storagePlanAdjustmentNote' => 'required|string|min:10|max:500',
+        ]);
+
+        $plan = StoragePlan::query()
+            ->where('is_active', true)
+            ->find((int) $validated['storagePlanAdjustmentId']);
+
+        if (!$plan) {
+            $this->dispatch('alert', type: 'error', message: __('Selected storage plan is inactive or unavailable.'));
+
+            return;
+        }
+
+        $billingCycle = (string) $validated['storagePlanBillingCycle'];
+
+        if (!$plan->supportsBillingInterval($billingCycle)) {
+            $this->dispatch(
+                'alert',
+                type: 'error',
+                message: __('This billing cycle is not enabled for the selected storage plan.')
+            );
+
+            return;
+        }
+
+        $providerRef = $this->normalizedAdminProviderRef((string) ($validated['storagePlanProviderRef'] ?? ''), 'ADMIN-STORAGE');
+        $adminNote = trim((string) $validated['storagePlanAdjustmentNote']);
+        $activeUntil = $billingCycle === 'yearly' ? now()->addYear() : now()->addMonth();
+
+        app(PlanSwitcher::class)->switchStoragePlan($customer, (int) $plan->id, [
+            'provider' => 'admin_manual',
+            'provider_ref' => $providerRef,
+            'payment_method' => 'admin_manual',
+            'billing_cycle' => $billingCycle,
+            'renewal_strategy' => PaymentRecurringStrategy::PROVIDER_SCHEDULE->value,
+            'paid_at' => now(),
+            'active_until' => $activeUntil,
+            'ui' => 'admin.customers.register',
+            'admin_adjustment' => true,
+            'admin_id' => auth('admin')->id(),
+            'admin_note' => $adminNote,
+        ]);
+
+        Log::info('Admin applied manual storage plan adjustment.', [
+            'admin_id' => auth('admin')->id(),
+            'customer_id' => $customer->id,
+            'storage_plan_id' => $plan->id,
+            'storage_plan_code' => $plan->code,
+            'billing_cycle' => $billingCycle,
+            'provider_ref' => $providerRef,
+        ]);
+
+        $this->storagePlanProviderRef = '';
+        $this->storagePlanAdjustmentNote = '';
+        $this->storagePlanAdjustmentId = (string) $plan->id;
+
+        $this->dispatch('alert', type: 'success', message: __('Storage plan updated successfully for this customer.'));
+    }
+
+    public function applyAddonAdjustment(): void
+    {
+        $customer = $this->resolveFocusedCustomer();
+
+        if (!$customer) {
+            return;
+        }
+
+        $validated = $this->validate([
+            'addonProductAdjustmentId' => 'required|integer',
+            'addonProviderRef' => 'nullable|string|max:191',
+            'addonAdjustmentNote' => 'required|string|min:10|max:500',
+        ]);
+
+        $product = CreditProduct::query()
+            ->where('is_active', true)
+            ->find((int) $validated['addonProductAdjustmentId']);
+
+        if (!$product) {
+            $this->dispatch('alert', type: 'error', message: __('Selected addon pack is inactive or unavailable.'));
+
+            return;
+        }
+
+        $providerRef = $this->normalizedAdminProviderRef((string) ($validated['addonProviderRef'] ?? ''), 'ADMIN-ADDON');
+        $adminNote = trim((string) $validated['addonAdjustmentNote']);
+
+        try {
+            app(AddonPurchaseService::class)->purchase($customer, (int) $product->id, [
+                'provider' => 'admin_manual',
+                'provider_ref' => $providerRef,
+                'payment_method' => 'admin_manual',
+                'paid_at' => now(),
+                'ui' => 'admin.customers.register',
+                'admin_adjustment' => true,
+                'admin_id' => auth('admin')->id(),
+                'admin_note' => $adminNote,
+            ]);
+        } catch (AuthorizationException $exception) {
+            $this->dispatch('alert', type: 'error', message: $exception->getMessage());
+
+            return;
+        }
+
+        Log::info('Admin applied manual addon credit adjustment.', [
+            'admin_id' => auth('admin')->id(),
+            'customer_id' => $customer->id,
+            'credit_product_id' => $product->id,
+            'credit_product_code' => $product->code,
+            'provider_ref' => $providerRef,
+        ]);
+
+        $this->addonProviderRef = '';
+        $this->addonAdjustmentNote = '';
+        $this->addonProductAdjustmentId = (string) $product->id;
+
+        $this->dispatch('alert', type: 'success', message: __('Addon credits added successfully for this customer.'));
+    }
+
+    protected function resolveFocusedCustomer(): ?Customer
+    {
+        $customerId = (int) $this->customerFilter;
+
+        if ($this->customerFilter === 'all' || $customerId <= 0) {
+            $this->dispatch('alert', type: 'error', message: __('Select a customer first before applying a manual billing adjustment.'));
+
+            return null;
+        }
+
+        $customer = Customer::query()->find($customerId);
+
+        if (!$customer) {
+            $this->dispatch('alert', type: 'error', message: __('The selected customer could not be found.'));
+
+            return null;
+        }
+
+        return $customer;
+    }
+
+    protected function prefillManualAdjustmentsFromCustomer(?Customer $customer): void
+    {
+        if (!$customer) {
+            $this->resetManualAdjustmentForms();
+
+            return;
+        }
+
+        $this->servicePlanAdjustmentId = '';
+        $this->storagePlanAdjustmentId = '';
+        $this->addonProductAdjustmentId = '';
+
+        $servicePlanId = (int) ($customer->activeServiceSubscription?->service_plan_id ?? 0);
+        $storagePlanId = (int) ($customer->activeStorageSubscription?->storage_plan_id ?? 0);
+
+        if ($servicePlanId > 0) {
+            $this->servicePlanAdjustmentId = (string) $servicePlanId;
+        }
+
+        if ($storagePlanId > 0) {
+            $this->storagePlanAdjustmentId = (string) $storagePlanId;
+        }
+    }
+
+    protected function normalizedAdminProviderRef(string $value, string $prefix): string
+    {
+        $value = trim($value);
+
+        if ($value !== '') {
+            return substr($value, 0, 191);
+        }
+
+        return $prefix . '-' . now()->format('YmdHis') . '-' . random_int(1000, 9999);
+    }
+
+    protected function resetManualAdjustmentForms(): void
+    {
+        $this->servicePlanAdjustmentId = '';
+        $this->servicePlanBillingCycle = 'monthly';
+        $this->servicePlanProviderRef = '';
+        $this->servicePlanAdjustmentNote = '';
+
+        $this->storagePlanAdjustmentId = '';
+        $this->storagePlanBillingCycle = 'monthly';
+        $this->storagePlanProviderRef = '';
+        $this->storagePlanAdjustmentNote = '';
+
+        $this->addonProductAdjustmentId = '';
+        $this->addonProviderRef = '';
+        $this->addonAdjustmentNote = '';
     }
 }

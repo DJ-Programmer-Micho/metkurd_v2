@@ -118,7 +118,7 @@ class extends Component
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
                 <div>
                     <h5 class="card-title mb-1">{{ __('Customer List') }}</h5>
-                    <p class="text-muted mb-0">{{ __('Use the quick view modal for context, then jump directly into register or usage pages when deeper follow-up is needed.') }}</p>
+                    <p class="text-muted mb-0">{{ __('Use the quick view modal for context, then jump into the billing register page for manual plan/storage/addon corrections when reconciliation needs intervention.') }}</p>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button type="button" class="btn btn-sm {{ $sortColumn === 'created_at' ? 'btn-secondary' : 'btn-soft-secondary' }}" wire:click="sortByColumn('created_at')">
@@ -217,7 +217,7 @@ class extends Component
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
                                         <button type="button" class="btn btn-sm btn-soft-info" wire:click="openCustomerView({{ $customer->id }})">{{ __('View') }}</button>
-                                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Register') }}</a>
+                                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Billing Register') }}</a>
                                         <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-secondary">{{ __('Usage') }}</a>
                                         <button type="button" class="btn btn-sm {{ (int) $customer->status === 0 ? 'btn-soft-success' : 'btn-soft-danger' }}" wire:click="toggleCustomerStatus({{ $customer->id }})">
                                             {{ (int) $customer->status === 0 ? __('Restore') : __('Suspend') }}
@@ -343,7 +343,7 @@ class extends Component
                                 <div class="border rounded p-3 h-100">
                                     <div class="d-flex align-items-center justify-content-between mb-3">
                                         <h6 class="mb-0">{{ __('Recent Purchases') }}</h6>
-                                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $focusedCustomer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Open Register') }}</a>
+                                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $focusedCustomer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Open Billing Register') }}</a>
                                     </div>
                                     <div class="table-responsive">
                                         <table class="table table-sm align-middle mb-0">
@@ -385,7 +385,7 @@ class extends Component
                 </div>
                 <div class="modal-footer">
                     @if ($this->viewingCustomer)
-                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $this->viewingCustomer->id]) }}" class="btn btn-primary">{{ __('Open Register') }}</a>
+                        <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $this->viewingCustomer->id]) }}" class="btn btn-primary">{{ __('Open Billing Register') }}</a>
                     @endif
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="closeCustomerView">{{ __('Close') }}</button>
                 </div>

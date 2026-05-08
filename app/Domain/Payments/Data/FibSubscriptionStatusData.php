@@ -59,7 +59,18 @@ final class FibSubscriptionStatusData
             status: strtoupper(trim((string) data_get($payload, 'status', 'PENDING'))),
             validUntil: self::nullableCarbon(data_get($payload, 'validUntil')),
             activeUntil: self::nullableCarbon(data_get($payload, 'activeUntil')),
-            lastPaymentAt: self::nullableCarbon(data_get($payload, 'lastPaymentAt')),
+            lastPaymentAt: self::firstCarbonFromCandidates([
+                data_get($payload, 'lastPaymentAt'),
+                data_get($payload, 'lastPaidAt'),
+                data_get($payload, 'lastSuccessfulPaymentAt'),
+                data_get($payload, 'latestPaidAt'),
+                data_get($payload, 'payment.lastPaymentAt'),
+                data_get($payload, 'payment.lastPaidAt'),
+                data_get($payload, 'latestPayment.lastPaymentAt'),
+                data_get($payload, 'latestPayment.lastPaidAt'),
+                data_get($payload, 'subscription.lastPaymentAt'),
+                data_get($payload, 'subscription.lastPaidAt'),
+            ]),
             providerLinks: $links,
             raw: $payload,
         );
@@ -87,5 +98,21 @@ final class FibSubscriptionStatusData
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * @param  array<int, mixed>  $candidates
+     */
+    protected static function firstCarbonFromCandidates(array $candidates): ?Carbon
+    {
+        foreach ($candidates as $candidate) {
+            $date = self::nullableCarbon($candidate);
+
+            if ($date instanceof Carbon) {
+                return $date;
+            }
+        }
+
+        return null;
     }
 }
