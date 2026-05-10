@@ -194,4 +194,56 @@ trait ManagesCustomerListPage
             message: $nextStatus === 0 ? __('Customer suspended successfully.') : __('Customer restored successfully.')
         );
     }
+
+    public function sendVerificationSupportEmail(int $customerId): void
+    {
+        $customer = Customer::query()->with('profile')->findOrFail($customerId);
+
+        $emailPending = !(bool) $customer->email_verify;
+        $phonePending = !(bool) $customer->phone_verify;
+
+        if (!$emailPending && !$phonePending) {
+            $this->dispatch(
+                'alert',
+                type: 'info',
+                message: __('Customer is already fully verified.')
+            );
+
+            return;
+        }
+
+        $emailAddress = trim((string) $customer->email);
+
+        if ($emailAddress === '') {
+            $this->dispatch(
+                'alert',
+                type: 'warning',
+                message: __('This customer does not have a valid email address.')
+            );
+
+            return;
+        }
+
+        CustomerEmailNotifier::sendVerificationSupport(
+            $customer,
+            [
+                'email_pending' => $emailPending,
+                'phone_pending' => $phonePending,
+                'continue_url' => route('app.signin'),
+            ],
+            'Customer verification support action'
+        );
+
+        $pendingLabel = match (true) {
+            $emailPending && $phonePending => __('email and phone verification'),
+            $emailPending => __('email verification'),
+            default => __('phone verification'),
+        };
+
+        $this->dispatch(
+            'alert',
+            type: 'success',
+            message: __('Verification support email sent for :target.', ['target' => $pendingLabel])
+        );
+    }
 }

@@ -108,6 +108,35 @@ class CustomerEmailNotifier
         );
     }
 
+    public static function sendVerificationSupport(Customer $customer, array $payload = [], string $logContext = 'Customer verification support action'): void
+    {
+        $emailPending = (bool) ($payload['email_pending'] ?? !(bool) $customer->email_verify);
+        $phonePending = (bool) ($payload['phone_pending'] ?? !(bool) $customer->phone_verify);
+
+        if (!$emailPending && !$phonePending) {
+            return;
+        }
+
+        $verificationStatus = match (true) {
+            $emailPending && $phonePending => 'Email and phone verification are still pending.',
+            $emailPending => 'Email verification is still pending.',
+            default => 'Phone verification is still pending.',
+        };
+
+        static::send(
+            $customer,
+            'Need help verifying your MET KURD account?',
+            'app.otp.verification-support',
+            array_merge(static::baseData($customer), [
+                'emailPending' => $emailPending,
+                'phonePending' => $phonePending,
+                'verificationStatus' => $verificationStatus,
+                'continueUrl' => (string) ($payload['continue_url'] ?? route('app.signin')),
+            ]),
+            $logContext
+        );
+    }
+
     protected static function send(Customer $customer, string $subject, string $view, array $viewData, string $logContext): void
     {
         $email = trim((string) $customer->email);

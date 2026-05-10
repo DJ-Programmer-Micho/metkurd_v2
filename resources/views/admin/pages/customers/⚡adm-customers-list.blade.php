@@ -219,6 +219,9 @@ class extends Component
                                         <button type="button" class="btn btn-sm btn-soft-info" wire:click="openCustomerView({{ $customer->id }})">{{ __('View') }}</button>
                                         <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Billing Register') }}</a>
                                         <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-secondary">{{ __('Usage') }}</a>
+                                        @if (!$customer->email_verify || !$customer->phone_verify)
+                                            <button type="button" class="btn btn-sm btn-soft-warning" wire:click="sendVerificationSupportEmail({{ $customer->id }})">{{ __('Verification Help Email') }}</button>
+                                        @endif
                                         <button type="button" class="btn btn-sm {{ (int) $customer->status === 0 ? 'btn-soft-success' : 'btn-soft-danger' }}" wire:click="toggleCustomerStatus({{ $customer->id }})">
                                             {{ (int) $customer->status === 0 ? __('Restore') : __('Suspend') }}
                                         </button>

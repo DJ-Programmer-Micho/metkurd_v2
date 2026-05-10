@@ -190,6 +190,7 @@
         <div class="container">
 
             <div class="header">
+                <img src="{{ asset('app/logo/white_logo.png') }}" alt="METKURD" height="30" style="display:block;margin:0 auto 12px;border:0;outline:none;text-decoration:none;">
                 <h1>{{ __('METKURD') }}</h1>
                 <p>{{ __('Account Access Restored') }}</p>
             </div>

@@ -17,7 +17,16 @@
             <td style="padding:24px 32px;background:#0f172a;">
               <table role="presentation" width="100%">
                 <tr>
-                  <td style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:0.5px;">METKURD</td>
+                  <td>
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="padding-right:10px;vertical-align:middle;">
+                          <img src="{{ asset('app/logo/white_logo.png') }}" alt="METKURD" height="26" style="display:block;border:0;outline:none;text-decoration:none;">
+                        </td>
+                        <td style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:0.5px;vertical-align:middle;">METKURD</td>
+                      </tr>
+                    </table>
+                  </td>
                   <td align="right" style="font-size:12px;color:#cbd5e1;">Credits added</td>
                 </tr>
               </table>
