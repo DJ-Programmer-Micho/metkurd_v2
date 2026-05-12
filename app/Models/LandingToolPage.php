@@ -12,6 +12,8 @@ class LandingToolPage extends Model
         'square_image_path',
         'hero_image_path',
         'card_image_path',
+        'demo_type',
+        'demo_config',
         'is_active',
         'sort_order',
         'content',
@@ -19,6 +21,7 @@ class LandingToolPage extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'demo_config' => 'array',
         'content' => 'array',
     ];
 }

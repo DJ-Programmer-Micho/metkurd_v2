@@ -202,5 +202,7 @@ new #[Layout('landing::layouts.app')] class extends Component
         </div>
     </section>
 
+    <livewire:landing::components.tool-demo :tool="$tool" />
+
     <livewire:landing::components.tool-app-download :tool="$tool" />
 </div>

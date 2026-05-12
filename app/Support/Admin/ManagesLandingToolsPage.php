@@ -3,8 +3,12 @@
 namespace App\Support\Admin;
 
 use App\Models\LandingToolPage;
+use App\Models\Voice;
+use App\Support\Landing\LandingDemoSampleSchema;
 use App\Support\Landing\LandingMediaStorage;
 use App\Support\Landing\LandingToolPageCatalog;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -23,6 +27,15 @@ trait ManagesLandingToolsPage
     public string $slug = '';
     public int $sortOrder = 0;
     public string $toolStatus = 'active';
+    public string $demoType = '';
+    public string $demoConfigJson = '';
+    /** @var array<string, mixed> */
+    public array $demoMeta = ['sample_text' => ''];
+    /** @var array<int, array<string, mixed>> */
+    public array $demoItems = [];
+    public bool $removeSquareImage = false;
+    public bool $removeHeroImage = false;
+    public bool $removeCardImage = false;
 
     public ?string $squareImagePath = null;
     public ?string $heroImagePath = null;
@@ -90,6 +103,32 @@ trait ManagesLandingToolsPage
     public function updatedStatusFilter(): void
     {
         $this->resetPage();
+    }
+
+    public function updatedDemoType(): void
+    {
+        $this->normalizeDemoTypeFromState();
+        $this->syncDemoBuilderFromConfig($this->decodedDemoConfigFromJson());
+    }
+
+    public function addDemoItem(): void
+    {
+        $type = $this->resolvedDemoType();
+        if ($type === '') {
+            return;
+        }
+
+        $this->demoItems[] = $this->newDemoItemPayload($type);
+    }
+
+    public function removeDemoItem(int $index): void
+    {
+        if (! array_key_exists($index, $this->demoItems)) {
+            return;
+        }
+
+        unset($this->demoItems[$index]);
+        $this->demoItems = array_values($this->demoItems);
     }
 
     public function resetFilters(): void
@@ -163,6 +202,34 @@ trait ManagesLandingToolsPage
         ];
     }
 
+    /**
+     * @return array<string, string>
+     */
+    #[Computed]
+    public function demoTypeOptions(): array
+    {
+        return $this->demoSchema()->adminTypeOptions();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    #[Computed]
+    public function availableDemoVoices(): array
+    {
+        return Voice::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['code', 'name'])
+            ->mapWithKeys(fn (Voice $voice) => [
+                (string) $voice->code => trim((string) $voice->name) !== ''
+                    ? (string) $voice->name . ' (' . (string) $voice->code . ')'
+                    : (string) $voice->code,
+            ])
+            ->all();
+    }
+
     public function importDefaultTools(): void
     {
         $count = $this->toolCatalog()->importFallbackDefaults();
@@ -181,6 +248,9 @@ trait ManagesLandingToolsPage
         $toolPage = LandingToolPage::query()->findOrFail($toolPageId);
         $content = is_array($toolPage->content) ? $toolPage->content : [];
         $locales = ['en', 'ar', 'ku'];
+        $hasDemoTypeColumn = Schema::hasColumn('landing_tool_pages', 'demo_type');
+        $hasDemoConfigColumn = Schema::hasColumn('landing_tool_pages', 'demo_config');
+        $shadowDemo = is_array(data_get($content, '_demo')) ? (array) data_get($content, '_demo') : [];
 
         $this->resetValidation();
         $this->editingToolPageId = $toolPage->id;
@@ -190,9 +260,27 @@ trait ManagesLandingToolsPage
         $this->squareImagePath = $toolPage->square_image_path;
         $this->heroImagePath = $toolPage->hero_image_path;
         $this->cardImagePath = $toolPage->card_image_path;
+        $shadowDemoType = trim((string) data_get($shadowDemo, 'type', ''));
+        $shadowDemoConfig = is_array(data_get($shadowDemo, 'config')) ? (array) data_get($shadowDemo, 'config') : [];
+        $rawDemoType = $hasDemoTypeColumn
+            ? trim((string) ($toolPage->demo_type ?: $shadowDemoType))
+            : $shadowDemoType;
+        $rawDemoConfig = $hasDemoConfigColumn
+            ? ((is_array($toolPage->demo_config) && $toolPage->demo_config !== []) ? $toolPage->demo_config : $shadowDemoConfig)
+            : $shadowDemoConfig;
+        $normalizedDemoType = $this->demoSchema()->normalizeType($rawDemoType, (string) $toolPage->slug);
+        $normalizedDemoConfig = $this->demoSchema()->normalizeConfig($normalizedDemoType, $rawDemoConfig, (string) $toolPage->slug);
+        $this->demoType = (string) ($normalizedDemoType ?? '');
+        $this->demoConfigJson = $normalizedDemoConfig !== []
+            ? (string) json_encode($normalizedDemoConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+            : '';
+        $this->removeSquareImage = false;
+        $this->removeHeroImage = false;
+        $this->removeCardImage = false;
         $this->squareImageUpload = null;
         $this->heroImageUpload = null;
         $this->cardImageUpload = null;
+        $this->syncDemoBuilderFromConfig($normalizedDemoConfig);
 
         foreach ($locales as $locale) {
             $this->badge[$locale] = $this->contentValue($content, $locale, 'badge');
@@ -226,6 +314,48 @@ trait ManagesLandingToolsPage
         $this->dispatch('landing-tools:modal-show', id: 'landingToolPageModal');
     }
 
+    public function openDemoConfigModal(): void
+    {
+        $this->resetValidation();
+        $this->normalizeDemoTypeFromState();
+
+        if ($this->demoType === '') {
+            $this->addError('demoType', __('Please choose a demo type first.'));
+            return;
+        }
+
+        $this->syncDemoBuilderFromConfig($this->decodedDemoConfigFromJson());
+        $this->dispatch('landing-tools:modal-hide', id: 'landingToolPageModal');
+        $this->dispatch('landing-tools:modal-show', id: 'landingToolDemoModal');
+    }
+
+    public function closeDemoConfigModal(): void
+    {
+        $this->dispatch('landing-tools:modal-hide', id: 'landingToolDemoModal');
+        $this->dispatch('landing-tools:modal-show', id: 'landingToolPageModal');
+    }
+
+    public function clearSquareImage(): void
+    {
+        $this->removeSquareImage = true;
+        $this->squareImagePath = null;
+        $this->squareImageUpload = null;
+    }
+
+    public function clearHeroImage(): void
+    {
+        $this->removeHeroImage = true;
+        $this->heroImagePath = null;
+        $this->heroImageUpload = null;
+    }
+
+    public function clearCardImage(): void
+    {
+        $this->removeCardImage = true;
+        $this->cardImagePath = null;
+        $this->cardImageUpload = null;
+    }
+
     public function saveToolPage(): void
     {
         $toolPage = $this->editingToolPageId
@@ -244,6 +374,44 @@ trait ManagesLandingToolsPage
             ],
             'sortOrder' => ['required', 'integer', 'min:0', 'max:65535'],
             'toolStatus' => ['required', Rule::in(['active', 'inactive'])],
+            'demoType' => ['nullable', 'string', 'max:80', Rule::in(array_keys($this->demoTypeOptions()))],
+            'demoConfigJson' => ['nullable', 'string', 'max:65000'],
+            'demoMeta.sample_text' => ['nullable', 'string', 'max:12000'],
+            'demoItems' => ['nullable', 'array', 'max:40'],
+            'demoItems.*.label' => ['nullable', 'string', 'max:180'],
+            'demoItems.*.engine' => ['nullable', 'string', 'max:80'],
+            'demoItems.*.voice_id' => ['nullable', 'string', 'max:120'],
+            'demoItems.*.audio_url' => ['nullable', 'string', 'max:2048'],
+            'demoItems.*.audio_upload' => ['nullable', 'file', 'mimes:mp3,wav,m4a,aac,ogg,flac,opus', 'max:51200'],
+            'demoItems.*.description' => ['nullable', 'string', 'max:2000'],
+            'demoItems.*.title' => ['nullable', 'string', 'max:180'],
+            'demoItems.*.source_label' => ['nullable', 'string', 'max:180'],
+            'demoItems.*.source_audio_url' => ['nullable', 'string', 'max:2048'],
+            'demoItems.*.source_audio_upload' => ['nullable', 'file', 'mimes:mp3,wav,m4a,aac,ogg,flac,opus', 'max:51200'],
+            'demoItems.*.cloned_label' => ['nullable', 'string', 'max:180'],
+            'demoItems.*.cloned_audio_url' => ['nullable', 'string', 'max:2048'],
+            'demoItems.*.cloned_audio_upload' => ['nullable', 'file', 'mimes:mp3,wav,m4a,aac,ogg,flac,opus', 'max:51200'],
+            'demoItems.*.notes' => ['nullable', 'string', 'max:3000'],
+            'demoItems.*.transcript' => ['nullable', 'string', 'max:15000'],
+            'demoItems.*.language' => ['nullable', 'string', 'max:80'],
+            'demoItems.*.confidence' => ['nullable', 'string', 'max:80'],
+            'demoItems.*.original_audio_url' => ['nullable', 'string', 'max:2048'],
+            'demoItems.*.original_audio_upload' => ['nullable', 'file', 'mimes:mp3,wav,m4a,aac,ogg,flac,opus', 'max:51200'],
+            'demoItems.*.vocals_url' => ['nullable', 'string', 'max:2048'],
+            'demoItems.*.vocals_upload' => ['nullable', 'file', 'mimes:mp3,wav,m4a,aac,ogg,flac,opus', 'max:51200'],
+            'demoItems.*.drums_url' => ['nullable', 'string', 'max:2048'],
+            'demoItems.*.drums_upload' => ['nullable', 'file', 'mimes:mp3,wav,m4a,aac,ogg,flac,opus', 'max:51200'],
+            'demoItems.*.bass_url' => ['nullable', 'string', 'max:2048'],
+            'demoItems.*.bass_upload' => ['nullable', 'file', 'mimes:mp3,wav,m4a,aac,ogg,flac,opus', 'max:51200'],
+            'demoItems.*.other_url' => ['nullable', 'string', 'max:2048'],
+            'demoItems.*.other_upload' => ['nullable', 'file', 'mimes:mp3,wav,m4a,aac,ogg,flac,opus', 'max:51200'],
+            'demoItems.*.image_url' => ['nullable', 'string', 'max:2048'],
+            'demoItems.*.image_upload' => ['nullable', 'image', 'max:10240'],
+            'demoItems.*.extracted_text' => ['nullable', 'string', 'max:20000'],
+            'demoItems.*.source_lang' => ['nullable', 'string', 'max:10'],
+            'demoItems.*.target_lang' => ['nullable', 'string', 'max:10'],
+            'demoItems.*.source_text' => ['nullable', 'string', 'max:20000'],
+            'demoItems.*.target_text' => ['nullable', 'string', 'max:20000'],
             'squareImageUpload' => ['nullable', 'image', 'max:4096', 'dimensions:ratio=1/1'],
             'heroImageUpload' => ['nullable', 'image', 'max:5120'],
             'cardImageUpload' => ['nullable', 'image', 'max:5120'],
@@ -287,16 +455,57 @@ trait ManagesLandingToolsPage
             'squareImageUpload.dimensions' => __('Tool square image must use a 1:1 ratio.'),
         ]);
 
+        $this->normalizeDemoTypeFromState();
+        $resolvedDemoType = $this->resolvedDemoType();
+
+        $demoConfig = [];
+        $rawDemoConfig = trim($this->demoConfigJson);
+
+        if ($rawDemoConfig !== '') {
+            $decoded = json_decode($rawDemoConfig, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
+                $this->addError('demoConfigJson', __('Demo config must be a valid JSON object or array.'));
+                return;
+            }
+
+            $demoConfig = $decoded;
+        }
+
+        $mediaDisk = $this->landingMediaStorage()->diskName();
+        $demoConfig = $this->buildDemoConfigPayload($demoConfig, trim((string) $this->slug), $mediaDisk);
+        $this->demoConfigJson = $demoConfig !== []
+            ? (string) json_encode($demoConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+            : '';
+
+        $hasDemoTypeColumn = Schema::hasColumn('landing_tool_pages', 'demo_type');
+        $hasDemoConfigColumn = Schema::hasColumn('landing_tool_pages', 'demo_config');
+
         $toolPage->slug = trim($this->slug);
         $toolPage->icon_class = null;
+        if ($hasDemoTypeColumn) {
+            $toolPage->demo_type = $this->emptyToNull($resolvedDemoType);
+        }
+        if ($hasDemoConfigColumn) {
+            $toolPage->demo_config = $demoConfig;
+        }
         $toolPage->sort_order = (int) $this->sortOrder;
         $toolPage->is_active = $this->toolStatus === 'active';
-        $toolPage->content = $this->buildLocalizedContentPayload();
-        $mediaDisk = $this->landingMediaStorage()->diskName();
+        $contentPayload = $this->buildLocalizedContentPayload();
+        if (! $hasDemoTypeColumn || ! $hasDemoConfigColumn) {
+            $contentPayload['_demo'] = [
+                'type' => $this->emptyToNull($resolvedDemoType),
+                'config' => $demoConfig,
+            ];
+        }
+        $toolPage->content = $contentPayload;
 
         if ($this->squareImageUpload) {
             $this->deletePublicAsset($toolPage->square_image_path);
             $toolPage->square_image_path = $this->squareImageUpload->store('web-setting/tools/square', $mediaDisk);
+        } elseif ($this->removeSquareImage) {
+            $this->deletePublicAsset($toolPage->square_image_path);
+            $toolPage->square_image_path = null;
         } else {
             $toolPage->square_image_path = $this->landingMediaStorage()->normalizeStoredPath($toolPage->square_image_path);
         }
@@ -304,6 +513,9 @@ trait ManagesLandingToolsPage
         if ($this->heroImageUpload) {
             $this->deletePublicAsset($toolPage->hero_image_path);
             $toolPage->hero_image_path = $this->heroImageUpload->store('web-setting/tools', $mediaDisk);
+        } elseif ($this->removeHeroImage) {
+            $this->deletePublicAsset($toolPage->hero_image_path);
+            $toolPage->hero_image_path = null;
         } else {
             $toolPage->hero_image_path = $this->landingMediaStorage()->normalizeStoredPath($toolPage->hero_image_path);
         }
@@ -311,6 +523,9 @@ trait ManagesLandingToolsPage
         if ($this->cardImageUpload) {
             $this->deletePublicAsset($toolPage->card_image_path);
             $toolPage->card_image_path = $this->cardImageUpload->store('web-setting/tools', $mediaDisk);
+        } elseif ($this->removeCardImage) {
+            $this->deletePublicAsset($toolPage->card_image_path);
+            $toolPage->card_image_path = null;
         } else {
             $toolPage->card_image_path = $this->landingMediaStorage()->normalizeStoredPath($toolPage->card_image_path);
         }
@@ -411,6 +626,11 @@ trait ManagesLandingToolsPage
         $this->squareImagePath = null;
         $this->heroImagePath = null;
         $this->cardImagePath = null;
+        $this->demoType = '';
+        $this->demoConfigJson = '';
+        $this->removeSquareImage = false;
+        $this->removeHeroImage = false;
+        $this->removeCardImage = false;
         $this->squareImageUpload = null;
         $this->heroImageUpload = null;
         $this->cardImageUpload = null;
@@ -438,12 +658,600 @@ trait ManagesLandingToolsPage
             $this->appDownloadIosLabel[$locale] = '';
             $this->appDownloadAndroidLabel[$locale] = '';
         }
+
+        $this->resetDemoBuilderForm();
+        $this->dispatch('landing-tools:modal-hide', id: 'landingToolDemoModal');
     }
 
     public function resetDeleteState(): void
     {
         $this->toolPageIdPendingDelete = null;
         $this->toolPageDeleteLabel = '';
+    }
+
+    protected function resetDemoBuilderForm(): void
+    {
+        $this->demoMeta = ['sample_text' => ''];
+        $this->demoItems = [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    protected function syncDemoBuilderFromConfig(array $config): void
+    {
+        $this->resetDemoBuilderForm();
+        $this->normalizeDemoTypeFromState();
+
+        $type = $this->resolvedDemoType();
+        if ($type === '') {
+            return;
+        }
+
+        $normalized = $this->demoSchema()->normalizeConfig($type, $config, $this->slug);
+        if ($normalized === []) {
+            $normalized = [
+                'type' => $type,
+                'version' => 1,
+                'meta' => [],
+                'items' => [],
+            ];
+        }
+
+        $this->demoMeta = [
+            'sample_text' => trim((string) data_get($normalized, 'meta.sample_text', '')),
+        ];
+
+        $items = is_array(data_get($normalized, 'items')) ? (array) data_get($normalized, 'items') : [];
+        $this->demoItems = array_values(array_map(
+            fn ($item) => $this->inflateBuilderItemPayload($type, is_array($item) ? $item : []),
+            $items
+        ));
+
+        if ($this->demoItems === []) {
+            $this->demoItems = $this->defaultDemoItemsForType($type);
+        }
+
+        $this->demoConfigJson = (string) json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function decodedDemoConfigFromJson(): array
+    {
+        $raw = trim($this->demoConfigJson);
+
+        if ($raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        $type = $this->resolvedDemoType();
+        if ($type === '') {
+            return $decoded;
+        }
+
+        return $this->demoSchema()->normalizeConfig($type, $decoded, $this->slug);
+    }
+
+    /**
+     * @param  array<string, mixed>  $baseConfig
+     * @return array<string, mixed>
+     */
+    protected function buildDemoConfigPayload(array $baseConfig, string $slug, string $mediaDisk): array
+    {
+        $type = (string) ($this->demoSchema()->normalizeType($this->demoType, $slug) ?? '');
+        if ($type === '') {
+            return [];
+        }
+
+        $base = $this->demoSchema()->normalizeConfig($type, $baseConfig, $slug);
+        $assetBase = $this->demoAssetDirectory($slug) . '/' . $type;
+        $meta = is_array(data_get($base, 'meta')) ? (array) data_get($base, 'meta') : [];
+
+        $sampleText = trim((string) data_get($this->demoMeta, 'sample_text', ''));
+        if ($sampleText !== '') {
+            $meta['sample_text'] = $sampleText;
+        } else {
+            unset($meta['sample_text']);
+        }
+
+        $items = [];
+        $baseItems = is_array(data_get($base, 'items')) ? array_values((array) data_get($base, 'items')) : [];
+
+        foreach (array_values($this->demoItems) as $index => $row) {
+            $item = is_array($row) ? $row : [];
+            $current = is_array(data_get($baseItems, (string) $index)) ? (array) data_get($baseItems, (string) $index) : [];
+            $payload = $this->buildDemoItemPayloadByType(
+                type: $type,
+                row: $item,
+                current: $current,
+                directory: $assetBase,
+                disk: $mediaDisk
+            );
+
+            if ($payload !== []) {
+                $items[] = $payload;
+            }
+        }
+
+        $envelope = [
+            'type' => $type,
+            'version' => 1,
+            'meta' => $meta,
+            'items' => $items,
+        ];
+
+        return $this->demoSchema()->normalizeConfig($type, $envelope, $slug);
+    }
+
+    protected function normalizeDemoTypeFromState(): void
+    {
+        $this->demoType = (string) ($this->demoSchema()->normalizeType($this->demoType, $this->slug) ?? '');
+    }
+
+    protected function resolvedDemoType(): string
+    {
+        return (string) ($this->demoSchema()->normalizeType($this->demoType, $this->slug) ?? '');
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    protected function defaultDemoItemsForType(string $type): array
+    {
+        return match ($type) {
+            'translation' => [
+                [
+                    'title' => 'KU -> EN',
+                    'source_lang' => 'ku',
+                    'target_lang' => 'en',
+                    'source_text' => '',
+                    'target_text' => '',
+                ],
+                [
+                    'title' => 'KU -> AR',
+                    'source_lang' => 'ku',
+                    'target_lang' => 'ar',
+                    'source_text' => '',
+                    'target_text' => '',
+                ],
+                [
+                    'title' => 'AR -> KU',
+                    'source_lang' => 'ar',
+                    'target_lang' => 'ku',
+                    'source_text' => '',
+                    'target_text' => '',
+                ],
+                [
+                    'title' => 'KU -> DE',
+                    'source_lang' => 'ku',
+                    'target_lang' => 'de',
+                    'source_text' => '',
+                    'target_text' => '',
+                ],
+            ],
+            default => $this->newDemoItemPayload($type) !== [] ? [$this->newDemoItemPayload($type)] : [],
+        };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function newDemoItemPayload(string $type): array
+    {
+        return match ($type) {
+            'tts' => [
+                'label' => '',
+                'engine' => '',
+                'voice_id' => '',
+                'audio_url' => '',
+                'audio_upload' => null,
+                'description' => '',
+            ],
+            'ctts' => [
+                'title' => '',
+                'source_label' => '',
+                'source_audio_url' => '',
+                'source_audio_upload' => null,
+                'cloned_label' => '',
+                'cloned_audio_url' => '',
+                'cloned_audio_upload' => null,
+                'notes' => '',
+            ],
+            'asr' => [
+                'title' => '',
+                'audio_url' => '',
+                'audio_upload' => null,
+                'transcript' => '',
+                'language' => '',
+                'confidence' => '',
+                'notes' => '',
+            ],
+            'stem' => [
+                'title' => '',
+                'original_audio_url' => '',
+                'original_audio_upload' => null,
+                'vocals_url' => '',
+                'vocals_upload' => null,
+                'drums_url' => '',
+                'drums_upload' => null,
+                'bass_url' => '',
+                'bass_upload' => null,
+                'other_url' => '',
+                'other_upload' => null,
+                'notes' => '',
+            ],
+            'ocr' => [
+                'title' => '',
+                'image_url' => '',
+                'image_upload' => null,
+                'extracted_text' => '',
+                'notes' => '',
+            ],
+            'translation' => [
+                'title' => '',
+                'source_lang' => 'ku',
+                'target_lang' => 'en',
+                'source_text' => '',
+                'target_text' => '',
+            ],
+            default => [],
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    protected function inflateBuilderItemPayload(string $type, array $item): array
+    {
+        $row = $this->newDemoItemPayload($type);
+
+        if ($row === []) {
+            return [];
+        }
+
+        return match ($type) {
+            'tts' => array_merge($row, [
+                'label' => trim((string) data_get($item, 'label', '')),
+                'engine' => trim((string) data_get($item, 'engine', '')),
+                'voice_id' => trim((string) data_get($item, 'voice_id', '')),
+                'audio_url' => trim((string) data_get($item, 'audio', '')),
+                'description' => trim((string) data_get($item, 'description', '')),
+            ]),
+            'ctts' => array_merge($row, [
+                'title' => trim((string) data_get($item, 'title', '')),
+                'source_label' => trim((string) data_get($item, 'source_label', '')),
+                'source_audio_url' => trim((string) data_get($item, 'source_audio', '')),
+                'cloned_label' => trim((string) data_get($item, 'cloned_label', '')),
+                'cloned_audio_url' => trim((string) data_get($item, 'cloned_audio', '')),
+                'notes' => trim((string) data_get($item, 'notes', '')),
+            ]),
+            'asr' => array_merge($row, [
+                'title' => trim((string) data_get($item, 'title', '')),
+                'audio_url' => trim((string) data_get($item, 'audio', '')),
+                'transcript' => trim((string) data_get($item, 'transcript', '')),
+                'language' => trim((string) data_get($item, 'language', '')),
+                'confidence' => trim((string) data_get($item, 'confidence', '')),
+                'notes' => trim((string) data_get($item, 'notes', '')),
+            ]),
+            'stem' => array_merge($row, [
+                'title' => trim((string) data_get($item, 'title', '')),
+                'original_audio_url' => trim((string) data_get($item, 'original_audio', '')),
+                'vocals_url' => trim((string) data_get($item, 'stems.vocals', '')),
+                'drums_url' => trim((string) data_get($item, 'stems.drums', '')),
+                'bass_url' => trim((string) data_get($item, 'stems.bass', '')),
+                'other_url' => trim((string) data_get($item, 'stems.other', '')),
+                'notes' => trim((string) data_get($item, 'notes', '')),
+            ]),
+            'ocr' => array_merge($row, [
+                'title' => trim((string) data_get($item, 'title', '')),
+                'image_url' => trim((string) data_get($item, 'image', '')),
+                'extracted_text' => trim((string) data_get($item, 'extracted_text', '')),
+                'notes' => trim((string) data_get($item, 'notes', '')),
+            ]),
+            'translation' => array_merge($row, [
+                'title' => trim((string) data_get($item, 'title', '')),
+                'source_lang' => Str::lower(trim((string) data_get($item, 'source_lang', 'ku'))),
+                'target_lang' => Str::lower(trim((string) data_get($item, 'target_lang', 'en'))),
+                'source_text' => trim((string) data_get($item, 'source_text', '')),
+                'target_text' => trim((string) data_get($item, 'target_text', '')),
+            ]),
+            default => $row,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $current
+     * @return array<string, mixed>
+     */
+    protected function buildDemoItemPayloadByType(string $type, array $row, array $current, string $directory, string $disk): array
+    {
+        return match ($type) {
+            'tts' => $this->buildTtsDemoItemPayload($row, $current, $directory, $disk),
+            'ctts' => $this->buildCttsDemoItemPayload($row, $current, $directory, $disk),
+            'asr' => $this->buildAsrDemoItemPayload($row, $current, $directory, $disk),
+            'stem' => $this->buildStemDemoItemPayload($row, $current, $directory, $disk),
+            'ocr' => $this->buildOcrDemoItemPayload($row, $current, $directory, $disk),
+            'translation' => $this->buildTranslationDemoItemPayload($row),
+            default => [],
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $current
+     * @return array<string, mixed>
+     */
+    protected function buildTtsDemoItemPayload(array $row, array $current, string $directory, string $disk): array
+    {
+        $audio = $this->resolveDemoMediaValue(
+            current: data_get($current, 'audio'),
+            urlOrPath: trim((string) data_get($row, 'audio_url', '')),
+            upload: data_get($row, 'audio_upload'),
+            directory: $directory . '/audio',
+            disk: $disk
+        );
+
+        $payload = [
+            'label' => trim((string) data_get($row, 'label', '')),
+            'engine' => Str::lower(trim((string) data_get($row, 'engine', ''))),
+            'voice_id' => trim((string) data_get($row, 'voice_id', '')),
+            'audio' => $audio,
+            'description' => trim((string) data_get($row, 'description', '')),
+        ];
+
+        $hasContent = trim((string) ($payload['label'] ?? '')) !== ''
+            || trim((string) ($payload['voice_id'] ?? '')) !== ''
+            || trim((string) ($payload['audio'] ?? '')) !== '';
+
+        return $hasContent
+            ? array_filter($payload, fn ($value) => ! ($value === null || $value === ''))
+            : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $current
+     * @return array<string, mixed>
+     */
+    protected function buildCttsDemoItemPayload(array $row, array $current, string $directory, string $disk): array
+    {
+        $source = $this->resolveDemoMediaValue(
+            current: data_get($current, 'source_audio'),
+            urlOrPath: trim((string) data_get($row, 'source_audio_url', '')),
+            upload: data_get($row, 'source_audio_upload'),
+            directory: $directory . '/source',
+            disk: $disk
+        );
+        $cloned = $this->resolveDemoMediaValue(
+            current: data_get($current, 'cloned_audio'),
+            urlOrPath: trim((string) data_get($row, 'cloned_audio_url', '')),
+            upload: data_get($row, 'cloned_audio_upload'),
+            directory: $directory . '/cloned',
+            disk: $disk
+        );
+
+        $payload = [
+            'title' => trim((string) data_get($row, 'title', '')),
+            'source_label' => trim((string) data_get($row, 'source_label', '')),
+            'source_audio' => $source,
+            'cloned_label' => trim((string) data_get($row, 'cloned_label', '')),
+            'cloned_audio' => $cloned,
+            'notes' => trim((string) data_get($row, 'notes', '')),
+        ];
+
+        $hasContent = trim((string) ($payload['title'] ?? '')) !== ''
+            || trim((string) ($payload['source_label'] ?? '')) !== ''
+            || trim((string) ($payload['cloned_label'] ?? '')) !== ''
+            || trim((string) ($payload['source_audio'] ?? '')) !== ''
+            || trim((string) ($payload['cloned_audio'] ?? '')) !== '';
+
+        return $hasContent
+            ? array_filter($payload, fn ($value) => ! ($value === null || $value === ''))
+            : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $current
+     * @return array<string, mixed>
+     */
+    protected function buildAsrDemoItemPayload(array $row, array $current, string $directory, string $disk): array
+    {
+        $audio = $this->resolveDemoMediaValue(
+            current: data_get($current, 'audio'),
+            urlOrPath: trim((string) data_get($row, 'audio_url', '')),
+            upload: data_get($row, 'audio_upload'),
+            directory: $directory . '/audio',
+            disk: $disk
+        );
+
+        $payload = [
+            'title' => trim((string) data_get($row, 'title', '')),
+            'audio' => $audio,
+            'transcript' => trim((string) data_get($row, 'transcript', '')),
+            'language' => Str::lower(trim((string) data_get($row, 'language', ''))),
+            'confidence' => trim((string) data_get($row, 'confidence', '')),
+            'notes' => trim((string) data_get($row, 'notes', '')),
+        ];
+
+        $hasContent = trim((string) ($payload['title'] ?? '')) !== ''
+            || trim((string) ($payload['audio'] ?? '')) !== ''
+            || trim((string) ($payload['transcript'] ?? '')) !== '';
+
+        return $hasContent
+            ? array_filter($payload, fn ($value) => ! ($value === null || $value === ''))
+            : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $current
+     * @return array<string, mixed>
+     */
+    protected function buildStemDemoItemPayload(array $row, array $current, string $directory, string $disk): array
+    {
+        $original = $this->resolveDemoMediaValue(
+            current: data_get($current, 'original_audio'),
+            urlOrPath: trim((string) data_get($row, 'original_audio_url', '')),
+            upload: data_get($row, 'original_audio_upload'),
+            directory: $directory . '/mix',
+            disk: $disk
+        );
+
+        $stemPayload = [];
+        foreach (['vocals', 'drums', 'bass', 'other'] as $stemKey) {
+            $stemPayload[$stemKey] = $this->resolveDemoMediaValue(
+                current: data_get($current, "stems.{$stemKey}"),
+                urlOrPath: trim((string) data_get($row, "{$stemKey}_url", '')),
+                upload: data_get($row, "{$stemKey}_upload"),
+                directory: $directory . '/' . $stemKey,
+                disk: $disk
+            );
+        }
+        $stemPayload = array_filter($stemPayload, fn ($value) => ! ($value === null || $value === ''));
+
+        $payload = [
+            'title' => trim((string) data_get($row, 'title', '')),
+            'original_audio' => $original,
+            'stems' => $stemPayload,
+            'notes' => trim((string) data_get($row, 'notes', '')),
+        ];
+
+        $hasContent = trim((string) ($payload['title'] ?? '')) !== ''
+            || trim((string) ($payload['original_audio'] ?? '')) !== ''
+            || (is_array($payload['stems'] ?? null) && ($payload['stems'] ?? []) !== []);
+
+        return $hasContent
+            ? array_filter($payload, fn ($value) => ! ($value === null || $value === '' || $value === []))
+            : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $current
+     * @return array<string, mixed>
+     */
+    protected function buildOcrDemoItemPayload(array $row, array $current, string $directory, string $disk): array
+    {
+        $image = $this->resolveDemoMediaValue(
+            current: data_get($current, 'image'),
+            urlOrPath: trim((string) data_get($row, 'image_url', '')),
+            upload: data_get($row, 'image_upload'),
+            directory: $directory . '/image',
+            disk: $disk
+        );
+
+        $payload = [
+            'title' => trim((string) data_get($row, 'title', '')),
+            'image' => $image,
+            'extracted_text' => trim((string) data_get($row, 'extracted_text', '')),
+            'notes' => trim((string) data_get($row, 'notes', '')),
+        ];
+
+        $hasContent = trim((string) ($payload['title'] ?? '')) !== ''
+            || trim((string) ($payload['image'] ?? '')) !== ''
+            || trim((string) ($payload['extracted_text'] ?? '')) !== '';
+
+        return $hasContent
+            ? array_filter($payload, fn ($value) => ! ($value === null || $value === ''))
+            : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    protected function buildTranslationDemoItemPayload(array $row): array
+    {
+        $payload = [
+            'title' => trim((string) data_get($row, 'title', '')),
+            'source_lang' => Str::lower(trim((string) data_get($row, 'source_lang', 'ku'))),
+            'target_lang' => Str::lower(trim((string) data_get($row, 'target_lang', 'en'))),
+            'source_text' => trim((string) data_get($row, 'source_text', '')),
+            'target_text' => trim((string) data_get($row, 'target_text', '')),
+        ];
+
+        $hasContent = trim((string) ($payload['title'] ?? '')) !== ''
+            || trim((string) ($payload['source_text'] ?? '')) !== ''
+            || trim((string) ($payload['target_text'] ?? '')) !== '';
+
+        return $hasContent
+            ? array_filter($payload, fn ($value) => ! ($value === null || $value === ''))
+            : [];
+    }
+
+    protected function demoAssetDirectory(string $slug): string
+    {
+        $cleanSlug = Str::of($slug)
+            ->lower()
+            ->replaceMatches('/[^a-z0-9\\-]+/', '-')
+            ->replaceMatches('/-+/', '-')
+            ->trim('-')
+            ->value();
+
+        return 'landing/demos/' . ($cleanSlug !== '' ? $cleanSlug : 'tool');
+    }
+
+    /**
+     * @param  mixed  $current
+     * @param  mixed  $upload
+     */
+    protected function resolveDemoMediaValue(mixed $current, string $urlOrPath, mixed $upload, string $directory, string $disk): ?string
+    {
+        if ($upload) {
+            return $upload->store($directory, $disk);
+        }
+
+        $candidate = trim($urlOrPath);
+        if ($candidate !== '') {
+            if (Str::startsWith($candidate, ['http://', 'https://'])) {
+                return $candidate;
+            }
+
+            return $this->landingMediaStorage()->normalizeStoredPath($candidate);
+        }
+
+        $currentValue = trim((string) $current);
+
+        return $currentValue !== '' ? $currentValue : null;
+    }
+
+    protected function demoTextValue(mixed $value): string
+    {
+        if (is_string($value)) {
+            return trim($value);
+        }
+
+        if (is_array($value)) {
+            $locale = app()->getLocale();
+            $localized = trim((string) data_get($value, $locale, ''));
+            if ($localized !== '') {
+                return $localized;
+            }
+
+            $english = trim((string) data_get($value, 'en', ''));
+            if ($english !== '') {
+                return $english;
+            }
+
+            foreach ($value as $item) {
+                $candidate = trim((string) $item);
+                if ($candidate !== '') {
+                    return $candidate;
+                }
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -830,5 +1638,10 @@ trait ManagesLandingToolsPage
     protected function landingMediaStorage(): LandingMediaStorage
     {
         return app(LandingMediaStorage::class);
+    }
+
+    protected function demoSchema(): LandingDemoSampleSchema
+    {
+        return app(LandingDemoSampleSchema::class);
     }
 }

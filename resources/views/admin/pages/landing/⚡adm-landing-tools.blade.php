@@ -66,6 +66,7 @@ class extends Component
                         <tr class="text-uppercase">
                             <th>{{ __('Slug') }}</th>
                             <th>{{ __('EN Title') }}</th>
+                            <th>{{ __('Demo') }}</th>
                             <th>{{ __('Square Image') }}</th>
                             <th>{{ __('Sort') }}</th>
                             <th>{{ __('Status') }}</th>
@@ -77,6 +78,14 @@ class extends Component
                             <tr wire:key="landing-tool-page-{{ $toolPage->id }}">
                                 <td class="fw-semibold">{{ $toolPage->slug }}</td>
                                 <td>{{ data_get($toolPage->content, 'en.title', $toolPage->slug) }}</td>
+                                <td>
+                                    @php($rowDemoType = $toolPage->demo_type ?: data_get($toolPage->content, '_demo.type'))
+                                    @if($rowDemoType)
+                                        <span class="badge bg-info-subtle text-info">{{ $rowDemoType }}</span>
+                                    @else
+                                        <span class="text-muted">-</span>
+                                    @endif
+                                </td>
                                 <td>
                                     @if($toolPage->square_image_path)
                                         @php($squareThumbUrl = $landingMedia->publicUrl($toolPage->square_image_path))
@@ -113,7 +122,7 @@ class extends Component
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="6" class="text-center py-5 text-muted">{{ __('No tool pages found.') }}</td></tr>
+                            <tr><td colspan="7" class="text-center py-5 text-muted">{{ __('No tool pages found.') }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -152,9 +161,13 @@ class extends Component
                                 @if($squareImagePath)
                                     @php($squarePreviewUrl = $landingMedia->publicUrl($squareImagePath))
                                     <small class="text-muted d-block mt-2">{{ __('Current: :path', ['path' => $squareImagePath]) }}</small>
+                                    <button type="button" class="btn btn-sm btn-soft-danger mt-2" wire:click="clearSquareImage">{{ __('Remove current image') }}</button>
                                     @if($squarePreviewUrl)
                                         <img src="{{ $squarePreviewUrl }}" alt="tool square image" class="rounded mt-2" style="width:88px; height:88px; object-fit:cover;">
                                     @endif
+                                @endif
+                                @if($removeSquareImage)
+                                    <div class="text-warning small mt-2">{{ __('Square image will be removed after saving.') }}</div>
                                 @endif
                             </div>
                             <div class="col-md-2">
@@ -170,6 +183,40 @@ class extends Component
                                 </select>
                                 @error('toolStatus') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
+                            <div class="col-md-6">
+                                <label class="form-label">{{ __('Demo Type') }}</label>
+                                <select class="form-select @error('demoType') is-invalid @enderror" wire:model.defer="demoType">
+                                    <option value="">{{ __('Auto by slug (recommended)') }}</option>
+                                    @foreach($this->demoTypeOptions as $demoTypeValue => $demoTypeLabel)
+                                        <option value="{{ $demoTypeValue }}">{{ $demoTypeLabel }}</option>
+                                    @endforeach
+                                </select>
+                                <div class="form-text">{{ __('Select which live demo layout to render at the end of the tool detail page.') }}</div>
+                                @error('demoType') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">{{ __('Demo Content Builder') }}</label>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <button type="button" class="btn btn-soft-primary" wire:click="openDemoConfigModal">
+                                        {{ __('Open Demo Builder') }}
+                                    </button>
+                                    <span class="badge bg-secondary-subtle text-secondary align-self-center">{{ $demoType !== '' ? $demoType : __('Auto mode') }}</span>
+                                </div>
+                                <div class="form-text">{{ __('Use the standalone builder to upload audio/images and manage links without editing raw JSON.') }}</div>
+                                @error('demoType') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">{{ __('Advanced: Demo Config JSON') }}</label>
+                                <textarea
+                                    class="form-control @error('demoConfigJson') is-invalid @enderror"
+                                    rows="4"
+                                    wire:model.defer="demoConfigJson"
+                                    placeholder='{"type":"tts","version":1,"meta":{"sample_text":"..."},"items":[{"label":"Apollo Female","engine":"apollo","voice_id":"apollo_female_1","audio":"https://..."}]}'
+                                    style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;"
+                                ></textarea>
+                                <div class="form-text">{{ __('Optional advanced override. Builder updates this automatically.') }}</div>
+                                @error('demoConfigJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
 
                             <div class="col-md-6">
                                 <label class="form-label">{{ __('Tool Detail Right-Side Visual') }}</label>
@@ -179,9 +226,13 @@ class extends Component
                                 @if($heroImagePath)
                                     @php($heroPreviewUrl = $landingMedia->publicUrl($heroImagePath))
                                     <small class="text-muted d-block mt-2">{{ __('Current: :path', ['path' => $heroImagePath]) }}</small>
+                                    <button type="button" class="btn btn-sm btn-soft-danger mt-2" wire:click="clearHeroImage">{{ __('Remove current visual') }}</button>
                                     @if($heroPreviewUrl)
                                         <img src="{{ $heroPreviewUrl }}" alt="tool detail visual" class="img-fluid rounded mt-2" style="max-height:120px;">
                                     @endif
+                                @endif
+                                @if($removeHeroImage)
+                                    <div class="text-warning small mt-2">{{ __('Right-side visual will be removed after saving.') }}</div>
                                 @endif
                             </div>
 
@@ -193,9 +244,13 @@ class extends Component
                                 @if($cardImagePath)
                                     @php($cardPreviewUrl = $landingMedia->publicUrl($cardImagePath))
                                     <small class="text-muted d-block mt-2">{{ __('Current: :path', ['path' => $cardImagePath]) }}</small>
+                                    <button type="button" class="btn btn-sm btn-soft-danger mt-2" wire:click="clearCardImage">{{ __('Remove current thumbnail') }}</button>
                                     @if($cardPreviewUrl)
                                         <img src="{{ $cardPreviewUrl }}" alt="tool card image" class="img-fluid rounded mt-2" style="max-height:120px;">
                                     @endif
+                                @endif
+                                @if($removeCardImage)
+                                    <div class="text-warning small mt-2">{{ __('Card thumbnail will be removed after saving.') }}</div>
                                 @endif
                             </div>
                         </div>
@@ -383,6 +438,280 @@ class extends Component
         </div>
     </div>
 
+    <div wire:ignore.self class="modal fade" id="landingToolDemoModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">{{ __('Demo Content Builder') }} @if($demoType !== '')<span class="text-muted">- {{ $demoType }}</span>@endif</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="closeDemoConfigModal"></button>
+                </div>
+                <div class="modal-body" style="max-height: calc(100vh - 220px); overflow-y: auto;">
+                    @if($demoType === '')
+                        <div class="alert alert-warning mb-0">{{ __('Please choose a Demo Type in the main modal first.') }}</div>
+                    @else
+                        <div class="alert alert-info">
+                            <strong>{{ __('Pre-generated Demo Samples') }}</strong><br>
+                            <span class="small">{{ __('Add examples here. Click "Done", then click "Update Tool Page" in the main modal to persist changes.') }}</span>
+                        </div>
+
+                        <div class="row g-3">
+                            @if(in_array($demoType, ['tts', 'ctts'], true))
+                                <div class="col-12">
+                                    <label class="form-label">{{ __('Shared sample text') }}</label>
+                                    <textarea class="form-control @error('demoMeta.sample_text') is-invalid @enderror" rows="4" wire:model.defer="demoMeta.sample_text"></textarea>
+                                    @error('demoMeta.sample_text') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                </div>
+                            @endif
+
+                            <div class="col-12 d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0">{{ __('Examples') }}</h6>
+                                <button type="button" class="btn btn-sm btn-soft-primary" wire:click="addDemoItem">
+                                    <i class="bi bi-plus-circle me-1"></i>{{ __('Add example') }}
+                                </button>
+                            </div>
+
+                            @forelse($demoItems as $itemIndex => $item)
+                                <div class="col-12" wire:key="landing-demo-item-{{ $itemIndex }}">
+                                    <div class="border rounded-3 p-3 bg-light-subtle">
+                                        <div class="d-flex justify-content-between align-items-center mb-3">
+                                            <strong>{{ __('Example #:index', ['index' => $itemIndex + 1]) }}</strong>
+                                            @if(count($demoItems) > 1)
+                                                <button type="button" class="btn btn-sm btn-soft-danger" wire:click="removeDemoItem({{ $itemIndex }})">{{ __('Remove') }}</button>
+                                            @endif
+                                        </div>
+
+                                        <div class="row g-3">
+                                            @if($demoType === 'tts')
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Label / Name') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.label') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.label">
+                                                    @error('demoItems.'.$itemIndex.'.label') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Engine') }}</label>
+                                                    <select class="form-select @error('demoItems.'.$itemIndex.'.engine') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.engine">
+                                                        <option value="">{{ __('Select engine') }}</option>
+                                                        <option value="apollo">Apollo</option>
+                                                        <option value="delta">Delta</option>
+                                                        <option value="xtts">XTTS</option>
+                                                        <option value="ftts">FTTS</option>
+                                                    </select>
+                                                    @error('demoItems.'.$itemIndex.'.engine') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Voice ID (optional)') }}</label>
+                                                    <select class="form-select @error('demoItems.'.$itemIndex.'.voice_id') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.voice_id">
+                                                        <option value="">{{ __('Select voice from DB') }}</option>
+                                                        @foreach($this->availableDemoVoices as $voiceCode => $voiceLabel)
+                                                            <option value="{{ $voiceCode }}">{{ $voiceLabel }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                    @error('demoItems.'.$itemIndex.'.voice_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Audio URL or storage path') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.audio_url') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.audio_url" placeholder="landing/demos/.../sample.mp3">
+                                                    @error('demoItems.'.$itemIndex.'.audio_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Upload audio') }}</label>
+                                                    <input type="file" class="form-control @error('demoItems.'.$itemIndex.'.audio_upload') is-invalid @enderror" wire:model="demoItems.{{ $itemIndex }}.audio_upload" accept="audio/*">
+                                                    @error('demoItems.'.$itemIndex.'.audio_upload') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Description (optional)') }}</label>
+                                                    <textarea class="form-control @error('demoItems.'.$itemIndex.'.description') is-invalid @enderror" rows="2" wire:model.defer="demoItems.{{ $itemIndex }}.description"></textarea>
+                                                    @error('demoItems.'.$itemIndex.'.description') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                            @elseif($demoType === 'ctts')
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Title / Label') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.title') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.title">
+                                                    @error('demoItems.'.$itemIndex.'.title') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Source speaker label') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.source_label') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.source_label">
+                                                    @error('demoItems.'.$itemIndex.'.source_label') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Source audio URL/path') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.source_audio_url') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.source_audio_url">
+                                                    @error('demoItems.'.$itemIndex.'.source_audio_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Upload source audio') }}</label>
+                                                    <input type="file" class="form-control @error('demoItems.'.$itemIndex.'.source_audio_upload') is-invalid @enderror" wire:model="demoItems.{{ $itemIndex }}.source_audio_upload" accept="audio/*">
+                                                    @error('demoItems.'.$itemIndex.'.source_audio_upload') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Cloned speaker label') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.cloned_label') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.cloned_label">
+                                                    @error('demoItems.'.$itemIndex.'.cloned_label') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Cloned audio URL/path') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.cloned_audio_url') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.cloned_audio_url">
+                                                    @error('demoItems.'.$itemIndex.'.cloned_audio_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Upload cloned audio') }}</label>
+                                                    <input type="file" class="form-control @error('demoItems.'.$itemIndex.'.cloned_audio_upload') is-invalid @enderror" wire:model="demoItems.{{ $itemIndex }}.cloned_audio_upload" accept="audio/*">
+                                                    @error('demoItems.'.$itemIndex.'.cloned_audio_upload') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Notes (optional)') }}</label>
+                                                    <textarea class="form-control @error('demoItems.'.$itemIndex.'.notes') is-invalid @enderror" rows="2" wire:model.defer="demoItems.{{ $itemIndex }}.notes"></textarea>
+                                                    @error('demoItems.'.$itemIndex.'.notes') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                            @elseif($demoType === 'asr')
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Title / Label') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.title') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.title">
+                                                    @error('demoItems.'.$itemIndex.'.title') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Audio URL/path') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.audio_url') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.audio_url">
+                                                    @error('demoItems.'.$itemIndex.'.audio_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Upload audio') }}</label>
+                                                    <input type="file" class="form-control @error('demoItems.'.$itemIndex.'.audio_upload') is-invalid @enderror" wire:model="demoItems.{{ $itemIndex }}.audio_upload" accept="audio/*">
+                                                    @error('demoItems.'.$itemIndex.'.audio_upload') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label">{{ __('Language') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.language') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.language" placeholder="ku">
+                                                    @error('demoItems.'.$itemIndex.'.language') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label">{{ __('Confidence') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.confidence') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.confidence" placeholder="97%">
+                                                    @error('demoItems.'.$itemIndex.'.confidence') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label">{{ __('Transcript') }}</label>
+                                                    <textarea class="form-control @error('demoItems.'.$itemIndex.'.transcript') is-invalid @enderror" rows="4" wire:model.defer="demoItems.{{ $itemIndex }}.transcript"></textarea>
+                                                    @error('demoItems.'.$itemIndex.'.transcript') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label">{{ __('Notes (optional)') }}</label>
+                                                    <textarea class="form-control @error('demoItems.'.$itemIndex.'.notes') is-invalid @enderror" rows="2" wire:model.defer="demoItems.{{ $itemIndex }}.notes"></textarea>
+                                                    @error('demoItems.'.$itemIndex.'.notes') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                            @elseif($demoType === 'stem')
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Title / Label') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.title') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.title">
+                                                    @error('demoItems.'.$itemIndex.'.title') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Original mix URL/path') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.original_audio_url') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.original_audio_url">
+                                                    @error('demoItems.'.$itemIndex.'.original_audio_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Upload original mix') }}</label>
+                                                    <input type="file" class="form-control @error('demoItems.'.$itemIndex.'.original_audio_upload') is-invalid @enderror" wire:model="demoItems.{{ $itemIndex }}.original_audio_upload" accept="audio/*">
+                                                    @error('demoItems.'.$itemIndex.'.original_audio_upload') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                @foreach(['vocals' => 'Vocals', 'drums' => 'Drums', 'bass' => 'Bass', 'other' => 'Other'] as $stemKey => $stemLabel)
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">{{ __($stemLabel) }} {{ __('URL/path') }}</label>
+                                                        <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.'.$stemKey.'_url') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.{{ $stemKey }}_url">
+                                                        @error('demoItems.'.$itemIndex.'.'.$stemKey.'_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">{{ __('Upload') }} {{ __($stemLabel) }}</label>
+                                                        <input type="file" class="form-control @error('demoItems.'.$itemIndex.'.'.$stemKey.'_upload') is-invalid @enderror" wire:model="demoItems.{{ $itemIndex }}.{{ $stemKey }}_upload" accept="audio/*">
+                                                        @error('demoItems.'.$itemIndex.'.'.$stemKey.'_upload') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                    </div>
+                                                @endforeach
+                                                <div class="col-12">
+                                                    <label class="form-label">{{ __('Notes (optional)') }}</label>
+                                                    <textarea class="form-control @error('demoItems.'.$itemIndex.'.notes') is-invalid @enderror" rows="2" wire:model.defer="demoItems.{{ $itemIndex }}.notes"></textarea>
+                                                    @error('demoItems.'.$itemIndex.'.notes') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                            @elseif($demoType === 'ocr')
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Title (optional)') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.title') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.title">
+                                                    @error('demoItems.'.$itemIndex.'.title') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Image/GIF URL/path') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.image_url') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.image_url">
+                                                    @error('demoItems.'.$itemIndex.'.image_url') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Upload image/GIF') }}</label>
+                                                    <input type="file" class="form-control @error('demoItems.'.$itemIndex.'.image_upload') is-invalid @enderror" wire:model="demoItems.{{ $itemIndex }}.image_upload" accept="image/*">
+                                                    @error('demoItems.'.$itemIndex.'.image_upload') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    @php($ocrUpload = data_get($demoItems, $itemIndex.'.image_upload'))
+                                                    @if($ocrUpload && method_exists($ocrUpload, 'temporaryUrl'))
+                                                        <label class="form-label">{{ __('Preview') }}</label>
+                                                        <img src="{{ $ocrUpload->temporaryUrl() }}" alt="ocr preview" class="img-fluid rounded border">
+                                                    @endif
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label">{{ __('Extracted text') }}</label>
+                                                    <textarea class="form-control @error('demoItems.'.$itemIndex.'.extracted_text') is-invalid @enderror" rows="5" wire:model.defer="demoItems.{{ $itemIndex }}.extracted_text"></textarea>
+                                                    @error('demoItems.'.$itemIndex.'.extracted_text') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label">{{ __('Notes (optional)') }}</label>
+                                                    <textarea class="form-control @error('demoItems.'.$itemIndex.'.notes') is-invalid @enderror" rows="2" wire:model.defer="demoItems.{{ $itemIndex }}.notes"></textarea>
+                                                    @error('demoItems.'.$itemIndex.'.notes') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                            @elseif($demoType === 'translation')
+                                                <div class="col-md-4">
+                                                    <label class="form-label">{{ __('Title (optional)') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.title') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.title">
+                                                    @error('demoItems.'.$itemIndex.'.title') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label">{{ __('Source language') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.source_lang') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.source_lang" placeholder="ku">
+                                                    @error('demoItems.'.$itemIndex.'.source_lang') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label">{{ __('Target language') }}</label>
+                                                    <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.target_lang') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.target_lang" placeholder="en">
+                                                    @error('demoItems.'.$itemIndex.'.target_lang') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Source text') }}</label>
+                                                    <textarea class="form-control @error('demoItems.'.$itemIndex.'.source_text') is-invalid @enderror" rows="4" wire:model.defer="demoItems.{{ $itemIndex }}.source_text"></textarea>
+                                                    @error('demoItems.'.$itemIndex.'.source_text') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">{{ __('Target text') }}</label>
+                                                    <textarea class="form-control @error('demoItems.'.$itemIndex.'.target_text') is-invalid @enderror" rows="4" wire:model.defer="demoItems.{{ $itemIndex }}.target_text"></textarea>
+                                                    @error('demoItems.'.$itemIndex.'.target_text') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                            @empty
+                                <div class="col-12">
+                                    <div class="alert alert-light border mb-0">{{ __('No examples configured yet. Click "Add example".') }}</div>
+                                </div>
+                            @endforelse
+                        </div>
+                    @endif
+                </div>
+                <div class="modal-footer">
+                    <span class="text-muted small me-auto">{{ __('Changes are stored when you click "Update Tool Page" in the main modal.') }}</span>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal" wire:click="closeDemoConfigModal">{{ __('Done') }}</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div wire:ignore.self class="modal fade" id="landingToolPageDeleteModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -402,7 +731,7 @@ class extends Component
                     }
 
                     window.__LANDING_TOOLS_MODAL_EVENTS__ = true;
-                    const modalIds = ['landingToolPageModal', 'landingToolPageDeleteModal'];
+                    const modalIds = ['landingToolPageModal', 'landingToolDemoModal', 'landingToolPageDeleteModal'];
 
                     const cleanupModalState = () => {
                         if (typeof bootstrap === 'undefined') {

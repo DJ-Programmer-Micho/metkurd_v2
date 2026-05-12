@@ -19,6 +19,27 @@ class extends Component
 
 @php
     $metaRepository = app(SiteMetaSettingsRepository::class);
+    $assetWithVersion = static function (string $path): string {
+        $trimmed = ltrim(trim($path), '/');
+        $url = asset($trimmed);
+        $fullPath = public_path($trimmed);
+
+        if (! is_file($fullPath)) {
+            return $url;
+        }
+
+        $version = @filemtime($fullPath);
+        if (! is_int($version) || $version <= 0) {
+            return $url;
+        }
+
+        return $url . '?v=' . $version;
+    };
+    $defaultFaviconUrl = $assetWithVersion('favicon.ico');
+    $defaultFaviconSvgUrl = $assetWithVersion('favicon.svg');
+    $defaultAppleTouchIconUrl = $assetWithVersion('apple-touch-icon.png');
+    $effectiveFaviconUrl = $metaRepository->publicUrl($faviconPath) ?: $defaultFaviconUrl;
+    $effectiveAppleTouchIconUrl = $metaRepository->publicUrl($appleTouchIconPath) ?: $defaultAppleTouchIconUrl;
 @endphp
 
 <div class="container-fluid">
@@ -87,11 +108,15 @@ class extends Component
                         <input type="file" class="form-control @error('faviconUpload') is-invalid @enderror" wire:model="faviconUpload" accept=".ico,image/*">
                         <div class="form-text">{{ __('Used for browser tab icon and bookmarks.') }}</div>
                         @error('faviconUpload') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                        <small class="text-muted d-block mt-2">{{ __('Effective URL: :url', ['url' => $effectiveFaviconUrl]) }}</small>
+                        <small class="text-muted d-block">{{ __('SVG fallback: :url', ['url' => $defaultFaviconSvgUrl]) }}</small>
                         @if($faviconPath)
                             <small class="text-muted d-block mt-2">{{ $faviconPath }}</small>
                             @if($metaRepository->publicUrl($faviconPath))
                                 <img src="{{ $metaRepository->publicUrl($faviconPath) }}" alt="favicon" class="img-fluid rounded mt-2" style="max-height:64px;">
                             @endif
+                        @else
+                            <img src="{{ $defaultFaviconUrl }}" alt="default favicon" class="img-fluid rounded mt-2" style="max-height:64px;">
                         @endif
                     </div>
                     <div class="col-md-6">
@@ -99,9 +124,12 @@ class extends Component
                         <input type="file" class="form-control @error('appleTouchIconUpload') is-invalid @enderror" wire:model="appleTouchIconUpload" accept="image/*">
                         <div class="form-text">{{ __('Used when users add your site to iPhone/iPad home screen.') }}</div>
                         @error('appleTouchIconUpload') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                        <small class="text-muted d-block mt-2">{{ __('Effective URL: :url', ['url' => $effectiveAppleTouchIconUrl]) }}</small>
                         @if($appleTouchIconPath && $metaRepository->publicUrl($appleTouchIconPath))
                             <small class="text-muted d-block mt-2">{{ $appleTouchIconPath }}</small>
                             <img src="{{ $metaRepository->publicUrl($appleTouchIconPath) }}" alt="apple icon" class="img-fluid rounded mt-2" style="max-height:72px;">
+                        @else
+                            <img src="{{ $defaultAppleTouchIconUrl }}" alt="default apple icon" class="img-fluid rounded mt-2" style="max-height:72px;">
                         @endif
                     </div>
                     <div class="col-md-6">

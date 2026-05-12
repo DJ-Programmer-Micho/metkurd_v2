@@ -78,6 +78,8 @@ class LandingToolPageCatalog
 
         $locales = ['en', 'ar', 'ku'];
         $created = 0;
+        $hasDemoTypeColumn = Schema::hasColumn('landing_tool_pages', 'demo_type');
+        $hasDemoConfigColumn = Schema::hasColumn('landing_tool_pages', 'demo_config');
 
         foreach ($this->fallbackToolCodes() as $index => $toolCode) {
             $slug = $this->canonicalFallbackSlug($toolCode);
@@ -97,13 +99,23 @@ class LandingToolPageCatalog
                 $content[$locale] = $this->localizedFallbackContent($toolCode, $locale);
             }
 
-            LandingToolPage::query()->create([
+            $payload = [
                 'slug' => $slug,
                 'icon_class' => null,
                 'is_active' => true,
                 'sort_order' => $index,
                 'content' => $content,
-            ]);
+            ];
+
+            if ($hasDemoTypeColumn) {
+                $payload['demo_type'] = $this->defaultDemoTypeForSlug($slug);
+            }
+
+            if ($hasDemoConfigColumn) {
+                $payload['demo_config'] = $this->defaultDemoConfigForSlug($slug);
+            }
+
+            LandingToolPage::query()->create($payload);
 
             $created++;
         }
@@ -119,6 +131,15 @@ class LandingToolPageCatalog
         $content = is_array($page->content) ? $page->content : [];
         $field = fn (string $name, mixed $fallback = '') => $this->localizedField($content, $locale, $name, $fallback);
         $appDownload = $this->localizedAppDownloadFromContent($content, $locale);
+        $hasDemoTypeColumn = Schema::hasColumn('landing_tool_pages', 'demo_type');
+        $hasDemoConfigColumn = Schema::hasColumn('landing_tool_pages', 'demo_config');
+        $shadowDemo = is_array(data_get($content, '_demo')) ? (array) data_get($content, '_demo') : [];
+        $rawDemoType = $hasDemoTypeColumn
+            ? ($page->demo_type ?: data_get($shadowDemo, 'type'))
+            : data_get($shadowDemo, 'type');
+        $rawDemoConfig = $hasDemoConfigColumn
+            ? ((is_array($page->demo_config) && $page->demo_config !== []) ? $page->demo_config : data_get($shadowDemo, 'config', []))
+            : data_get($shadowDemo, 'config', []);
 
         $featureCards = $this->localizedFeatureCardsFromContent($content, $locale, 'bi bi-stars');
         $featureBullets = collect($featureCards)
@@ -126,6 +147,9 @@ class LandingToolPageCatalog
             ->filter()
             ->values()
             ->all();
+
+        $normalizedType = $this->demoSchema()->normalizeType(is_string($rawDemoType) ? $rawDemoType : null, (string) $page->slug);
+        $normalizedConfig = $this->demoSchema()->normalizeConfig($normalizedType, $rawDemoConfig, (string) $page->slug);
 
         return [
             'source' => 'db',
@@ -145,6 +169,8 @@ class LandingToolPageCatalog
             'meta_description' => (string) $field('meta_description', ''),
             'capabilities' => $this->normalizeStringList($field('capabilities', [])),
             'app_download' => $appDownload,
+            'demo_type' => $normalizedType,
+            'demo_config' => $normalizedConfig,
             'square_image_url' => $this->publicAssetUrl($page->square_image_path),
             'hero_image_url' => $this->publicAssetUrl($page->hero_image_path),
             'card_image_url' => $this->publicAssetUrl($page->card_image_path),
@@ -224,6 +250,8 @@ class LandingToolPageCatalog
             'meta_description' => (string) data_get($toolPage, 'meta_description', ''),
             'capabilities' => $this->normalizeStringList((array) data_get($toolCatalog, 'capabilities', [])),
             'app_download' => $appDownload,
+            'demo_type' => $this->defaultDemoTypeForSlug($this->canonicalFallbackSlug($toolCode)),
+            'demo_config' => $this->defaultDemoConfigForSlug($this->canonicalFallbackSlug($toolCode)),
             'square_image_url' => null,
             'hero_image_url' => null,
             'card_image_url' => null,
@@ -416,6 +444,79 @@ class LandingToolPageCatalog
         ));
     }
 
+    protected function normalizedDemoType(?string $demoType, string $slug): ?string
+    {
+        return $this->demoSchema()->normalizeType($demoType, $slug);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function normalizedDemoConfig(mixed $demoConfig, string $slug): array
+    {
+        $type = $this->defaultDemoTypeForSlug($slug);
+        $normalized = $this->demoSchema()->normalizeConfig($type, $demoConfig, $slug);
+
+        if ($normalized !== []) {
+            return $normalized;
+        }
+
+        return $this->defaultDemoConfigForSlug($slug);
+    }
+
+    protected function defaultDemoTypeForSlug(string $slug): string
+    {
+        return (string) ($this->demoSchema()->normalizeType(null, $slug) ?? '');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function defaultDemoConfigForSlug(string $slug): array
+    {
+        $type = $this->defaultDemoTypeForSlug($slug);
+
+        return match ($type) {
+            'tts' => [
+                'type' => 'tts',
+                'version' => 1,
+                'meta' => [],
+                'items' => [],
+            ],
+            'ctts' => [
+                'type' => 'ctts',
+                'version' => 1,
+                'meta' => [],
+                'items' => [],
+            ],
+            'asr' => [
+                'type' => 'asr',
+                'version' => 1,
+                'meta' => [],
+                'items' => [],
+            ],
+            'stem' => [
+                'type' => 'stem',
+                'version' => 1,
+                'meta' => [],
+                'items' => [],
+            ],
+            'ocr' => [
+                'type' => 'ocr',
+                'version' => 1,
+                'meta' => [],
+                'items' => [],
+            ],
+            'translation' => [
+                'type' => 'translation',
+                'version' => 1,
+                'meta' => [],
+                'items' => [],
+            ],
+            default => [],
+        };
+    }
+
     protected function publicAssetUrl(?string $path): ?string
     {
         return $this->mediaStorage()->publicUrl($path);
@@ -424,6 +525,11 @@ class LandingToolPageCatalog
     protected function mediaStorage(): LandingMediaStorage
     {
         return app(LandingMediaStorage::class);
+    }
+
+    protected function demoSchema(): LandingDemoSampleSchema
+    {
+        return app(LandingDemoSampleSchema::class);
     }
 
     /**

@@ -58,6 +58,22 @@
             ? $value
             : url(ltrim($value, '/'));
     };
+    $assetWithVersion = static function (string $path): string {
+        $trimmed = ltrim(trim($path), '/');
+        $url = asset($trimmed);
+        $fullPath = public_path($trimmed);
+
+        if (! is_file($fullPath)) {
+            return $url;
+        }
+
+        $version = @filemtime($fullPath);
+        if (! is_int($version) || $version <= 0) {
+            return $url;
+        }
+
+        return $url . '?v=' . $version;
+    };
 
     $settingsDefaultMetaTitle = $sanitizeMeta($metaSettings->defaultMetaTitle());
     $settingsDefaultMetaDescription = $sanitizeMeta($metaSettings->defaultMetaDescription());
@@ -78,15 +94,18 @@
     $pageKeywords = $sanitizeMeta($keywords) ?: $siteKeywords;
     $canonicalUrl = $absolutePageUrl($canonical) ?: url()->current();
 
-    $fallbackFavicon = app()->bound('logo_1024_tran_black')
-        ? asset(app('logo_1024_tran_black'))
-        : (app()->bound('logo_1024') ? asset(app('logo_1024')) : asset('favicon.ico'));
-    $favicon = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->faviconPath())) ?: $fallbackFavicon;
-    $appleTouchIcon = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appleTouchIconPath())) ?: $favicon;
+    $defaultFaviconIco = $assetWithVersion('favicon.ico');
+    $defaultFaviconSvg = $assetWithVersion('favicon.svg');
+    $defaultAppleTouchIcon = $assetWithVersion('apple-touch-icon.png');
+    $configuredFavicon = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->faviconPath()));
+    $configuredAppleTouchIcon = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appleTouchIconPath()));
+    $favicon = $configuredFavicon ?: $defaultFaviconIco;
+    $faviconSvg = $defaultFaviconSvg;
+    $appleTouchIcon = $configuredAppleTouchIcon ?: $defaultAppleTouchIcon;
     $appIcon192 = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appIcon192Path())) ?: null;
     $appIcon512 = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appIcon512Path())) ?: null;
     $defaultLogo = $appIcon512
-        ?: (app()->bound('logo_1024') ? asset(app('logo_1024')) : $fallbackFavicon);
+        ?: (app()->bound('logo_1024') ? asset(app('logo_1024')) : $defaultFaviconIco);
     $defaultOgImage = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->ogImagePath())) ?: $defaultLogo;
     $defaultTwitterImage = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->twitterImagePath())) ?: $defaultOgImage;
     $pageImage = $absoluteAssetUrl($image) ?: $defaultOgImage;
@@ -212,14 +231,16 @@
     @endif
 
     <link rel="canonical" href="{{ $canonicalUrl }}">
-    <link rel="icon" href="{{ $favicon }}">
+    <link rel="icon" href="{{ $defaultFaviconIco }}" sizes="any">
+    <link rel="shortcut icon" href="{{ $defaultFaviconIco }}">
+    <link rel="icon" type="image/svg+xml" href="{{ $defaultFaviconSvg }}">
     @if($appIcon192)
         <link rel="icon" type="image/png" sizes="192x192" href="{{ $appIcon192 }}">
     @endif
     @if($appIcon512)
         <link rel="icon" type="image/png" sizes="512x512" href="{{ $appIcon512 }}">
     @endif
-    <link rel="apple-touch-icon" href="{{ $appleTouchIcon }}">
+    <link rel="apple-touch-icon" href="{{ $defaultAppleTouchIcon }}">
 
     {{-- Route-aware canonical and hreflang tags help search engines index the right localized page. --}}
     @foreach($alternateUrls as $alternateLocale => $alternateUrl)

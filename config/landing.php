@@ -36,6 +36,7 @@ return [
         'web-setting/',
         'site-meta/',
         'landing/tools/',
+        'landing/demos/',
     ],
 
     /*

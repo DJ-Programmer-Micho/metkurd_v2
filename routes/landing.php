@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\LawController;
+use App\Http\Controllers\Landing\LandingToolVoiceAssetController;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
 
@@ -33,6 +34,12 @@ Route::prefix('{locale}')
         Route::livewire('/home', 'landing::pages.home')->name('landing.home.localized');
         Route::livewire('/tools', 'landing::pages.tools')->name('landing.tools');
         Route::livewire('/tools/{slug}', 'landing::pages.tool-detail')->name('landing.tools.show');
+        Route::get('/tools/demos/voices/{voiceCode}/preview', [LandingToolVoiceAssetController::class, 'preview'])
+            ->where(['voiceCode' => '[A-Za-z0-9_-]+'])
+            ->name('landing.tools.demo.voice.preview');
+        Route::get('/tools/demos/voices/{voiceCode}/avatar', [LandingToolVoiceAssetController::class, 'avatar'])
+            ->where(['voiceCode' => '[A-Za-z0-9_-]+'])
+            ->name('landing.tools.demo.voice.avatar');
         Route::livewire('/pricing', 'landing::pages.pricing')->name('landing.pricing');
         Route::livewire('/contact', 'landing::pages.contact')->name('landing.contact');
         Route::livewire('/metkurd-ai-overview', 'landing::pages.overview')->name('landing.overview');
