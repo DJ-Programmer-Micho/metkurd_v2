@@ -201,18 +201,29 @@ class LandingDemoSampleSchema
     {
         $sourceAudio = $this->normalizeMediaValue(data_get($item, 'source_audio', data_get($item, 'sample_audio', data_get($item, 'source_url'))));
         $clonedAudio = $this->normalizeMediaValue(data_get($item, 'cloned_audio', data_get($item, 'target_audio', data_get($item, 'cloned_url'))));
+        $title = trim((string) data_get($item, 'title', data_get($item, 'label', '')));
+        $sourceLabel = trim((string) data_get($item, 'source_label', data_get($item, 'sample_label', '')));
+        $clonedLabel = trim((string) data_get($item, 'cloned_label', data_get($item, 'target_label', '')));
+        $notes = trim((string) data_get($item, 'notes', data_get($item, 'description', '')));
 
-        if ($sourceAudio === null && $clonedAudio === null) {
+        $hasContent = $sourceAudio !== null
+            || $clonedAudio !== null
+            || $title !== ''
+            || $sourceLabel !== ''
+            || $clonedLabel !== ''
+            || $notes !== '';
+
+        if (! $hasContent) {
             return [];
         }
 
         return array_filter([
-            'title' => trim((string) data_get($item, 'title', '')),
-            'source_label' => trim((string) data_get($item, 'source_label', data_get($item, 'sample_label', ''))),
+            'title' => $title,
+            'source_label' => $sourceLabel,
             'source_audio' => $sourceAudio,
-            'cloned_label' => trim((string) data_get($item, 'cloned_label', data_get($item, 'target_label', ''))),
+            'cloned_label' => $clonedLabel,
             'cloned_audio' => $clonedAudio,
-            'notes' => trim((string) data_get($item, 'notes', '')),
+            'notes' => $notes,
         ], fn ($value) => ! ($value === null || $value === ''));
     }
 
@@ -356,9 +367,19 @@ class LandingDemoSampleSchema
      */
     protected function legacyCttsItems(array $config): array
     {
+        $samples = is_array(data_get($config, 'samples')) ? (array) data_get($config, 'samples') : [];
+        if ($samples !== []) {
+            return $samples;
+        }
+
         $examples = is_array(data_get($config, 'examples')) ? (array) data_get($config, 'examples') : [];
         if ($examples !== []) {
             return $examples;
+        }
+
+        $sample = data_get($config, 'sample');
+        if (is_array($sample) && $sample !== []) {
+            return [$sample];
         }
 
         $source = data_get($config, 'sample_audio', data_get($config, 'source_audio'));
@@ -521,4 +542,3 @@ class LandingDemoSampleSchema
         return $text !== '' ? $text : null;
     }
 }
-

@@ -11,7 +11,7 @@
                 <h3>{{ $item['title'] ?? __('Stem Separation Example') }}</h3>
             </header>
 
-            <div class="demo-stem-board">
+            <div class="demo-stem-board" dir="ltr">
                 <section class="demo-stem-source-wrap">
                     <div class="demo-audio-card demo-stem-source">
                         <div class="demo-audio-card__meta">

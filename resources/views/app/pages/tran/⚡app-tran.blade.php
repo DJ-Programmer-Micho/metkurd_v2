@@ -35,6 +35,7 @@ class extends Component
     public ?string $currentStatus = null;
     public bool $jobFinished = false;
     public bool $showJobStatus = false;
+    public bool $showEliminateModal = false;
     public int $currentProgress = 0;
     public ?string $dismissedJobStatusFor = null;
 
@@ -627,6 +628,78 @@ class extends Component
         }
     }
 
+    public function openEliminateModal(): void
+    {
+        if (!$this->currentJobId || $this->jobFinished) {
+            $this->dispatch('alert', type: 'warning', message: __('There is no active job to eliminate.'));
+            return;
+        }
+
+        $this->showEliminateModal = true;
+    }
+
+    public function closeEliminateModal(): void
+    {
+        $this->showEliminateModal = false;
+    }
+
+    public function eliminateCurrentJob(CustomerOutputStorage $storage): void
+    {
+        $this->showEliminateModal = false;
+
+        if (!$this->currentJobId) {
+            $this->dispatch('alert', type: 'warning', message: __('No current job found.'));
+            return;
+        }
+
+        $customerId = auth('app')->id();
+        $job = MlJob::query()
+            ->where('id', $this->currentJobId)
+            ->where('customer_id', $customerId)
+            ->first();
+
+        if ($job && in_array((string) $job->status, ['queued', 'running', 'saving'], true)) {
+            $job->update([
+                'status' => 'failed',
+                'error' => [
+                    'message' => __('Eliminated by customer. Credits are not refundable.'),
+                    'type' => 'eliminated_by_customer',
+                ],
+                'finished_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $sourcePath = (string) data_get($job->input, 'source_path', '');
+            $sourceBytes = (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'source_bytes', 0));
+
+            try {
+                if ($sourcePath !== '') {
+                    $storage->deleteFromS3AndUncount((int) $customerId, $sourcePath, $sourceBytes);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('TRAN_ELIMINATE_SOURCE_DELETE_FAIL', [
+                    'job_id' => (string) $job->id,
+                    'path' => $sourcePath,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            app(\App\Services\Security\JobExecutionLockService::class)->releaseLock((string) $job->id);
+        }
+
+        $this->currentJobId = null;
+        $this->providerJobId = null;
+        $this->currentStatus = null;
+        $this->jobFinished = true;
+        $this->showJobStatus = false;
+        $this->currentProgress = 0;
+
+        $this->dispatch('header:refresh');
+        $this->dispatch('customerStorageUpdated');
+        $this->dispatch('tran-renders-refresh');
+        $this->dispatch('alert', type: 'warning', message: __('Current job eliminated. Credits were not refunded.'));
+    }
+
     public function copyTranslation(): void
     {
         if (trim($this->translatedText) === '') {
@@ -1037,6 +1110,15 @@ class extends Component
 
                                 <button class="btn btn-outline-secondary" wire:click="resetForm" type="button">{{ __('Reset') }}</button>
 
+                                <button
+                                    class="btn btn-outline-danger"
+                                    wire:click="openEliminateModal"
+                                    type="button"
+                                    @disabled(!$currentJobId || $jobFinished)
+                                >
+                                    {{ __('Eliminate') }}
+                                </button>
+
                                 @if($walletBalance < $creditsCost && $creditsCost > 0)
                                     <span class="small text-danger align-self-center">{{ __('Not enough credits.') }}</span>
                                 @endif
@@ -1111,6 +1193,42 @@ class extends Component
         </div>
     </div>
 </div>
+
+@if($showEliminateModal)
+    <div class="modal fade show" style="display:block;" tabindex="-1" aria-modal="true" role="dialog">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-danger">
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger">{{ __('Eliminate Current Job') }}</h5>
+                    <button type="button" class="btn-close" wire:click="closeEliminateModal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <p class="mb-2">{{ __('Are you sure you want to eliminate the current job?') }}</p>
+
+                    <div class="alert alert-warning mb-0">
+                        <strong>{{ __('Warning:') }}</strong> {{ __('the credit will not be refunded and you will lose the charged credit for this job.') }}
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" wire:click="closeEliminateModal" wire:loading.attr="disabled" wire:target="eliminateCurrentJob">
+                        {{ __('Cancel') }}
+                    </button>
+
+                    <button type="button" class="btn btn-danger" wire:click="eliminateCurrentJob" wire:loading.attr="disabled" wire:target="eliminateCurrentJob">
+                        <span wire:loading.remove wire:target="eliminateCurrentJob">{{ __('Yes, Eliminate') }}</span>
+                        <span wire:loading wire:target="eliminateCurrentJob">
+                            <span class="spinner-border spinner-border-sm me-1"></span>{{ __('Eliminating...') }}
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop fade show"></div>
+@endif
 
 @push('styles')
 <style>

@@ -118,7 +118,7 @@ trait ManagesLandingToolsPage
             return;
         }
 
-        $this->demoItems[] = $this->newDemoItemPayload($type);
+        $this->demoItems[] = $this->ensureDemoBuilderRowKey($this->newDemoItemPayload($type));
     }
 
     public function removeDemoItem(int $index): void
@@ -712,6 +712,8 @@ trait ManagesLandingToolsPage
             $this->demoItems = $this->defaultDemoItemsForType($type);
         }
 
+        $this->demoItems = $this->withDemoBuilderRowKeys($this->demoItems);
+
         $this->demoConfigJson = (string) json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
@@ -765,7 +767,7 @@ trait ManagesLandingToolsPage
         $baseItems = is_array(data_get($base, 'items')) ? array_values((array) data_get($base, 'items')) : [];
 
         foreach (array_values($this->demoItems) as $index => $row) {
-            $item = is_array($row) ? $row : [];
+            $item = $this->stripDemoBuilderInternalKeys(is_array($row) ? $row : []);
             $current = is_array(data_get($baseItems, (string) $index)) ? (array) data_get($baseItems, (string) $index) : [];
             $payload = $this->buildDemoItemPayloadByType(
                 type: $type,
@@ -805,7 +807,7 @@ trait ManagesLandingToolsPage
      */
     protected function defaultDemoItemsForType(string $type): array
     {
-        return match ($type) {
+        $defaults = match ($type) {
             'translation' => [
                 [
                     'title' => 'KU -> EN',
@@ -838,6 +840,8 @@ trait ManagesLandingToolsPage
             ],
             default => $this->newDemoItemPayload($type) !== [] ? [$this->newDemoItemPayload($type)] : [],
         };
+
+        return $this->withDemoBuilderRowKeys($defaults);
     }
 
     /**
@@ -845,7 +849,7 @@ trait ManagesLandingToolsPage
      */
     protected function newDemoItemPayload(string $type): array
     {
-        return match ($type) {
+        $payload = match ($type) {
             'tts' => [
                 'label' => '',
                 'engine' => '',
@@ -903,6 +907,8 @@ trait ManagesLandingToolsPage
             ],
             default => [],
         };
+
+        return $this->ensureDemoBuilderRowKey($payload);
     }
 
     /**
@@ -917,7 +923,7 @@ trait ManagesLandingToolsPage
             return [];
         }
 
-        return match ($type) {
+        $inflated = match ($type) {
             'tts' => array_merge($row, [
                 'label' => trim((string) data_get($item, 'label', '')),
                 'engine' => trim((string) data_get($item, 'engine', '')),
@@ -965,6 +971,66 @@ trait ManagesLandingToolsPage
             ]),
             default => $row,
         };
+
+        return $this->ensureDemoBuilderRowKey(
+            $inflated,
+            trim((string) data_get($item, '__row_key', ''))
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    protected function ensureDemoBuilderRowKey(array $row, string $preferredKey = ''): array
+    {
+        if ($row === []) {
+            return [];
+        }
+
+        $key = trim($preferredKey);
+        if ($key === '') {
+            $key = trim((string) data_get($row, '__row_key', ''));
+        }
+        if ($key === '') {
+            $key = $this->newDemoBuilderRowKey();
+        }
+
+        $row['__row_key'] = $key;
+
+        return $row;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    protected function withDemoBuilderRowKeys(array $rows): array
+    {
+        return array_values(array_map(
+            fn ($row) => $this->ensureDemoBuilderRowKey(is_array($row) ? $row : []),
+            $rows
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    protected function stripDemoBuilderInternalKeys(array $row): array
+    {
+        if ($row === []) {
+            return [];
+        }
+
+        unset($row['__row_key']);
+
+        return $row;
+    }
+
+    protected function newDemoBuilderRowKey(): string
+    {
+        return 'demo-' . Str::lower(Str::random(14));
     }
 
     /**

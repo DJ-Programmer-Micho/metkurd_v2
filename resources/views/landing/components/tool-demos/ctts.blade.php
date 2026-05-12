@@ -6,7 +6,7 @@
 
         <div class="demo-compare-list">
             @forelse($items as $example)
-                <article class="demo-clone-card">
+                <article class="demo-clone-card" dir="ltr">
                     @if(!empty($example['title']))
                         <h4>{{ $example['title'] }}</h4>
                     @endif
@@ -43,7 +43,7 @@
                         </section>
 
                         <div class="demo-clone-arrow" aria-hidden="true">
-                            <span class="demo-clone-arrow-line"></span>
+                            {{-- <span class="demo-clone-arrow-line"></span> --}}
                             <i class="bi bi-arrow-right"></i>
                         </div>
 

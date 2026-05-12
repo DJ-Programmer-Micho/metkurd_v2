@@ -1402,7 +1402,7 @@ a{text-decoration:none}
   min-height:42px;
 }
 .demo-clone-arrow i{
-  font-size:1.1rem;
+  font-size:2.1rem;
   position:relative;
   z-index:2;
   animation:demoCloneArrowPulse 1.4s ease-in-out infinite;

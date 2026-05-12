@@ -465,13 +465,14 @@ class extends Component
 
                             <div class="col-12 d-flex justify-content-between align-items-center">
                                 <h6 class="mb-0">{{ __('Examples') }}</h6>
+                                @php($addExampleLabel = $demoType === 'ctts' ? __('Add clone example') : __('Add example'))
                                 <button type="button" class="btn btn-sm btn-soft-primary" wire:click="addDemoItem">
-                                    <i class="bi bi-plus-circle me-1"></i>{{ __('Add example') }}
+                                    <i class="bi bi-plus-circle me-1"></i>{{ $addExampleLabel }}
                                 </button>
                             </div>
 
                             @forelse($demoItems as $itemIndex => $item)
-                                <div class="col-12" wire:key="landing-demo-item-{{ $itemIndex }}">
+                                <div class="col-12" wire:key="landing-demo-item-{{ data_get($item, '__row_key', $itemIndex) }}">
                                     <div class="border rounded-3 p-3 bg-light-subtle">
                                         <div class="d-flex justify-content-between align-items-center mb-3">
                                             <strong>{{ __('Example #:index', ['index' => $itemIndex + 1]) }}</strong>
