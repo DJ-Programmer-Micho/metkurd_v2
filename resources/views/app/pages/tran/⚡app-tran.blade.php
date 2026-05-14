@@ -840,6 +840,8 @@ class extends Component
         'failed' => 'glass-load--danger',
         default => 'glass-load--secondary',
     };
+    $gpuQueueMessage = __('MetKurd AI GPUs are currently busy. Your job is queued and will start automatically as soon as capacity is available.');
+    $gpuQueueMessageDir = in_array(app()->getLocale(), ['ar', 'ku']) ? 'rtl' : 'ltr';
 @endphp
 
 <div id="tran-page-root">
@@ -862,6 +864,10 @@ class extends Component
                     <div class="progress" role="progressbar" aria-valuenow="{{ $currentProgress }}" aria-valuemin="0" aria-valuemax="100" style="height:8px;">
                         <div class="progress-bar progress-bar-striped {{ !$jobFinished ? 'progress-bar-animated' : '' }} bg-{{ $badge }}" style="width: {{ $currentProgress }}%"></div>
                     </div>
+
+                    @if($currentStatus === 'queued')
+                        <div dir="{{ $gpuQueueMessageDir }}" class="text-danger mt-2" style="font-size: 20px">{{ $gpuQueueMessage }}</div>
+                    @endif
 
                     <div class="d-flex align-items-center justify-content-between mt-2 small">
                         <span class="text-muted">{{ $currentProgress }}%</span>

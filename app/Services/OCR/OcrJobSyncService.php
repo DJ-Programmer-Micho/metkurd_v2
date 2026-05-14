@@ -98,7 +98,7 @@ class OcrJobSyncService
             ]);
 
             return match ($rawStatus) {
-                'IN_QUEUE', 'QUEUED' => $this->markStatus($job, 'queued', 10, 'Job queued.'),
+                'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => $this->markStatus($job, 'queued', 10, 'Job queued.'),
                 'IN_PROGRESS', 'PROCESSING', 'RUNNING' => $this->markStatus($job, 'running', 65, 'Extracting text...'),
                 'COMPLETED', 'SUCCESS' => (data_get($statusPayload, 'output.ok') === false)
                     ? $this->failJob($job, $error !== '' ? $error : 'RunPod OCR job failed.', $statusPayload)

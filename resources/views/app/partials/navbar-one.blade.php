@@ -202,7 +202,7 @@
     </div>
 
     <div class="navbar-brand-box">
-        <div class="position-absolute bottom-0 pb-3" style="min-width: 220px;">
+        <div class="position-absolute bottom-0 pb-3 app-sidebar-account-chip-wrap">
             <livewire:partials.components.header-account-chip />
         </div>
     </div>

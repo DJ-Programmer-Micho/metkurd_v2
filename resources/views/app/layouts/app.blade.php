@@ -145,6 +145,23 @@
             bottom: 0px !important;
         }
 
+        #app-navbar-menu{
+            --app-sidebar-footer-space: calc(70px + 125px);
+            padding-bottom: var(--app-sidebar-footer-space);
+        }
+
+        #app-navbar-menu #scrollbar{
+            padding-bottom: 0;
+        }
+
+        #app-navbar-menu #scrollbar .container-fluid{
+            padding-bottom: var(--app-sidebar-footer-space);
+        }
+
+        #app-navbar-menu .app-sidebar-account-chip-wrap{
+            min-width: 220px;
+        }
+
         .ar-shift{
             direction: rtl;
             text-align: right;
@@ -447,6 +464,28 @@
                 });
             }
 
+            function syncSidebarScrollContainer() {
+                const scrollbar = document.getElementById('scrollbar');
+                const navbarNav = document.getElementById('navbar-nav');
+
+                if (!scrollbar || !navbarNav) {
+                    return;
+                }
+
+                const layout = document.documentElement.getAttribute('data-layout');
+                const isVerticalLayout = layout === 'vertical' || layout === 'semibox';
+
+                if (isVerticalLayout) {
+                    scrollbar.classList.add('h-100');
+                    scrollbar.setAttribute('data-simplebar', '');
+                    navbarNav.setAttribute('data-simplebar', '');
+                } else {
+                    scrollbar.classList.remove('h-100');
+                    scrollbar.removeAttribute('data-simplebar');
+                    navbarNav.removeAttribute('data-simplebar');
+                }
+            }
+
             function syncSidebarTriggerState() {
                 const hamburger = document.getElementById('topnav-hamburger-icon');
                 if (!hamburger) return;
@@ -618,10 +657,12 @@
             function bootLayout(scope = document) {
                 scope = resolveScope(scope);
                 restoreThemeState();
+                syncSidebarScrollContainer();
                 initBootstrapPlugins(scope);
                 initFeather(scope);
                 initWaves(scope);
                 initSimplebar(scope);
+                initSimplebar(document.getElementById('app-navbar-menu') || document);
                 initThemeInteractions();
             }
 

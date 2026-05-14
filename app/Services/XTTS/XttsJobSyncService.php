@@ -55,7 +55,7 @@ class XttsJobSyncService
         $progress = (int) (data_get($out, 'progress', 0) ?: data_get($st, 'output.progress', 0));
 
         $mapped = match ($rawStatus) {
-            'IN_QUEUE', 'QUEUED'                => 'queued',
+            'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 'queued',
             'IN_PROGRESS', 'RUNNING'            => 'running',
             'COMPLETED'                         => ($wavB64 !== '' ? 'saving' : 'running'),
             'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',

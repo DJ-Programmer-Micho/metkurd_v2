@@ -58,7 +58,7 @@ class QasrJobSyncService
         $hasRenderableOutput = $hasAsrOutput || $hasCaptionOutput;
 
         $mapped = match ($rawStatus) {
-            'IN_QUEUE', 'QUEUED' => 'queued',
+            'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 'queued',
             'IN_PROGRESS', 'RUNNING' => 'running',
             'COMPLETED', 'SUCCESS' => ($hasRenderableOutput ? 'saving' : 'failed'),
             'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
@@ -440,7 +440,7 @@ class QasrJobSyncService
         }
 
         return match (strtoupper((string) data_get($statusPayload, 'status', ''))) {
-            'IN_QUEUE', 'QUEUED' => 10,
+            'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 10,
             'IN_PROGRESS', 'RUNNING' => 45,
             'COMPLETED', 'SUCCESS' => 95,
             'FAILED', 'TIMED_OUT' => 100,

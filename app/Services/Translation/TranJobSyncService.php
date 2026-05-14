@@ -47,7 +47,7 @@ class TranJobSyncService
 
         $translatedText = $this->extractTranslatedText($statusPayload);
         $mapped = match ($rawStatus) {
-            'IN_QUEUE', 'QUEUED' => 'queued',
+            'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 'queued',
             'IN_PROGRESS', 'RUNNING' => 'running',
             'COMPLETED', 'SUCCESS' => ($translatedText !== '' ? 'saving' : 'failed'),
             'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
@@ -232,7 +232,7 @@ class TranJobSyncService
         }
 
         return match ($rawStatus) {
-            'IN_QUEUE', 'QUEUED' => 10,
+            'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 10,
             'IN_PROGRESS', 'RUNNING' => 55,
             'COMPLETED', 'SUCCESS' => 95,
             'FAILED', 'TIMED_OUT', 'CANCELLED' => 100,

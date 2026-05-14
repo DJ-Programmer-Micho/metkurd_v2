@@ -1045,6 +1045,8 @@ class extends Component
             'failed' => 'glass-load--danger',
             default => 'glass-load--secondary'
         };
+        $gpuQueueMessage = __('MetKurd AI GPUs are currently busy. Your job is queued and will start automatically as soon as capacity is available.');
+        $gpuQueueMessageDir = in_array(app()->getLocale(), ['ar', 'ku']) ? 'rtl' : 'ltr';
         $stemMaxUploadKb = max(1, (int) config('livewire.stem_max_upload_kb', 102400));
         $stemMaxUploadMb = max(1, (int) ceil($stemMaxUploadKb / 1024));
         $stemMaxUploadBytes = $stemMaxUploadKb * 1024;
@@ -1114,6 +1116,10 @@ class extends Component
                                 {{ $currentProgress }}%
                             </div>
                         </div>
+
+                        @if($status === 'queued')
+                            <div dir="{{ $gpuQueueMessageDir }}" class="text-danger mt-2" style="font-size: 20px">{{ $gpuQueueMessage }}</div>
+                        @endif
                     </div>
                 </div>
             @endif

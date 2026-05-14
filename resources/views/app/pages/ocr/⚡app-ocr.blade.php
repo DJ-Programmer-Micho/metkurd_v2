@@ -1099,6 +1099,8 @@ class extends Component
             'failed' => 'glass-load--danger',
             default => 'glass-load--secondary'
         };
+        $gpuQueueMessage = __('MetKurd AI GPUs are currently busy. Your job is queued and will start automatically as soon as capacity is available.');
+        $gpuQueueMessageDir = in_array(app()->getLocale(), ['ar', 'ku']) ? 'rtl' : 'ltr';
     @endphp
 
     <div class="row">
@@ -1141,6 +1143,10 @@ class extends Component
                                 {{ $currentProgress }}%
                             </div>
                         </div>
+
+                        @if($status === 'queued')
+                            <div dir="{{ $gpuQueueMessageDir }}" class="text-danger mt-2" style="font-size: 20px">{{ $gpuQueueMessage }}</div>
+                        @endif
                     </div>
                 </div>
             @endif
