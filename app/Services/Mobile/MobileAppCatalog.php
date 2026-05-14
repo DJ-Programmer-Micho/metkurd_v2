@@ -45,9 +45,9 @@ class MobileAppCatalog
         ],
         'asr' => [
             'name' => 'METKURD - ASR',
-            'tool_codes' => ['asr', 'wasr', 'qasr'],
-            'job_kinds' => ['asr', 'wasr', 'qasr'],
-            'file_tool_codes' => ['asr', 'wasr', 'qasr'],
+            'tool_codes' => ['asr', 'wasr', 'qasr', 'caption'],
+            'job_kinds' => ['asr', 'wasr', 'qasr', 'caption'],
+            'file_tool_codes' => ['asr', 'wasr', 'qasr', 'caption'],
             'primary_tool_code' => 'wasr',
             'job_submission_enabled' => true,
             'upload' => [

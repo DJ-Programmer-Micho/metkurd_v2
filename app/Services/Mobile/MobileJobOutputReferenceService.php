@@ -137,6 +137,15 @@ class MobileJobOutputReferenceService
                 $this->pushDescriptor($descriptors, data_get($job->output, 'json_path'), 'transcript_json', false),
             ],
             'qasr' => $this->pushDescriptor($descriptors, data_get($job->output, 'path'), 'transcript', true),
+            'caption' => [
+                $this->pushDescriptor($descriptors, data_get($job->output, 'path'), 'transcript', true),
+                $this->pushDescriptor(
+                    $descriptors,
+                    data_get($job->output, 'srt.path') ?: data_get($job->output, 'srt_file.path') ?: data_get($job->output, 'srt_path'),
+                    'srt',
+                    false
+                ),
+            ],
             'stem' => [
                 $this->pushDescriptor($descriptors, data_get($job->output, 'stems.vocals.path'), 'vocals', true),
                 $this->pushDescriptor($descriptors, data_get($job->output, 'stems.instrumental.path'), 'instrumental', false),

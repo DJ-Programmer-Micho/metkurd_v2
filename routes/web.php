@@ -7,6 +7,7 @@ use App\Http\Controllers\App\Services\CloneXttsRenderController;
 use App\Http\Controllers\App\Services\F5ttsRenderController;
 use App\Http\Controllers\App\Services\F5ttsSpeakerAssetController;
 use App\Http\Controllers\App\Services\OcrRenderController;
+use App\Http\Controllers\App\Services\CaptionRenderController;
 use App\Http\Controllers\App\Services\QasrRenderController;
 use App\Http\Controllers\App\Services\StemRenderController;
 use App\Http\Controllers\App\Services\TranRenderController;
@@ -175,6 +176,9 @@ Route::prefix('{locale}')
         Route::livewire('/app/qasr', 'app::pages.qasr.app-qasr')
             ->middleware('app.tool.access:qasr.standard')
             ->name('app.qasr');
+        Route::livewire('/app/caption', 'app::pages.qasr.app-caption')
+            ->middleware('app.tool.access:caption.standard')
+            ->name('app.caption');
         Route::livewire('/app/tran', 'app::pages.tran.app-tran')
             ->middleware('app.tool.access:tran.standard')
             ->name('app.tran');
@@ -270,6 +274,22 @@ Route::prefix('{locale}')
     Route::get('/app/renders/qasr/{jobId}/input-audio', [QasrRenderController::class, 'inputAudio'])
         ->middleware('app.tool.access:qasr.standard')
         ->name('app.renders.qasr.input-audio');
+
+    Route::get('/app/renders/caption/{jobId}/txt', [CaptionRenderController::class, 'downloadTxt'])
+        ->middleware('app.tool.access:caption.standard')
+        ->name('app.renders.caption.txt');
+
+    Route::get('/app/renders/caption/{jobId}/srt', [CaptionRenderController::class, 'downloadSrt'])
+        ->middleware('app.tool.access:caption.standard')
+        ->name('app.renders.caption.srt');
+
+    Route::get('/app/renders/caption/{jobId}/json', [CaptionRenderController::class, 'downloadJson'])
+        ->middleware('app.tool.access:caption.standard')
+        ->name('app.renders.caption.json');
+
+    Route::get('/app/renders/caption/{jobId}/input-audio', [CaptionRenderController::class, 'inputAudio'])
+        ->middleware('app.tool.access:caption.standard')
+        ->name('app.renders.caption.input-audio');
 
     Route::get('/app/renders/tran/{jobId}/source', [TranRenderController::class, 'downloadSource'])
         ->middleware('app.tool.access:tran.standard')

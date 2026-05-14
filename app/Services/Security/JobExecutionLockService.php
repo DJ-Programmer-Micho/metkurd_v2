@@ -103,7 +103,7 @@ class JobExecutionLockService
 
             MlJob::query()
                 ->where('customer_id', $customerId)
-                ->whereIn('job_kind', ['asr', 'wasr', 'qasr'])
+                ->whereIn('job_kind', ['asr', 'wasr', 'qasr', 'caption'])
                 ->whereIn('status', ['queued', 'running', 'saving'])
                 ->whereNotNull('lock_expires_at')
                 ->where('lock_expires_at', '<', $now)
@@ -120,7 +120,7 @@ class JobExecutionLockService
 
             MlJob::query()
                 ->where('customer_id', $customerId)
-                ->whereIn('job_kind', ['asr', 'wasr', 'qasr'])
+                ->whereIn('job_kind', ['asr', 'wasr', 'qasr', 'caption'])
                 ->whereIn('status', ['queued', 'running', 'saving'])
                 ->whereNull('lock_expires_at')
                 ->where('id', '!=', $jobId)
@@ -133,7 +133,7 @@ class JobExecutionLockService
 
             $sameFileConflict = MlJob::query()
                 ->where('customer_id', $customerId)
-                ->whereIn('job_kind', ['asr', 'wasr', 'qasr'])
+                ->whereIn('job_kind', ['asr', 'wasr', 'qasr', 'caption'])
                 ->whereIn('status', ['queued', 'running', 'saving'])
                 ->where('id', '!=', $jobId)
                 ->whereNotNull('lock_expires_at')
@@ -151,7 +151,7 @@ class JobExecutionLockService
 
             $activeCount = MlJob::query()
                 ->where('customer_id', $customerId)
-                ->whereIn('job_kind', ['asr', 'wasr', 'qasr'])
+                ->whereIn('job_kind', ['asr', 'wasr', 'qasr', 'caption'])
                 ->whereIn('status', ['queued', 'running', 'saving'])
                 ->whereNotNull('lock_expires_at')
                 ->where('lock_expires_at', '>', $now)

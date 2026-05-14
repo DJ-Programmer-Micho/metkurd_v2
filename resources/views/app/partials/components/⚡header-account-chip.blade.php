@@ -23,6 +23,7 @@ new class extends Component
     #[On('clone-xtts-renders-refresh')]
     #[On('wasr-renders-refresh')]
     #[On('qasr-renders-refresh')]
+    #[On('caption-renders-refresh')]
     #[On('tran-renders-refresh')]
     #[On('stem-renders-refresh')]
     #[On('ocr-renders-refresh')]

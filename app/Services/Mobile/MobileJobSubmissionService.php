@@ -646,7 +646,7 @@ class MobileJobSubmissionService
 
         $this->assertConcurrencyAvailable(
             $customer,
-            $this->countActiveJobs($customer, jobKinds: ['asr', 'wasr', 'qasr'], liveLocked: true),
+            $this->countActiveJobs($customer, jobKinds: ['asr', 'wasr', 'qasr', 'caption'], liveLocked: true),
             __('You reached your concurrent job limit for the current plan.')
         );
 
@@ -818,17 +818,19 @@ class MobileJobSubmissionService
     {
         $data = $this->normalizedPayload($request, [
             'modelVariant' => 'fine_tuned',
+            'language' => 'ckb',
         ]);
         $data['audioFile'] = $request->file('audioFile');
 
         $validated = Validator::make($data, [
             'audioFile' => self::AUDIO_FILE_RULE,
             'modelVariant' => ['required', 'string', 'in:fine_tuned'],
+            'language' => ['required', 'string', 'in:ckb,ar,en'],
         ])->validate();
 
         $this->assertConcurrencyAvailable(
             $customer,
-            $this->countActiveJobs($customer, jobKinds: ['asr', 'wasr', 'qasr'], liveLocked: true),
+            $this->countActiveJobs($customer, jobKinds: ['asr', 'wasr', 'qasr', 'caption'], liveLocked: true),
             __('You reached your concurrent job limit for the current plan.')
         );
 
@@ -882,6 +884,8 @@ class MobileJobSubmissionService
                     'credits_charged' => $cost,
                     'input' => [
                         'model_variant' => (string) $validated['modelVariant'],
+                        'language' => (string) $validated['language'],
+                        'type' => 'asr',
                         'audio_name' => (string) $audioFile->getClientOriginalName(),
                         'audio_mime' => (string) ($audioFile->getMimeType() ?: 'audio/*'),
                         'audio_bytes' => (int) ($audioFile->getSize() ?? 0),
@@ -948,6 +952,8 @@ class MobileJobSubmissionService
             $response = $this->runpod->run($endpointId, [
                 'audio_url' => $audioUrl,
                 'model_variant' => (string) $validated['modelVariant'],
+                'language' => (string) $validated['language'],
+                'type' => 'asr',
             ], (int) (data_get($tool->meta, 'runpod_timeout') ?: config('runpod.timeout', 60)));
 
             $providerJobId = (string) data_get($response, 'id', '');

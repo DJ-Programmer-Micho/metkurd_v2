@@ -363,7 +363,7 @@ class extends Component
 
         return MlJob::query()
             ->where('customer_id', $customerId)
-            ->whereIn('job_kind', ['asr', 'wasr', 'qasr'])
+            ->whereIn('job_kind', ['asr', 'wasr', 'qasr', 'caption'])
             ->whereIn('status', ['queued', 'running', 'saving'])
             ->whereNotNull('lock_expires_at')
             ->where('lock_expires_at', '>', now())

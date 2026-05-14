@@ -63,7 +63,7 @@ class MobileJobStatusSyncService
         match ($jobKind !== '' ? $jobKind : $toolCode) {
             'tts', 'ftts', 'clone_tts' => $this->xtts->sync($job, $this->resolveTool($tool, $toolCode, ['tts', 'ftts', 'clone_tts'])),
             'wasr', 'asr' => $this->asr->sync($job, $this->resolveTool($tool, $toolCode, ['wasr', 'asr'])),
-            'qasr' => $this->qasr->sync($job, $this->resolveTool($tool, $toolCode, ['qasr'])),
+            'qasr', 'caption' => $this->qasr->sync($job, $this->resolveTool($tool, $toolCode, ['qasr', 'caption'])),
             'stem' => $this->stem->sync($job),
             'ocr' => $this->ocr->sync($job),
             'tran' => $this->tran->sync($job, $this->resolveTool($tool, $toolCode, ['tran'])),

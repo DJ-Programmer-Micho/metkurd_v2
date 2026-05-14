@@ -8,6 +8,7 @@ new class extends Component
     public ?string $id = null;
     public string $icon = '';
     public string $label = '';
+    public ?string $description = null;
     public array|string|null $features = null;
     public array|string|null $toolCodes = null;
     public array|string|null $entitlements = null;
@@ -83,9 +84,16 @@ new class extends Component
             role="button"
             aria-expanded="false"
             aria-controls="{{ $collapseId }}"
+            title="{{ __($label) }}"
+            aria-label="{{ __($label) }}"
         >
             <i class="{{ $icon }}"></i>
-            <span>{{ __($label) }}</span>
+            <span class="nav-link-content">
+                <span class="nav-link-title">{{ __($label) }}</span>
+                @if($description)
+                    <small class="nav-link-description">{{ __($description) }}</small>
+                @endif
+            </span>
 
             @if($badge)
                 <span class="badge badge-pill bg-primary ms-2">{{ __($badge) }}</span>

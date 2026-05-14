@@ -12,8 +12,8 @@
             'items' => [
                 [
                     'route' => 'app.home',
-                    'icon' => 'bx bx-home',
-                    'label' => __('Home'),
+                    'icon' => 'ri-dashboard-line',
+                    'label' => __('Dashboard'),
                     'enabled' => true,
                 ],
             ],
@@ -24,32 +24,49 @@
                 [
                     'route' => 'app.xtts',
                     'icon' => 'ri-volume-up-line',
-                    'label' => __('TTS Apollo'),
+                    'label' => __('Apollo'),
+                    'description' => __('Text-To-Speech'),
                     'enabled' => (bool) ($accessMap['tts'] ?? false),
                 ],
                 [
                     'route' => 'app.f5tts',
                     'icon' => 'ri-volume-up-line',
-                    'label' => __('TTS Delta'),
+                    'label' => __('Delta'),
+                    'description' => __('Text-To-Speech'),
                     'enabled' => (bool) ($accessMap['ftts'] ?? false),
                 ],
                 [
                     'route' => 'app.clone-xtts',
                     'icon' => 'bx bx-user-voice',
-                    'label' => __('CTTS Vector'),
+                    'label' => __('Vector'),
+                    'description' => __('Clone Speech'),
                     'enabled' => (bool) ($accessMap['clone_tts'] ?? false),
                 ],
+            ],
+        ],
+        [
+            'title' => __('Text Tools'),
+            'items' => [
                 [
                     'route' => 'app.wasr',
                     'icon' => 'ri-file-text-line',
-                    'label' => __('WASR NEO'),
+                    'label' => __('NEO'),
+                    'description' => __('Speech-To-Text'),
                     'enabled' => (bool) ($accessMap['asr'] ?? false),
                 ],
                 [
                     'route' => 'app.qasr',
                     'icon' => 'ri-file-text-line',
-                    'label' => __('QASR LEO'),
+                    'label' => __('LEO'),
+                    'description' => __('Speech-To-Text'),
                     'enabled' => (bool) ($accessMap['qasr'] ?? false),
+                ],
+                [
+                    'route' => 'app.caption',
+                    'icon' => 'ri-video-chat-line',
+                    'label' => __('Caption'),
+                    'description' => __('Subtitle .srt'),
+                    'enabled' => (bool) ($accessMap['caption'] ?? false),
                 ],
             ],
         ],
@@ -60,6 +77,7 @@
                     'route' => 'app.stem',
                     'icon' => 'bx bx-music',
                     'label' => __('Stem Separation'),
+                    'description' => __('Song-To-Track'),
                     'enabled' => (bool) ($accessMap['stem'] ?? false),
                 ],
             ],
@@ -70,7 +88,8 @@
                 [
                     'route' => 'app.ocr',
                     'icon' => 'bx bx-aperture',
-                    'label' => __('Optical Character Recognition'),
+                    'label' => __('OCR Scanner'),
+                    'description' => __('PDF/Image-To-Text'),
                     'enabled' => (bool) ($accessMap['ocr'] ?? false),
                 ],
             ],
@@ -82,6 +101,7 @@
                     'route' => 'app.tran',
                     'icon' => 'ri-translate-2',
                     'label' => __('MET Translation'),
+                    'description' => __('Kurdish Translation'),
                     'enabled' => (bool) ($accessMap['tran'] ?? false),
                 ],
             ],
@@ -135,7 +155,7 @@
         </button>
     </div>
 
-    <div id="scrollbar">
+    <div id="scrollbar" class="nav-height">
         <div class="container-fluid">
             <div id="two-column-menu"></div>
 
@@ -161,10 +181,17 @@
                                     class="nav-link menu-link {{ $isActive ? 'active' : '' }}"
                                     href="{{ route($item['route'], ['locale' => app()->getLocale()]) }}"
                                     wire:navigate
+                                    title="{{ $item['label'] }}"
+                                    aria-label="{{ $item['label'] }}"
                                     @if($isActive) aria-current="page" @endif
                                 >
                                     <i class="{{ $item['icon'] }}"></i>
-                                    <span>{{ $item['label'] }}</span>
+                                    <span class="nav-link-content">
+                                        <span class="nav-link-title">{{ $item['label'] }}</span>
+                                        @if(! empty($item['description']))
+                                            <small class="nav-link-description">{{ $item['description'] }}</small>
+                                        @endif
+                                    </span>
                                 </a>
                             </li>
                         @endforeach
