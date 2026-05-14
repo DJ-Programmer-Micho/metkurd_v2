@@ -214,6 +214,15 @@
             opacity: .7;
         }
 
+        #app-navbar-menu .menu-title{
+            letter-spacing: .05em;
+            cursor: default;
+            font-size: 15px !important;
+            text-transform: uppercase;
+            color: #6691e7 !important;
+            font-weight: 500;
+        }
+
         :is([data-layout=vertical],[data-layout=semibox])[data-sidebar-size=sm] #app-navbar-menu .navbar-nav .nav-link.menu-link .nav-link-content,
         :is([data-layout=vertical],[data-layout=semibox])[data-sidebar-size=sm-hover] #app-navbar-menu .navbar-nav .nav-link.menu-link .nav-link-content,
         :is([data-layout=vertical],[data-layout=semibox])[data-sidebar-size=sm-hover-active] #app-navbar-menu .navbar-nav .nav-link.menu-link .nav-link-content{
