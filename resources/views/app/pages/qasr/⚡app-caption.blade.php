@@ -1014,8 +1014,8 @@ class extends Component
                     <div class="card mb-0">
                         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                             <div>
-                                <strong>{{ __('Caption (QWEN AUTOMATIC-SPEECH-RECOGNITION)') }}</strong>
-                                <div class="text-muted small">{{ __('Upload audio and generate transcript + SRT captions with the Qwen worker') }}</div>
+                                <strong>{{ __('Caption (AUTOMATIC-SPEECH-RECOGNITION)') }}</strong>
+                                <div class="text-muted small">{{ __('Upload audio and generate transcript + SRT captions with the MetKurd worker') }}</div>
                             </div>
 
                             <div class="d-flex gap-2 flex-wrap text-end small">
@@ -1100,7 +1100,7 @@ class extends Component
                             <hr>
 
                             <div class="row g-3 align-items-end mb-1">
-                                <div class="col-md-6">
+                                {{-- <div class="col-md-6">
                                     <label class="form-label">{{ __('Model Variant') }}</label>
                                     <select class="form-select" wire:model.change="modelVariant">
                                         @foreach($modelVariantOptions as $code => $label)
@@ -1110,7 +1110,7 @@ class extends Component
                                     @error('modelVariant')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
                                     @enderror
-                                </div>
+                                </div> --}}
 
                                 <div class="col-md-6">
                                     <label class="form-label">{{ __('Language') }}</label>
