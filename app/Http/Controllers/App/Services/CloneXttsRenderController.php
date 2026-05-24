@@ -11,9 +11,13 @@ use Illuminate\Support\Facades\Storage;
 
 class CloneXttsRenderController extends Controller
 {
+    protected string $toolCode = 'clone_tts';
+
+    protected string $streamFailureLog = 'CLONE_XTTS_STREAM_FAIL';
+
     protected function jobOrFail(string $jobId): MlJob
     {
-        $toolId = Tool::query()->where('code', 'clone_tts')->value('id');
+        $toolId = Tool::query()->where('code', $this->toolCode)->value('id');
 
         $job = MlJob::query()
             ->with([
@@ -71,7 +75,7 @@ class CloneXttsRenderController extends Controller
                 'Accept-Ranges' => 'bytes',
             ]);
         } catch (\Throwable $e) {
-            Log::error('CLONE_XTTS_STREAM_FAIL', ['job_id' => $jobId, 'message' => $e->getMessage()]);
+            Log::error($this->streamFailureLog, ['job_id' => $jobId, 'message' => $e->getMessage()]);
             abort(500, 'Audio stream failed.');
         }
     }

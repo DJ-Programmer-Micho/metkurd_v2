@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
 use App\Http\Controllers\App\Services\CloneXttsRenderController;
+use App\Http\Controllers\App\Services\CloneXomniRenderController;
 use App\Http\Controllers\App\Services\F5ttsRenderController;
 use App\Http\Controllers\App\Services\F5ttsSpeakerAssetController;
 use App\Http\Controllers\App\Services\OcrRenderController;
@@ -14,6 +15,8 @@ use App\Http\Controllers\App\Services\TranRenderController;
 use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Controllers\App\Services\XttsSpeakerAssetController;
+use App\Http\Controllers\App\Services\XomniRenderController;
+use App\Http\Controllers\App\Services\XomniSpeakerAssetController;
 use App\Http\Controllers\App\Services\YoutubeRenderController;
 use App\Http\Controllers\Payments\AreebaWebhookController;
 use App\Http\Controllers\Payments\FibCallbackController;
@@ -164,12 +167,18 @@ Route::prefix('{locale}')
         Route::livewire('/app/xtts', 'app::pages.xtts.app-xtts')
             ->middleware('app.tool.access:tts.standard')
             ->name('app.xtts');
+        Route::livewire('/app/xomni', 'app::pages.omni.app-xomni')
+            ->middleware('app.tool.access:xomni.generate')
+            ->name('app.xomni');
         Route::livewire('/app/f5tts', 'app::pages.f5tts.app-f5tts')
             ->middleware('app.tool.access:ftts.standard')
             ->name('app.f5tts');
         Route::livewire('/app/clone-xtts', 'app::pages.clone-xtts.app-clone-xtts')
             ->middleware('app.tool.access:clone_tts.standard')
             ->name('app.clone-xtts');
+        Route::livewire('/app/clone-xomni', 'app::pages.omni.app-clone-xomni')
+            ->middleware('app.tool.access:clone_xomni.generate')
+            ->name('app.clone-xomni');
         Route::livewire('/app/wasr', 'app::pages.wasr.app-wasr')
             ->middleware('app.tool.access:asr.standard')
             ->name('app.wasr');
@@ -219,6 +228,14 @@ Route::prefix('{locale}')
         ->middleware('app.tool.access:tts')
         ->name('app.renders.xtts.download');
 
+    Route::get('/app/renders/xomni/{jobId}/stream', [XomniRenderController::class, 'stream'])
+        ->middleware('app.tool.access:xomni')
+        ->name('app.renders.xomni.stream');
+
+    Route::get('/app/renders/xomni/{jobId}/download', [XomniRenderController::class, 'download'])
+        ->middleware('app.tool.access:xomni')
+        ->name('app.renders.xomni.download');
+
     Route::get('/app/renders/f5tts/{jobId}/stream', [F5ttsRenderController::class, 'stream'])
         ->middleware('app.tool.access:ftts')
         ->name('app.renders.f5tts.stream');
@@ -235,6 +252,14 @@ Route::prefix('{locale}')
         ->middleware('app.tool.access:tts')
         ->name('app.xtts.speaker.avatar');
 
+    Route::get('/app/xomni/speakers/{voiceCode}/preview', [XomniSpeakerAssetController::class, 'preview'])
+        ->middleware('app.tool.access:xomni')
+        ->name('app.xomni.speaker.preview');
+
+    Route::get('/app/xomni/speakers/{voiceCode}/avatar', [XomniSpeakerAssetController::class, 'avatar'])
+        ->middleware('app.tool.access:xomni')
+        ->name('app.xomni.speaker.avatar');
+
     Route::get('/app/f5tts/speakers/{voiceCode}/preview', [F5ttsSpeakerAssetController::class, 'preview'])
         ->middleware('app.tool.access:ftts')
         ->name('app.f5tts.speaker.preview');
@@ -250,6 +275,14 @@ Route::prefix('{locale}')
     Route::get('/app/renders/clone-xtts/{jobId}/download', [CloneXttsRenderController::class, 'Download'])
         ->middleware('app.tool.access:clone_tts')
         ->name('app.renders.clone_xtts.download');
+
+    Route::get('/app/renders/clone-xomni/{jobId}/stream', [CloneXomniRenderController::class, 'stream'])
+        ->middleware('app.tool.access:clone_xomni')
+        ->name('app.renders.clone_xomni.stream');
+
+    Route::get('/app/renders/clone-xomni/{jobId}/download', [CloneXomniRenderController::class, 'download'])
+        ->middleware('app.tool.access:clone_xomni')
+        ->name('app.renders.clone_xomni.download');
 
     Route::get('/app/renders/wasr/{jobId}/txt', [WasrRenderController::class, 'downloadTxt'])
         ->middleware('app.tool.access:asr')

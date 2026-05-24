@@ -43,14 +43,7 @@ class XttsJobSyncService
 
         $rawStatus = strtoupper((string) data_get($st, 'status', ''));
         $out = (array) data_get($st, 'output', []);
-        $wavB64 = (string) (
-            data_get($out, 'wav_b64', '')
-            ?: data_get($out, 'wav_base64', '')
-            ?: data_get($out, 'audio_b64', '')
-            ?: data_get($out, 'audio_base64', '')
-            ?: data_get($st, 'output.wav_b64', '')
-            ?: data_get($st, 'output.audio_b64', '')
-        );
+        $wavB64 = $this->extractAudioBase64($out, $st);
 
         $progress = (int) (data_get($out, 'progress', 0) ?: data_get($st, 'output.progress', 0));
 
@@ -62,7 +55,7 @@ class XttsJobSyncService
             default                             => 'running',
         };
 
-        if ($toolCode === 'clone_tts') {
+        if (in_array($toolCode, ['clone_tts', 'clone_xomni'], true)) {
             $this->locks->refreshLock((string) $job->id);
         }
 
@@ -74,9 +67,15 @@ class XttsJobSyncService
             return $this->failJob($job, $err);
         }
 
-        if ($rawStatus === 'COMPLETED' && $toolCode === 'ftts' && $wavB64 === '') {
+        if (
+            $rawStatus === 'COMPLETED'
+            && in_array($toolCode, ['ftts', 'xomni', 'clone_xomni'], true)
+            && $wavB64 === ''
+        ) {
             return $this->failJob($job, $this->normalizeProviderFailureMessage(
-                'F5TTS completed without output.wav_b64.',
+                $toolCode === 'ftts'
+                    ? 'F5TTS completed without output.wav_b64.'
+                    : 'Omni generation completed without output.audio_base64.',
                 $toolCode
             ));
         }
@@ -108,14 +107,24 @@ class XttsJobSyncService
                 return $this->payload($fresh, 100);
             }
 
+            $providerMime = strtolower(trim((string) data_get($providerOutput, 'mime_type', 'audio/wav')));
+            if (!str_starts_with($providerMime, 'audio/')) {
+                $providerMime = 'audio/wav';
+            }
+
+            $outputFilename = basename(trim((string) data_get($providerOutput, 'output_filename', '')));
+            if ($outputFilename === '' || $outputFilename === '.' || $outputFilename === DIRECTORY_SEPARATOR) {
+                $outputFilename = 'out.wav';
+            }
+
             $subFolder = $this->outputFolderForTool((string) $tool->code);
-            $fileKey = $this->storage->renderBaseDir($fresh, $subFolder).'/out.wav';
+            $fileKey = $this->storage->renderBaseDir($fresh, $subFolder).'/'.$outputFilename;
 
             $saved = $this->storage->saveWavB64ToS3((int) $fresh->customer_id, $fileKey, $wavB64, [
                 'job_id' => (string) $fresh->id,
                 'tool' => (string) $tool->code,
                 'purpose' => 'render',
-                'mime' => 'audio/wav',
+                'mime' => $providerMime,
             ]);
 
             $fresh->status = 'done';
@@ -124,6 +133,10 @@ class XttsJobSyncService
                 'path' => $saved['path'],
                 'bytes' => $saved['bytes'],
                 'mime' => $saved['mime'],
+                'output_filename' => (string) data_get($providerOutput, 'output_filename', ''),
+                'duration' => (float) data_get($providerOutput, 'duration', 0),
+                'provider_success' => (bool) data_get($providerOutput, 'success', true),
+                'provider_mode' => (string) data_get($providerOutput, 'mode', ''),
             ];
 
             if ((string) $tool->code === 'ftts') {
@@ -140,7 +153,7 @@ class XttsJobSyncService
             $fresh->error = null;
             $fresh->save();
 
-            if ((string) $tool->code === 'clone_tts') {
+            if (in_array((string) $tool->code, ['clone_tts', 'clone_xomni'], true)) {
                 $this->locks->releaseLock((string) $fresh->id);
             }
 
@@ -156,12 +169,12 @@ class XttsJobSyncService
             'finished_at' => now(),
         ]);
 
-    if (
-        (string) data_get($job, 'tool.code') === 'clone_tts'
-        || (string) $job->job_kind === 'clone_tts'
-    ) {
-        $this->locks->releaseLock((string) $job->id);
-    }
+        if (
+            in_array((string) data_get($job, 'tool.code'), ['clone_tts', 'clone_xomni'], true)
+            || in_array((string) $job->job_kind, ['clone_tts', 'clone_xomni'], true)
+        ) {
+            $this->locks->releaseLock((string) $job->id);
+        }
 
         $job->refresh();
 
@@ -192,7 +205,7 @@ class XttsJobSyncService
                 $this->storage->deleteFromS3AndUncount($customerId, $outPath, $outBytes);
             }
 
-            if ((string) $job->tool?->code === 'clone_tts') {
+            if (in_array((string) $job->tool?->code, ['clone_tts', 'clone_xomni'], true)) {
                 $refPath  = (string) data_get($job->input, 'reference_audio_path', '');
                 $refBytes = (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'reference_audio_bytes', 0));
 
@@ -243,6 +256,7 @@ class XttsJobSyncService
     {
         return match ($toolCode) {
             'ftts' => (string) (config('runpod.endpoints.ftts') ?: env('RUNPOD_ENDPOINT_ID_FTTS')),
+            'xomni', 'clone_xomni' => (string) (config('runpod.endpoints.omni') ?: env('RUNPOD_ENDPOINT_ID_OMNI')),
             default => (string) (config('runpod.endpoints.xtts') ?: env('RUNPOD_ENDPOINT_ID_XTTS')),
         };
     }
@@ -251,6 +265,8 @@ class XttsJobSyncService
     {
         return match (strtolower(trim($toolCode))) {
             'clone_tts' => 'clone-tts',
+            'xomni' => 'xomni',
+            'clone_xomni' => 'clone_xomni',
             'ftts' => 'ftts',
             default => 'tts',
         };
@@ -295,8 +311,41 @@ class XttsJobSyncService
 
     protected function genericProviderFailureMessage(string $toolCode = ''): string
     {
+        if (in_array($toolCode, ['xomni', 'clone_xomni'], true)) {
+            return 'The Vector 1.5v generation failed. Please try again.';
+        }
+
         return $toolCode === 'ftts'
             ? 'The F5TTS generation failed. Please try again.'
             : 'The audio generation failed. Please try again.';
+    }
+
+    protected function extractAudioBase64(array $out, array $statusPayload = []): string
+    {
+        $b64 = (string) (
+            data_get($out, 'wav_b64', '')
+            ?: data_get($out, 'wav_base64', '')
+            ?: data_get($out, 'audio_b64', '')
+            ?: data_get($out, 'audio_base64', '')
+            ?: data_get($statusPayload, 'output.wav_b64', '')
+            ?: data_get($statusPayload, 'output.wav_base64', '')
+            ?: data_get($statusPayload, 'output.audio_b64', '')
+            ?: data_get($statusPayload, 'output.audio_base64', '')
+        );
+
+        if ($b64 !== '') {
+            return $b64;
+        }
+
+        $dataUrl = (string) (
+            data_get($out, 'audio_data_url', '')
+            ?: data_get($statusPayload, 'output.audio_data_url', '')
+        );
+
+        if ($dataUrl !== '' && preg_match('/^data:audio\/[^;]+;base64,(.+)$/i', $dataUrl, $matches) === 1) {
+            return trim((string) ($matches[1] ?? ''));
+        }
+
+        return '';
     }
 }

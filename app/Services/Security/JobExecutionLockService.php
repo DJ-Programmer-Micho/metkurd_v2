@@ -16,18 +16,21 @@ class JobExecutionLockService
         string $jobId,
         Session|string|null $session,
         ?string $agent = null,
-        ?string $ip = null
+        ?string $ip = null,
+        string $jobKind = 'clone_tts'
     ): array {
-        return DB::transaction(function () use ($customerId, $jobId, $session, $agent, $ip) {
+        return DB::transaction(function () use ($customerId, $jobId, $session, $agent, $ip, $jobKind) {
             $now = now();
             $expiresAt = $now->copy()->addMinutes(30);
+            $jobKind = strtolower(trim($jobKind)) ?: 'clone_tts';
+            $scopeLabel = $jobKind === 'clone_xomni' ? 'Vector 1.5v' : 'Clone XTTS';
 
-            $sessionId = $this->resolveLockOwnerId($session, $customerId, 'clone_tts');
-            $fingerprint = $this->makeFingerprint($customerId, $agent, $ip, 'clone_tts');
+            $sessionId = $this->resolveLockOwnerId($session, $customerId, $jobKind);
+            $fingerprint = $this->makeFingerprint($customerId, $agent, $ip, $jobKind);
 
             MlJob::query()
                 ->where('customer_id', $customerId)
-                ->where('job_kind', 'clone_tts')
+                ->where('job_kind', $jobKind)
                 ->whereIn('status', ['queued', 'running', 'saving'])
                 ->whereNotNull('lock_expires_at')
                 ->where('lock_expires_at', '<', $now)
@@ -41,7 +44,7 @@ class JobExecutionLockService
 
             $conflict = MlJob::query()
                 ->where('customer_id', $customerId)
-                ->where('job_kind', 'clone_tts')
+                ->where('job_kind', $jobKind)
                 ->whereIn('status', ['queued', 'running', 'saving'])
                 ->whereNotNull('lock_expires_at')
                 ->where('lock_expires_at', '>', $now)
@@ -54,7 +57,7 @@ class JobExecutionLockService
             if ($conflict) {
                 return [
                     'ok' => false,
-                    'message' => 'Clone XTTS is already running on another browser or machine.',
+                    'message' => "{$scopeLabel} is already running on another browser or machine.",
                     'conflict_job_id' => (string) $conflict->id,
                 ];
             }
@@ -63,7 +66,7 @@ class JobExecutionLockService
                 ->where('id', $jobId)
                 ->where('customer_id', $customerId)
                 ->update([
-                    'job_kind' => 'clone_tts',
+                    'job_kind' => $jobKind,
                     'execution_scope' => 'device',
                     'locked_by_session_id' => $sessionId,
                     'locked_by_fingerprint' => $fingerprint,

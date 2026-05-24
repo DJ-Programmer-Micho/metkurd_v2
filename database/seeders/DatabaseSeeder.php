@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
             BillingCurrencyBootstrapSeeder::class,
             PaymentMethodSeeder::class,
             DevDefaultSeeder::class,
+            OmniToolSeeder::class,
         ]);
     }
 }

@@ -12,6 +12,7 @@ new class extends Component
     public ?string $feature = null;
     public array|string|null $toolCodes = null;
     public array|string|null $entitlements = null;
+    public array|string|null $activeRoutes = null;
     public string $mode = 'any';
     public ?string $badge = null;
 };
@@ -66,6 +67,13 @@ new class extends Component
     }
 
     $url = $route ? route($route, ['locale' => app()->getLocale()]) : 'javascript:void(0)';
+    $currentRouteName = request()->route()?->getName();
+    $activeChecks = collect($normalize($activeRoutes))
+        ->merge($route ? [$route] : [])
+        ->unique()
+        ->values()
+        ->all();
+    $isActive = $currentRouteName !== null && in_array($currentRouteName, $activeChecks, true);
 @endphp
 
 <li
@@ -80,11 +88,12 @@ new class extends Component
 >
     @if($enabled)
         <a
-            class="nav-link menu-link"
+            class="nav-link menu-link {{ $isActive ? 'active' : '' }}"
             href="{{ $url }}"
             wire:navigate.hover
             title="{{ __($label) }}"
             aria-label="{{ __($label) }}"
+            @if($isActive) aria-current="page" @endif
         >
             <i class="{{ $icon }}"></i>
             <span class="nav-link-content">

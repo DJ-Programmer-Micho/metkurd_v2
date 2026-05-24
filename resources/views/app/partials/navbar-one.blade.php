@@ -22,11 +22,28 @@
             'title' => __('Speech Tools'),
             'items' => [
                 [
-                    'route' => 'app.xtts',
+                    'type' => 'multi',
+                    'id' => 'sidebarApollo',
                     'icon' => 'ri-volume-up-line',
                     'label' => __('Apollo'),
                     'description' => __('Text-To-Speech'),
-                    'enabled' => (bool) ($accessMap['tts'] ?? false),
+                    'tool_codes' => ['tts', 'xomni'],
+                    'active_routes' => ['app.xtts', 'app.xomni'],
+                    'enabled' => (bool) (($accessMap['tts'] ?? false) || ($accessMap['xomni'] ?? false)),
+                    'children' => [
+                        [
+                            'route' => 'app.xtts',
+                            'label' => __('Apollo Classic'),
+                            'description' => __('Text-To-Speech'),
+                            'enabled' => (bool) ($accessMap['tts'] ?? false),
+                        ],
+                        [
+                            'route' => 'app.xomni',
+                            'label' => __('Apollo 1.5v'),
+                            'description' => __('OmniVoice TTS'),
+                            'enabled' => (bool) ($accessMap['xomni'] ?? false),
+                        ],
+                    ],
                 ],
                 [
                     'route' => 'app.f5tts',
@@ -36,11 +53,28 @@
                     'enabled' => (bool) ($accessMap['ftts'] ?? false),
                 ],
                 [
-                    'route' => 'app.clone-xtts',
+                    'type' => 'multi',
+                    'id' => 'sidebarVector',
                     'icon' => 'bx bx-user-voice',
                     'label' => __('Vector'),
                     'description' => __('Clone Speech'),
-                    'enabled' => (bool) ($accessMap['clone_tts'] ?? false),
+                    'tool_codes' => ['clone_tts', 'clone_xomni'],
+                    'active_routes' => ['app.clone-xtts', 'app.clone-xomni'],
+                    'enabled' => (bool) (($accessMap['clone_tts'] ?? false) || ($accessMap['clone_xomni'] ?? false)),
+                    'children' => [
+                        [
+                            'route' => 'app.clone-xtts',
+                            'label' => __('Vector Classic'),
+                            'description' => __('Clone Speech'),
+                            'enabled' => (bool) ($accessMap['clone_tts'] ?? false),
+                        ],
+                        [
+                            'route' => 'app.clone-xomni',
+                            'label' => __('Vector 1.5v'),
+                            'description' => __('OmniVoice Clone'),
+                            'enabled' => (bool) ($accessMap['clone_xomni'] ?? false),
+                        ],
+                    ],
                 ],
             ],
         ],
@@ -173,27 +207,67 @@
                         @endif
 
                         @foreach($items as $item)
-                            @php
-                                $isActive = $currentRouteName === $item['route'];
-                            @endphp
-                            <li class="nav-item">
-                                <a
-                                    class="nav-link menu-link {{ $isActive ? 'active' : '' }}"
-                                    href="{{ route($item['route'], ['locale' => app()->getLocale()]) }}"
-                                    wire:navigate
-                                    title="{{ $item['label'] }}"
-                                    aria-label="{{ $item['label'] }}"
-                                    @if($isActive) aria-current="page" @endif
-                                >
-                                    <i class="{{ $item['icon'] }}"></i>
-                                    <span class="nav-link-content">
-                                        <span class="nav-link-title">{{ $item['label'] }}</span>
-                                        @if(! empty($item['description']))
-                                            <small class="nav-link-description">{{ $item['description'] }}</small>
-                                        @endif
-                                    </span>
-                                </a>
-                            </li>
+                            @if(($item['type'] ?? 'single') === 'multi')
+                                @php
+                                    $children = array_values(array_filter($item['children'] ?? [], fn (array $child) => (bool) ($child['enabled'] ?? false)));
+                                @endphp
+
+                                @if($children !== [])
+                                    <livewire:partials.components.nav-multi-feature-link
+                                        :id="$item['id'] ?? null"
+                                        :icon="$item['icon']"
+                                        :label="$item['label']"
+                                        :description="$item['description'] ?? null"
+                                        :tool-codes="$item['tool_codes'] ?? null"
+                                        :active-routes="$item['active_routes'] ?? []"
+                                    >
+                                        @foreach($children as $child)
+                                            @php
+                                                $isChildActive = $currentRouteName === $child['route'];
+                                            @endphp
+                                            <li class="nav-item">
+                                                <a
+                                                    class="nav-link menu-link nav-child-link {{ $isChildActive ? 'active' : '' }}"
+                                                    href="{{ route($child['route'], ['locale' => app()->getLocale()]) }}"
+                                                    wire:navigate.hover
+                                                    title="{{ $child['label'] }}"
+                                                    aria-label="{{ $child['label'] }}"
+                                                    @if($isChildActive) aria-current="page" @endif
+                                                >
+                                                    <span class="nav-link-content nav-child-content">
+                                                        <span class="nav-link-title nav-child-title">{{ $child['label'] }}</span>
+                                                        @if(! empty($child['description']))
+                                                            <small class="nav-link-description nav-child-description">{{ $child['description'] }}</small>
+                                                        @endif
+                                                    </span>
+                                                </a>
+                                            </li>
+                                        @endforeach
+                                    </livewire:partials.components.nav-multi-feature-link>
+                                @endif
+                            @else
+                                @php
+                                    $isActive = $currentRouteName === $item['route'];
+                                @endphp
+                                <li class="nav-item">
+                                    <a
+                                        class="nav-link menu-link {{ $isActive ? 'active' : '' }}"
+                                        href="{{ route($item['route'], ['locale' => app()->getLocale()]) }}"
+                                        wire:navigate
+                                        title="{{ $item['label'] }}"
+                                        aria-label="{{ $item['label'] }}"
+                                        @if($isActive) aria-current="page" @endif
+                                    >
+                                        <i class="{{ $item['icon'] }}"></i>
+                                        <span class="nav-link-content">
+                                            <span class="nav-link-title">{{ $item['label'] }}</span>
+                                            @if(! empty($item['description']))
+                                                <small class="nav-link-description">{{ $item['description'] }}</small>
+                                            @endif
+                                        </span>
+                                    </a>
+                                </li>
+                            @endif
                         @endforeach
                     @endif
                 @endforeach

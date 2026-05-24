@@ -12,6 +12,7 @@ new class extends Component
     public array|string|null $features = null;
     public array|string|null $toolCodes = null;
     public array|string|null $entitlements = null;
+    public array|string|null $activeRoutes = null;
     public string $mode = 'any'; // any|all
     public ?string $badge = null;
     public string $tooltip = 'Subscribe to unlock this feature';
@@ -64,6 +65,9 @@ new class extends Component
     }
 
     $collapseId = $id ?: ('sidebarMenu_' . (\Illuminate\Support\Str::slug($label) ?: 'menu'));
+    $currentRouteName = request()->route()?->getName();
+    $activeChecks = collect($normalize($activeRoutes))->unique()->values()->all();
+    $isActive = $currentRouteName !== null && in_array($currentRouteName, $activeChecks, true);
 @endphp
 
 <li
@@ -78,11 +82,11 @@ new class extends Component
 >
     @if($enabled)
         <a
-            class="nav-link menu-link"
+            class="nav-link menu-link {{ $isActive ? 'active' : '' }}"
             href="#{{ $collapseId }}"
             data-bs-toggle="collapse"
             role="button"
-            aria-expanded="false"
+            aria-expanded="{{ $isActive ? 'true' : 'false' }}"
             aria-controls="{{ $collapseId }}"
             title="{{ __($label) }}"
             aria-label="{{ __($label) }}"
@@ -100,8 +104,8 @@ new class extends Component
             @endif
         </a>
 
-        <div class="collapse menu-dropdown" id="{{ $collapseId }}">
-            <ul class="nav nav-sm flex-column">
+        <div class="collapse menu-dropdown nav-multi-feature-dropdown {{ $isActive ? 'show' : '' }}" id="{{ $collapseId }}">
+            <ul class="nav nav-sm flex-column nav-multi-feature-child-list">
                 {{ $slot }}
             </ul>
         </div>
