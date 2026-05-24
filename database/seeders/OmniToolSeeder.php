@@ -223,16 +223,29 @@ class OmniToolSeeder extends Seeder
     protected function seedOmniVoices(): void
     {
         $groupDefinitions = $this->omniVoiceGroupDefinitions();
-        $previewRelativeSet = $this->omniPreviewRelativeSet();
+        $previewAudioRelativeSet = $this->omniFinalPreviewAudioRelativeSet();
+        $previewImageRelativeSet = $this->omniFinalPreviewImageRelativeSet();
 
         $voiceRows = [];
 
         foreach ($groupDefinitions as $groupKey => $definition) {
             $voiceRows = array_merge(
                 $voiceRows,
-                $this->buildOmniVoiceRowsForGroup($groupKey, $definition, $previewRelativeSet)
+                $this->buildOmniVoiceRowsForGroup(
+                    $groupKey,
+                    $definition,
+                    $previewAudioRelativeSet,
+                    $previewImageRelativeSet
+                )
             );
         }
+
+        $expectedRefAudios = collect($voiceRows)
+            ->map(fn (array $row): string => trim((string) data_get($row, 'meta.ref_audio', '')))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
 
         $voices = [];
 
@@ -248,6 +261,8 @@ class OmniToolSeeder extends Seeder
                 ]
             );
         }
+
+        $this->deactivateStaleOmniVoices($expectedRefAudios);
 
         $plans = ServicePlan::query()
             ->select('id')
@@ -269,6 +284,57 @@ class OmniToolSeeder extends Seeder
                     ]
                 );
             }
+        }
+    }
+
+    /**
+     * @param  array<int,string>  $expectedRefAudios
+     */
+    protected function deactivateStaleOmniVoices(array $expectedRefAudios): void
+    {
+        $expectedLookup = [];
+
+        foreach ($expectedRefAudios as $refAudio) {
+            $normalized = trim((string) $refAudio);
+
+            if ($normalized !== '') {
+                $expectedLookup[$normalized] = true;
+            }
+        }
+
+        $staleVoiceIds = [];
+
+        Voice::query()
+            ->where('meta->engine', 'xomni')
+            ->get(['id', 'is_active', 'is_public', 'meta'])
+            ->each(function (Voice $voice) use ($expectedLookup, &$staleVoiceIds): void {
+                $meta = (array) ($voice->meta ?? []);
+                $refAudio = trim((string) data_get($meta, 'ref_audio', data_get($meta, 'runpod_ref_audio', '')));
+
+                if ($refAudio !== '' && isset($expectedLookup[$refAudio])) {
+                    return;
+                }
+
+                $meta['preview_available'] = false;
+                $meta['deprecated'] = true;
+                $meta['deprecated_reason'] = 'not_in_final_omni_catalog';
+
+                $voice->forceFill([
+                    'is_active' => false,
+                    'is_public' => false,
+                    'meta' => $meta,
+                ])->save();
+
+                $staleVoiceIds[] = (int) $voice->id;
+            });
+
+        if ($staleVoiceIds !== []) {
+            PlanVoiceAccess::query()
+                ->whereIn('voice_id', $staleVoiceIds)
+                ->update([
+                    'is_active' => false,
+                    'is_public' => false,
+                ]);
         }
     }
 
@@ -300,7 +366,7 @@ class OmniToolSeeder extends Seeder
                     'hyder_male_proud_1.wav',
                     'hyder_male_proud_2.wav',
                     'hyder_male_sad_1.wav',
-                    'hyder_male_sarcasim_1.wav',
+                    'hyder_male_sarcasm_1.wav',
                     'hyder_male_serious_1.wav',
                     'hyder_male_surprise_1.wav',
                     'hyder_male_surprise_2.wav',
@@ -326,7 +392,7 @@ class OmniToolSeeder extends Seeder
                     'shabo_male_fear_1.wav',
                     'shabo_male_fear_2.wav',
                     'shabo_male_happy_1.wav',
-                    'shabo_male_nutral_1.wav',
+                    'shabo_male_neutral_1.wav',
                     'shabo_male_playful_1.wav',
                     'shabo_male_proud_1.wav',
                     'shabo_male_sad_1.wav',
@@ -353,8 +419,8 @@ class OmniToolSeeder extends Seeder
                     'marcel_male_fear_2.wav',
                     'marcel_male_happy_1.wav',
                     'marcel_male_happy_2.wav',
-                    'marcel_male_nutral_1.wav',
-                    'marcel_male_nutral_2.wav',
+                    'marcel_male_neutral_1.wav',
+                    'marcel_male_neutral_2.wav',
                     'marcel_male_playful_1.wav',
                     'marcel_male_proud_1.wav',
                     'marcel_male_sad_1.wav',
@@ -402,7 +468,7 @@ class OmniToolSeeder extends Seeder
                     'liza_female_angry_1.wav',
                     'liza_female_calm_1.wav',
                     'liza_female_cry_1.wav',
-                    'liza_female_excited _1.wav',
+                    'liza_female_excited_1.wav',
                     'liza_female_fear_1.wav',
                     'liza_female_fear_2.wav',
                     'liza_female_happy_1.wav',
@@ -458,7 +524,6 @@ class OmniToolSeeder extends Seeder
                     'female_mad_01.wav',
                     'female_sad_01.wav',
                     'female_whisper_01.wav',
-                    'female whisper_01.wav',
                     'male_angry_01.wav',
                     'male_cry_01.wav',
                     'male_guiding_01.wav',
@@ -479,36 +544,147 @@ class OmniToolSeeder extends Seeder
     /**
      * @return array<string, bool>
      */
-    protected function omniPreviewRelativeSet(): array
+    protected function omniFinalPreviewAudioRelativeSet(): array
     {
         $set = [];
-        $groups = $this->omniVoiceGroupDefinitions();
 
-        foreach (['male_1', 'male_2', 'male_3', 'female_1', 'female_2', 'female_3'] as $group) {
-            foreach ((array) data_get($groups, $group . '.files', []) as $filename) {
-                $set[$group . '/' . trim((string) $filename)] = true;
+        foreach ($this->omniVoiceGroupDefinitions() as $groupKey => $definition) {
+            foreach ((array) data_get($definition, 'files', []) as $filename) {
+                $path = trim($groupKey . '/' . trim((string) $filename), '/');
+
+                if ($path !== '') {
+                    $set[$path] = true;
+                }
             }
         }
 
+        return $set;
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    protected function omniFinalPreviewImageRelativeSet(): array
+    {
+        $set = [];
+
         foreach ([
-            'female whisper_01.wav',
-            'female_advertiser_01.wav',
-            'female_angry_01.wav',
-            'female_mad_01.wav',
-            'female_sad_01.wav',
-            'male_cry_01.wav',
-            'male_guiding_01.wav',
-            'male_happy_01.waw.wav',
-            'male_pointing_01.wav',
-            'male_sarcasim_01.wav',
-            'male_sarcasim_02.wav',
-            'male_seriuos_01.wav',
-            'male_suspect_01.wav',
-            'male_whisper_01.wav',
-            'male_whisper_02.wav',
-            'male_whisper_03.wav',
-        ] as $customPreviewFile) {
-            $set['custom/' . $customPreviewFile] = true;
+            'custom/female_advertiser_01.jpg',
+            'custom/female_angry_01.jpg',
+            'custom/female_mad_01.jpg',
+            'custom/female_sad_01.jpg',
+            'custom/female_whisper_01.jpg',
+            'custom/male_angry_01.jpg',
+            'custom/male_cry_01.jpg',
+            'custom/male_guiding_01.jpg',
+            'custom/male_happy_01.jpg',
+            'custom/male_pointing_01.jpg',
+            'custom/male_sarcasim_01.jpg',
+            'custom/male_sarcasim_02.jpg',
+            'custom/male_seriuos_01.jpg',
+            'custom/male_suspect_01.jpg',
+            'custom/male_whisper_01.jpg',
+            'custom/male_whisper_02.jpg',
+            'custom/male_whisper_03.jpg',
+            'female_1/patty_female_angry.jpg',
+            'female_1/patty_female_calm.jpg',
+            'female_1/patty_female_confidence.jpg',
+            'female_1/patty_female_cry.jpg',
+            'female_1/patty_female_excited.jpg',
+            'female_1/patty_female_fear.jpg',
+            'female_1/patty_female_happy.jpg',
+            'female_1/patty_female_playful.jpg',
+            'female_1/patty_female_proud.jpg',
+            'female_1/patty_female_sad.jpg',
+            'female_1/patty_female_sarcasm.jpg',
+            'female_1/patty_female_serious.jpg',
+            'female_1/patty_female_surprise.jpg',
+            'female_1/patty_female_tired.jpg',
+            'female_1/patty_female_whisper.jpg',
+            'female_2/liza_female_angry.jpg',
+            'female_2/liza_female_calm.jpg',
+            'female_2/liza_female_confident.jpg',
+            'female_2/liza_female_cry.jpg',
+            'female_2/liza_female_excited.jpg',
+            'female_2/liza_female_fear.jpg',
+            'female_2/liza_female_happy.jpg',
+            'female_2/liza_female_neutral.jpg',
+            'female_2/liza_female_playful.jpg',
+            'female_2/liza_female_proud.jpg',
+            'female_2/liza_female_sad.jpg',
+            'female_2/liza_female_sarcasm.jpg',
+            'female_2/liza_female_seriuos.jpg',
+            'female_2/liza_female_surprise.jpg',
+            'female_2/liza_female_tired.jpg',
+            'female_2/liza_female_whisper.jpg',
+            'female_3/bebe_female_angry.jpg',
+            'female_3/bebe_female_calm.jpg',
+            'female_3/bebe_female_confident.jpg',
+            'female_3/bebe_female_crazy.jpg',
+            'female_3/bebe_female_cry.jpg',
+            'female_3/bebe_female_excited.jpg',
+            'female_3/bebe_female_fear.jpg',
+            'female_3/bebe_female_happy.jpg',
+            'female_3/bebe_female_proud.jpg',
+            'female_3/bebe_female_sad.jpg',
+            'female_3/bebe_female_sarcasm.jpg',
+            'female_3/bebe_female_serious.jpg',
+            'female_3/bebe_female_surprise.jpg',
+            'female_3/bebe_female_tired.jpg',
+            'female_3/bebe_female_whisper.jpg',
+            'male_1/hyder_male_angry.jpg',
+            'male_1/hyder_male_confident.jpg',
+            'male_1/hyder_male_cry.jpg',
+            'male_1/hyder_male_excited.jpg',
+            'male_1/hyder_male_fear.jpg',
+            'male_1/hyder_male_happy.jpg',
+            'male_1/hyder_male_nuetral.jpg',
+            'male_1/hyder_male_playful.jpg',
+            'male_1/hyder_male_proud.jpg',
+            'male_1/hyder_male_sad.jpg',
+            'male_1/hyder_male_sarcasm.jpg',
+            'male_1/hyder_male_serious.jpg',
+            'male_1/hyder_male_surprise.jpg',
+            'male_1/hyder_male_tired.jpg',
+            'male_1/hyder_male_whisper.jpg',
+            'male_2/shabo_male_angry.jpg',
+            'male_2/shabo_male_calm.jpg',
+            'male_2/shabo_male_confident.jpg',
+            'male_2/shabo_male_cry.jpg',
+            'male_2/shabo_male_excited.jpg',
+            'male_2/shabo_male_fear.jpg',
+            'male_2/shabo_male_happy.jpg',
+            'male_2/shabo_male_neutral.jpg',
+            'male_2/shabo_male_playful.jpg',
+            'male_2/shabo_male_proud.jpg',
+            'male_2/shabo_male_sad.jpg',
+            'male_2/shabo_male_sarcasm.jpg',
+            'male_2/shabo_male_seriuos.jpg',
+            'male_2/shabo_male_surprise.jpg',
+            'male_2/shabo_male_tired.jpg',
+            'male_2/shabo_male_whisper.jpg',
+            'male_3/marcel_male_angry.jpg',
+            'male_3/marcel_male_calm.jpg',
+            'male_3/marcel_male_confident.jpg',
+            'male_3/marcel_male_cry.jpg',
+            'male_3/marcel_male_excited.jpg',
+            'male_3/marcel_male_fear.jpg',
+            'male_3/marcel_male_happy.jpg',
+            'male_3/marcel_male_neutral.jpg',
+            'male_3/marcel_male_playful.jpg',
+            'male_3/marcel_male_proud.jpg',
+            'male_3/marcel_male_sad.jpg',
+            'male_3/marcel_male_sarcasim.jpg',
+            'male_3/marcel_male_serious.jpg',
+            'male_3/marcel_male_surprise.jpg',
+            'male_3/marcel_male_tired.jpg',
+            'male_3/marcel_male_whisper.jpg',
+        ] as $relativePath) {
+            $path = trim((string) $relativePath);
+
+            if ($path !== '') {
+                $set[$path] = true;
+            }
         }
 
         return $set;
@@ -516,10 +692,16 @@ class OmniToolSeeder extends Seeder
 
     /**
      * @param  array{label:string,gender:string,source_name:string,sort_base:int,files:array<int,string>}  $definition
-     * @param  array<string,bool>  $previewRelativeSet
+     * @param  array<string,bool>  $previewAudioRelativeSet
+     * @param  array<string,bool>  $previewImageRelativeSet
      * @return array<int, array<string,mixed>>
      */
-    protected function buildOmniVoiceRowsForGroup(string $groupKey, array $definition, array $previewRelativeSet): array
+    protected function buildOmniVoiceRowsForGroup(
+        string $groupKey,
+        array $definition,
+        array $previewAudioRelativeSet,
+        array $previewImageRelativeSet
+    ): array
     {
         $rows = [];
         $label = (string) ($definition['label'] ?? Str::headline(str_replace('_', ' ', $groupKey)));
@@ -537,10 +719,11 @@ class OmniToolSeeder extends Seeder
             }
 
             $runpodRefAudio = $groupKey . '/' . $filename;
-            $hasPreview = (bool) ($previewRelativeSet[$runpodRefAudio] ?? false);
+            $hasPreview = (bool) ($previewAudioRelativeSet[$runpodRefAudio] ?? false);
             $previewAudioPath = $hasPreview
                 ? 'metkurd_audio_data/omni/' . $runpodRefAudio
                 : null;
+            $avatarPath = $this->resolveOmniAvatarPath($runpodRefAudio, $previewImageRelativeSet);
             $variant = $this->resolveOmniVariantFromFilename($filename);
             $style = $this->resolveOmniStyleFromFilename($filename);
             $displayName = $this->buildOmniDisplayName($groupKey, $label, $filename, $style, $variant);
@@ -577,17 +760,58 @@ class OmniToolSeeder extends Seeder
                     'style' => $style,
                     'variant' => $variant,
                     'display_name' => $displayName,
+                    'ref_audio' => $runpodRefAudio,
+                    'runpod_ref_audio' => $runpodRefAudio,
                     'preview_audio' => $previewAudioPath,
                     'preview_audio_path' => $previewAudioPath,
-                    'preview_image_path' => null,
-                    'avatar' => null,
-                    'runpod_ref_audio' => $runpodRefAudio,
+                    'preview_image_path' => $avatarPath,
+                    'avatar' => $avatarPath,
+                    'avatar_path' => $avatarPath,
                     'preview_available' => $hasPreview,
                 ],
             ];
         }
 
         return $rows;
+    }
+
+    /**
+     * @param  array<string,bool>  $previewImageRelativeSet
+     */
+    protected function resolveOmniAvatarPath(string $runpodRefAudio, array $previewImageRelativeSet): ?string
+    {
+        $relative = trim(str_replace('\\', '/', $runpodRefAudio), '/');
+
+        if ($relative === '') {
+            return null;
+        }
+
+        $directory = trim(str_replace('\\', '/', dirname($relative)), '/.');
+        $stem = (string) pathinfo($relative, PATHINFO_FILENAME);
+
+        if ($directory === '' || $stem === '') {
+            return null;
+        }
+
+        $candidates = [$directory . '/' . $stem . '.jpg'];
+
+        if (preg_match('/^(.*)_\d+$/u', $stem, $matches) === 1) {
+            $baseStem = trim((string) ($matches[1] ?? ''));
+
+            if ($baseStem !== '') {
+                $candidates[] = $directory . '/' . $baseStem . '.jpg';
+            }
+        }
+
+        foreach (array_unique($candidates) as $candidate) {
+            $normalized = trim(str_replace('\\', '/', (string) $candidate), '/');
+
+            if ($normalized !== '' && isset($previewImageRelativeSet[$normalized])) {
+                return 'metkurd_audio_data/omni/' . $normalized;
+            }
+        }
+
+        return null;
     }
 
     protected function resolveOmniStyleFromFilename(string $filename): string

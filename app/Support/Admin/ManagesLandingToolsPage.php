@@ -230,6 +230,46 @@ trait ManagesLandingToolsPage
             ->all();
     }
 
+    /**
+     * @return array<string, string>
+     */
+    #[Computed]
+    public function demoGroupOptions(): array
+    {
+        $type = $this->resolvedDemoType();
+        if (! in_array($type, ['tts', 'ctts'], true)) {
+            return [];
+        }
+
+        $options = [];
+        $normalized = $this->demoSchema()->normalizeConfig($type, $this->decodedDemoConfigFromJson(), $this->slug);
+        $groups = is_array(data_get($normalized, 'groups')) ? (array) data_get($normalized, 'groups') : [];
+
+        foreach ($groups as $group) {
+            $key = $this->normalizeDemoGroupKey((string) data_get($group, 'key', ''));
+            $label = trim((string) data_get($group, 'label', ''));
+
+            if ($key !== '' && $label !== '') {
+                $options[$key] = $label;
+            }
+        }
+
+        if ($options !== []) {
+            return $options;
+        }
+
+        foreach ($this->defaultDemoGroupsByType($type) as $group) {
+            $key = $this->normalizeDemoGroupKey((string) data_get($group, 'key', ''));
+            $label = trim((string) data_get($group, 'label', ''));
+
+            if ($key !== '' && $label !== '') {
+                $options[$key] = $label;
+            }
+        }
+
+        return $options;
+    }
+
     public function importDefaultTools(): void
     {
         $count = $this->toolCatalog()->importFallbackDefaults();
@@ -379,6 +419,7 @@ trait ManagesLandingToolsPage
             'demoMeta.sample_text' => ['nullable', 'string', 'max:12000'],
             'demoItems' => ['nullable', 'array', 'max:40'],
             'demoItems.*.label' => ['nullable', 'string', 'max:180'],
+            'demoItems.*.group_key' => ['nullable', 'string', 'max:120'],
             'demoItems.*.engine' => ['nullable', 'string', 'max:80'],
             'demoItems.*.voice_id' => ['nullable', 'string', 'max:120'],
             'demoItems.*.audio_url' => ['nullable', 'string', 'max:2048'],
@@ -703,6 +744,39 @@ trait ManagesLandingToolsPage
         ];
 
         $items = is_array(data_get($normalized, 'items')) ? (array) data_get($normalized, 'items') : [];
+        $groups = is_array(data_get($normalized, 'groups')) ? (array) data_get($normalized, 'groups') : [];
+
+        if (in_array($type, ['tts', 'ctts'], true) && $groups !== []) {
+            $flattened = [];
+
+            foreach ($groups as $group) {
+                $groupRow = is_array($group) ? $group : [];
+                $groupKey = $this->normalizeDemoGroupKey((string) data_get($groupRow, 'key', ''));
+                $groupEngine = $this->normalizeDemoEngineForType($type, (string) data_get($groupRow, 'engine', ''));
+                $samples = is_array(data_get($groupRow, 'samples'))
+                    ? (array) data_get($groupRow, 'samples')
+                    : (is_array(data_get($groupRow, 'items')) ? (array) data_get($groupRow, 'items') : []);
+
+                foreach ($samples as $sample) {
+                    $sampleRow = is_array($sample) ? $sample : [];
+
+                    if ($groupKey !== '' && trim((string) data_get($sampleRow, 'group_key', '')) === '') {
+                        $sampleRow['group_key'] = $groupKey;
+                    }
+
+                    if ($groupEngine !== '' && trim((string) data_get($sampleRow, 'engine', '')) === '') {
+                        $sampleRow['engine'] = $groupEngine;
+                    }
+
+                    $flattened[] = $sampleRow;
+                }
+            }
+
+            if ($flattened !== []) {
+                $items = $flattened;
+            }
+        }
+
         $this->demoItems = array_values(array_map(
             fn ($item) => $this->inflateBuilderItemPayload($type, is_array($item) ? $item : []),
             $items
@@ -765,6 +839,17 @@ trait ManagesLandingToolsPage
 
         $items = [];
         $baseItems = is_array(data_get($base, 'items')) ? array_values((array) data_get($base, 'items')) : [];
+        $baseGroups = is_array(data_get($base, 'groups')) ? array_values((array) data_get($base, 'groups')) : [];
+        $groupedSamples = [];
+        $resolvedGroups = $this->resolvedDemoGroupsForBuilder($type, $baseGroups);
+
+        foreach ($resolvedGroups as $group) {
+            $groupKey = $this->normalizeDemoGroupKey((string) data_get($group, 'key', ''));
+            if ($groupKey === '') {
+                continue;
+            }
+            $groupedSamples[$groupKey] = [];
+        }
 
         foreach (array_values($this->demoItems) as $index => $row) {
             $item = $this->stripDemoBuilderInternalKeys(is_array($row) ? $row : []);
@@ -779,6 +864,22 @@ trait ManagesLandingToolsPage
 
             if ($payload !== []) {
                 $items[] = $payload;
+
+                if (in_array($type, ['tts', 'ctts'], true)) {
+                    $groupKey = $this->normalizeDemoGroupKey((string) data_get($payload, 'group_key', ''));
+
+                    if ($groupKey === '') {
+                        $groupKey = $this->inferDemoGroupKeyFromItem($type, $payload);
+                    }
+
+                    if ($groupKey !== '') {
+                        if (! array_key_exists($groupKey, $groupedSamples)) {
+                            $groupedSamples[$groupKey] = [];
+                        }
+
+                        $groupedSamples[$groupKey][] = $payload;
+                    }
+                }
             }
         }
 
@@ -787,9 +888,255 @@ trait ManagesLandingToolsPage
             'version' => 1,
             'meta' => $meta,
             'items' => $items,
+            'groups' => [],
         ];
 
+        if (in_array($type, ['tts', 'ctts'], true) && $resolvedGroups !== []) {
+            $groups = [];
+
+            foreach ($resolvedGroups as $group) {
+                $groupRow = is_array($group) ? $group : [];
+                $groupKey = $this->normalizeDemoGroupKey((string) data_get($groupRow, 'key', ''));
+
+                if ($groupKey === '') {
+                    continue;
+                }
+
+                $samples = array_values((array) ($groupedSamples[$groupKey] ?? []));
+                $groupRow['samples'] = $samples;
+                $groupRow['items'] = $samples;
+                $groups[] = $groupRow;
+            }
+
+            foreach ($groupedSamples as $groupKey => $samples) {
+                if ($samples === [] || collect($groups)->contains(fn (array $row): bool => $this->normalizeDemoGroupKey((string) data_get($row, 'key', '')) === $groupKey)) {
+                    continue;
+                }
+
+                $blueprint = $this->demoGroupBlueprintByKey($type, $groupKey);
+
+                $groups[] = array_filter([
+                    'key' => $groupKey,
+                    'label' => (string) data_get($blueprint, 'label', Str::headline(str_replace('_', ' ', $groupKey))),
+                    'engine' => (string) data_get($blueprint, 'engine', $this->normalizeDemoEngineForType($type, (string) data_get($samples[0] ?? [], 'engine', ''))),
+                    'description' => (string) data_get($blueprint, 'description', ''),
+                    'limit' => (int) data_get($blueprint, 'limit', in_array($type, ['tts'], true) ? 6 : 2),
+                    'random' => (bool) data_get($blueprint, 'random', $type === 'tts'),
+                    'samples' => $samples,
+                    'items' => $samples,
+                ], fn ($value) => ! ($value === null || $value === ''));
+            }
+
+            $envelope['groups'] = $groups;
+        }
+
         return $this->demoSchema()->normalizeConfig($type, $envelope, $slug);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $groups
+     * @return array<int, array<string, mixed>>
+     */
+    protected function resolvedDemoGroupsForBuilder(string $type, array $groups): array
+    {
+        if (! in_array($type, ['tts', 'ctts'], true)) {
+            return [];
+        }
+
+        $defaults = collect($this->defaultDemoGroupsByType($type))
+            ->keyBy(fn (array $group): string => $this->normalizeDemoGroupKey((string) data_get($group, 'key', '')));
+        $resolved = [];
+
+        foreach ($groups as $index => $group) {
+            $row = is_array($group) ? $group : [];
+            $key = $this->normalizeDemoGroupKey((string) data_get($row, 'key', ''));
+            $engine = $this->normalizeDemoEngineForType($type, (string) data_get($row, 'engine', ''));
+
+            if ($key === '' && $engine !== '') {
+                $key = $this->inferDemoGroupKeyFromItem($type, ['engine' => $engine]);
+            }
+            if ($key === '') {
+                $key = $type . '_group_' . ($index + 1);
+            }
+
+            /** @var array<string, mixed> $base */
+            $base = (array) ($defaults->get($key, []) ?: []);
+            if ($base === [] && $engine !== '') {
+                $base = (array) ($defaults->first(fn (array $item): bool => $this->normalizeDemoEngineForType($type, (string) data_get($item, 'engine', '')) === $engine) ?? []);
+            }
+
+            $resolved[] = array_filter([
+                'key' => $key,
+                'label' => trim((string) data_get($row, 'label', (string) data_get($base, 'label', Str::headline(str_replace('_', ' ', $key))))),
+                'engine' => $engine !== '' ? $engine : $this->normalizeDemoEngineForType($type, (string) data_get($base, 'engine', '')),
+                'description' => trim((string) data_get($row, 'description', (string) data_get($base, 'description', ''))),
+                'limit' => (int) data_get($row, 'limit', data_get($base, 'limit', $type === 'tts' ? 6 : 2)),
+                'random' => $this->toBool(data_get($row, 'random', data_get($base, 'random', $type === 'tts'))),
+                'samples' => [],
+                'items' => [],
+            ], fn ($value) => ! ($value === null || $value === ''));
+        }
+
+        if ($resolved !== []) {
+            return $resolved;
+        }
+
+        return $this->defaultDemoGroupsByType($type);
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    protected function inferDemoGroupKeyFromItem(string $type, array $item): string
+    {
+        $groupKey = $this->normalizeDemoGroupKey((string) data_get($item, 'group_key', ''));
+        if ($groupKey !== '') {
+            return $groupKey;
+        }
+
+        $engine = $this->normalizeDemoEngineForType($type, (string) data_get($item, 'engine', ''));
+
+        if ($type === 'tts') {
+            return match ($engine) {
+                'xtts' => 'apollo_1_0v',
+                'ftts' => 'delta',
+                'xomni' => 'apollo_1_5v',
+                default => '',
+            };
+        }
+
+        if ($type === 'ctts') {
+            return match ($engine) {
+                'clone_xtts' => 'vector_1_0v',
+                'clone_xomni' => 'vector_1_5v',
+                default => '',
+            };
+        }
+
+        return '';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function demoGroupBlueprintByKey(string $type, string $groupKey): array
+    {
+        $normalizedKey = $this->normalizeDemoGroupKey($groupKey);
+
+        foreach ($this->defaultDemoGroupsByType($type) as $group) {
+            if ($this->normalizeDemoGroupKey((string) data_get($group, 'key', '')) === $normalizedKey) {
+                return $group;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    protected function defaultDemoGroupsByType(string $type): array
+    {
+        return match ($type) {
+            'tts' => [
+                [
+                    'key' => 'apollo_1_0v',
+                    'label' => __('Apollo 1.0v'),
+                    'engine' => 'xtts',
+                    'description' => __('Classic Kurdish TTS voices'),
+                    'limit' => 6,
+                    'random' => true,
+                    'samples' => [],
+                    'items' => [],
+                ],
+                [
+                    'key' => 'delta',
+                    'label' => __('Delta'),
+                    'engine' => 'ftts',
+                    'description' => __('Fast expressive TTS voices'),
+                    'limit' => 6,
+                    'random' => true,
+                    'samples' => [],
+                    'items' => [],
+                ],
+                [
+                    'key' => 'apollo_1_5v',
+                    'label' => __('Apollo 1.5v'),
+                    'engine' => 'xomni',
+                    'description' => __('OmniVoice multilingual TTS'),
+                    'limit' => 6,
+                    'random' => true,
+                    'samples' => [],
+                    'items' => [],
+                ],
+            ],
+            'ctts' => [
+                [
+                    'key' => 'vector_1_0v',
+                    'label' => __('Vector 1.0v'),
+                    'engine' => 'clone_xtts',
+                    'description' => __('Classic voice cloning'),
+                    'limit' => 2,
+                    'random' => false,
+                    'samples' => [],
+                    'items' => [],
+                ],
+                [
+                    'key' => 'vector_1_5v',
+                    'label' => __('Vector 1.5v'),
+                    'engine' => 'clone_xomni',
+                    'description' => __('OmniVoice voice cloning'),
+                    'limit' => 2,
+                    'random' => false,
+                    'samples' => [],
+                    'items' => [],
+                ],
+            ],
+            default => [],
+        };
+    }
+
+    protected function normalizeDemoGroupKey(string $value): string
+    {
+        return Str::of($value)
+            ->lower()
+            ->replaceMatches('/[^a-z0-9_]+/', '_')
+            ->replaceMatches('/_+/', '_')
+            ->trim('_')
+            ->value();
+    }
+
+    protected function normalizeDemoEngineForType(string $type, string $engine): string
+    {
+        $value = Str::of($engine)
+            ->lower()
+            ->replace(['\\', '/', '.'], ['_', '_', '_'])
+            ->replace('-', '_')
+            ->trim()
+            ->value();
+
+        if ($value === '') {
+            return '';
+        }
+
+        if ($type === 'tts') {
+            return match ($value) {
+                'apollo', 'apollo_classic', 'apollo_1_0v', 'tts', 'xtts' => 'xtts',
+                'delta', 'ftts', 'f5tts' => 'ftts',
+                'xomni', 'apollo_1_5v', 'omni', 'omnivoice' => 'xomni',
+                default => $value,
+            };
+        }
+
+        if ($type === 'ctts') {
+            return match ($value) {
+                'clone_tts', 'clone_xtts', 'vector', 'vector_classic', 'vector_1_0v', 'ctts' => 'clone_xtts',
+                'clone_xomni', 'vector_1_5v', 'xomni', 'omni', 'omnivoice' => 'clone_xomni',
+                default => $value,
+            };
+        }
+
+        return $value;
     }
 
     protected function normalizeDemoTypeFromState(): void
@@ -852,6 +1199,7 @@ trait ManagesLandingToolsPage
         $payload = match ($type) {
             'tts' => [
                 'label' => '',
+                'group_key' => '',
                 'engine' => '',
                 'voice_id' => '',
                 'audio_url' => '',
@@ -860,6 +1208,8 @@ trait ManagesLandingToolsPage
             ],
             'ctts' => [
                 'title' => '',
+                'group_key' => '',
+                'engine' => '',
                 'source_label' => '',
                 'source_audio_url' => '',
                 'source_audio_upload' => null,
@@ -926,6 +1276,7 @@ trait ManagesLandingToolsPage
         $inflated = match ($type) {
             'tts' => array_merge($row, [
                 'label' => trim((string) data_get($item, 'label', '')),
+                'group_key' => $this->normalizeDemoGroupKey((string) data_get($item, 'group_key', '')),
                 'engine' => trim((string) data_get($item, 'engine', '')),
                 'voice_id' => trim((string) data_get($item, 'voice_id', '')),
                 'audio_url' => trim((string) data_get($item, 'audio', '')),
@@ -933,6 +1284,8 @@ trait ManagesLandingToolsPage
             ]),
             'ctts' => array_merge($row, [
                 'title' => trim((string) data_get($item, 'title', '')),
+                'group_key' => $this->normalizeDemoGroupKey((string) data_get($item, 'group_key', '')),
+                'engine' => trim((string) data_get($item, 'engine', '')),
                 'source_label' => trim((string) data_get($item, 'source_label', '')),
                 'source_audio_url' => trim((string) data_get($item, 'source_audio', '')),
                 'cloned_label' => trim((string) data_get($item, 'cloned_label', '')),
@@ -1068,7 +1421,8 @@ trait ManagesLandingToolsPage
 
         $payload = [
             'label' => trim((string) data_get($row, 'label', '')),
-            'engine' => Str::lower(trim((string) data_get($row, 'engine', ''))),
+            'group_key' => $this->normalizeDemoGroupKey((string) data_get($row, 'group_key', '')),
+            'engine' => $this->normalizeDemoEngineForType('tts', (string) data_get($row, 'engine', '')),
             'voice_id' => trim((string) data_get($row, 'voice_id', '')),
             'audio' => $audio,
             'description' => trim((string) data_get($row, 'description', '')),
@@ -1107,6 +1461,8 @@ trait ManagesLandingToolsPage
 
         $payload = [
             'title' => trim((string) data_get($row, 'title', '')),
+            'group_key' => $this->normalizeDemoGroupKey((string) data_get($row, 'group_key', '')),
+            'engine' => $this->normalizeDemoEngineForType('ctts', (string) data_get($row, 'engine', '')),
             'source_label' => trim((string) data_get($row, 'source_label', '')),
             'source_audio' => $source,
             'cloned_label' => trim((string) data_get($row, 'cloned_label', '')),
@@ -1639,6 +1995,23 @@ trait ManagesLandingToolsPage
             $item['sort_order'] = $index;
             return $item;
         }, $normalized, array_keys($normalized)));
+    }
+
+    protected function toBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return ((int) $value) === 1;
+        }
+
+        if (is_string($value)) {
+            return in_array(Str::lower(trim($value)), ['1', 'true', 'yes', 'on'], true);
+        }
+
+        return false;
     }
 
     protected function newFeatureItem(int $sortOrder = 0): array

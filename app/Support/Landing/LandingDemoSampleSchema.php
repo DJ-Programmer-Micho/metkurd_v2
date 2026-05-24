@@ -39,7 +39,7 @@ class LandingDemoSampleSchema
 
         $mapped = match ($normalized) {
             'tts', 'tts-dual' => 'tts',
-            'ctts', 'clone-tts', 'ctts-vector' => 'ctts',
+            'ctts', 'clone-tts', 'clone-xomni', 'ctts-vector' => 'ctts',
             'asr', 'asr-dual', 'wasr', 'qasr' => 'asr',
             'stem', 'stem-split' => 'stem',
             'ocr', 'ocr-flow' => 'ocr',
@@ -59,7 +59,7 @@ class LandingDemoSampleSchema
 
         return match ($slugNormalized) {
             'tts' => 'tts',
-            'ctts', 'clone-tts', 'clone-xtts' => 'ctts',
+            'ctts', 'clone-tts', 'clone-xtts', 'clone-xomni' => 'ctts',
             'asr', 'wasr', 'qasr' => 'asr',
             'stem' => 'stem',
             'ocr' => 'ocr',
@@ -98,11 +98,22 @@ class LandingDemoSampleSchema
             fn ($item) => is_array($item) && $item !== []
         ));
 
+        $groups = is_array(data_get($config, 'groups')) ? (array) data_get($config, 'groups') : [];
+        $normalizedGroups = [];
+
+        foreach ($groups as $index => $group) {
+            $normalized = $this->normalizeGroup($envelopeType, is_array($group) ? $group : [], (int) $index);
+            if ($normalized !== []) {
+                $normalizedGroups[] = $normalized;
+            }
+        }
+
         return [
             'type' => $envelopeType,
             'version' => 1,
             'meta' => $meta,
             'items' => $normalizedItems,
+            'groups' => $normalizedGroups,
         ];
     }
 
@@ -165,6 +176,54 @@ class LandingDemoSampleSchema
     }
 
     /**
+     * @param  array<string, mixed>  $group
+     * @return array<string, mixed>
+     */
+    protected function normalizeGroup(string $type, array $group, int $index): array
+    {
+        if ($group === []) {
+            return [];
+        }
+
+        $key = $this->normalizeGroupKey((string) data_get($group, 'key', ''));
+        $label = trim((string) data_get($group, 'label', ''));
+        $description = trim((string) data_get($group, 'description', ''));
+        $engine = $this->normalizeEngineForType($type, (string) data_get($group, 'engine', ''));
+        $limit = (int) data_get($group, 'limit', 0);
+        $random = $this->normalizeBoolean(data_get($group, 'random'));
+        $sampleRows = is_array(data_get($group, 'samples'))
+            ? (array) data_get($group, 'samples')
+            : (is_array(data_get($group, 'items')) ? (array) data_get($group, 'items') : []);
+
+        $samples = array_values(array_filter(
+            array_map(fn ($item) => $this->normalizeItem($type, $item), $sampleRows),
+            fn ($item) => is_array($item) && $item !== []
+        ));
+
+        $fallbackKey = 'group_' . ($index + 1);
+        if ($key === '' && $engine !== '') {
+            $key = Str::of($engine)->replace(['.', '/', '\\', ' '], '_')->trim('_')->value();
+        }
+        if ($key === '') {
+            $key = $fallbackKey;
+        }
+
+        if ($label === '') {
+            $label = Str::headline(str_replace('_', ' ', $key));
+        }
+
+        return array_filter([
+            'key' => $key,
+            'label' => $label,
+            'engine' => $engine,
+            'description' => $description,
+            'limit' => $limit > 0 ? $limit : 0,
+            'random' => $random,
+            'samples' => $samples,
+        ], fn ($value) => ! ($value === null || $value === '' || $value === []));
+    }
+
+    /**
      * @param  array<string, mixed>  $item
      * @return array<string, mixed>
      */
@@ -172,7 +231,8 @@ class LandingDemoSampleSchema
     {
         $audio = $this->normalizeMediaValue(data_get($item, 'audio', data_get($item, 'audio_url')));
         $label = trim((string) data_get($item, 'label', data_get($item, 'name', '')));
-        $engine = trim((string) data_get($item, 'engine', ''));
+        $engine = $this->normalizeEngineForType('tts', (string) data_get($item, 'engine', ''));
+        $groupKey = $this->normalizeGroupKey((string) data_get($item, 'group_key', ''));
         $voiceId = trim((string) data_get($item, 'voice_id', data_get($item, 'voice_code', '')));
         $description = trim((string) data_get($item, 'description', ''));
 
@@ -187,6 +247,7 @@ class LandingDemoSampleSchema
         return array_filter([
             'label' => $label !== '' ? $label : __('Voice Sample'),
             'engine' => $engine,
+            'group_key' => $groupKey,
             'voice_id' => $voiceId,
             'audio' => $audio,
             'description' => $description,
@@ -202,6 +263,8 @@ class LandingDemoSampleSchema
         $sourceAudio = $this->normalizeMediaValue(data_get($item, 'source_audio', data_get($item, 'sample_audio', data_get($item, 'source_url'))));
         $clonedAudio = $this->normalizeMediaValue(data_get($item, 'cloned_audio', data_get($item, 'target_audio', data_get($item, 'cloned_url'))));
         $title = trim((string) data_get($item, 'title', data_get($item, 'label', '')));
+        $engine = $this->normalizeEngineForType('ctts', (string) data_get($item, 'engine', ''));
+        $groupKey = $this->normalizeGroupKey((string) data_get($item, 'group_key', ''));
         $sourceLabel = trim((string) data_get($item, 'source_label', data_get($item, 'sample_label', '')));
         $clonedLabel = trim((string) data_get($item, 'cloned_label', data_get($item, 'target_label', '')));
         $notes = trim((string) data_get($item, 'notes', data_get($item, 'description', '')));
@@ -209,6 +272,8 @@ class LandingDemoSampleSchema
         $hasContent = $sourceAudio !== null
             || $clonedAudio !== null
             || $title !== ''
+            || $engine !== ''
+            || $groupKey !== ''
             || $sourceLabel !== ''
             || $clonedLabel !== ''
             || $notes !== '';
@@ -219,6 +284,8 @@ class LandingDemoSampleSchema
 
         return array_filter([
             'title' => $title,
+            'engine' => $engine,
+            'group_key' => $groupKey,
             'source_label' => $sourceLabel,
             'source_audio' => $sourceAudio,
             'cloned_label' => $clonedLabel,
@@ -529,10 +596,71 @@ class LandingDemoSampleSchema
         $code = Str::lower(trim($voiceCode));
 
         return match (true) {
-            str_contains($code, 'apollo'), str_contains($code, 'xtts') => 'apollo',
-            str_contains($code, 'delta'), str_contains($code, 'ftts') => 'delta',
+            str_contains($code, 'xomni') => 'xomni',
+            str_contains($code, 'delta'), str_contains($code, 'ftts') => 'ftts',
+            str_contains($code, 'apollo'), str_contains($code, 'xtts') => 'xtts',
             default => '',
         };
+    }
+
+    protected function normalizeGroupKey(string $key): string
+    {
+        return Str::of($key)
+            ->lower()
+            ->replaceMatches('/[^a-z0-9_]+/', '_')
+            ->replaceMatches('/_+/', '_')
+            ->trim('_')
+            ->value();
+    }
+
+    protected function normalizeEngineForType(string $type, string $engine): string
+    {
+        $value = Str::of($engine)
+            ->lower()
+            ->replace(['\\', '/', '.'], ['_', '_', '_'])
+            ->replace('-', '_')
+            ->trim()
+            ->value();
+
+        if ($value === '') {
+            return '';
+        }
+
+        if ($type === 'tts') {
+            return match ($value) {
+                'apollo', 'xtts', 'apollo_1_0v', 'apollo_classic', 'tts' => 'xtts',
+                'delta', 'ftts', 'f5tts' => 'ftts',
+                'xomni', 'apollo_1_5v', 'omni', 'omnivoice' => 'xomni',
+                default => $value,
+            };
+        }
+
+        if ($type === 'ctts') {
+            return match ($value) {
+                'vector', 'vector_classic', 'vector_1_0v', 'clone_tts', 'clone_xtts', 'ctts' => 'clone_xtts',
+                'vector_1_5v', 'clone_xomni', 'xomni', 'omni', 'omnivoice' => 'clone_xomni',
+                default => $value,
+            };
+        }
+
+        return $value;
+    }
+
+    protected function normalizeBoolean(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return ((int) $value) === 1;
+        }
+
+        if (is_string($value)) {
+            return in_array(Str::lower(trim($value)), ['1', 'true', 'yes', 'on'], true);
+        }
+
+        return false;
     }
 
     protected function normalizeMediaValue(mixed $value): ?string

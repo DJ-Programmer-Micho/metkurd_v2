@@ -211,7 +211,7 @@ class extends Component
                                     class="form-control @error('demoConfigJson') is-invalid @enderror"
                                     rows="4"
                                     wire:model.defer="demoConfigJson"
-                                    placeholder='{"type":"tts","version":1,"meta":{"sample_text":"..."},"items":[{"label":"Apollo Female","engine":"apollo","voice_id":"apollo_female_1","audio":"https://..."}]}'
+                                    placeholder='{"type":"tts","version":1,"meta":{"sample_text":"..."},"groups":[{"key":"apollo_1_0v","label":"Apollo 1.0v","engine":"xtts","limit":6,"random":true,"samples":[]}],"items":[{"group_key":"apollo_1_0v","label":"Apollo Female","engine":"xtts","voice_id":"apollo_female_1","audio":"https://..."}]}'
                                     style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;"
                                 ></textarea>
                                 <div class="form-text">{{ __('Optional advanced override. Builder updates this automatically.') }}</div>
@@ -483,19 +483,28 @@ class extends Component
 
                                         <div class="row g-3">
                                             @if($demoType === 'tts')
-                                                <div class="col-md-6">
+                                                <div class="col-md-4">
+                                                    <label class="form-label">{{ __('Model group') }}</label>
+                                                    <select class="form-select @error('demoItems.'.$itemIndex.'.group_key') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.group_key">
+                                                        <option value="">{{ __('Auto') }}</option>
+                                                        @foreach($this->demoGroupOptions as $groupKey => $groupLabel)
+                                                            <option value="{{ $groupKey }}">{{ $groupLabel }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                    @error('demoItems.'.$itemIndex.'.group_key') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-4">
                                                     <label class="form-label">{{ __('Label / Name') }}</label>
                                                     <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.label') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.label">
                                                     @error('demoItems.'.$itemIndex.'.label') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                                 </div>
-                                                <div class="col-md-6">
+                                                <div class="col-md-4">
                                                     <label class="form-label">{{ __('Engine') }}</label>
                                                     <select class="form-select @error('demoItems.'.$itemIndex.'.engine') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.engine">
-                                                        <option value="">{{ __('Select engine') }}</option>
-                                                        <option value="apollo">Apollo</option>
-                                                        <option value="delta">Delta</option>
-                                                        <option value="xtts">XTTS</option>
-                                                        <option value="ftts">FTTS</option>
+                                                        <option value="">{{ __('Auto') }}</option>
+                                                        <option value="xtts">{{ __('Apollo 1.0v') }}</option>
+                                                        <option value="ftts">{{ __('Delta') }}</option>
+                                                        <option value="xomni">{{ __('Apollo 1.5v') }}</option>
                                                     </select>
                                                     @error('demoItems.'.$itemIndex.'.engine') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                                 </div>
@@ -525,7 +534,26 @@ class extends Component
                                                     @error('demoItems.'.$itemIndex.'.description') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                                 </div>
                                             @elseif($demoType === 'ctts')
-                                                <div class="col-md-6">
+                                                <div class="col-md-4">
+                                                    <label class="form-label">{{ __('Model group') }}</label>
+                                                    <select class="form-select @error('demoItems.'.$itemIndex.'.group_key') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.group_key">
+                                                        <option value="">{{ __('Auto') }}</option>
+                                                        @foreach($this->demoGroupOptions as $groupKey => $groupLabel)
+                                                            <option value="{{ $groupKey }}">{{ $groupLabel }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                    @error('demoItems.'.$itemIndex.'.group_key') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label">{{ __('Engine') }}</label>
+                                                    <select class="form-select @error('demoItems.'.$itemIndex.'.engine') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.engine">
+                                                        <option value="">{{ __('Auto') }}</option>
+                                                        <option value="clone_xtts">{{ __('Vector 1.0v') }}</option>
+                                                        <option value="clone_xomni">{{ __('Vector 1.5v') }}</option>
+                                                    </select>
+                                                    @error('demoItems.'.$itemIndex.'.engine') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                                </div>
+                                                <div class="col-md-4">
                                                     <label class="form-label">{{ __('Title / Label') }}</label>
                                                     <input type="text" class="form-control @error('demoItems.'.$itemIndex.'.title') is-invalid @enderror" wire:model.defer="demoItems.{{ $itemIndex }}.title">
                                                     @error('demoItems.'.$itemIndex.'.title') <div class="invalid-feedback">{{ $message }}</div> @enderror

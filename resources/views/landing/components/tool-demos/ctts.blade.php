@@ -1,90 +1,57 @@
-<div class="demo-sample-board">
-    <div class="demo-sample-card">
-        <header class="demo-card-head">
-            <h3>{{ __('Original vs Cloned') }}</h3>
-        </header>
+@php
+    $groupRows = isset($groups) && is_array($groups) ? array_values($groups) : [];
+@endphp
 
-        <div class="demo-compare-list">
-            @forelse($items as $example)
-                <article class="demo-clone-card" dir="ltr">
-                    @if(!empty($example['title']))
-                        <h4>{{ $example['title'] }}</h4>
-                    @endif
-
-                    <div class="demo-clone-flow">
-                        <section class="demo-clone-person">
-                            <div class="demo-clone-person__head">
-                                <div class="demo-clone-avatar">
-                                    @if(!empty($example['source_avatar']))
-                                        <img
-                                            src="{{ $example['source_avatar'] }}"
-                                            alt="{{ $example['source_label'] ?? __('Original voice') }}"
-                                            loading="lazy"
-                                            onload="this.nextElementSibling && (this.nextElementSibling.style.display='none');"
-                                            onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='grid');"
-                                        >
-                                    @endif
-                                    <span>{{ $example['source_initials'] ?? 'OR' }}</span>
-                                </div>
-                                <div class="demo-clone-person__meta">
-                                    <strong>{{ $example['source_label'] ?? __('Original voice') }}</strong>
-                                </div>
-                            </div>
-
-                            @if(!empty($example['source_audio']))
-                                @include('landing.components.tool-demos._wave-player', [
-                                    'audioUrl' => (string) $example['source_audio'],
-                                    'title' => (string) ($example['source_label'] ?? ''),
-                                    'uid' => 'ctts-source-' . $loop->index,
-                                ])
-                            @else
-                                <div class="demo-inline-note">{{ __('Original sample not configured.') }}</div>
-                            @endif
-                        </section>
-
-                        <div class="demo-clone-arrow" aria-hidden="true">
-                            {{-- <span class="demo-clone-arrow-line"></span> --}}
-                            <i class="bi bi-arrow-right"></i>
-                        </div>
-
-                        <section class="demo-clone-person">
-                            <div class="demo-clone-person__head">
-                                <div class="demo-clone-avatar">
-                                    @if(!empty($example['cloned_avatar']))
-                                        <img
-                                            src="{{ $example['cloned_avatar'] }}"
-                                            alt="{{ $example['cloned_label'] ?? __('Cloned voice') }}"
-                                            loading="lazy"
-                                            onload="this.nextElementSibling && (this.nextElementSibling.style.display='none');"
-                                            onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='grid');"
-                                        >
-                                    @endif
-                                    <span>{{ $example['cloned_initials'] ?? 'CL' }}</span>
-                                </div>
-                                <div class="demo-clone-person__meta">
-                                    <strong>{{ $example['cloned_label'] ?? __('Cloned voice') }}</strong>
-                                </div>
-                            </div>
-
-                            @if(!empty($example['cloned_audio']))
-                                @include('landing.components.tool-demos._wave-player', [
-                                    'audioUrl' => (string) $example['cloned_audio'],
-                                    'title' => (string) ($example['cloned_label'] ?? ''),
-                                    'uid' => 'ctts-cloned-' . $loop->index,
-                                ])
-                            @else
-                                <div class="demo-inline-note">{{ __('Cloned sample not configured.') }}</div>
-                            @endif
-                        </section>
+@if($groupRows !== [])
+    <div class="demo-sample-board demo-sample-board--ctts-groups">
+        @foreach($groupRows as $groupIndex => $group)
+            @php
+                $groupExamples = is_array(data_get($group, 'items')) ? array_values((array) data_get($group, 'items')) : [];
+                $groupKey = trim((string) data_get($group, 'key', 'group-' . $groupIndex));
+                $groupLabel = trim((string) data_get($group, 'label', __('Original vs Cloned')));
+                $groupDescription = trim((string) data_get($group, 'description', ''));
+            @endphp
+            <div class="demo-sample-card demo-sample-card--group">
+                <header class="demo-card-head">
+                    <div class="demo-group-head-copy">
+                        <h3>{{ $groupLabel }}</h3>
+                        @if($groupDescription !== '')
+                            <p class="demo-group-description">{{ $groupDescription }}</p>
+                        @endif
                     </div>
+                    <span class="demo-chip">{{ count($groupExamples) }} {{ __('samples') }}</span>
+                </header>
 
-                    @if(!empty($example['notes']))
-                        <p class="demo-clone-notes">{{ $example['notes'] }}</p>
-                    @endif
-                </article>
-            @empty
-                <div class="demo-empty">{{ __('No clone comparison examples configured yet.') }}</div>
-            @endforelse
+                <div class="demo-compare-list">
+                    @forelse($groupExamples as $exampleIndex => $example)
+                        @include('landing.components.tool-demos._ctts-row', [
+                            'example' => $example,
+                            'uidPrefix' => 'ctts-' . $groupKey . '-' . $exampleIndex,
+                        ])
+                    @empty
+                        <div class="demo-empty">{{ __('No samples configured yet.') }}</div>
+                    @endforelse
+                </div>
+            </div>
+        @endforeach
+    </div>
+@else
+    <div class="demo-sample-board">
+        <div class="demo-sample-card">
+            <header class="demo-card-head">
+                <h3>{{ __('Original vs Cloned') }}</h3>
+            </header>
+
+            <div class="demo-compare-list">
+                @forelse($items as $example)
+                    @include('landing.components.tool-demos._ctts-row', [
+                        'example' => $example,
+                        'uidPrefix' => 'ctts-' . $loop->index,
+                    ])
+                @empty
+                    <div class="demo-empty">{{ __('No clone comparison examples configured yet.') }}</div>
+                @endforelse
+            </div>
         </div>
     </div>
-</div>
+@endif

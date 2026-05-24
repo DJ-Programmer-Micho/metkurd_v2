@@ -296,12 +296,14 @@ class extends Component
                 $displayName = $this->speakerDisplayName($code, (string) $voice->name);
                 $group = $this->speakerGroupKey($code, (string) $voice->name, $meta, []);
                 $groupLabel = $this->speakerGroupLabel($group);
-                $refAudio = $this->normalizeRunpodRefAudioPath((string) data_get($meta, 'runpod_ref_audio', ''));
+                $refAudio = $this->normalizeRunpodRefAudioPath((string) data_get($meta, 'ref_audio', data_get($meta, 'runpod_ref_audio', '')));
                 $style = trim((string) data_get($meta, 'style', ''));
                 $styleLabel = $style !== ''
                     ? Str::of($style)->replace(['_', '-'], ' ')->headline()->value()
                     : null;
                 $previewAudio = trim((string) data_get($meta, 'preview_audio', data_get($meta, 'preview_audio_path', '')));
+                $avatarPath = trim((string) data_get($meta, 'avatar_path', data_get($meta, 'avatar', '')));
+                $hasAvatar = $avatarPath !== '';
                 $isActive = (bool) $voice->is_active && $refAudio !== '';
 
                 return [
@@ -314,7 +316,7 @@ class extends Component
                     'gender_label' => $groupLabel,
                     'style' => $style,
                     'style_label' => $styleLabel,
-                    'avatar_url' => $this->speakerAvatarRoute($code),
+                    'avatar_url' => $hasAvatar ? $this->speakerAvatarRoute($code) : null,
                     'avatar_initials' => $this->speakerAvatarInitials($displayName),
                     'has_preview' => $previewAudio !== '',
                     'preview_url' => $this->speakerPreviewRoute($code),
@@ -3641,6 +3643,5 @@ window.addEventListener('xomni-form-state-clear', () => {
 });
 </script>
 @endpush
-
 
 
