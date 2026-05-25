@@ -1206,7 +1206,7 @@
     "Selected provider is not yet active for storage recurring checkout": "Selected provider is not yet active for storage recurring checkout",
     "Selected service plan was not found.": "Selected service plan was not found.",
     "Selected storage plan was not found.": "Selected storage plan was not found.",
-    "Server-side validated": "Server-side validated",
+    "Server-side validated": "Form",
     "Showing :shown of :total folders": "Showing :shown of :total folders",
     "Source": "Source",
     "Source Language": "Source Language",
@@ -1373,5 +1373,18 @@
     "Male 3": "Male 3",
     "Female 3": "Female 3",
     "Voice categories": "Voice categories",
-    "Scroll voice categories": "Scroll voice categories"
+    "Scroll voice categories": "Scroll voice categories",
+    "Apollo 1.0v": "Apollo 1.0v",
+    "Vector 1.0v": "Vector 1.0v",
+    "WASR NEO": "WASR NEO",
+    "QASR LEO": "QASR LEO",
+    "Open Apollo 1.0v": "Open Apollo 1.0v",
+    "Open Delta": "Open Delta",
+    "Open Vector 1.0v": "Open Vector 1.0v",
+    "Open WASR NEO": "Open WASR NEO",
+    "Open QASR LEO": "Open QASR LEO",
+    "Start with Apollo 1.0v": "Start with Apollo 1.0v",
+    "Start with Delta": "Start with Delta",
+    "Generate speech with the Delta voice engine.": "Generate speech with the Delta voice engine.",
+    "The latest customer jobs across Apollo, Vector, Delta, WASR, QASR, OCR, and YouTube.": "The latest customer jobs across Apollo, Vector, Delta, WASR, QASR, OCR, and YouTube."
 }

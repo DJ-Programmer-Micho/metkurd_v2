@@ -14,6 +14,7 @@ use App\Models\Customer;
 use App\Models\CreditWallet;
 use App\Models\CustomerUsage;
 use App\Models\MlJob;
+use App\Support\CustomerFacingToolName;
 use Carbon\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -67,15 +68,17 @@ class extends Component
     {
         $this->toolOptions = [
             'all'       => __('All Tools'),
-            'tts'       => __('Text to Speech'),
-            'ftts'      => __('F5 Text to Speech'),
-            'clone_tts' => __('Clone Speech'),
-            'stem'      => __('Stem Separation'),
-            'wasr'      => __('Speech to Text'),
-            'qasr'      => __('QASR Speech to Text'),
-            'caption'   => __('Caption'),
-            'tran'      => __('MET Translation'),
-            'ocr'       => __('Optical Character Recognition'),
+            'tts'       => CustomerFacingToolName::translated('tts'),
+            'xomni'     => CustomerFacingToolName::translated('xomni'),
+            'ftts'      => CustomerFacingToolName::translated('ftts'),
+            'clone_tts' => CustomerFacingToolName::translated('clone_tts'),
+            'clone_xomni' => CustomerFacingToolName::translated('clone_xomni'),
+            'stem'      => CustomerFacingToolName::translated('stem'),
+            'wasr'      => CustomerFacingToolName::translated('asr'),
+            'qasr'      => CustomerFacingToolName::translated('qasr'),
+            'caption'   => CustomerFacingToolName::translated('caption'),
+            'tran'      => CustomerFacingToolName::translated('tran'),
+            'ocr'       => CustomerFacingToolName::translated('ocr'),
         ];
 
         if (!$this->dateFrom || !$this->dateTo) {
@@ -84,6 +87,10 @@ class extends Component
 
         if (!in_array($this->groupBy, ['day', 'week', 'month'], true)) {
             $this->groupBy = 'day';
+        }
+
+        if ($this->toolFilter !== 'all') {
+            $this->toolFilter = $this->normalizeToolFilter($this->toolFilter);
         }
 
         if (!array_key_exists($this->toolFilter, $this->toolOptions)) {
@@ -275,7 +282,15 @@ class extends Component
             ->whereNotIn('status', ['deleted']);
 
         if ($this->toolFilter !== 'all') {
-            $query->where('job_kind', $this->toolFilter);
+            $filterCodes = CustomerFacingToolName::filterCodes($this->toolFilter);
+
+            if (count($filterCodes) > 1) {
+                $query->whereIn('job_kind', $filterCodes);
+            } elseif ($filterCodes !== []) {
+                $query->where('job_kind', $filterCodes[0]);
+            } else {
+                $query->where('job_kind', $this->toolFilter);
+            }
         }
 
         if ($this->statusFilter !== 'all') {
@@ -403,7 +418,7 @@ class extends Component
             ->map(function (Collection $rows, string $tool) {
                 return [
                     'tool' => $tool,
-                    'label' => __($this->toolOptions[$tool] ?? Str::headline(str_replace('_', ' ', $tool))),
+                    'label' => $this->toolLabel($tool),
                     'jobs' => $rows->count(),
                     'success' => $rows->where('status', 'done')->count(),
                     'failed' => $rows->where('status', 'failed')->count(),
@@ -793,17 +808,30 @@ class extends Component
 
     public function toolBadgeClass(?string $tool): string
     {
-        return match ((string) $tool) {
-            'tts' => 'primary',
+        return match (CustomerFacingToolName::canonical($tool)) {
+            'tts', 'xomni' => 'primary',
             'ftts' => 'info',
-            'clone_tts' => 'info',
+            'clone_tts', 'clone_xomni' => 'info',
             'stem' => 'success',
-            'wasr' => 'warning',
+            'asr' => 'warning',
             'qasr' => 'warning',
             'caption' => 'warning',
             'tran' => 'primary',
             'ocr' => 'danger',
             default => 'secondary',
+        };
+    }
+
+    public function toolLabel(?string $tool): string
+    {
+        return CustomerFacingToolName::translated($tool);
+    }
+
+    protected function normalizeToolFilter(string $tool): string
+    {
+        return match (CustomerFacingToolName::canonical($tool)) {
+            'asr' => 'wasr',
+            default => CustomerFacingToolName::canonical($tool),
         };
     }
 
@@ -1342,7 +1370,7 @@ class extends Component
                                         <td>{{ $this->formatTimestamp($job->created_at) }}</td>
                                         <td>
                                             <span class="badge bg-{{ $this->toolBadgeClass($job->job_kind) }}-subtle text-{{ $this->toolBadgeClass($job->job_kind) }}">
-                                                {{ __($toolOptions[$job->job_kind] ?? Str::headline(str_replace('_', ' ', (string) $job->job_kind))) }}
+                                                {{ $this->toolLabel($job->job_kind) }}
                                             </span>
                                         </td>
                                         <td class="fw-semibold">{{ $job->id }}</td>
@@ -1412,9 +1440,7 @@ class extends Component
                                         <td>
                                             @if(!empty($row['support_label']))
                                                 <span class="badge bg-{{ $row['support_badge_class'] ?? 'secondary' }}-subtle text-{{ $row['support_badge_class'] ?? 'secondary' }}">
-                                                    {{ array_key_exists((string) $row['support_label'], $toolOptions)
-                                                        ? __($toolOptions[(string) $row['support_label']])
-                                                        : (string) $row['support_label'] }}
+                                                    {{ $this->toolLabel((string) $row['support_label']) }}
                                                 </span>
                                             @else
                                                 <span class="text-muted">{{ __('Not applicable') }}</span>

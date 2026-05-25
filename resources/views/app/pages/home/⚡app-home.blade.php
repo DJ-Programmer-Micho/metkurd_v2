@@ -4,6 +4,7 @@ use App\Models\Customer;
 use App\Models\MlJob;
 use App\Services\Analytics\ConversionTrackingService;
 use App\Support\AppShellData;
+use App\Support\CustomerFacingToolName;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -155,48 +156,75 @@ class extends Component
         $actions = [
             [
                 'tool' => 'tts',
-                'label' => __('Text to Speech'),
+                'label' => CustomerFacingToolName::translated('tts'),
                 'description' => __('Turn scripts into natural audio output.'),
                 'route' => route('app.xtts', ['locale' => $locale]),
                 'icon' => 'ri-volume-up-line',
                 'entitlement' => 'tts.standard',
-                'cta' => __('Open XTTS'),
+                'cta' => __('Open Apollo 1.0v'),
+            ],
+            [
+                'tool' => 'xomni',
+                'label' => CustomerFacingToolName::translated('xomni'),
+                'description' => __('Turn scripts into natural audio output.'),
+                'route' => route('app.xomni', ['locale' => $locale]),
+                'icon' => 'ri-volume-up-line',
+                'entitlement' => 'xomni.standard',
+                'cta' => __('Open Apollo 1.5v'),
             ],
             [
                 'tool' => 'ftts',
-                'label' => __('F5 Text to Speech'),
-                'description' => __('Generate speech with the F5TTS voice engine.'),
+                'label' => CustomerFacingToolName::translated('ftts'),
+                'description' => __('Generate speech with the Delta voice engine.'),
                 'route' => route('app.f5tts', ['locale' => $locale]),
                 'icon' => 'ri-volume-up-line',
                 'entitlement' => 'ftts.standard',
-                'cta' => __('Open F5TTS'),
+                'cta' => __('Open Delta'),
             ],
             [
                 'tool' => 'clone_tts',
-                'label' => __('Voice Clone'),
+                'label' => CustomerFacingToolName::translated('clone_tts'),
                 'description' => __('Generate speech with a cloned voice profile.'),
                 'route' => route('app.clone-xtts', ['locale' => $locale]),
                 'icon' => 'ri-user-voice-line',
                 'entitlement' => 'clone_tts.standard',
-                'cta' => __('Open Clone XTTS'),
+                'cta' => __('Open Vector 1.0v'),
             ],
             [
-                'tool' => 'wasr',
-                'label' => __('WASR Speech to Text'),
+                'tool' => 'clone_xomni',
+                'label' => CustomerFacingToolName::translated('clone_xomni'),
+                'description' => __('Generate speech with a cloned voice profile.'),
+                'route' => route('app.clone-xomni', ['locale' => $locale]),
+                'icon' => 'ri-user-voice-line',
+                'entitlement' => 'clone_xomni.standard',
+                'cta' => __('Open Vector 1.5v'),
+            ],
+            [
+                'tool' => 'asr',
+                'label' => CustomerFacingToolName::translated('asr'),
                 'description' => __('Transcribe audio and export clean text.'),
                 'route' => route('app.wasr', ['locale' => $locale]),
                 'icon' => 'ri-file-text-line',
                 'entitlement' => 'asr.standard',
-                'cta' => __('Open WASR'),
+                'cta' => __('Open NEO'),
             ],
             [
                 'tool' => 'qasr',
-                'label' => __('QASR Speech to Text'),
-                'description' => __('Transcribe audio with the Qwen ASR engine and export clean text.'),
+                'label' => CustomerFacingToolName::translated('qasr'),
+                'description' => __('Transcribe audio with the LEO engine and export clean text.'),
                 'route' => route('app.qasr', ['locale' => $locale]),
                 'icon' => 'ri-file-text-line',
                 'entitlement' => 'qasr.standard',
-                'cta' => __('Open QASR'),
+                'cta' => __('Open LEO'),
+            ],
+            [
+                'tool' => 'caption',
+                'label' => CustomerFacingToolName::translated('caption'),
+                'description' => __('Turn audio timestamp and export clean text.'),
+                'route' => route('app.caption', ['locale' => $locale]),
+                'icon' => 'ri-video-chat-line',
+                'entitlement' => 'caption.standard',
+                'cta' => __('Open Caption'),
             ],
             [
                 'tool' => 'tran',
@@ -218,7 +246,7 @@ class extends Component
             ],
             [
                 'tool' => 'ocr',
-                'label' => __('Optical Character Recognition'),
+                'label' => CustomerFacingToolName::translated('ocr'),
                 'description' => __('Extract text from scans and images.'),
                 'route' => route('app.ocr', ['locale' => $locale]),
                 'icon' => 'bx bx-aperture',
@@ -419,28 +447,15 @@ class extends Component
 
     public function toolLabel(?string $toolCode): string
     {
-        return match ($this->normalizeToolCode($toolCode)) {
-            'tts' => __('Text to Speech'),
-            'ftts' => __('F5 Text to Speech'),
-            'clone_tts' => __('Voice Clone'),
-            'asr' => __('Speech to Text'),
-            'qasr' => __('QASR Speech to Text'),
-            'tran' => __('MET Translation'),
-            'stem' => __('Stem Separation'),
-            'ocr' => __('Optical Character Recognition'),
-            'youtube_audio' => __('YouTube Audio'),
-            'youtube_video' => __('YouTube Video'),
-            'youtube_download' => __('YouTube Downloader'),
-            default => __(Str::headline(str_replace('_', ' ', (string) $toolCode))),
-        };
+        return CustomerFacingToolName::translated($this->normalizeToolCode($toolCode));
     }
 
     public function toolBadgeClass(?string $toolCode): string
     {
         return match ($this->normalizeToolCode($toolCode)) {
-            'tts' => 'primary',
+            'tts', 'xomni' => 'primary',
             'ftts' => 'info',
-            'clone_tts' => 'info',
+            'clone_tts', 'clone_xomni' => 'info',
             'asr', 'qasr' => 'warning',
             'tran' => 'primary',
             'stem' => 'success',
@@ -453,9 +468,9 @@ class extends Component
     public function toolColor(?string $toolCode): string
     {
         return match ($this->normalizeToolCode($toolCode)) {
-            'tts' => '#85a7ec',
+            'tts', 'xomni' => '#85a7ec',
             'ftts' => '#73cfeb',
-            'clone_tts' => '#73cfeb',
+            'clone_tts', 'clone_xomni' => '#73cfeb',
             'asr', 'qasr' => '#edc975',
             'tran' => '#7dc7ff',
             'stem' => '#42d189',
@@ -493,8 +508,10 @@ class extends Component
 
         return match ($normalizedToolCode) {
             'tts' => route('app.xtts', ['locale' => $locale]),
+            'xomni' => route('app.xomni', ['locale' => $locale]),
             'ftts' => route('app.f5tts', ['locale' => $locale]),
             'clone_tts' => route('app.clone-xtts', ['locale' => $locale]),
+            'clone_xomni' => route('app.clone-xomni', ['locale' => $locale]),
             'asr' => route('app.wasr', ['locale' => $locale]),
             'qasr' => route('app.qasr', ['locale' => $locale]),
             'tran' => route('app.tran', ['locale' => $locale]),
@@ -538,10 +555,7 @@ class extends Component
 
     protected function normalizeToolCode(?string $toolCode): string
     {
-        return match ((string) $toolCode) {
-            'wasr' => 'asr',
-            default => (string) $toolCode,
-        };
+        return CustomerFacingToolName::canonical($toolCode);
     }
 
     protected function liveStatuses(): array
@@ -1172,11 +1186,11 @@ class extends Component
                                 <p class="text-muted mb-3">{{ __('Once the customer starts using the tools, activity will appear here.') }}</p>
                                 @if($this->canOpenTool('tts'))
                                     <a wire:navigate href="{{ route('app.xtts', ['locale' => app()->getLocale()]) }}" class="btn btn-primary btn-sm">
-                                        {{ __('Start with XTTS') }}
+                                        {{ __('Start with Apollo 1.0v') }}
                                     </a>
                                 @elseif($this->canOpenTool('ftts'))
                                     <a wire:navigate href="{{ route('app.f5tts', ['locale' => app()->getLocale()]) }}" class="btn btn-info btn-sm">
-                                        {{ __('Start with F5TTS') }}
+                                        {{ __('Start with Delta') }}
                                     </a>
                                 @else
                                     <a wire:navigate href="{{ route('app.billing', ['locale' => app()->getLocale()]) }}" class="btn btn-outline-dark btn-sm">
@@ -1266,7 +1280,7 @@ class extends Component
                 <div class="d-flex justify-content-between align-items-center gap-3">
                     <div>
                         <h5 class="card-title mb-1">{{ __('Recent Jobs') }}</h5>
-                        <p class="text-muted mb-0">{{ __('The latest customer jobs across XTTS, F5TTS, ASR, STEM, OCR, and YouTube.') }}</p>
+                        <p class="text-muted mb-0">{{ __('The latest customer jobs across Apollo, Vector, Delta, WASR, QASR, OCR, and YouTube.') }}</p>
                     </div>
                     <span class="badge bg-secondary-subtle text-secondary">{{ __('Auto-updating') }}</span>
                 </div>

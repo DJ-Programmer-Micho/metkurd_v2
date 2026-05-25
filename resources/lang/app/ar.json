@@ -1206,7 +1206,7 @@
     "Selected provider is not yet active for storage recurring checkout": "الموفر المحدد ليس نشطًا بعد للتخزين والخروج المتكرر",
     "Selected service plan was not found.": "لم يتم العثور على خطة الخدمة المحددة.",
     "Selected storage plan was not found.": "لم يتم العثور على خطة التخزين المحددة.",
-    "Server-side validated": "تم التحقق من صحة جانب الخادم",
+    "Server-side validated": "استمارة",
     "Showing :shown of :total folders": "يتم عرض :shown من :total المجلدات",
     "Source": "مصدر",
     "Source Language": "لغة المصدر",
@@ -1373,5 +1373,18 @@
     "Male 3": "ذكر 3",
     "Female 3": "أنثى 3",
     "Voice categories": "فئات الأصوات",
-    "Scroll voice categories": "مرر فئات الأصوات"
+    "Scroll voice categories": "مرر فئات الأصوات",
+    "Apollo 1.0v": "Apollo 1.0v",
+    "Vector 1.0v": "Vector 1.0v",
+    "WASR NEO": "WASR NEO",
+    "QASR LEO": "QASR LEO",
+    "Open Apollo 1.0v": "Open Apollo 1.0v",
+    "Open Delta": "Open Delta",
+    "Open Vector 1.0v": "Open Vector 1.0v",
+    "Open WASR NEO": "Open WASR NEO",
+    "Open QASR LEO": "Open QASR LEO",
+    "Start with Apollo 1.0v": "Start with Apollo 1.0v",
+    "Start with Delta": "Start with Delta",
+    "Generate speech with the Delta voice engine.": "Generate speech with the Delta voice engine.",
+    "The latest customer jobs across Apollo, Vector, Delta, WASR, QASR, OCR, and YouTube.": "The latest customer jobs across Apollo, Vector, Delta, WASR, QASR, OCR, and YouTube."
 }

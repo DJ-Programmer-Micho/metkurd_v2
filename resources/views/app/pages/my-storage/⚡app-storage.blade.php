@@ -17,6 +17,7 @@ use App\Services\Billing\BillingCurrencyService;
 use App\Services\Billing\CustomerBillingStateService;
 use App\Services\Billing\ScheduleStoragePlanCancellation;
 use App\Services\Payments\PaymentMethodCatalog;
+use App\Support\CustomerFacingToolName;
 use App\Support\StorageBrowser;
 use Illuminate\Support\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -101,17 +102,17 @@ class extends Component
     public function mount(): void
     {
         $this->toolRoots = [
-            'tts'       => ['label' => __('Text to Speech'), 'icon' => 'ri-volume-up-line', 'color' => 'primary'],
-            'xomni'     => ['label' => __('Apollo 1.5v'), 'icon' => 'ri-volume-up-line', 'color' => 'primary'],
-            'ftts'      => ['label' => __('F5 Text to Speech'), 'icon' => 'ri-volume-up-line', 'color' => 'secondary'],
-            'clone-tts' => ['label' => __('Clone Speech'), 'icon' => 'ri-mic-line', 'color' => 'success'],
-            'clone_xomni' => ['label' => __('Vector 1.5v'), 'icon' => 'ri-mic-line', 'color' => 'success'],
-            'stem'      => ['label' => __('Stem Separation'), 'icon' => 'ri-equalizer-line', 'color' => 'info'],
-            'wasr'      => ['label' => __('Speech to Text'), 'icon' => 'ri-file-text-line', 'color' => 'warning'],
-            'qasr'      => ['label' => __('QASR Speech to Text'), 'icon' => 'ri-file-text-line', 'color' => 'danger'],
-            'caption'   => ['label' => __('Caption'), 'icon' => 'ri-file-list-3-line', 'color' => 'info'],
-            'tran'      => ['label' => __('MET Translation'), 'icon' => 'ri-translate-2', 'color' => 'primary'],
-            'ocr'       => ['label' => __('Optical Character Recognition'), 'icon' => 'ri-scan-2-line', 'color' => 'secondary'],
+            'tts'       => ['label' => CustomerFacingToolName::translated('tts'), 'icon' => 'ri-volume-up-line', 'color' => 'primary'],
+            'xomni'     => ['label' => CustomerFacingToolName::translated('xomni'), 'icon' => 'ri-volume-up-line', 'color' => 'primary'],
+            'ftts'      => ['label' => CustomerFacingToolName::translated('ftts'), 'icon' => 'ri-volume-up-line', 'color' => 'secondary'],
+            'clone-tts' => ['label' => CustomerFacingToolName::translated('clone_tts'), 'icon' => 'ri-mic-line', 'color' => 'success'],
+            'clone_xomni' => ['label' => CustomerFacingToolName::translated('clone_xomni'), 'icon' => 'ri-mic-line', 'color' => 'success'],
+            'stem'      => ['label' => CustomerFacingToolName::translated('stem'), 'icon' => 'ri-equalizer-line', 'color' => 'info'],
+            'wasr'      => ['label' => CustomerFacingToolName::translated('asr'), 'icon' => 'ri-file-text-line', 'color' => 'warning'],
+            'qasr'      => ['label' => CustomerFacingToolName::translated('qasr'), 'icon' => 'ri-file-text-line', 'color' => 'danger'],
+            'caption'   => ['label' => CustomerFacingToolName::translated('caption'), 'icon' => 'ri-file-list-3-line', 'color' => 'info'],
+            'tran'      => ['label' => CustomerFacingToolName::translated('tran'), 'icon' => 'ri-translate-2', 'color' => 'primary'],
+            'ocr'       => ['label' => CustomerFacingToolName::translated('ocr'), 'icon' => 'ri-scan-2-line', 'color' => 'secondary'],
         ];
 
         $this->path = $this->sanitizePath($this->path);
@@ -716,7 +717,7 @@ class extends Component
         foreach ($parts as $part) {
             $built = trim($built . '/' . $part, '/');
             $crumbs[] = [
-                'label' => $this->toolRoots[$part]['label'] ?? $part,
+                'label' => $this->toolRoots[$part]['label'] ?? $this->toolLabel($part),
                 'path'  => $built,
             ];
         }
@@ -817,6 +818,11 @@ class extends Component
             auth('app')->user(),
             $this->sanitizePath($relativePath)
         );
+    }
+
+    protected function toolLabel(?string $toolCode): string
+    {
+        return CustomerFacingToolName::translated($toolCode);
     }
 
     protected function resolveDeletePrefixForFile(string $relativePath): string
@@ -1768,7 +1774,7 @@ class extends Component
                                                         </tr>
                                                         <tr>
                                                             <th scope="row">{{ __('Tool :') }}</th>
-                                                            <td>{{ strtoupper(explode('/', $preview['relative_path'])[0] ?? '-') }}</td>
+                                                            <td>{{ $this->toolLabel(explode('/', (string) ($preview['relative_path'] ?? ''))[0] ?? '-') }}</td>
                                                         </tr>
                                                     </tbody>
                                                 </table>

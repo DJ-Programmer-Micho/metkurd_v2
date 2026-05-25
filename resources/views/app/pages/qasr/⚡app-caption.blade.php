@@ -1053,6 +1053,7 @@ class extends Component
                                     <input
                                         type="file"
                                         id="caption-audio-pond"
+                                        data-caption-filepond="1"
                                         accept=".wav,.mp3,.m4a,.aac,.ogg,.flac,.webm,audio/*"
                                     >
                                 </div>
@@ -1578,23 +1579,23 @@ class extends Component
     const FORM_KEY = 'caption_form_state_v2';
     const FORM_TTL = 7 * 24 * 60 * 60 * 1000;
 
-    if (!S.pluginsRegistered && window.FilePond) {
-        const plugins = [];
+    function hasFilePondDeps() {
+        return typeof window.FilePond !== 'undefined'
+            && typeof window.FilePondPluginFileValidateType !== 'undefined'
+            && typeof window.FilePondPluginFileValidateSize !== 'undefined';
+    }
 
-        if (window.FilePondPluginFileValidateType) {
-            plugins.push(window.FilePondPluginFileValidateType);
-        }
+    function registerPlugins() {
+        if (S.pluginsRegistered) return true;
+        if (!hasFilePondDeps()) return false;
 
-        if (window.FilePondPluginFileValidateSize) {
-            plugins.push(window.FilePondPluginFileValidateSize);
-        }
+        FilePond.registerPlugin(
+            FilePondPluginFileValidateType,
+            FilePondPluginFileValidateSize
+        );
 
-        if (plugins.length > 0) {
-            FilePond.registerPlugin(...plugins);
-            S.pluginsRegistered = true;
-        } else {
-            console.warn('[caption] FilePond plugins are not available.');
-        }
+        S.pluginsRegistered = true;
+        return true;
     }
 
     function getCaptionComponent() {
@@ -1613,6 +1614,10 @@ class extends Component
         }
     }
 
+    function isCaptionPageActive() {
+        return !!document.getElementById('caption-page-root');
+    }
+
     function destroyPond() {
         if (S.bootTimer) {
             clearTimeout(S.bootTimer);
@@ -1622,6 +1627,11 @@ class extends Component
         if (S.pond) {
             try { S.pond.destroy(); } catch (_) {}
             S.pond = null;
+        }
+
+        const input = document.querySelector('input[data-caption-filepond]');
+        if (input && input._filepond) {
+            try { input._filepond.destroy(); } catch (_) {}
         }
     }
 
@@ -1715,16 +1725,23 @@ class extends Component
         });
     }
 
-    function bootPond() {
-        const input = document.getElementById('caption-audio-pond');
-        if (!input) return;
+    function bootPond(attempt = 0) {
+        const input = document.querySelector('input[data-caption-filepond]');
+        const lw = getCaptionComponent();
+        const maxAttempts = 40;
+
+        if (!isCaptionPageActive()) return;
+
+        if (!input || !lw || !registerPlugins()) {
+            if (attempt >= maxAttempts) return;
+            S.bootTimer = setTimeout(() => bootPond(attempt + 1), 75);
+            return;
+        }
 
         destroyPond();
 
-        const lw = getCaptionComponent();
-        if (!lw) return;
-
-        S.pond = FilePond.create(input, {
+        try {
+            S.pond = FilePond.create(input, {
             allowMultiple: false,
             allowReorder: false,
             allowReplace: true,
@@ -1777,7 +1794,11 @@ class extends Component
                     load();
                 }
             }
-        });
+            });
+        } catch (_) {
+            if (attempt >= maxAttempts) return;
+            S.bootTimer = setTimeout(() => bootPond(attempt + 1), 75);
+        }
     }
 
     function bootcaptionFilePondPage() {
@@ -1789,13 +1810,14 @@ class extends Component
             S.bootTimer = null;
             formRestoreIfNeeded();
             watchAndPersistForm();
-            bootPond();
+            bootPond(0);
         }, 0);
     }
 
     if (!S.listenersBound) {
         S.listenersBound = true;
 
+        document.addEventListener('DOMContentLoaded', bootcaptionFilePondPage);
         document.addEventListener('livewire:initialized', bootcaptionFilePondPage);
         document.addEventListener('livewire:navigated', bootcaptionFilePondPage);
         document.addEventListener('livewire:navigating', () => {
@@ -1834,9 +1856,10 @@ class extends Component
                 succeed(() => {
                     requestAnimationFrame(() => {
                         formSave();
-                        const input = document.getElementById('caption-audio-pond');
-                        if (input && !S.pond) {
-                            bootPond();
+                        const input = document.querySelector('input[data-caption-filepond]');
+                        const isCurrentPage = isCaptionPageActive();
+                        if (isCurrentPage && input && !S.pond) {
+                            bootPond(0);
                         }
                     });
                 });

@@ -1206,7 +1206,7 @@
     "Selected provider is not yet active for storage recurring checkout": "دابینکەری هەڵبژێردراو هێشتا چالاک نییە بۆ پاشەکەوتکردنی دووبارەبوونەوەی هەڵگرتن",
     "Selected service plan was not found.": "پلانی خزمەتگوزاری هەڵبژێردراو نەدۆزرایەوە.",
     "Selected storage plan was not found.": "پلانی هەڵگرتنی هەڵبژێردراو نەدۆزرایەوە.",
-    "Server-side validated": "لە لایەن سێرڤەرەوە پشتڕاستکراوەتەوە",
+    "Server-side validated": "فۆرم",
     "Showing :shown of :total folders": "پیشاندانی :shown لە :total فۆڵدەرەکان",
     "Source": "سەرچاوە",
     "Source Language": "زمانی سەرچاوە",
@@ -1373,5 +1373,18 @@
     "Male 3": "نێر 3",
     "Female 3": "مێ 3",
     "Voice categories": "پۆلەکانی دەنگ",
-    "Scroll voice categories": "پۆلەکانی دەنگ بگوازەوە"
+    "Scroll voice categories": "پۆلەکانی دەنگ بگوازەوە",
+    "Apollo 1.0v": "Apollo 1.0v",
+    "Vector 1.0v": "Vector 1.0v",
+    "WASR NEO": "WASR NEO",
+    "QASR LEO": "QASR LEO",
+    "Open Apollo 1.0v": "Open Apollo 1.0v",
+    "Open Delta": "Open Delta",
+    "Open Vector 1.0v": "Open Vector 1.0v",
+    "Open WASR NEO": "Open WASR NEO",
+    "Open QASR LEO": "Open QASR LEO",
+    "Start with Apollo 1.0v": "Start with Apollo 1.0v",
+    "Start with Delta": "Start with Delta",
+    "Generate speech with the Delta voice engine.": "Generate speech with the Delta voice engine.",
+    "The latest customer jobs across Apollo, Vector, Delta, WASR, QASR, OCR, and YouTube.": "The latest customer jobs across Apollo, Vector, Delta, WASR, QASR, OCR, and YouTube."
 }

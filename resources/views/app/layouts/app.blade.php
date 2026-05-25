@@ -149,7 +149,11 @@
             --app-sidebar-footer-space: calc(70px + 125px);
             padding-bottom: var(--app-sidebar-footer-space);
         }
-
+        @media (max-width: 767.98px) {
+            #app-navbar-menu{
+                padding-bottom: unset;
+            }
+        }
         #app-navbar-menu #scrollbar{
             padding-bottom: 0;
         }
