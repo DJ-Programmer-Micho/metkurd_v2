@@ -112,9 +112,22 @@ class XttsJobSyncService
                 $providerMime = 'audio/wav';
             }
 
-            $outputFilename = basename(trim((string) data_get($providerOutput, 'output_filename', '')));
-            if ($outputFilename === '' || $outputFilename === '.' || $outputFilename === DIRECTORY_SEPARATOR) {
-                $outputFilename = 'out.wav';
+            $providerOutputFilename = basename(trim((string) data_get($providerOutput, 'output_filename', '')));
+            if (
+                $providerOutputFilename === ''
+                || $providerOutputFilename === '.'
+                || $providerOutputFilename === DIRECTORY_SEPARATOR
+            ) {
+                $providerOutputFilename = 'out.wav';
+            }
+
+            $outputFilename = $providerOutputFilename;
+            if (in_array((string) $tool->code, ['xomni', 'clone_xomni'], true)) {
+                $outputFilename = $this->normalizeOmniOutputFilename(
+                    toolCode: (string) $tool->code,
+                    workerFilename: $providerOutputFilename,
+                    mimeType: $providerMime,
+                );
             }
 
             $subFolder = $this->outputFolderForTool((string) $tool->code);
@@ -133,7 +146,9 @@ class XttsJobSyncService
                 'path' => $saved['path'],
                 'bytes' => $saved['bytes'],
                 'mime' => $saved['mime'],
-                'output_filename' => (string) data_get($providerOutput, 'output_filename', ''),
+                'output_filename' => $outputFilename,
+                'stored_output_filename' => $outputFilename,
+                'provider_output_filename' => (string) data_get($providerOutput, 'output_filename', ''),
                 'duration' => (float) data_get($providerOutput, 'duration', 0),
                 'provider_success' => (bool) data_get($providerOutput, 'success', true),
                 'provider_mode' => (string) data_get($providerOutput, 'mode', ''),
@@ -269,6 +284,62 @@ class XttsJobSyncService
             'clone_xomni' => 'clone_xomni',
             'ftts' => 'ftts',
             default => 'tts',
+        };
+    }
+
+    protected function normalizeOmniOutputFilename(string $toolCode, ?string $workerFilename, ?string $mimeType = null): string
+    {
+        $prefix = match (strtolower(trim($toolCode))) {
+            'xomni' => 'xomni',
+            'clone_xomni' => 'clone_xomni',
+            default => 'audio',
+        };
+
+        $workerFilename = basename(trim((string) $workerFilename));
+        $extension = $this->resolveAudioExtension($mimeType, $workerFilename);
+
+        if (
+            $workerFilename !== ''
+            && preg_match('/^omnivoice_(\d{8}_\d{6}_\d+)\.[a-z0-9]+$/i', $workerFilename, $matches) === 1
+        ) {
+            return "{$prefix}_{$matches[1]}.{$extension}";
+        }
+
+        if (
+            $workerFilename !== ''
+            && preg_match('/(\d{8}_\d{6}_\d+)/', $workerFilename, $matches) === 1
+        ) {
+            return "{$prefix}_{$matches[1]}.{$extension}";
+        }
+
+        return sprintf(
+            '%s_%s_%06d.%s',
+            $prefix,
+            now()->format('Ymd_His'),
+            (int) now()->format('u'),
+            $extension
+        );
+    }
+
+    protected function resolveAudioExtension(?string $mimeType = null, ?string $filename = null): string
+    {
+        $filename = trim((string) $filename);
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+        if ($ext !== '') {
+            return preg_replace('/[^a-z0-9]+/i', '', $ext) ?: 'wav';
+        }
+
+        $mimeType = strtolower(trim((string) $mimeType));
+
+        return match ($mimeType) {
+            'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave' => 'wav',
+            'audio/mpeg' => 'mp3',
+            'audio/mp4', 'audio/x-m4a' => 'm4a',
+            'audio/aac' => 'aac',
+            'audio/ogg' => 'ogg',
+            'audio/flac', 'audio/x-flac' => 'flac',
+            default => 'wav',
         };
     }
 
