@@ -555,6 +555,7 @@
     "Price:": "Price:",
     "Pricing could not be calculated.": "Pricing could not be calculated.",
     "Pricing is not configured.": "Pricing is not configured.",
+    "Pricing is not configured for this service. Please contact support.": "Pricing is not configured for this service. Please contact support.",
     "Pricing is not configured for OCR.": "Pricing is not configured for OCR.",
     "Pricing is not configured for STEM separation.": "Pricing is not configured for STEM separation.",
     "Processing...": "Processing...",

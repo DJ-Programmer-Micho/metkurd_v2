@@ -456,24 +456,32 @@ class extends Component
         return $pages;
     }
 
+    protected function pricingContext(): array
+    {
+        $pages = $this->estimatedPages();
+
+        return [
+            'metric_code' => 'page',
+            'pages' => $pages,
+            'page_count' => $pages,
+            'files' => 1,
+            'file_count' => 1,
+            'requests' => 1,
+            'request_count' => 1,
+            'lang' => $this->lang,
+            'dpi' => $this->dpi,
+        ];
+    }
+
     protected function requiredCredits(): int
     {
         $customer = auth('app')->user();
-        $pages = $this->estimatedPages();
 
-        if ($customer && method_exists($customer, 'priceCreditsFor')) {
-            $credits = (int) $customer->priceCreditsFor($this->fullActionCode(), [
-                'pages' => $pages,
-                'lang' => $this->lang,
-                'dpi' => $this->dpi,
-            ]);
-
-            if ($credits > 0) {
-                return $credits;
-            }
+        if (!$customer) {
+            return 0;
         }
 
-        return max(100, $pages * 100);
+        return max(0, (int) $customer->priceCreditsFor($this->fullActionCode(), $this->pricingContext()));
     }
 
     protected function syncWallet(): void
@@ -606,7 +614,7 @@ class extends Component
 
         $needed = $this->requiredCredits();
         if ($needed <= 0) {
-            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured for OCR.'));
+            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured for this service. Please contact support.'));
             return;
         }
 

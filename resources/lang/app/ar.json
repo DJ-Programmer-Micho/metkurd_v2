@@ -555,6 +555,7 @@
     "Price:": "السعر:",
     "Pricing could not be calculated.": "تعذر حساب التسعير.",
     "Pricing is not configured.": "التسعير غير مهيأ.",
+    "Pricing is not configured for this service. Please contact support.": "التسعير غير مهيأ لهذه الخدمة. يرجى التواصل مع الدعم.",
     "Pricing is not configured for OCR.": "التسعير غير مهيأ لـ OCR.",
     "Pricing is not configured for STEM separation.": "التسعير غير مهيأ لفصل STEM.",
     "Processing...": "جاري المعالجة...",

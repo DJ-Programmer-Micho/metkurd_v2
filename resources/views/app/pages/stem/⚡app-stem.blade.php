@@ -384,24 +384,29 @@ class extends Component
         return $this->toolCode . '.' . $this->actionCode();
     }
 
+    protected function pricingContext(): array
+    {
+        $outputs = $this->stems === 2 ? 2 : 4;
+
+        return [
+            'metric_code' => 'stem_output',
+            'outputs' => $outputs,
+            'stem_outputs' => $outputs,
+            'separation_mode' => $this->stems,
+            'minutes' => $this->audioBillableMin,
+            'seconds' => (float) ($this->audioDurationSec ?? 0),
+        ];
+    }
+
     protected function requiredCredits(): int
     {
         $customer = auth('app')->user();
-        $outputs = $this->stems === 2 ? 2 : 4;
 
-        if ($customer && method_exists($customer, 'priceCreditsFor')) {
-            $credits = (int) $customer->priceCreditsFor($this->fullActionCode(), [
-                'outputs' => $outputs,
-                'stem_outputs' => $outputs,
-                'separation_mode' => $this->stems,
-            ]);
-
-            if ($credits > 0) {
-                return $credits;
-            }
+        if (!$customer) {
+            return 0;
         }
 
-        return $outputs * 500;
+        return max(0, (int) $customer->priceCreditsFor($this->fullActionCode(), $this->pricingContext()));
     }
 
     protected function syncWallet(): void
@@ -553,7 +558,7 @@ class extends Component
 
         $needed = $this->requiredCredits();
         if ($needed <= 0) {
-            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured for STEM separation.'));
+            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured for this service. Please contact support.'));
             return;
         }
 

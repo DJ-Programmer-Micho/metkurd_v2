@@ -555,6 +555,7 @@
     "Price:": "نرخ:",
     "Pricing could not be calculated.": "نرخ حیساب نەکرا.",
     "Pricing is not configured.": "نرخ ڕێکنەخراوە.",
+    "Pricing is not configured for this service. Please contact support.": "نرخی ئەم خزمەتە ڕێکنەخراوە. تکایە پەیوەندی بە پشتگیری بکە.",
     "Pricing is not configured for OCR.": "نرخ بۆ OCR ڕێکنەخراوە.",
     "Pricing is not configured for STEM separation.": "نرخ بۆ جیاکردنەوەی STEM ڕێکنەخراوە.",
     "Processing...": "چارەسەر دەکرێت...",

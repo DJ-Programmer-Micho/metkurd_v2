@@ -603,7 +603,7 @@ class Customer extends Authenticatable
 
         $rounded = match (strtolower($roundingMode)) {
             'floor' => floor($rawCredits),
-            'round' => round($rawCredits),
+            'round', 'nearest' => round($rawCredits),
             'none'  => $rawCredits,
             default => ceil($rawCredits),
         };
@@ -616,6 +616,8 @@ class Customer extends Authenticatable
 
     protected function extractMetricQuantity(string $metricCode, array $context): float
     {
+        $metricCode = strtolower(trim($metricCode));
+
         return match ($metricCode) {
             'character', 'characters', 'char', 'chars'
                 => (float) ($context['chars'] ?? $context['characters'] ?? 0),
@@ -623,8 +625,37 @@ class Customer extends Authenticatable
             'minute', 'minutes'
                 => (float) ($context['minutes'] ?? $context['duration_minutes'] ?? $context['minute'] ?? 0),
 
+            'second', 'seconds'
+                => (float) ($context['seconds'] ?? $context['duration_seconds'] ?? $context['second'] ?? 0),
+
             'page', 'pages'
                 => (float) ($context['pages'] ?? $context['page_count'] ?? 0),
+
+            'file', 'files'
+                => (float) ($context['files'] ?? $context['file_count'] ?? $context['file'] ?? 0),
+
+            'request', 'requests'
+                => (float) ($context['requests'] ?? $context['request_count'] ?? $context['request'] ?? 0),
+
+            'token', 'tokens'
+                => (float) ($context['tokens'] ?? $context['token_count'] ?? $context['token'] ?? 0),
+
+            'storage', 'storage_gb', 'gb', 'gigabyte', 'gigabytes'
+                => (float) (
+                    $context['storage_gb']
+                    ?? $context['gigabytes']
+                    ?? $context['gb']
+                    ?? $context['storage']
+                    ?? (
+                        array_key_exists('storage_mb', $context)
+                            ? ((float) $context['storage_mb'] / 1024)
+                            : (
+                                (array_key_exists('storage_bytes', $context) || array_key_exists('bytes', $context))
+                                    ? ((float) ($context['storage_bytes'] ?? $context['bytes'] ?? 0) / 1073741824)
+                                    : 0
+                            )
+                    )
+                ),
 
             'stem_output', 'stem_outputs', 'output_stem'
                 => (float) ($context['stem_outputs'] ?? $context['outputs'] ?? 0),

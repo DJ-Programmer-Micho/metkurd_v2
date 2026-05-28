@@ -684,6 +684,31 @@ class extends Component
         }
     }
 
+    protected function pricingContext(int $chars): array
+    {
+        return [
+            'chars' => $chars,
+            'metric_code' => 'character',
+            'language' => $this->normalizedLanguage(),
+            'speaker_id' => $this->speaker_id,
+        ];
+    }
+
+    protected function calculateCreditsCost(int $chars, $customer = null): int
+    {
+        if ($chars <= 0) {
+            return 0;
+        }
+
+        $customer = $customer ?: auth('app')->user();
+
+        if (!$customer) {
+            return 0;
+        }
+
+        return max(0, (int) $customer->priceCreditsFor($this->fullActionCode, $this->pricingContext($chars)));
+    }
+
     protected function syncCostPreview(): void
     {
         $c = auth('app')->user();
@@ -694,17 +719,7 @@ class extends Component
             return;
         }
 
-        if (method_exists($c, 'priceCreditsFor')) {
-            $this->creditsCost = (int) $c->priceCreditsFor($this->fullActionCode, [
-                'chars' => $chars,
-                'metric_code' => 'character',
-                'language' => $this->language,
-                'speaker_id' => $this->speaker_id,
-            ]);
-            return;
-        }
-
-        $this->creditsCost = (int) ceil($chars * 1.0);
+        $this->creditsCost = $this->calculateCreditsCost($chars, $c);
     }
 
     protected function currentActiveJobsCount(): int
@@ -860,18 +875,10 @@ class extends Component
         }
 
         $chars = $this->currentChars;
-
-        $cost = method_exists($c, 'priceCreditsFor')
-            ? (int) $c->priceCreditsFor($actionCode, [
-                'chars' => $chars,
-                'metric_code' => 'character',
-                'language' => $language,
-                'speaker_id' => $this->speaker_id,
-            ])
-            : (int) ceil($chars * 1.0);
+        $cost = $this->calculateCreditsCost($chars, $c);
 
         if ($cost <= 0) {
-            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured.'));
+            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured for this service. Please contact support.'));
             return;
         }
 
@@ -3643,5 +3650,3 @@ window.addEventListener('xomni-form-state-clear', () => {
 });
 </script>
 @endpush
-
-

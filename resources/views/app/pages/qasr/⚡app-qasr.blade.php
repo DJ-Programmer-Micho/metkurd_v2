@@ -285,6 +285,27 @@ class extends Component
         $this->walletBalance = $subscription + $addon;
     }
 
+    protected function pricingContext(): array
+    {
+        return [
+            'minutes' => $this->audioBillableMin,
+            'metric_code' => 'minute',
+            'model_variant' => $this->modelVariant,
+            'language' => $this->language,
+        ];
+    }
+
+    protected function calculateCreditsCost($customer = null): int
+    {
+        $customer = $customer ?: auth('app')->user();
+
+        if (!$customer || $this->audioBillableMin <= 0) {
+            return 0;
+        }
+
+        return max(0, (int) $customer->priceCreditsFor($this->fullActionCode, $this->pricingContext()));
+    }
+
     protected function syncCostPreview(): void
     {
         $c = auth('app')->user();
@@ -294,16 +315,7 @@ class extends Component
             return;
         }
 
-        if (method_exists($c, 'priceCreditsFor')) {
-            $this->creditsCost = (int) $c->priceCreditsFor($this->fullActionCode, [
-                'minutes'     => $this->audioBillableMin,
-                'metric_code' => 'minute',
-                'model_variant' => $this->modelVariant,
-            ]);
-            return;
-        }
-
-        $this->creditsCost = $this->audioBillableMin * 1000;
+        $this->creditsCost = $this->calculateCreditsCost($c);
     }
 
     protected function currentActiveJobsCount(): int
@@ -519,13 +531,21 @@ class extends Component
             return;
         }
 
-        if ($this->creditsCost <= 0 || $this->audioBillableMin <= 0) {
+        $cost = $this->calculateCreditsCost($customer);
+        $this->creditsCost = $cost;
+
+        if ($this->audioBillableMin <= 0) {
             $this->dispatch('alert', type: 'error', message: __('Could not calculate billing for this file.'));
             return;
         }
 
+        if ($cost <= 0) {
+            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured for this service. Please contact support.'));
+            return;
+        }
+
         try {
-            $credits->charge((int) $customer->id, $this->creditsCost, 'asr_charge', [
+            $credits->charge((int) $customer->id, $cost, 'asr_charge', [
                 'related_type' => 'ml_job',
                 'related_id'   => null,
                 'tool_action'  => $action->full_code,
@@ -549,7 +569,7 @@ class extends Component
             $audioExt = strtolower((string) ($this->audioExt ?: $this->audioFile?->getClientOriginalExtension() ?: 'wav'));
             $audioKey = "renders/{$folder}/qasr/{$jobId}/audio.wav";
 
-            DB::transaction(function () use ($jobId, $tool, $action, $customer) {
+            DB::transaction(function () use ($jobId, $tool, $action, $customer, $cost) {
                 MlJob::create([
                     'id'               => $jobId,
                     'customer_id'      => (int) $customer->id,
@@ -560,7 +580,7 @@ class extends Component
                     'provider'         => 'runpod',
                     'provider_job_id'  => null,
                     'input_hash'       => $this->audioHash,
-                    'credits_charged'  => (int) $this->creditsCost,
+                    'credits_charged'  => (int) $cost,
                     'input'            => [
                         'model_variant'      => $this->modelVariant,
                         'language'           => $this->language,

@@ -215,6 +215,31 @@ class extends Component
         }
     }
 
+    protected function pricingContext(int $chars): array
+    {
+        return [
+            'chars' => $chars,
+            'metric_code' => 'character',
+            'source_lang' => $this->sourceLang,
+            'target_lang' => $this->targetLang,
+        ];
+    }
+
+    protected function calculateCreditsCost(int $chars, $customer = null): int
+    {
+        if ($chars <= 0 || trim($this->text) === '') {
+            return 0;
+        }
+
+        $customer = $customer ?: auth('app')->user();
+
+        if (!$customer) {
+            return 0;
+        }
+
+        return max(0, (int) $customer->priceCreditsFor($this->fullActionCode, $this->pricingContext($chars)));
+    }
+
     protected function syncCostPreview(): void
     {
         $customer = auth('app')->user();
@@ -224,17 +249,7 @@ class extends Component
             return;
         }
 
-        if (method_exists($customer, 'priceCreditsFor')) {
-            $this->creditsCost = (int) $customer->priceCreditsFor($this->fullActionCode, [
-                'chars' => $this->currentChars,
-                'metric_code' => 'character',
-                'source_lang' => $this->sourceLang,
-                'target_lang' => $this->targetLang,
-            ]);
-            return;
-        }
-
-        $this->creditsCost = (int) ceil($this->currentChars * 1.0);
+        $this->creditsCost = $this->calculateCreditsCost($this->currentChars, $customer);
     }
 
     protected function currentActiveJobsCount(): int
@@ -420,17 +435,10 @@ class extends Component
 
         $text = trim((string) $this->text);
         $chars = $this->currentChars;
-        $cost = method_exists($customer, 'priceCreditsFor')
-            ? (int) $customer->priceCreditsFor($this->fullActionCode, [
-                'chars' => $chars,
-                'metric_code' => 'character',
-                'source_lang' => $this->sourceLang,
-                'target_lang' => $this->targetLang,
-            ])
-            : (int) ceil($chars * 1.0);
+        $cost = $this->calculateCreditsCost($chars, $customer);
 
         if ($cost <= 0) {
-            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured.'));
+            $this->dispatch('alert', type: 'error', message: __('Pricing is not configured for this service. Please contact support.'));
             return;
         }
 
