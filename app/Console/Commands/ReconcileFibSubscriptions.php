@@ -9,7 +9,6 @@ use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
 
 class ReconcileFibSubscriptions extends Command
 {
@@ -17,7 +16,8 @@ class ReconcileFibSubscriptions extends Command
         {--customer-id= : Reconcile only subscriptions for a single customer id}
         {--chunk=100 : Number of subscriptions to reconcile per chunk}
         {--limit=0 : Maximum number of subscriptions to process (0 means no limit)}
-        {--stale-minutes=5 : Only reconcile records that were not checked within this window}';
+        {--stale-minutes=5 : Only reconcile records that were not checked within this window}
+        {--dry-run : Show which records would be processed without mutating data}';
 
     protected $description = 'Reconcile FIB recurring subscription state and lifecycle changes.';
 
@@ -27,6 +27,7 @@ class ReconcileFibSubscriptions extends Command
         $limit = max(0, (int) $this->option('limit'));
         $staleMinutes = max(0, (int) $this->option('stale-minutes'));
         $customerId = (int) $this->option('customer-id');
+        $dryRun = (bool) $this->option('dry-run');
 
         $query = Payment::query()
             ->where('provider', PaymentProvider::FIB)
@@ -70,7 +71,7 @@ class ReconcileFibSubscriptions extends Command
 
         $query
             ->orderBy('id')
-            ->chunkById($chunk, function ($payments) use ($sync, $events, $limit, &$processed, &$updated, &$failed) {
+            ->chunkById($chunk, function ($payments) use ($sync, $events, $limit, $dryRun, &$processed, &$updated, &$failed) {
                 foreach ($payments as $payment) {
                     if ($limit > 0 && $processed >= $limit) {
                         return false;
@@ -79,6 +80,21 @@ class ReconcileFibSubscriptions extends Command
                     ++$processed;
 
                     $before = $this->syncFingerprint($payment);
+
+                    if ($dryRun) {
+                        if ($processed <= 20) {
+                            $this->line(sprintf(
+                                '[dry-run] payment_id=%d customer_id=%d status=%s provider_status=%s active_until=%s',
+                                (int) $payment->id,
+                                (int) $payment->customer_id,
+                                (string) $payment->status->value,
+                                (string) ($payment->providerStatusLabel() ?? 'n/a'),
+                                (string) ($this->toIso($payment->active_until) ?? 'n/a')
+                            ));
+                        }
+
+                        continue;
+                    }
 
                     try {
                         $refreshed = $sync->handle($payment, 'scheduled_reconciliation')->fresh() ?? $payment->fresh() ?? $payment;
@@ -114,11 +130,13 @@ class ReconcileFibSubscriptions extends Command
                 return true;
             });
 
-        $this->info('FIB subscription reconciliation completed.');
+        $this->info($dryRun
+            ? 'FIB subscription reconciliation dry-run completed.'
+            : 'FIB subscription reconciliation completed.');
         $this->line('Candidates: ' . number_format($candidateCount));
         $this->line('Processed: ' . number_format($processed));
-        $this->line('Updated: ' . number_format($updated));
-        $this->line('Failed: ' . number_format($failed));
+        $this->line('Updated: ' . number_format($dryRun ? 0 : $updated));
+        $this->line('Failed: ' . number_format($dryRun ? 0 : $failed));
 
         return self::SUCCESS;
     }

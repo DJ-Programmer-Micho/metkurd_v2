@@ -101,6 +101,7 @@ return [
         'enabled' => $envBool('FIB_RECONCILIATION_ENABLED', true),
         'chunk_size' => (int) env('FIB_RECONCILIATION_CHUNK_SIZE', 100),
         'stale_minutes' => (int) env('FIB_RECONCILIATION_STALE_MINUTES', 5),
+        'local_expiry_grace_minutes' => (int) env('FIB_RECONCILIATION_LOCAL_EXPIRY_GRACE_MINUTES', 0),
     ],
     'payment' => [
         'category' => env('FIB_PAYMENT_CATEGORY', 'ECOMMERCE'),
