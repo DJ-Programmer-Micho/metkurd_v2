@@ -9,8 +9,8 @@ use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
-use App\Domain\Payments\Exceptions\FibApiException;
 use App\Domain\Payments\Fib\FibConfiguration;
+use App\Domain\Payments\Fib\FibFailureInterpreter;
 use App\Domain\Payments\Fib\FibMapper;
 use App\Domain\Payments\Fib\FibOneTimePaymentService;
 use App\Domain\Payments\Fib\FibStatusReasonParser;
@@ -25,6 +25,7 @@ use App\Models\ServicePlan;
 use App\Models\StoragePlan;
 use App\Services\Billing\BillingCurrencyService;
 use App\Services\Payments\PaymentApplicationService;
+use App\Services\Payments\PaymentSyncFailureService;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
@@ -55,8 +56,10 @@ class InspectFibPayments extends Command
         protected FibStatusReasonParser $reasonParser,
         protected PaymentEventRecorder $events,
         protected PaymentApplicationService $application,
+        protected PaymentSyncFailureService $failures,
         protected BillingCurrencyService $billing,
         protected FibConfiguration $fibConfig,
+        protected FibFailureInterpreter $failureInterpreter,
     ) {
         parent::__construct();
     }
@@ -159,7 +162,7 @@ class InspectFibPayments extends Command
             'mode' => 'local_scope',
             'filters' => $this->filterSummary($customer, $from, $to),
             'warnings' => array_values(array_unique($warnings)),
-            'local_rows' => $payments->map(fn (Payment $payment): array => $this->paymentSummary($payment))->values()->all(),
+            'local_rows' => $this->paymentSummaries($payments, $events),
             'payment_events' => $events->map(fn (PaymentEvent $event): array => $this->eventSummary($event))->values()->all(),
             'suspicious_conditions' => array_values(array_unique($suspicious)),
             'provider_lookup' => null,
@@ -198,22 +201,19 @@ class InspectFibPayments extends Command
 
             if ($localOnly) {
                 $events = $this->relatedEventsForPayments(collect([$localPayment]));
+                $localRows = $this->paymentSummaries(collect([$localPayment]), $events);
 
                 return [
                     'mode' => 'provider_reference_existing_row_local_only',
                     'filters' => $this->filterSummary($customer, $from, $to, $fibPaymentId, $fibSubscriptionId, $providerReference),
                     'warnings' => array_values(array_unique($warnings)),
-                    'local_rows' => [$this->paymentSummary($localPayment)],
+                    'local_rows' => $localRows,
                     'payment_events' => $events->map(fn (PaymentEvent $event): array => $this->eventSummary($event))->values()->all(),
                     'suspicious_conditions' => array_values(array_unique($this->collectSuspiciousConditions(collect([$localPayment]), $events))),
-                    'provider_lookup' => [
-                        'attempted' => false,
-                        'local_only' => true,
-                        'provider_reference' => $requestedReference ?: $localPayment->providerReference(),
-                        'matched_local_row' => true,
-                        'status_refreshed' => false,
-                        'message' => 'Local-only mode skipped the live FIB provider lookup and left the stored provider status unchanged.',
-                    ],
+                    'provider_lookup' => array_merge(
+                        $this->lookupSummaryFromPayment($localPayment, false, false, 'Local-only mode skipped the live FIB provider lookup and left the stored provider status unchanged.'),
+                        ['local_only' => true]
+                    ),
                     'possible_local_candidates' => [],
                     'recovery_action' => [
                         'status' => 'matched_existing_row_local_only',
@@ -223,28 +223,58 @@ class InspectFibPayments extends Command
                 ];
             }
 
-            $localPayment = $this->refreshExistingPaymentForInspection($localPayment);
-            $events = $this->relatedEventsForPayments(collect([$localPayment]));
+            try {
+                $localPayment = $this->refreshExistingPaymentForInspection($localPayment);
+                $events = $this->relatedEventsForPayments(collect([$localPayment]));
+                $localRows = $this->paymentSummaries(collect([$localPayment]), $events);
 
-            return [
-                'mode' => 'provider_reference_existing_row',
-                'filters' => $this->filterSummary($customer, $from, $to, $fibPaymentId, $fibSubscriptionId, $providerReference),
-                'warnings' => array_values(array_unique($warnings)),
-                'local_rows' => [$this->paymentSummary($localPayment)],
-                'payment_events' => $events->map(fn (PaymentEvent $event): array => $this->eventSummary($event))->values()->all(),
-                'suspicious_conditions' => array_values(array_unique($this->collectSuspiciousConditions(collect([$localPayment]), $events))),
-                'provider_lookup' => [
-                    'matched_local_row' => true,
-                    'provider_reference' => $localPayment->providerReference(),
-                    'status_refreshed' => true,
-                ],
-                'possible_local_candidates' => [],
-                'recovery_action' => [
-                    'status' => 'matched_existing_row',
-                    'message' => sprintf('Matched local payment row #%d and refreshed provider status without fulfillment.', (int) $localPayment->id),
-                ],
-                'exit_code' => self::SUCCESS,
-            ];
+                return [
+                    'mode' => 'provider_reference_existing_row',
+                    'filters' => $this->filterSummary($customer, $from, $to, $fibPaymentId, $fibSubscriptionId, $providerReference),
+                    'warnings' => array_values(array_unique($warnings)),
+                    'local_rows' => $localRows,
+                    'payment_events' => $events->map(fn (PaymentEvent $event): array => $this->eventSummary($event))->values()->all(),
+                    'suspicious_conditions' => array_values(array_unique($this->collectSuspiciousConditions(collect([$localPayment]), $events))),
+                    'provider_lookup' => $this->lookupSummaryFromPayment($localPayment, true, true),
+                    'possible_local_candidates' => [],
+                    'recovery_action' => [
+                        'status' => 'matched_existing_row',
+                        'message' => sprintf('Matched local payment row #%d and refreshed provider status without fulfillment.', (int) $localPayment->id),
+                    ],
+                    'exit_code' => self::SUCCESS,
+                ];
+            } catch (\Throwable $exception) {
+                $failure = $this->failures->capture($localPayment, $exception, 'artisan_fib_inspect');
+                $localPayment = $localPayment->fresh() ?? $localPayment;
+                $events = $this->relatedEventsForPayments(collect([$localPayment]));
+                $localRows = $this->paymentSummaries(collect([$localPayment]), $events);
+                $warnings[] = (string) ($failure['safe_message'] ?? 'FIB provider lookup failed for the matched local row.');
+
+                return [
+                    'mode' => 'provider_reference_existing_row_lookup_failed',
+                    'filters' => $this->filterSummary($customer, $from, $to, $fibPaymentId, $fibSubscriptionId, $providerReference),
+                    'warnings' => array_values(array_unique($warnings)),
+                    'local_rows' => $localRows,
+                    'payment_events' => $events->map(fn (PaymentEvent $event): array => $this->eventSummary($event))->values()->all(),
+                    'suspicious_conditions' => array_values(array_unique($this->collectSuspiciousConditions(collect([$localPayment]), $events))),
+                    'provider_lookup' => $this->lookupFailureSummary(
+                        $failure,
+                        $localPayment->provider_object_type,
+                        true,
+                        true,
+                        false,
+                    ) + [
+                        'purchase_type' => $localPayment->purchase_type?->value ?? null,
+                        'payment_mode' => $localPayment->payment_mode?->value ?? null,
+                    ],
+                    'possible_local_candidates' => [],
+                    'recovery_action' => [
+                        'status' => 'matched_existing_row_lookup_failed',
+                        'message' => sprintf('Matched local payment row #%d, but the provider refresh failed. No fulfillment was applied.', (int) $localPayment->id),
+                    ],
+                    'exit_code' => self::FAILURE,
+                ];
+            }
         }
 
         if ($localOnly) {
@@ -305,7 +335,7 @@ class InspectFibPayments extends Command
         $possibleCandidates = $customer instanceof Customer
             ? $this->possibleLocalCandidates($customer, $from, $to, $providerLookup)
             : collect();
-        $candidateSummaries = $possibleCandidates->map(fn (Payment $payment): array => $this->paymentSummary($payment))->values()->all();
+        $candidateSummaries = $this->paymentSummaries($possibleCandidates);
         $eventRows = $this->eventsForProviderLookup($providerLookup);
 
         if (! $createMissingReview) {
@@ -370,7 +400,7 @@ class InspectFibPayments extends Command
             'mode' => 'provider_reference_recovered',
             'filters' => $this->filterSummary($customer, $from, $to, $fibPaymentId, $fibSubscriptionId, $providerReference),
             'warnings' => array_values(array_unique($warnings)),
-            'local_rows' => [$this->paymentSummary($payment)],
+            'local_rows' => $this->paymentSummaries(collect([$payment]), $events),
             'payment_events' => $events->map(fn (PaymentEvent $event): array => $this->eventSummary($event))->values()->all(),
             'suspicious_conditions' => array_values(array_unique($this->collectSuspiciousConditions(collect([$payment]), $events))),
             'provider_lookup' => $providerLookup,
@@ -522,19 +552,7 @@ class InspectFibPayments extends Command
             return $subscriptionLookup;
         }
 
-        return [
-            'found' => false,
-            'provider_reference' => $providerReference,
-            'message' => 'Provider lookup failed for both the payment and subscription profiles. Please verify the ID from FIB Business before retrying.',
-            'errors' => array_values(array_unique(array_filter([
-                ...((array) data_get($paymentLookup, 'errors', [])),
-                ...((array) data_get($subscriptionLookup, 'errors', [])),
-            ]))),
-            'guidance' => array_values(array_unique(array_filter([
-                ...((array) data_get($paymentLookup, 'guidance', [])),
-                ...((array) data_get($subscriptionLookup, 'guidance', [])),
-            ]))),
-        ];
+        return $this->combineProviderLookupFailures($providerReference, $paymentLookup, $subscriptionLookup);
     }
 
     /**
@@ -549,11 +567,20 @@ class InspectFibPayments extends Command
             return [
                 'found' => true,
                 'provider_reference' => $providerPaymentId,
+                'provider_reference_type' => 'payment',
                 'provider_object_type' => PaymentProviderObjectType::PAYMENT->value,
                 'mapped_local_status' => $mapped->value,
                 'provider_status_raw' => $status->status,
                 'reason' => $this->reasonParser->reasonFromRaw($status->raw) ?: $status->decliningReason,
                 'error_codes' => $this->reasonParser->errorCodesFromRaw($status->raw),
+                'http_status' => 200,
+                'fib_error_code' => null,
+                'fib_error_title' => null,
+                'fib_trace_id' => null,
+                'display_error' => null,
+                'safe_message' => null,
+                'errors' => [],
+                'guidance' => [],
                 'amount_iqd' => (int) data_get($status->amount, 'amount', 0),
                 'currency' => (string) data_get($status->amount, 'currency', 'IQD'),
                 'valid_until' => $status->validUntil?->toIso8601String(),
@@ -591,11 +618,20 @@ class InspectFibPayments extends Command
             return [
                 'found' => true,
                 'provider_reference' => $providerSubscriptionId,
+                'provider_reference_type' => 'subscription',
                 'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
                 'mapped_local_status' => $mapped->value,
                 'provider_status_raw' => $status->status,
                 'reason' => $this->reasonParser->reasonFromRaw($status->raw),
                 'error_codes' => $this->reasonParser->errorCodesFromRaw($status->raw),
+                'http_status' => 200,
+                'fib_error_code' => null,
+                'fib_error_title' => null,
+                'fib_trace_id' => null,
+                'display_error' => null,
+                'safe_message' => null,
+                'errors' => [],
+                'guidance' => [],
                 'amount_iqd' => (int) data_get($status->amount, 'amount', 0),
                 'currency' => (string) data_get($status->amount, 'currency', 'IQD'),
                 'valid_until' => $status->validUntil?->toIso8601String(),
@@ -631,94 +667,157 @@ class InspectFibPayments extends Command
         bool $includeFailureMessage,
     ): array {
         $profileLabel = $providerObjectType->isSubscription() ? 'subscription' : 'payment';
+        $details = $this->failureInterpreter->describe(
+            $exception,
+            $profileLabel,
+            $providerReference,
+            'artisan_fib_inspect',
+            $providerObjectType->isSubscription() ? 'subscription_status' : 'payment_status',
+            $profileLabel,
+        );
+        $displayError = (string) ($details['display_error'] ?? trim($exception->getMessage()));
 
         return [
             'found' => false,
             'provider_reference' => $providerReference,
+            'provider_reference_type' => $details['provider_reference_type'] ?? $profileLabel,
             'provider_object_type' => $providerObjectType->value,
-            'http_status' => $exception instanceof FibApiException && $exception->getCode() > 0
-                ? (int) $exception->getCode()
-                : null,
-            'error_codes' => $exception instanceof FibApiException ? $exception->errorCodes() : [],
+            'http_status' => $details['http_status'] ?? null,
+            'fib_error_code' => $details['fib_error_code'] ?? null,
+            'fib_error_title' => $details['fib_error_title'] ?? null,
+            'fib_trace_id' => $details['fib_trace_id'] ?? null,
+            'error_codes' => array_values(array_filter([(string) ($details['fib_error_code'] ?? '')])),
             'message' => $includeFailureMessage
-                ? sprintf('FIB %s lookup failed: %s', $profileLabel, $exception->getMessage())
-                : $exception->getMessage(),
-            'errors' => $this->providerLookupErrors($exception),
-            'guidance' => $this->providerLookupGuidanceForFailure($exception),
+                ? sprintf('FIB %s lookup failed: %s', $profileLabel, $displayError)
+                : $displayError,
+            'display_error' => $displayError,
+            'errors' => array_values(array_filter([$displayError])),
+            'guidance' => array_values(array_unique(array_filter([(string) ($details['safe_message'] ?? '')]))),
+            'safe_message' => $details['safe_message'] ?? null,
+            'endpoint' => $details['endpoint'] ?? null,
+            'profile' => $details['profile'] ?? null,
+            'transient' => (bool) ($details['transient'] ?? false),
+            'permanent' => (bool) ($details['permanent'] ?? false),
         ];
     }
 
     /**
-     * @return array<int, string>
+     * @return array<string, mixed>
      */
-    protected function providerLookupErrors(\Throwable $exception): array
+    protected function combineProviderLookupFailures(string $providerReference, array $paymentLookup, array $subscriptionLookup): array
     {
-        if ($exception instanceof FibApiException) {
-            $status = (int) $exception->getCode();
-            $detail = $this->providerLookupErrorDetail($exception);
+        $displayErrors = array_values(array_unique(array_filter([
+            (string) ($paymentLookup['display_error'] ?? ''),
+            (string) ($subscriptionLookup['display_error'] ?? ''),
+        ])));
+        $guidance = array_values(array_unique(array_filter([
+            ...((array) ($paymentLookup['guidance'] ?? [])),
+            ...((array) ($subscriptionLookup['guidance'] ?? [])),
+        ])));
+        $httpStatuses = array_values(array_unique(array_filter([
+            $paymentLookup['http_status'] ?? null,
+            $subscriptionLookup['http_status'] ?? null,
+        ], static fn (mixed $value): bool => is_int($value) || ctype_digit((string) $value))));
+        $fibErrorCodes = array_values(array_unique(array_filter([
+            (string) ($paymentLookup['fib_error_code'] ?? ''),
+            (string) ($subscriptionLookup['fib_error_code'] ?? ''),
+        ])));
+        $fibErrorTitles = array_values(array_unique(array_filter([
+            (string) ($paymentLookup['fib_error_title'] ?? ''),
+            (string) ($subscriptionLookup['fib_error_title'] ?? ''),
+        ])));
+        $traceIds = array_values(array_unique(array_filter([
+            (string) ($paymentLookup['fib_trace_id'] ?? ''),
+            (string) ($subscriptionLookup['fib_trace_id'] ?? ''),
+        ])));
 
-            if ($status > 0 && $detail !== '') {
-                return [sprintf('HTTP %d %s', $status, $detail)];
-            }
-
-            if ($status > 0) {
-                return [sprintf('HTTP %d', $status)];
-            }
-        }
-
-        return [trim($exception->getMessage())];
+        return [
+            'found' => false,
+            'provider_reference' => $providerReference,
+            'provider_reference_type' => 'unknown',
+            'provider_object_type' => null,
+            'http_status' => count($httpStatuses) === 1 ? (int) $httpStatuses[0] : null,
+            'fib_error_code' => count($fibErrorCodes) === 1 ? $fibErrorCodes[0] : null,
+            'fib_error_title' => count($fibErrorTitles) === 1 ? $fibErrorTitles[0] : null,
+            'fib_trace_id' => count($traceIds) === 1 ? $traceIds[0] : null,
+            'message' => 'Provider lookup failed for both the payment and subscription profiles. Please verify the ID from FIB Business before retrying.',
+            'display_error' => implode(' | ', $displayErrors),
+            'errors' => $displayErrors,
+            'guidance' => $guidance,
+            'attempts' => [
+                'payment' => $paymentLookup,
+                'subscription' => $subscriptionLookup,
+            ],
+        ];
     }
 
     /**
-     * @return array<int, string>
+     * @return array<string, mixed>
      */
-    protected function providerLookupGuidanceForFailure(\Throwable $exception): array
-    {
-        if (! $exception instanceof FibApiException) {
-            return [];
-        }
-
-        $guidance = [];
-        $status = (int) $exception->getCode();
-        $detail = Str::lower(trim($this->providerLookupErrorDetail($exception).' '.$exception->getMessage()));
-
-        if ($status === 400 || $exception->hasErrorCode('INVALID_REQUEST')) {
-            $guidance[] = 'The provider reference was rejected by FIB. This may not be the API paymentId/subscriptionId expected by the FIB status endpoint. If you copied a Transaction ID from FIB Business, look for the API paymentId created by MetKurd or check whether FIB supports transaction-ID lookup.';
-        }
-
-        if ($status === 401 && str_contains($detail, 'jwt issuer is not configured')) {
-            $guidance[] = 'FIB authentication/environment mismatch detected. Check local .env FIB base URL, client ID, client secret, grant type, and whether you are using sandbox credentials against production IDs or production credentials against sandbox IDs.';
-        }
-
-        return array_values(array_unique($guidance));
+    protected function lookupSummaryFromPayment(
+        Payment $payment,
+        bool $attempted,
+        bool $statusRefreshed,
+        ?string $message = null,
+    ): array {
+        return array_filter([
+            'attempted' => $attempted,
+            'matched_local_row' => true,
+            'matched_local_payment_id' => (int) $payment->id,
+            'found' => $attempted ? true : null,
+            'provider_reference' => $payment->providerReference(),
+            'provider_reference_type' => $payment->isProviderSubscriptionObject() ? 'subscription' : 'payment',
+            'provider_object_type' => $payment->provider_object_type?->value ?? null,
+            'purchase_type' => $payment->purchase_type?->value ?? null,
+            'payment_mode' => $payment->payment_mode?->value ?? null,
+            'mapped_local_status' => $payment->status?->value ?? null,
+            'provider_status_raw' => $payment->providerStatusLabel(),
+            'readable_code' => $payment->readable_code,
+            'paid_at' => $payment->paid_at?->toIso8601String(),
+            'last_payment_at' => $payment->last_payment_at?->toIso8601String(),
+            'status_refreshed' => $statusRefreshed,
+            'message' => $message,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
     }
 
-    protected function providerLookupErrorDetail(FibApiException $exception): string
-    {
-        $errorCode = trim((string) data_get($exception->errorCodes(), '0', ''));
+    /**
+     * @return array<string, mixed>
+     */
+    protected function lookupFailureSummary(
+        array $details,
+        PaymentProviderObjectType|string|null $providerObjectType = null,
+        bool $matchedLocalRow = false,
+        bool $attempted = true,
+        bool $statusRefreshed = false,
+    ): array {
+        $providerObjectValue = $providerObjectType instanceof PaymentProviderObjectType
+            ? $providerObjectType->value
+            : (is_string($providerObjectType) ? $providerObjectType : null);
+        $displayError = trim((string) ($details['display_error'] ?? $details['message'] ?? ''));
+        $safeMessage = trim((string) ($details['safe_message'] ?? ''));
 
-        if ($errorCode !== '') {
-            return $errorCode;
-        }
-
-        foreach ([
-            data_get($exception->payload(), 'message'),
-            data_get($exception->payload(), 'error_description'),
-            data_get($exception->payload(), 'error'),
-            data_get($exception->payload(), 'detail'),
-        ] as $candidate) {
-            if (! is_scalar($candidate)) {
-                continue;
-            }
-
-            $value = trim((string) $candidate);
-
-            if ($value !== '') {
-                return $value;
-            }
-        }
-
-        return '';
+        return array_filter([
+            'attempted' => $attempted,
+            'matched_local_row' => $matchedLocalRow,
+            'status_refreshed' => $statusRefreshed,
+            'found' => false,
+            'provider_reference' => $details['provider_reference'] ?? null,
+            'provider_reference_type' => $details['provider_reference_type'] ?? null,
+            'provider_object_type' => $providerObjectValue,
+            'http_status' => $details['http_status'] ?? null,
+            'fib_error_code' => $details['fib_error_code'] ?? null,
+            'fib_error_title' => $details['fib_error_title'] ?? null,
+            'fib_trace_id' => $details['fib_trace_id'] ?? null,
+            'display_error' => $displayError !== '' ? $displayError : null,
+            'safe_message' => $safeMessage !== '' ? $safeMessage : null,
+            'message' => $safeMessage !== '' ? $safeMessage : ($displayError !== '' ? $displayError : null),
+            'errors' => $displayError !== '' ? [$displayError] : [],
+            'guidance' => $safeMessage !== '' ? [$safeMessage] : [],
+            'endpoint' => $details['endpoint'] ?? null,
+            'profile' => $details['profile'] ?? null,
+            'transient' => (bool) ($details['transient'] ?? false),
+            'permanent' => (bool) ($details['permanent'] ?? false),
+        ], static fn (mixed $value): bool => $value !== null);
     }
 
     /**
@@ -765,13 +864,17 @@ class InspectFibPayments extends Command
         }
 
         if ($requestedReference !== null && $this->runningInLocalStyleEnvironment()) {
-            $warnings[] = 'Local testing note: provider lookup only works if your local .env uses valid FIB sandbox credentials and the provider reference belongs to the same FIB environment. Production FIB Business transactions usually cannot be checked from local sandbox credentials.';
+            $warnings[] = 'Local testing note: provider lookup only works if your local .env uses valid FIB sandbox credentials and the provider reference belongs to the same FIB environment. Public/production FIB lookups often require matching HTTPS environment credentials. If local lookup fails with "Jwt issuer is not configured", rerun with --local-only for DB-only inspection or test from production with the production FIB .env.';
         }
 
         foreach ((array) data_get($report, 'provider_lookup.guidance', []) as $guidance) {
             if (is_string($guidance) && trim($guidance) !== '') {
                 $warnings[] = trim($guidance);
             }
+        }
+
+        if ($this->hasUnconfirmedProviderCheckout($report)) {
+            $warnings[] = 'This appears to be an uncompleted or unconfirmed FIB checkout/subscription. Do not fulfill unless FIB Business confirms a matching paid transaction.';
         }
 
         return array_values(array_unique($warnings));
@@ -796,7 +899,9 @@ class InspectFibPayments extends Command
             'FIB_SUBSCRIPTION_BASE_URL_HOST' => $this->hostOnly((string) $subscriptionProfile['base_url']),
             'FIB_SUBSCRIPTION_CLIENT_ID_CONFIGURED' => $subscriptionProfile['client_id'] !== '' ? 'yes' : 'no',
             'FIB_SUBSCRIPTION_CLIENT_SECRET_CONFIGURED' => $subscriptionProfile['client_secret'] !== '' ? 'yes' : 'no',
+            'FIB_CALLBACK_BASE_URL_HOST' => $callbackBaseUrl !== '' ? $this->hostOnly($callbackBaseUrl) : '',
             'FIB_CALLBACK_URL_CONFIGURED' => $callbackBaseUrl !== '' ? 'yes' : 'no',
+            'FIB_CALLBACK_SECRET_CONFIGURED' => trim((string) config('fib.callback_secret', '')) !== '' ? 'yes' : 'no',
         ];
     }
 
@@ -1417,6 +1522,105 @@ class InspectFibPayments extends Command
             ->get();
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    protected function paymentSummaries(Collection $payments, ?Collection $events = null): array
+    {
+        $events ??= collect();
+
+        return $payments
+            ->map(function (Payment $payment) use ($events): array {
+                return $this->paymentSummary($payment, $this->eventStatsForPayment($payment, $events));
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function eventStatsForPayment(Payment $payment, Collection $events): array
+    {
+        $matchedEvents = $events->filter(function (mixed $event) use ($payment): bool {
+            if (! $event instanceof PaymentEvent) {
+                return false;
+            }
+
+            if ((int) ($event->payment_id ?? 0) === (int) $payment->id) {
+                return true;
+            }
+
+            if (filled($payment->fib_payment_id) && filled($event->fib_payment_id) && $event->fib_payment_id === $payment->fib_payment_id) {
+                return true;
+            }
+
+            return filled($payment->fib_subscription_id)
+                && filled($event->fib_subscription_id)
+                && $event->fib_subscription_id === $payment->fib_subscription_id;
+        })->values();
+
+        $latestFailureEvent = $matchedEvents
+            ->filter(fn (mixed $event): bool => $event instanceof PaymentEvent && $event->event_type === 'provider_status_sync_failed')
+            ->sortByDesc(fn (PaymentEvent $event): int => (int) (($event->processed_at ?? $event->created_at)?->getTimestamp() ?? 0))
+            ->first();
+
+        return [
+            'event_count' => $matchedEvents->count(),
+            'sync_failure_event_count' => $matchedEvents->where('event_type', 'provider_status_sync_failed')->count(),
+            'latest_sync_failure_event_at' => $latestFailureEvent?->processed_at?->toIso8601String()
+                ?? $latestFailureEvent?->created_at?->toIso8601String(),
+            'latest_sync_failure_event_note' => $latestFailureEvent instanceof PaymentEvent ? $this->eventNote($latestFailureEvent) : null,
+        ];
+    }
+
+    protected function hasUnconfirmedProviderCheckout(array $report): bool
+    {
+        foreach ((array) ($report['local_rows'] ?? []) as $row) {
+            if (is_array($row) && $this->rowLooksUnconfirmed($row)) {
+                return true;
+            }
+        }
+
+        $providerLookup = $report['provider_lookup'] ?? null;
+
+        return is_array($providerLookup) && $this->lookupLooksUnconfirmed($providerLookup);
+    }
+
+    protected function rowLooksUnconfirmed(array $row): bool
+    {
+        if (($row['provider_object_type'] ?? null) !== PaymentProviderObjectType::SUBSCRIPTION->value) {
+            return false;
+        }
+
+        if (filled($row['paid_at'] ?? null) || filled($row['last_payment_at'] ?? null)) {
+            return false;
+        }
+
+        $providerStatus = strtoupper(trim((string) ($row['provider_subscription_status'] ?? $row['provider_status'] ?? '')));
+        $localStatus = strtoupper(trim((string) ($row['local_status'] ?? '')));
+
+        return in_array($providerStatus, ['DRAFT', 'PENDING', 'AWAITING_CUSTOMER_ACTION', 'UNPAID'], true)
+            || in_array($localStatus, ['PENDING', 'AWAITING_CUSTOMER_ACTION'], true);
+    }
+
+    protected function lookupLooksUnconfirmed(array $lookup): bool
+    {
+        if (($lookup['provider_object_type'] ?? null) !== PaymentProviderObjectType::SUBSCRIPTION->value) {
+            return false;
+        }
+
+        if (filled($lookup['paid_at'] ?? null) || filled($lookup['last_payment_at'] ?? null)) {
+            return false;
+        }
+
+        $providerStatus = strtoupper(trim((string) ($lookup['provider_status_raw'] ?? '')));
+        $mappedStatus = strtoupper(trim((string) ($lookup['mapped_local_status'] ?? '')));
+
+        return in_array($providerStatus, ['DRAFT', 'PENDING', 'AWAITING_CUSTOMER_ACTION', 'UNPAID'], true)
+            || in_array($mappedStatus, ['PENDING', 'AWAITING_CUSTOMER_ACTION'], true);
+    }
+
     protected function collectSuspiciousConditions(Collection $payments, Collection $events): array
     {
         $conditions = [];
@@ -1475,9 +1679,15 @@ class InspectFibPayments extends Command
     /**
      * @return array<string, mixed>
      */
-    protected function paymentSummary(Payment $payment): array
+    protected function paymentSummary(Payment $payment, array $eventStats = []): array
     {
         $snapshot = $payment->snapshot();
+        $statusResponse = is_array($payment->status_response) ? $payment->status_response : [];
+        $createResponse = is_array($payment->create_response) ? $payment->create_response : [];
+        $callbackPayload = is_array($payment->callback_payload) ? $payment->callback_payload : [];
+        $latestSyncFailure = is_array(data_get($payment->meta, 'latest_sync_failure'))
+            ? (array) data_get($payment->meta, 'latest_sync_failure')
+            : [];
 
         return [
             'payment_id' => (int) $payment->id,
@@ -1486,7 +1696,13 @@ class InspectFibPayments extends Command
             'fib_subscription_id' => $payment->fib_subscription_id,
             'local_reference' => $payment->local_reference,
             'purchase_type' => (string) ($payment->purchase_type?->value ?? $payment->purchase_type),
+            'payment_mode' => (string) ($payment->payment_mode?->value ?? $payment->payment_mode),
             'provider_object_type' => (string) ($payment->provider_object_type?->value ?? $payment->provider_object_type),
+            'readable_code' => $this->firstStringValue(
+                $payment->readable_code,
+                data_get($statusResponse, 'readableCode'),
+                data_get($createResponse, 'readableCode'),
+            ),
             'intended_plan_code' => (string) data_get($snapshot, 'intended_plan.code', data_get($snapshot, 'code', '')),
             'intended_plan_name' => (string) data_get($snapshot, 'intended_plan.name', data_get($snapshot, 'name', '')),
             'checkout_current_plan_code' => (string) data_get(
@@ -1499,12 +1715,41 @@ class InspectFibPayments extends Command
                 'checkout_context.current_service_plan_name',
                 data_get($snapshot, 'checkout_context.current_storage_plan_name', '')
             ),
+            'provider_title' => $this->firstStringValue(
+                data_get($statusResponse, 'title'),
+                data_get($createResponse, 'title'),
+                data_get($snapshot, 'name'),
+            ),
+            'provider_description' => $this->firstStringValue(
+                data_get($statusResponse, 'description'),
+                data_get($createResponse, 'description'),
+            ),
+            'amount' => (int) round((float) ($payment->amount ?? 0)),
+            'currency' => (string) ($payment->currency ?? ''),
             'provider_status' => (string) ($payment->providerStatusLabel() ?? ''),
+            'provider_payment_status' => (string) ($payment->provider_payment_status ?? ''),
+            'provider_subscription_status' => (string) ($payment->provider_subscription_status ?? ''),
+            'status_response_status' => $this->firstStringValue(data_get($statusResponse, 'status')),
+            'callback_status' => $this->firstStringValue(data_get($callbackPayload, 'status')),
             'local_status' => (string) ($payment->status?->value ?? $payment->status),
             'internal_status' => (string) ($payment->internal_status?->value ?? ''),
+            'status_reason' => (string) ($payment->status_reason ?? ''),
             'mismatch_reason' => (string) ($payment->mismatch_reason ?? ''),
+            'event_count' => (int) ($eventStats['event_count'] ?? 0),
+            'sync_failure_event_count' => (int) ($eventStats['sync_failure_event_count'] ?? 0),
+            'latest_sync_failure_count' => (int) data_get($payment->meta, 'latest_sync_failure_count', 0),
+            'latest_sync_failure_message' => $this->firstStringValue(
+                data_get($latestSyncFailure, 'safe_message'),
+                data_get($latestSyncFailure, 'display_error'),
+                (string) ($eventStats['latest_sync_failure_event_note'] ?? ''),
+            ),
+            'latest_sync_failure_event_at' => $eventStats['latest_sync_failure_event_at'] ?? null,
             'paid_at' => $payment->paid_at?->toIso8601String(),
+            'review_required_at' => $payment->review_required_at?->toIso8601String(),
             'fulfilled_at' => $payment->fulfilled_at?->toIso8601String(),
+            'valid_until' => $payment->valid_until?->toIso8601String(),
+            'active_until' => $payment->active_until?->toIso8601String(),
+            'last_payment_at' => $payment->last_payment_at?->toIso8601String(),
             'last_callback_received_at' => $payment->last_callback_received_at?->toIso8601String(),
             'last_status_checked_at' => $payment->last_status_checked_at?->toIso8601String(),
             'created_at' => $payment->created_at?->toIso8601String(),
@@ -1525,8 +1770,56 @@ class InspectFibPayments extends Command
             'fib_subscription_id' => $event->fib_subscription_id,
             'before_status' => $event->before_status,
             'after_status' => $event->after_status,
+            'response_code' => $event->response_code !== null ? (int) $event->response_code : null,
+            'note' => $this->eventNote($event),
+            'payload' => $event->payload,
+            'meta' => $event->meta,
             'processed_at' => $event->processed_at?->toIso8601String(),
+            'created_at' => $event->created_at?->toIso8601String(),
         ];
+    }
+
+    protected function eventNote(PaymentEvent $event): string
+    {
+        $payload = is_array($event->payload) ? $event->payload : [];
+        $meta = is_array($event->meta) ? $event->meta : [];
+
+        foreach ([
+            data_get($payload, 'safe_message'),
+            data_get($payload, 'display_error'),
+            trim(implode(' ', array_filter([
+                data_get($payload, 'fib_error_code'),
+                data_get($payload, 'fib_error_title'),
+            ]))),
+            data_get($meta, 'reason'),
+            data_get($meta, 'recovery_reason'),
+            data_get($payload, 'status'),
+        ] as $candidate) {
+            $value = $this->firstStringValue($candidate);
+
+            if ($value !== null) {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    protected function firstStringValue(mixed ...$candidates): ?string
+    {
+        foreach ($candidates as $candidate) {
+            if (! is_scalar($candidate)) {
+                continue;
+            }
+
+            $value = trim((string) $candidate);
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1599,40 +1892,48 @@ class InspectFibPayments extends Command
             $this->info('LOCAL FIB ROWS');
             $this->table([
                 'payment_id',
-                'customer_id',
+                'purchase_type',
+                'payment_mode',
+                'provider_object_type',
+                'intended_plan_code',
+                'checkout_current_plan_code',
                 'fib_payment_id',
                 'fib_subscription_id',
-                'local_reference',
-                'intended_plan_code',
-                'intended_plan_name',
-                'checkout_current_plan_code',
-                'checkout_current_plan_name',
+                'readable_code',
+                'amount',
+                'currency',
                 'provider_status',
                 'local_status',
                 'internal_status',
+                'latest_sync_failure_count',
+                'latest_sync_failure_message',
                 'mismatch_reason',
                 'paid_at',
+                'last_payment_at',
                 'fulfilled_at',
-                'last_callback_received_at',
                 'last_status_checked_at',
                 'created_at',
             ], $localRows->map(fn (array $row): array => [
                 $row['payment_id'] ?? '',
-                $row['customer_id'] ?? '',
+                $row['purchase_type'] ?? '',
+                $row['payment_mode'] ?? '',
+                $row['provider_object_type'] ?? '',
+                $row['intended_plan_code'] ?? '',
+                $row['checkout_current_plan_code'] ?? '',
                 $row['fib_payment_id'] ?? '',
                 $row['fib_subscription_id'] ?? '',
-                $row['local_reference'] ?? '',
-                $row['intended_plan_code'] ?? '',
-                $row['intended_plan_name'] ?? '',
-                $row['checkout_current_plan_code'] ?? '',
-                $row['checkout_current_plan_name'] ?? '',
+                $row['readable_code'] ?? '',
+                $row['amount'] ?? '',
+                $row['currency'] ?? '',
                 $row['provider_status'] ?? '',
                 $row['local_status'] ?? '',
                 $row['internal_status'] ?? '',
+                $row['latest_sync_failure_count'] ?? '',
+                $row['latest_sync_failure_message'] ?? '',
                 $row['mismatch_reason'] ?? '',
                 $row['paid_at'] ?? '',
+                $row['last_payment_at'] ?? '',
                 $row['fulfilled_at'] ?? '',
-                $row['last_callback_received_at'] ?? '',
                 $row['last_status_checked_at'] ?? '',
                 $row['created_at'] ?? '',
             ])->all());
@@ -1648,16 +1949,16 @@ class InspectFibPayments extends Command
                 'payment_id',
                 'event_type',
                 'source',
-                'fib_payment_id',
-                'fib_subscription_id',
+                'response_code',
+                'note',
                 'processed_at',
             ], $events->map(fn (array $row): array => [
                 $row['event_id'] ?? '',
                 $row['payment_id'] ?? '',
                 $row['event_type'] ?? '',
                 $row['source'] ?? '',
-                $row['fib_payment_id'] ?? '',
-                $row['fib_subscription_id'] ?? '',
+                $row['response_code'] ?? '',
+                $row['note'] ?? '',
                 $row['processed_at'] ?? '',
             ])->all());
         }
@@ -1681,15 +1982,19 @@ class InspectFibPayments extends Command
             $this->info('POSSIBLE LOCAL CANDIDATES');
             $this->table([
                 'payment_id',
-                'local_reference',
                 'purchase_type',
+                'payment_mode',
+                'provider_object_type',
+                'local_reference',
                 'provider_status',
                 'internal_status',
                 'created_at',
             ], $candidates->map(fn (array $row): array => [
                 $row['payment_id'] ?? '',
-                $row['local_reference'] ?? '',
                 $row['purchase_type'] ?? '',
+                $row['payment_mode'] ?? '',
+                $row['provider_object_type'] ?? '',
+                $row['local_reference'] ?? '',
                 $row['provider_status'] ?? '',
                 $row['internal_status'] ?? '',
                 $row['created_at'] ?? '',

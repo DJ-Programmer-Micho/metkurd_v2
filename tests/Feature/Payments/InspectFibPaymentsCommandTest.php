@@ -14,6 +14,7 @@ use App\Models\ServicePlan;
 use App\Models\StoragePlan;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -261,6 +262,139 @@ it('finds an existing row by provider reference and refreshes status without ful
     expect($payment->status)->toBe(PaymentStatus::PAID)
         ->and($payment->internal_status)->toBe(PaymentInternalStatus::PAID_PENDING_APPLICATION)
         ->and($payment->fulfilled_at)->toBeNull();
+});
+
+it('does not crash when an existing local subscription row returns provider not found', function () {
+    Http::preventStrayRequests();
+
+    $customer = inspectFibCustomer();
+    $plan = StoragePlan::query()->where('code', 'pro-5120')->firstOrFail();
+
+    $payment = Payment::create([
+        'uuid' => (string) Str::uuid(),
+        'customer_id' => $customer->id,
+        'provider' => PaymentProvider::FIB,
+        'purchase_type' => PurchaseType::STORAGE_SUBSCRIPTION,
+        'payment_mode' => PaymentMode::RECURRING,
+        'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
+        'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
+        'internal_status' => PaymentInternalStatus::AWAITING_CUSTOMER_ACTION,
+        'local_reference' => 'INSPECT-STORAGE-404-'.strtoupper(Str::random(8)),
+        'idempotency_key' => (string) Str::uuid(),
+        'fib_subscription_id' => 'fib-storage-not-found-123',
+        'amount' => $plan->priceIqdAmount(),
+        'currency' => 'IQD',
+        'provider_subscription_status' => 'DRAFT',
+        'purchase_snapshot' => [
+            'code' => $plan->code,
+            'name' => $plan->name,
+            'billing_cycle' => 'monthly',
+            'checkout_context' => [
+                'current_storage_plan_code' => 'free-512',
+                'current_storage_plan_name' => 'Free 512 MB',
+            ],
+        ],
+    ]);
+
+    Http::fake([
+        inspectFibStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        inspectFibStageUrl('/protected/v1/subscriptions/fib-storage-not-found-123') => Http::response([
+            'traceId' => 'trace-storage-not-found-123',
+            'errors' => [[
+                'code' => 'NOT_FOUND_ERROR',
+                'title' => 'Subscription not found',
+                'detail' => 'No subscription exists for this id.',
+            ]],
+        ], 404),
+    ]);
+
+    $this->artisan('payments:inspect-fib', [
+        '--customer' => $customer->id,
+        '--fib-subscription-id' => 'fib-storage-not-found-123',
+    ])
+        ->expectsOutputToContain('matched_existing_row_lookup_failed')
+        ->expectsOutputToContain('HTTP 404 NOT_FOUND_ERROR')
+        ->expectsOutputToContain('storage_subscription')
+        ->expectsOutputToContain('recurring')
+        ->expectsOutputToContain('This appears to be an uncompleted or unconfirmed FIB checkout/subscription.')
+        ->assertExitCode(1);
+
+    $payment = $payment->fresh();
+    $failureEvent = PaymentEvent::query()
+        ->where('payment_id', $payment->id)
+        ->where('event_type', 'provider_status_sync_failed')
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($payment->status)->toBe(PaymentStatus::AWAITING_CUSTOMER_ACTION)
+        ->and($payment->internal_status)->toBe(PaymentInternalStatus::AWAITING_CUSTOMER_ACTION)
+        ->and((int) data_get($payment->meta, 'latest_sync_failure_count'))->toBe(1)
+        ->and((string) data_get($payment->meta, 'latest_sync_failure.fib_error_code'))->toBe('NOT_FOUND_ERROR')
+        ->and((string) data_get($failureEvent->payload, 'fib_error_code'))->toBe('NOT_FOUND_ERROR')
+        ->and((string) data_get($failureEvent->payload, 'safe_message'))->toContain('Do not fulfill automatically');
+});
+
+it('emits structured json when an existing local row provider refresh fails', function () {
+    Http::preventStrayRequests();
+
+    $customer = inspectFibCustomer();
+    $plan = StoragePlan::query()->where('code', 'pro-5120')->firstOrFail();
+
+    Payment::create([
+        'uuid' => (string) Str::uuid(),
+        'customer_id' => $customer->id,
+        'provider' => PaymentProvider::FIB,
+        'purchase_type' => PurchaseType::STORAGE_SUBSCRIPTION,
+        'payment_mode' => PaymentMode::RECURRING,
+        'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
+        'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
+        'internal_status' => PaymentInternalStatus::AWAITING_CUSTOMER_ACTION,
+        'local_reference' => 'INSPECT-STORAGE-JSON-'.strtoupper(Str::random(8)),
+        'idempotency_key' => (string) Str::uuid(),
+        'fib_subscription_id' => 'fib-storage-json-404',
+        'amount' => $plan->priceIqdAmount(),
+        'currency' => 'IQD',
+        'provider_subscription_status' => 'DRAFT',
+        'purchase_snapshot' => [
+            'code' => $plan->code,
+            'name' => $plan->name,
+        ],
+    ]);
+
+    Http::fake([
+        inspectFibStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        inspectFibStageUrl('/protected/v1/subscriptions/fib-storage-json-404') => Http::response([
+            'traceId' => 'trace-storage-json-404',
+            'errors' => [[
+                'code' => 'NOT_FOUND_ERROR',
+                'title' => 'Subscription not found',
+            ]],
+        ], 404),
+    ]);
+
+    $exitCode = Artisan::call('payments:inspect-fib', [
+        '--customer' => $customer->id,
+        '--fib-subscription-id' => 'fib-storage-json-404',
+        '--json' => true,
+    ]);
+    $report = json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and(data_get($report, 'mode'))->toBe('provider_reference_existing_row_lookup_failed')
+        ->and(data_get($report, 'provider_lookup.http_status'))->toBe(404)
+        ->and(data_get($report, 'provider_lookup.fib_error_code'))->toBe('NOT_FOUND_ERROR')
+        ->and(data_get($report, 'provider_lookup.provider_reference_type'))->toBe('subscription')
+        ->and(data_get($report, 'provider_lookup.matched_local_row'))->toBeTrue()
+        ->and(data_get($report, 'provider_lookup.status_refreshed'))->toBeFalse()
+        ->and(data_get($report, 'local_rows.0.purchase_type'))->toBe('storage_subscription')
+        ->and(data_get($report, 'local_rows.0.payment_mode'))->toBe('recurring')
+        ->and((int) data_get($report, 'local_rows.0.latest_sync_failure_count'))->toBe(1);
 });
 
 it('does not create a row for provider lookup unless create missing review is requested', function () {

@@ -1048,6 +1048,73 @@ it('detects recurring renewal through scheduled reconciliation and records sync 
         }))->toBeTrue();
 });
 
+it('marks repeated permanent subscription lookup failures for review and stops further provider polling', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $plan = StoragePlan::query()->where('code', 'pro-5120')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-subscription-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-storage-review-404'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-storage-review-404') => Http::response([
+            'traceId' => 'trace-storage-review-404',
+            'errors' => [[
+                'code' => 'NOT_FOUND_ERROR',
+                'title' => 'Subscription not found',
+                'detail' => 'No subscription exists for this identifier.',
+            ]],
+        ], 404),
+    ]);
+
+    $payment = app(CreateStorageSubscriptionPayment::class)->handle($customer, $plan->id);
+    $payment->forceFill([
+        'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
+        'internal_status' => PaymentInternalStatus::AWAITING_CUSTOMER_ACTION,
+        'provider_subscription_status' => 'DRAFT',
+        'last_status_checked_at' => now()->subMinutes(30),
+    ])->save();
+
+    foreach (range(1, 3) as $attempt) {
+        $this->artisan('payments:reconcile-fib-subscriptions', [
+            '--customer-id' => $customer->id,
+            '--chunk' => 25,
+            '--stale-minutes' => 0,
+        ])->assertSuccessful();
+    }
+
+    $payment = $payment->fresh();
+    $failureEvents = PaymentEvent::query()
+        ->where('payment_id', $payment->id)
+        ->where('event_type', 'provider_status_sync_failed')
+        ->get();
+
+    expect($payment->status)->toBe(PaymentStatus::AWAITING_CUSTOMER_ACTION)
+        ->and($payment->internal_status)->toBe(PaymentInternalStatus::REQUIRES_REVIEW)
+        ->and($payment->review_required_at)->not->toBeNull()
+        ->and($payment->fulfilled_at)->toBeNull()
+        ->and((string) $payment->mismatch_reason)->toContain('NOT_FOUND')
+        ->and((int) data_get($payment->meta, 'latest_sync_failure_count'))->toBe(3)
+        ->and((string) data_get($payment->meta, 'latest_sync_failure.fib_error_code'))->toBe('NOT_FOUND_ERROR')
+        ->and($failureEvents->count())->toBe(1)
+        ->and((string) data_get($failureEvents->first()?->payload, 'fib_error_code'))->toBe('NOT_FOUND_ERROR')
+        ->and((string) data_get($failureEvents->first()?->payload, 'safe_message'))->toContain('Do not fulfill automatically');
+
+    Http::preventStrayRequests();
+
+    $this->artisan('payments:reconcile-fib-subscriptions', [
+        '--customer-id' => $customer->id,
+        '--chunk' => 25,
+        '--stale-minutes' => 0,
+    ])->assertSuccessful();
+});
+
 it('keeps reconciliation renewal events and notifications idempotent across repeated sync runs', function () {
     Http::preventStrayRequests();
     fibFlowEnableHourlyTesting();
