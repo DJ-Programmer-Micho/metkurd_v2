@@ -14,8 +14,8 @@ use App\Models\StoragePlan;
 use App\Services\Billing\CustomerBillingStateService;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -57,9 +57,17 @@ class ReconcileSubscriptions extends Command
             $syncExitCode = $this->call('payments:reconcile-fib-subscriptions', $providerSyncOptions);
 
             if ($syncExitCode !== self::SUCCESS) {
-                $this->error('Provider status reconciliation failed.');
+                $this->error('Provider checkout reconciliation failed.');
 
                 return $syncExitCode;
+            }
+
+            $renewalSyncExitCode = $this->call('payments:reconcile-fib-subscription-renewals', $providerSyncOptions);
+
+            if ($renewalSyncExitCode !== self::SUCCESS) {
+                $this->error('Provider renewal reconciliation failed.');
+
+                return $renewalSyncExitCode;
             }
         }
 
@@ -123,14 +131,14 @@ class ReconcileSubscriptions extends Command
         $this->info($dryRun
             ? 'Subscription reconciliation dry-run completed.'
             : 'Subscription reconciliation completed.');
-        $this->line('Service candidates: ' . number_format($summary['service_candidates']));
+        $this->line('Service candidates: '.number_format($summary['service_candidates']));
         $this->line($dryRun
-            ? 'Service would downgrade: ' . number_format($summary['service_updated'])
-            : 'Service downgraded: ' . number_format($summary['service_updated']));
-        $this->line('Storage candidates: ' . number_format($summary['storage_candidates']));
+            ? 'Service would downgrade: '.number_format($summary['service_updated'])
+            : 'Service downgraded: '.number_format($summary['service_updated']));
+        $this->line('Storage candidates: '.number_format($summary['storage_candidates']));
         $this->line($dryRun
-            ? 'Storage would downgrade: ' . number_format($summary['storage_updated'])
-            : 'Storage downgraded: ' . number_format($summary['storage_updated']));
+            ? 'Storage would downgrade: '.number_format($summary['storage_updated'])
+            : 'Storage downgraded: '.number_format($summary['storage_updated']));
 
         return self::SUCCESS;
     }
@@ -188,16 +196,16 @@ class ReconcileSubscriptions extends Command
                         return false;
                     }
 
-                    ++$processed;
-                    ++$candidates;
+                    $processed++;
+                    $candidates++;
 
                     $payment = $subscription->payment;
 
                     if ($dryRun) {
-                        ++$updated;
+                        $updated++;
 
                         if ($previewPrinted < 20) {
-                            ++$previewPrinted;
+                            $previewPrinted++;
                             $this->line(sprintf(
                                 '[dry-run] %s subscription_id=%d customer_id=%d payment_id=%d active_until=%s provider_status=%s',
                                 $scopeLabel,
@@ -220,7 +228,7 @@ class ReconcileSubscriptions extends Command
                         events: $events,
                         defaultPlanId: $defaultPlanId,
                     )) {
-                        ++$updated;
+                        $updated++;
                     }
                 }
 
@@ -337,9 +345,9 @@ class ReconcileSubscriptions extends Command
 
             if ($payment) {
                 $events->record($payment, [
-                    'event_type' => $scopeLabel . '_subscription_ended',
+                    'event_type' => $scopeLabel.'_subscription_ended',
                     'source' => 'scheduled_reconciliation_local_expiry',
-                    'event_key' => 'subscription-local-expiry:' . $scopeLabel . ':' . $subscription->id . ':' . sha1($endedAt->toIso8601String()),
+                    'event_key' => 'subscription-local-expiry:'.$scopeLabel.':'.$subscription->id.':'.sha1($endedAt->toIso8601String()),
                     'before_status' => $payment->status->value,
                     'after_status' => $payment->status->value,
                     'meta' => [

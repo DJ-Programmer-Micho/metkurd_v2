@@ -10,6 +10,8 @@ use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Models\Coupon;
 use App\Models\Customer;
+use App\Models\CustomerServiceSubscription;
+use App\Models\CustomerStorageSubscription;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -126,6 +128,16 @@ class Payment extends Model
     public function events(): HasMany
     {
         return $this->hasMany(PaymentEvent::class, 'payment_id');
+    }
+
+    public function serviceSubscriptions(): HasMany
+    {
+        return $this->hasMany(CustomerServiceSubscription::class, 'payment_id');
+    }
+
+    public function storageSubscriptions(): HasMany
+    {
+        return $this->hasMany(CustomerStorageSubscription::class, 'payment_id');
     }
 
     public function isAwaitingCustomerAction(): bool

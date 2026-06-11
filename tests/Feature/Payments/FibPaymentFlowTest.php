@@ -6,6 +6,7 @@ use App\Domain\Payments\Actions\CreatePlanSubscriptionPayment;
 use App\Domain\Payments\Actions\CreateStorageSubscriptionPayment;
 use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentMode;
+use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
@@ -181,6 +182,25 @@ function fibFlowGrantPaidPlan(Customer $customer): ServicePlan
     ]);
 
     return $plan;
+}
+
+function fibFlowSyntheticPayment(Customer $customer, array $overrides = []): Payment
+{
+    return Payment::create(array_merge([
+        'uuid' => (string) Str::uuid(),
+        'customer_id' => $customer->id,
+        'provider' => PaymentProvider::FIB,
+        'purchase_type' => PurchaseType::ADDON_CREDITS,
+        'payment_mode' => PaymentMode::ONE_TIME,
+        'provider_object_type' => PaymentProviderObjectType::PAYMENT,
+        'status' => PaymentStatus::PENDING,
+        'internal_status' => PaymentInternalStatus::PENDING,
+        'local_reference' => 'SYN-'.strtoupper(Str::random(10)),
+        'idempotency_key' => (string) Str::uuid(),
+        'fib_payment_id' => 'fib-synthetic-'.Str::lower(Str::random(12)),
+        'amount' => 1000,
+        'currency' => 'IQD',
+    ], $overrides));
 }
 
 it('skips telegram payment notifications safely when checkout and payment groups are not configured', function () {
@@ -864,6 +884,121 @@ it('reconciles missed one-time fib callbacks and fulfills the payment safely', f
         ->and(CreditOrder::query()->where('payment_id', $payment->id)->count())->toBe(1);
 });
 
+it('skips applied review and terminal one-time rows while reconciling only unresolved checkouts', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    fibFlowGrantPaidPlan($customer);
+    $product = CreditProduct::query()->where('code', 'addon_10000')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/payments') => Http::response(
+            fibFlowCreateResponse('fib-addon-reconcile-mixed-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/payments/fib-addon-reconcile-mixed-123/status') => Http::response(
+            fibFlowStatusResponse('fib-addon-reconcile-mixed-123', 'PAID', [
+                'paidAt' => '2026-05-01T10:05:00Z',
+            ]),
+            200
+        ),
+    ]);
+
+    $unresolved = app(CreateAddonPayment::class)->handle($customer->fresh(), $product->id);
+
+    $appliedByStatus = fibFlowSyntheticPayment($customer, [
+        'fib_payment_id' => 'fib-applied-status-123',
+        'status' => PaymentStatus::PAID,
+        'internal_status' => PaymentInternalStatus::APPLIED,
+        'paid_at' => now()->subHour(),
+        'fulfilled_at' => now()->subHour(),
+        'last_status_checked_at' => now()->subMinutes(30),
+    ]);
+
+    $appliedByFulfillment = fibFlowSyntheticPayment($customer, [
+        'fib_payment_id' => 'fib-applied-fulfilled-123',
+        'status' => PaymentStatus::PAID,
+        'internal_status' => PaymentInternalStatus::PAID_PENDING_APPLICATION,
+        'paid_at' => now()->subHour(),
+        'fulfilled_at' => now()->subHour(),
+        'last_status_checked_at' => now()->subMinutes(30),
+    ]);
+
+    $reviewRequired = fibFlowSyntheticPayment($customer, [
+        'fib_payment_id' => 'fib-review-123',
+        'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
+        'internal_status' => PaymentInternalStatus::REQUIRES_REVIEW,
+        'review_required_at' => now()->subMinutes(10),
+        'last_status_checked_at' => now()->subMinutes(30),
+    ]);
+
+    $canceled = fibFlowSyntheticPayment($customer, [
+        'fib_payment_id' => 'fib-canceled-123',
+        'status' => PaymentStatus::CANCELED,
+        'internal_status' => PaymentInternalStatus::CANCELED,
+        'canceled_at' => now()->subHour(),
+        'last_status_checked_at' => now()->subMinutes(30),
+    ]);
+
+    $expired = fibFlowSyntheticPayment($customer, [
+        'fib_payment_id' => 'fib-expired-123',
+        'status' => PaymentStatus::EXPIRED,
+        'internal_status' => PaymentInternalStatus::EXPIRED,
+        'expired_at' => now()->subHour(),
+        'failed_at' => now()->subHour(),
+        'last_status_checked_at' => now()->subMinutes(30),
+    ]);
+
+    $failed = fibFlowSyntheticPayment($customer, [
+        'fib_payment_id' => 'fib-declined-123',
+        'status' => PaymentStatus::FAILED,
+        'internal_status' => PaymentInternalStatus::FAILED,
+        'provider_payment_status' => 'DECLINED',
+        'failed_at' => now()->subHour(),
+        'last_status_checked_at' => now()->subMinutes(30),
+    ]);
+
+    $appliedCheckedAt = $appliedByStatus->last_status_checked_at?->toIso8601String();
+    $fulfilledCheckedAt = $appliedByFulfillment->last_status_checked_at?->toIso8601String();
+    $reviewCheckedAt = $reviewRequired->last_status_checked_at?->toIso8601String();
+    $canceledCheckedAt = $canceled->last_status_checked_at?->toIso8601String();
+    $expiredCheckedAt = $expired->last_status_checked_at?->toIso8601String();
+    $failedCheckedAt = $failed->last_status_checked_at?->toIso8601String();
+
+    $this->artisan('payments:reconcile-fib-payments', [
+        '--customer-id' => $customer->id,
+        '--chunk' => 25,
+        '--stale-minutes' => 0,
+    ])
+        ->expectsOutputToContain('Candidates scanned: 7')
+        ->expectsOutputToContain('Skipped applied: 2')
+        ->expectsOutputToContain('Skipped review-required: 1')
+        ->expectsOutputToContain('Skipped terminal: 3')
+        ->expectsOutputToContain('Processed unresolved: 1')
+        ->expectsOutputToContain('Updated: 1')
+        ->expectsOutputToContain('Failed: 0')
+        ->assertSuccessful();
+
+    expect($unresolved->fresh()->status)->toBe(PaymentStatus::PAID)
+        ->and($unresolved->fresh()->internal_status)->toBe(PaymentInternalStatus::APPLIED)
+        ->and($unresolved->fresh()->fulfilled_at)->not->toBeNull()
+        ->and(CreditOrder::query()->where('payment_id', $unresolved->id)->count())->toBe(1);
+
+    expect($appliedByStatus->fresh()->last_status_checked_at?->toIso8601String())->toBe($appliedCheckedAt)
+        ->and($appliedByFulfillment->fresh()->last_status_checked_at?->toIso8601String())->toBe($fulfilledCheckedAt)
+        ->and($reviewRequired->fresh()->last_status_checked_at?->toIso8601String())->toBe($reviewCheckedAt)
+        ->and($canceled->fresh()->last_status_checked_at?->toIso8601String())->toBe($canceledCheckedAt)
+        ->and($expired->fresh()->last_status_checked_at?->toIso8601String())->toBe($expiredCheckedAt)
+        ->and($failed->fresh()->last_status_checked_at?->toIso8601String())->toBe($failedCheckedAt)
+        ->and(PaymentEvent::query()->where('payment_id', $appliedByStatus->id)->where('event_type', 'provider_status_checked')->exists())->toBeFalse()
+        ->and(PaymentEvent::query()->where('payment_id', $reviewRequired->id)->where('event_type', 'provider_status_checked')->exists())->toBeFalse()
+        ->and(PaymentEvent::query()->where('payment_id', $failed->id)->where('event_type', 'provider_status_checked')->exists())->toBeFalse();
+});
+
 it('fulfills a successful plan subscription checkout', function () {
     Http::preventStrayRequests();
 
@@ -988,7 +1123,7 @@ it('extends a fulfilled hourly subscription when fib reports a successful renewa
     );
 });
 
-it('detects recurring renewal through scheduled reconciliation and records sync evidence', function () {
+it('detects recurring renewal through the dedicated renewal reconciliation and records sync evidence', function () {
     Http::preventStrayRequests();
     fibFlowEnableHourlyTesting();
     Carbon::setTestNow('2026-05-01 10:00:00');
@@ -1023,7 +1158,7 @@ it('detects recurring renewal through scheduled reconciliation and records sync 
 
     Carbon::setTestNow('2026-05-01 11:05:00');
 
-    $this->artisan('payments:reconcile-fib-subscriptions', [
+    $this->artisan('payments:reconcile-fib-subscription-renewals', [
         '--customer-id' => $customer->id,
         '--chunk' => 25,
         '--stale-minutes' => 0,
@@ -1041,8 +1176,8 @@ it('detects recurring renewal through scheduled reconciliation and records sync 
 
     expect($payment->active_until?->toIso8601String())->toContain('2026-05-01T12:00:00')
         ->and($payment->last_payment_at?->toIso8601String())->toContain('2026-05-01T11:00:00')
-        ->and(data_get($payment->meta, 'subscription_lifecycle.sync_source'))->toBe('scheduled_reconciliation')
-        ->and(data_get($subscription->meta, 'provider_lifecycle_sync_source'))->toBe('scheduled_reconciliation')
+        ->and(data_get($payment->meta, 'subscription_lifecycle.sync_source'))->toBe('scheduled_subscription_renewal_reconciliation')
+        ->and(data_get($subscription->meta, 'provider_lifecycle_sync_source'))->toBe('scheduled_subscription_renewal_reconciliation')
         ->and($renewalEvents->contains(function (PaymentEvent $event): bool {
             return str_contains((string) data_get($event->meta, 'period_ends_at', ''), '2026-05-01T12:00:00');
         }))->toBeTrue();
@@ -1115,7 +1250,121 @@ it('marks repeated permanent subscription lookup failures for review and stops f
     ])->assertSuccessful();
 });
 
-it('keeps reconciliation renewal events and notifications idempotent across repeated sync runs', function () {
+it('keeps applied recurring subscriptions out of checkout reconciliation and records renewal failures separately', function () {
+    Http::preventStrayRequests();
+    fibFlowEnableHourlyTesting();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-hourly-renewal-failure-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-hourly-renewal-failure-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-renewal-failure-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200)
+            ->push([
+                'traceId' => 'trace-renewal-not-found-123',
+                'errors' => [[
+                    'code' => 'NOT_FOUND_ERROR',
+                    'title' => 'Subscription not found',
+                    'detail' => 'No subscription exists for this identifier.',
+                ]],
+            ], 404)
+            ->push([
+                'traceId' => 'trace-renewal-not-found-123',
+                'errors' => [[
+                    'code' => 'NOT_FOUND_ERROR',
+                    'title' => 'Subscription not found',
+                    'detail' => 'No subscription exists for this identifier.',
+                ]],
+            ], 404)
+            ->push([
+                'traceId' => 'trace-renewal-not-found-123',
+                'errors' => [[
+                    'code' => 'NOT_FOUND_ERROR',
+                    'title' => 'Subscription not found',
+                    'detail' => 'No subscription exists for this identifier.',
+                ]],
+            ], 404),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_reconcile_initial')->fresh();
+    $payment->forceFill([
+        'last_status_checked_at' => now()->subMinutes(30),
+    ])->save();
+
+    Http::preventStrayRequests();
+
+    $this->artisan('payments:reconcile-fib-subscriptions', [
+        '--customer-id' => $customer->id,
+        '--chunk' => 25,
+        '--stale-minutes' => 0,
+    ])
+        ->expectsOutputToContain('Candidates scanned: 1')
+        ->expectsOutputToContain('Skipped applied: 1')
+        ->expectsOutputToContain('Skipped review-required: 0')
+        ->expectsOutputToContain('Skipped terminal: 0')
+        ->expectsOutputToContain('Processed unresolved: 0')
+        ->expectsOutputToContain('Updated: 0')
+        ->expectsOutputToContain('Failed: 0')
+        ->assertSuccessful();
+
+    expect(PaymentEvent::query()
+        ->where('payment_id', $payment->id)
+        ->where('event_type', 'provider_status_sync_failed')
+        ->count())->toBe(0);
+
+    foreach (range(1, 3) as $attempt) {
+        $payment->forceFill([
+            'last_status_checked_at' => now()->subMinutes(30),
+        ])->save();
+
+        $this->artisan('payments:reconcile-fib-subscription-renewals', [
+            '--customer-id' => $customer->id,
+            '--chunk' => 25,
+            '--stale-minutes' => 0,
+        ])->assertSuccessful();
+    }
+
+    $payment = $payment->fresh();
+    $renewalFailureEvents = PaymentEvent::query()
+        ->where('payment_id', $payment->id)
+        ->where('event_type', 'provider_renewal_sync_failed')
+        ->get();
+
+    expect($payment->status)->toBe(PaymentStatus::PAID)
+        ->and($payment->internal_status)->toBe(PaymentInternalStatus::APPLIED)
+        ->and($payment->fulfilled_at)->not->toBeNull()
+        ->and($payment->review_required_at)->toBeNull()
+        ->and(data_get($payment->meta, 'latest_sync_failure'))->toBeNull()
+        ->and((int) data_get($payment->meta, 'latest_renewal_sync_failure_count'))->toBe(3)
+        ->and((string) data_get($payment->meta, 'latest_renewal_sync_failure.fib_error_code'))->toBe('NOT_FOUND_ERROR')
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $payment->id)
+            ->where('event_type', 'provider_status_sync_failed')
+            ->count())->toBe(0)
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $payment->id)
+            ->where('event_type', 'payment_requires_review')
+            ->count())->toBe(0)
+        ->and($renewalFailureEvents->count())->toBe(1)
+        ->and((string) $renewalFailureEvents->first()?->source)->toBe('scheduled_subscription_renewal_reconciliation')
+        ->and((string) data_get($renewalFailureEvents->first()?->payload, 'fib_error_code'))->toBe('NOT_FOUND_ERROR');
+});
+
+it('keeps renewal reconciliation events and notifications idempotent across repeated sync runs', function () {
     Http::preventStrayRequests();
     fibFlowEnableHourlyTesting();
     Carbon::setTestNow('2026-05-01 10:00:00');
@@ -1155,13 +1404,13 @@ it('keeps reconciliation renewal events and notifications idempotent across repe
 
     Carbon::setTestNow('2026-05-01 11:05:00');
 
-    $this->artisan('payments:reconcile-fib-subscriptions', [
+    $this->artisan('payments:reconcile-fib-subscription-renewals', [
         '--customer-id' => $customer->id,
         '--chunk' => 25,
         '--stale-minutes' => 0,
     ])->assertSuccessful();
 
-    $this->artisan('payments:reconcile-fib-subscriptions', [
+    $this->artisan('payments:reconcile-fib-subscription-renewals', [
         '--customer-id' => $customer->id,
         '--chunk' => 25,
         '--stale-minutes' => 0,

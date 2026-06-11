@@ -22,6 +22,42 @@ class PaymentSyncFailureService
      */
     public function capture(Payment $payment, \Throwable $exception, string $source): array
     {
+        return $this->captureFailure(
+            payment: $payment,
+            exception: $exception,
+            source: $source,
+            eventType: 'provider_status_sync_failed',
+            metaPrefix: 'latest_sync_failure',
+            markRequiresReview: true,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function captureRenewalFailure(Payment $payment, \Throwable $exception, string $source): array
+    {
+        return $this->captureFailure(
+            payment: $payment,
+            exception: $exception,
+            source: $source,
+            eventType: 'provider_renewal_sync_failed',
+            metaPrefix: 'latest_renewal_sync_failure',
+            markRequiresReview: false,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function captureFailure(
+        Payment $payment,
+        \Throwable $exception,
+        string $source,
+        string $eventType,
+        string $metaPrefix,
+        bool $markRequiresReview,
+    ): array {
         $payment = $payment->fresh() ?? $payment;
         $now = now();
         $providerReferenceType = $payment->isProviderSubscriptionObject() ? 'subscription' : 'payment';
@@ -36,17 +72,17 @@ class PaymentSyncFailureService
         $signature = $this->signature($details);
         $captured = [];
 
-        DB::transaction(function () use ($payment, $now, $details, $signature, &$captured) {
+        DB::transaction(function () use ($payment, $now, $details, $signature, $eventType, $metaPrefix, $markRequiresReview, &$captured) {
             /** @var Payment $locked */
             $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
             $meta = (array) ($locked->meta ?? []);
-            $previousSignature = trim((string) data_get($meta, 'latest_sync_failure_signature', ''));
+            $previousSignature = trim((string) data_get($meta, $metaPrefix.'_signature', ''));
             $sameFailure = $previousSignature !== '' && hash_equals($previousSignature, $signature);
             $failureCount = $sameFailure
-                ? max(1, (int) data_get($meta, 'latest_sync_failure_count', 0)) + 1
+                ? max(1, (int) data_get($meta, $metaPrefix.'_count', 0)) + 1
                 : 1;
             $firstSeenAt = $sameFailure
-                ? (string) data_get($meta, 'latest_sync_failure_first_seen_at', $now->toIso8601String())
+                ? (string) data_get($meta, $metaPrefix.'_first_seen_at', $now->toIso8601String())
                 : $now->toIso8601String();
             $pauseReconciliation = $this->shouldPauseReconciliation($locked, $details, $failureCount);
             $failureSnapshot = array_filter([
@@ -65,24 +101,24 @@ class PaymentSyncFailureService
                 'transient' => $details['transient'] ?? null,
             ], static fn (mixed $value): bool => $value !== null && $value !== '');
 
-            $meta['latest_sync_failure'] = $failureSnapshot;
-            $meta['latest_sync_failure_signature'] = $signature;
-            $meta['latest_sync_failure_count'] = $failureCount;
-            $meta['latest_sync_failure_first_seen_at'] = $firstSeenAt;
-            $meta['latest_sync_failure_last_seen_at'] = $now->toIso8601String();
-            $meta['latest_sync_failure_http_status'] = $details['http_status'] ?? null;
-            $meta['latest_sync_failure_error_code'] = $details['fib_error_code'] ?? null;
-            $meta['latest_sync_failure_trace_id'] = $details['fib_trace_id'] ?? null;
-            $meta['latest_sync_failure_pause_reconciliation'] = $pauseReconciliation;
+            $meta[$metaPrefix] = $failureSnapshot;
+            $meta[$metaPrefix.'_signature'] = $signature;
+            $meta[$metaPrefix.'_count'] = $failureCount;
+            $meta[$metaPrefix.'_first_seen_at'] = $firstSeenAt;
+            $meta[$metaPrefix.'_last_seen_at'] = $now->toIso8601String();
+            $meta[$metaPrefix.'_http_status'] = $details['http_status'] ?? null;
+            $meta[$metaPrefix.'_error_code'] = $details['fib_error_code'] ?? null;
+            $meta[$metaPrefix.'_trace_id'] = $details['fib_trace_id'] ?? null;
+            $meta[$metaPrefix.'_pause_reconciliation'] = $pauseReconciliation;
 
             $locked->forceFill([
                 'meta' => $meta,
                 'last_status_checked_at' => $now,
             ])->save();
 
-            $event = $this->recordFailureEvent($locked, $details, $signature, $failureCount, $firstSeenAt, $now);
+            $event = $this->recordFailureEvent($locked, $details, $signature, $failureCount, $firstSeenAt, $now, $eventType);
 
-            if ($this->shouldMarkRequiresReview($locked, $details, $failureCount)) {
+            if ($markRequiresReview && $this->shouldMarkRequiresReview($locked, $details, $failureCount)) {
                 $locked->forceFill([
                     'internal_status' => PaymentInternalStatus::REQUIRES_REVIEW,
                     'review_required_at' => $locked->review_required_at ?? $now,
@@ -150,11 +186,12 @@ class PaymentSyncFailureService
         int $failureCount,
         string $firstSeenAt,
         CarbonInterface $now,
+        string $eventType,
     ): PaymentEvent {
         $event = $this->events->record($payment, [
-            'event_type' => 'provider_status_sync_failed',
+            'event_type' => $eventType,
             'source' => (string) ($details['source'] ?? 'system'),
-            'event_key' => $this->failureEventKey($payment, $details, $signature, $now),
+            'event_key' => $this->failureEventKey($payment, $details, $signature, $now, $eventType),
             'before_status' => $payment->status->value,
             'after_status' => $payment->status->value,
             'response_code' => $this->responseCode($details['http_status'] ?? null),
@@ -186,13 +223,14 @@ class PaymentSyncFailureService
         return $event->fresh() ?? $event;
     }
 
-    protected function failureEventKey(Payment $payment, array $details, string $signature, CarbonInterface $now): string
+    protected function failureEventKey(Payment $payment, array $details, string $signature, CarbonInterface $now, string $eventType): string
     {
         $intervalHours = max(1, (int) ($details['event_interval_hours'] ?? 24));
         $bucket = (int) floor($now->getTimestamp() / ($intervalHours * 3600));
 
         return sprintf(
-            'provider-sync-failed:%d:%s:%s:%d',
+            '%s:%d:%s:%s:%d',
+            $eventType,
             (int) $payment->id,
             (string) ($details['source'] ?? 'system'),
             sha1($signature),

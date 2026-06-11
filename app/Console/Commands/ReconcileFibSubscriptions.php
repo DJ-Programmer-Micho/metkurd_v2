@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\InteractsWithFibCheckoutReconciliation;
 use App\Domain\Payments\Actions\SyncFibCheckoutStatus;
 use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentProvider;
@@ -16,6 +17,8 @@ use Illuminate\Support\Facades\DB;
 
 class ReconcileFibSubscriptions extends Command
 {
+    use InteractsWithFibCheckoutReconciliation;
+
     protected $signature = 'payments:reconcile-fib-subscriptions
         {--customer-id= : Reconcile only subscriptions for a single customer id}
         {--chunk=100 : Number of subscriptions to reconcile per chunk}
@@ -23,7 +26,7 @@ class ReconcileFibSubscriptions extends Command
         {--stale-minutes=5 : Only reconcile records that were not checked within this window}
         {--dry-run : Show which records would be processed without mutating data}';
 
-    protected $description = 'Reconcile FIB recurring subscription state and lifecycle changes.';
+    protected $description = 'Reconcile unresolved FIB recurring subscription checkout records when callbacks are delayed or missed.';
 
     public function handle(
         SyncFibCheckoutStatus $sync,
@@ -36,37 +39,31 @@ class ReconcileFibSubscriptions extends Command
         $customerId = (int) $this->option('customer-id');
         $dryRun = (bool) $this->option('dry-run');
 
-        $query = Payment::query()
+        $baseQuery = Payment::query()
             ->where('provider', PaymentProvider::FIB)
             ->where('provider_object_type', PaymentProviderObjectType::SUBSCRIPTION)
-            ->whereNotNull('fib_subscription_id')
-            ->where(function ($builder) {
-                $builder
-                    ->whereNull('internal_status')
-                    ->orWhere('internal_status', '!=', PaymentInternalStatus::REQUIRES_REVIEW->value);
-            })
-            ->where(function ($builder) {
-                $builder
-                    ->whereIn('status', ['pending', 'awaiting_customer_action', 'paid']);
-            });
+            ->whereNotNull('fib_subscription_id');
 
         if ($customerId > 0) {
-            $query->where('customer_id', $customerId);
+            $baseQuery->where('customer_id', $customerId);
         }
 
         if ($staleMinutes > 0) {
             $staleThreshold = now()->subMinutes($staleMinutes);
-            $query->where(function ($builder) use ($staleThreshold) {
+            $baseQuery->where(function ($builder) use ($staleThreshold) {
                 $builder
                     ->whereNull('last_status_checked_at')
                     ->orWhere('last_status_checked_at', '<=', $staleThreshold);
             });
         }
 
-        $candidateCount = (clone $query)->count();
+        $summary = $this->candidateSummary(clone $baseQuery);
+        $query = $this->unresolvedCheckoutQuery(clone $baseQuery);
+        $candidateCount = (int) ($summary['processed_unresolved'] ?? 0);
 
         if ($candidateCount === 0) {
             $this->info('No FIB subscriptions needed reconciliation.');
+            $this->renderSummary($summary, $dryRun);
 
             return self::SUCCESS;
         }
@@ -90,10 +87,11 @@ class ReconcileFibSubscriptions extends Command
                     if ($dryRun) {
                         if ($processed <= 20) {
                             $this->line(sprintf(
-                                '[dry-run] payment_id=%d customer_id=%d status=%s provider_status=%s active_until=%s',
+                                '[dry-run] payment_id=%d customer_id=%d status=%s internal_status=%s provider_status=%s active_until=%s',
                                 (int) $payment->id,
                                 (int) $payment->customer_id,
                                 (string) $payment->status->value,
+                                (string) ($payment->internal_status?->value ?? 'n/a'),
                                 (string) ($payment->providerStatusLabel() ?? 'n/a'),
                                 (string) ($this->toIso($payment->active_until) ?? 'n/a')
                             ));
@@ -113,11 +111,11 @@ class ReconcileFibSubscriptions extends Command
                     }
 
                     try {
-                        $refreshed = $sync->handle($payment, 'scheduled_reconciliation')->fresh() ?? $payment->fresh() ?? $payment;
+                        $refreshed = $sync->handle($payment, 'scheduled_subscription_checkout_reconciliation')->fresh() ?? $payment->fresh() ?? $payment;
                     } catch (\Throwable $exception) {
                         $failed++;
 
-                        $failures->capture($payment, $exception, 'scheduled_reconciliation');
+                        $failures->capture($payment, $exception, 'scheduled_subscription_checkout_reconciliation');
 
                         if ($this->syncFingerprint($payment->fresh() ?? $payment) !== $before) {
                             $updated++;
@@ -137,10 +135,10 @@ class ReconcileFibSubscriptions extends Command
         $this->info($dryRun
             ? 'FIB subscription reconciliation dry-run completed.'
             : 'FIB subscription reconciliation completed.');
-        $this->line('Candidates: '.number_format($candidateCount));
-        $this->line('Processed: '.number_format($processed));
-        $this->line('Updated: '.number_format($dryRun ? 0 : $updated));
-        $this->line('Failed: '.number_format($dryRun ? 0 : $failed));
+        $summary['processed_unresolved'] = $processed;
+        $summary['updated'] = $dryRun ? 0 : $updated;
+        $summary['failed'] = $dryRun ? 0 : $failed;
+        $this->renderSummary($summary, $dryRun);
 
         return self::SUCCESS;
     }
@@ -152,9 +150,12 @@ class ReconcileFibSubscriptions extends Command
     {
         return [
             'status' => $payment->status->value,
+            'internal_status' => $payment->internal_status?->value,
             'provider_status' => $payment->providerStatusLabel(),
             'active_until' => $this->toIso($payment->active_until),
             'last_payment_at' => $this->toIso($payment->last_payment_at),
+            'fulfilled_at' => $this->toIso($payment->fulfilled_at),
+            'review_required_at' => $this->toIso($payment->review_required_at),
             'last_status_checked_at' => $this->toIso($payment->last_status_checked_at),
         ];
     }
@@ -216,7 +217,7 @@ class ReconcileFibSubscriptions extends Command
 
             $events->record($locked, [
                 'event_type' => 'provider_status_expired_locally',
-                'source' => 'scheduled_reconciliation_local_expiry',
+                'source' => 'scheduled_subscription_checkout_reconciliation_local_expiry',
                 'event_key' => 'subscription-local-expiry:'.$locked->id,
                 'before_status' => $beforeStatus,
                 'after_status' => PaymentStatus::EXPIRED->value,

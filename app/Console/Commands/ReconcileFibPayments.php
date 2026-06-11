@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\InteractsWithFibCheckoutReconciliation;
 use App\Domain\Payments\Actions\SyncFibCheckoutStatus;
 use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentProvider;
+use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
@@ -14,6 +16,8 @@ use Illuminate\Support\Facades\DB;
 
 class ReconcileFibPayments extends Command
 {
+    use InteractsWithFibCheckoutReconciliation;
+
     protected $signature = 'payments:reconcile-fib-payments
         {--customer-id= : Reconcile only payments for a single customer id}
         {--chunk=100 : Number of payments to reconcile per chunk}
@@ -21,7 +25,7 @@ class ReconcileFibPayments extends Command
         {--stale-minutes=5 : Only reconcile records that were not checked within this window}
         {--dry-run : Show which records would be processed without mutating data}';
 
-    protected $description = 'Reconcile FIB payment and subscription records when callbacks are delayed or missed.';
+    protected $description = 'Reconcile unresolved FIB one-time checkout records when callbacks are delayed or missed.';
 
     public function handle(
         SyncFibCheckoutStatus $sync,
@@ -34,51 +38,31 @@ class ReconcileFibPayments extends Command
         $customerId = (int) $this->option('customer-id');
         $dryRun = (bool) $this->option('dry-run');
 
-        $query = Payment::query()
+        $baseQuery = Payment::query()
             ->where('provider', PaymentProvider::FIB)
-            ->where(function ($builder) {
-                $builder->whereNotNull('fib_payment_id')->orWhereNotNull('fib_subscription_id');
-            })
-            ->where(function ($builder) {
-                $builder
-                    ->whereNull('internal_status')
-                    ->orWhere('internal_status', '!=', PaymentInternalStatus::REQUIRES_REVIEW->value);
-            })
-            ->where(function ($builder) {
-                $builder
-                    ->whereIn('status', ['pending', 'awaiting_customer_action'])
-                    ->orWhere(function ($paidLike) {
-                        $paidLike
-                            ->where('status', 'paid')
-                            ->whereNull('fulfilled_at')
-                            ->where(function ($statuses) {
-                                $statuses
-                                    ->whereNull('internal_status')
-                                    ->orWhereIn('internal_status', [
-                                        PaymentInternalStatus::PAID_PENDING_APPLICATION->value,
-                                        PaymentInternalStatus::REQUIRES_REVIEW->value,
-                                    ]);
-                            });
-                    });
-            });
+            ->where('provider_object_type', PaymentProviderObjectType::PAYMENT)
+            ->whereNotNull('fib_payment_id');
 
         if ($customerId > 0) {
-            $query->where('customer_id', $customerId);
+            $baseQuery->where('customer_id', $customerId);
         }
 
         if ($staleMinutes > 0) {
             $threshold = now()->subMinutes($staleMinutes);
-            $query->where(function ($builder) use ($threshold) {
+            $baseQuery->where(function ($builder) use ($threshold) {
                 $builder
                     ->whereNull('last_status_checked_at')
                     ->orWhere('last_status_checked_at', '<=', $threshold);
             });
         }
 
-        $candidateCount = (clone $query)->count();
+        $summary = $this->candidateSummary(clone $baseQuery);
+        $query = $this->unresolvedCheckoutQuery(clone $baseQuery);
+        $candidateCount = (int) ($summary['processed_unresolved'] ?? 0);
 
         if ($candidateCount === 0) {
             $this->info('No FIB payments needed reconciliation.');
+            $this->renderSummary($summary, $dryRun);
 
             return self::SUCCESS;
         }
@@ -148,10 +132,10 @@ class ReconcileFibPayments extends Command
         $this->info($dryRun
             ? 'FIB payment reconciliation dry-run completed.'
             : 'FIB payment reconciliation completed.');
-        $this->line('Candidates: '.number_format($candidateCount));
-        $this->line('Processed: '.number_format($processed));
-        $this->line('Updated: '.number_format($dryRun ? 0 : $updated));
-        $this->line('Failed: '.number_format($dryRun ? 0 : $failed));
+        $summary['processed_unresolved'] = $processed;
+        $summary['updated'] = $dryRun ? 0 : $updated;
+        $summary['failed'] = $dryRun ? 0 : $failed;
+        $this->renderSummary($summary, $dryRun);
 
         return self::SUCCESS;
     }
