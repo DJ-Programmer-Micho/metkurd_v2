@@ -3,6 +3,7 @@
 namespace App\Domain\Payments\Actions;
 
 use App\Domain\Payments\Contracts\OneTimePaymentHandler;
+use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
@@ -19,8 +20,7 @@ class FulfillAddonCredits implements OneTimePaymentHandler
         protected PaymentEventRecorder $events,
         protected AddonPurchaseService $addons,
         protected CouponRedemptionService $redemptions,
-    ) {
-    }
+    ) {}
 
     public function supports(PurchaseType $purchaseType): bool
     {
@@ -64,6 +64,9 @@ class FulfillAddonCredits implements OneTimePaymentHandler
 
             $locked->forceFill([
                 'fulfilled_at' => now(),
+                'internal_status' => PaymentInternalStatus::APPLIED,
+                'review_required_at' => null,
+                'mismatch_reason' => null,
                 'meta' => array_merge((array) $locked->meta, [
                     'fulfilled_order_id' => $order->id,
                 ]),

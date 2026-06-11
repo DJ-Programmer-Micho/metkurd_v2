@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentMode;
 use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
@@ -67,9 +68,9 @@ function billingPagePendingPlanCheckout(Customer $customer, ServicePlan $plan, s
         'payment_mode' => PaymentMode::RECURRING,
         'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
         'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
-        'local_reference' => 'CHECKOUT-' . strtoupper(Str::random(8)),
+        'local_reference' => 'CHECKOUT-'.strtoupper(Str::random(8)),
         'idempotency_key' => (string) Str::uuid(),
-        'fib_subscription_id' => 'fib-sub-' . Str::lower(Str::random(8)),
+        'fib_subscription_id' => 'fib-sub-'.Str::lower(Str::random(8)),
         'amount' => $finalAmount,
         'currency' => 'IQD',
         'original_amount_iqd' => $originalAmount,
@@ -128,7 +129,7 @@ function billingPageAddonOrder(Customer $customer, CreditProduct $product): Cred
         'display_rounding_step' => $priceSnapshot['display_rounding_step'],
         'display_rounding_mode' => $priceSnapshot['display_rounding_mode'],
         'display_country_code' => $priceSnapshot['display_country_code'],
-        'provider_ref' => 'ORDER-' . strtoupper(Str::random(8)),
+        'provider_ref' => 'ORDER-'.strtoupper(Str::random(8)),
         'paid_at' => now(),
         'meta' => [
             'purpose' => 'addon_credits_topup',
@@ -188,4 +189,48 @@ it('shows recurring discounts and one-time add-on charges in billing activity', 
         ->assertSee('Discount:')
         ->assertSee('Add-on Charge')
         ->assertSee('One-time');
+});
+
+it('shows review-required fib payments in billing activity without claiming the subscription is active', function () {
+    $customer = billingPageTestCustomer();
+    $studentPlan = ServicePlan::query()->where('code', 'student')->firstOrFail();
+
+    Payment::create([
+        'uuid' => (string) Str::uuid(),
+        'customer_id' => $customer->id,
+        'provider' => PaymentProvider::FIB,
+        'purchase_type' => PurchaseType::PLAN_SUBSCRIPTION,
+        'payment_mode' => PaymentMode::RECURRING,
+        'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
+        'status' => PaymentStatus::PAID,
+        'internal_status' => PaymentInternalStatus::REQUIRES_REVIEW,
+        'local_reference' => 'BILLING-REVIEW-'.strtoupper(Str::random(8)),
+        'idempotency_key' => (string) Str::uuid(),
+        'fib_subscription_id' => 'fib-billing-review-123',
+        'amount' => $studentPlan->priceIqdForCycle('monthly'),
+        'currency' => 'IQD',
+        'provider_subscription_status' => 'ACTIVE',
+        'mismatch_reason' => 'Customer currently has Pro but this FIB payment was created for Student.',
+        'review_required_at' => now(),
+        'paid_at' => now(),
+        'purchase_snapshot' => [
+            'code' => $studentPlan->code,
+            'name' => $studentPlan->name,
+            'billing_cycle' => 'monthly',
+            'amount_iqd' => $studentPlan->priceIqdForCycle('monthly'),
+            'base_display' => app(BillingCurrencyService::class)->priceDataForBaseAmountIqd($studentPlan->priceIqdForCycle('monthly'), $customer),
+            'original_display' => app(BillingCurrencyService::class)->priceDataForBaseAmountIqd($studentPlan->priceIqdForCycle('monthly'), $customer),
+            'discount_display' => app(BillingCurrencyService::class)->priceDataForBaseAmountIqd(0, $customer),
+        ],
+        'purchasable_type' => ServicePlan::class,
+        'purchasable_id' => $studentPlan->id,
+    ]);
+
+    $this->actingAs($customer->fresh(), 'app')
+        ->get(route('app.billing', ['locale' => 'en']))
+        ->assertOk()
+        ->assertSee('Requires Review')
+        ->assertSee('Review reason:')
+        ->assertSee('Customer currently has Pro but this FIB payment was created for Student.')
+        ->assertDontSee('subscription active', false);
 });

@@ -63,7 +63,16 @@ class FibSubscriptionClient extends FibAuthorizedClient
                 'provider_subscription_id' => $providerSubscriptionId,
             ]);
 
-            throw new FibApiException($this->errorMessage('FIB subscription status check failed.', $payload), $payload);
+            throw new FibApiException(
+                $this->errorMessage('FIB subscription status check failed.', $payload),
+                $payload,
+                [
+                    'response_status' => $response->status(),
+                    'url' => $this->config->url($this->tokenProfile(), 'subscription_status', ['subscriptionId' => $providerSubscriptionId]),
+                    'provider_subscription_id' => $providerSubscriptionId,
+                ],
+                $response->status(),
+            );
         }
 
         $data = FibSubscriptionStatusData::fromArray($payload);

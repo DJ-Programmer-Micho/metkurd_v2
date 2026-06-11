@@ -5,8 +5,8 @@ namespace App\Domain\Payments\Fib;
 use App\Domain\Payments\Data\FibCreatePaymentRequestData;
 use App\Domain\Payments\Data\FibPaymentStatusData;
 use App\Domain\Payments\Models\Payment;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class FibOneTimePaymentService
 {
@@ -14,8 +14,7 @@ class FibOneTimePaymentService
         protected FibOneTimePaymentClient $client,
         protected FibCallbackUrlService $callbackUrls,
         protected FibConfiguration $config,
-    ) {
-    }
+    ) {}
 
     public function createPayment(Payment $payment, string $redirectUri): array
     {
@@ -59,6 +58,11 @@ class FibOneTimePaymentService
     public function getStatus(Payment $payment): FibPaymentStatusData
     {
         return $this->client->getPaymentStatus((string) $payment->fib_payment_id);
+    }
+
+    public function getStatusByPaymentId(string $providerPaymentId): FibPaymentStatusData
+    {
+        return $this->client->getPaymentStatus($providerPaymentId);
     }
 
     public function cancel(Payment $payment): void

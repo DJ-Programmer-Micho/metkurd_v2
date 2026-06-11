@@ -5,8 +5,8 @@ namespace App\Domain\Payments\Fib;
 use App\Domain\Payments\Data\FibCreateSubscriptionRequestData;
 use App\Domain\Payments\Data\FibSubscriptionStatusData;
 use App\Domain\Payments\Models\Payment;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class FibSubscriptionService
 {
@@ -14,8 +14,7 @@ class FibSubscriptionService
         protected FibSubscriptionClient $client,
         protected FibCallbackUrlService $callbackUrls,
         protected FibConfiguration $config,
-    ) {
-    }
+    ) {}
 
     public function createSubscription(Payment $payment): array
     {
@@ -60,6 +59,11 @@ class FibSubscriptionService
         return $this->client->getSubscription((string) $payment->fib_subscription_id);
     }
 
+    public function getStatusBySubscriptionId(string $providerSubscriptionId): FibSubscriptionStatusData
+    {
+        return $this->client->getSubscription($providerSubscriptionId);
+    }
+
     public function cancel(Payment $payment): void
     {
         $this->client->cancelSubscription((string) $payment->fib_subscription_id);
@@ -67,7 +71,7 @@ class FibSubscriptionService
 
     public function hourlyTestingEnabled(): bool
     {
-        if (!(bool) config('fib.subscription.hourly_testing_enabled', false)) {
+        if (! (bool) config('fib.subscription.hourly_testing_enabled', false)) {
             return false;
         }
 
@@ -119,7 +123,7 @@ class FibSubscriptionService
         };
 
         return (string) config(
-            'fib.subscription.intervals.' . $intervalKey,
+            'fib.subscription.intervals.'.$intervalKey,
             match ($intervalKey) {
                 'yearly' => 'P1Y',
                 'hourly' => 'PT1H',

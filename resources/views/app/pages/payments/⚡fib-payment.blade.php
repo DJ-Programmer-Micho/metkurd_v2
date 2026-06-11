@@ -320,11 +320,14 @@ class extends Component
         $snapshot = $payment->snapshot();
         $purchaseConversionPayload = app(ConversionTrackingService::class)->preparePurchaseConversionPayload($payment);
         $links = $payment->appLinks();
-        $shouldPoll = in_array($payment->status->value, ['pending', 'awaiting_customer_action'], true);
+        $shouldPoll = in_array($payment->status->value, ['pending', 'awaiting_customer_action'], true)
+            || ($payment->isPaid() && ! $payment->isApplied() && ! $payment->requiresReview());
         $status = $payment->status->value;
-        $statusClass = match ($status) {
-            'paid' => 'success',
-            'failed', 'canceled', 'expired' => 'danger',
+        $statusClass = match (true) {
+            $payment->requiresReview() => 'warning',
+            $payment->isPaid() && ! $payment->isApplied() => 'info',
+            $status === 'paid' => 'success',
+            in_array($status, ['failed', 'canceled', 'expired'], true) => 'danger',
             default => 'warning',
         };
         $purchaseLabel = match ($payment->purchase_type->value) {
@@ -408,27 +411,35 @@ class extends Component
             $billing->formatAmount((int) data_get($couponSummary, 'final_amount_iqd', (int) round((float) ($payment->discounted_amount_iqd ?? 0))), 'IQD')
         )
         : '';
-    $statusText = match ($payment->status->value) {
-        'paid' => __('Success'),
-        'failed' => __('Declined'),
-        'canceled' => __('Canceled'),
-        'expired' => __('Expired'),
+    $statusText = match (true) {
+        $payment->requiresReview() => __('Requires Review'),
+        $payment->isPaid() && ! $payment->isApplied() => __('Payment Received'),
+        $payment->status->value === 'paid' => __('Success'),
+        $payment->status->value === 'failed' => __('Declined'),
+        $payment->status->value === 'canceled' => __('Canceled'),
+        $payment->status->value === 'expired' => __('Expired'),
         default => __('Awaiting Payment'),
     };
-    $statusAlertClass = match ($payment->status->value) {
-        'paid' => 'success',
-        'failed' => 'danger',
-        'canceled', 'expired' => 'warning',
+    $statusAlertClass = match (true) {
+        $payment->requiresReview() => 'warning',
+        $payment->isPaid() && ! $payment->isApplied() => 'info',
+        $payment->status->value === 'paid' => 'success',
+        $payment->status->value === 'failed' => 'danger',
+        in_array($payment->status->value, ['canceled', 'expired'], true) => 'warning',
         default => 'info',
     };
     $statusAlertMessage = session('payment_status_message');
-    if ($statusAlertMessage === null && $payment->isPaid()) {
+    if ($statusAlertMessage === null && $payment->requiresReview()) {
+        $statusAlertMessage = __('We received this FIB payment, but it requires manual review before your subscription can be changed. Please contact support if you need help.');
+    } elseif ($statusAlertMessage === null && $payment->isPaid() && ! $payment->isApplied()) {
+        $statusAlertMessage = __('Payment received successfully. We are applying your billing access now.');
+    } elseif ($statusAlertMessage === null && $payment->isApplied()) {
         $statusAlertMessage = $payment->isProviderSubscriptionObject()
             ? __('Congrats! Your subscription was confirmed successfully. We sent the confirmation by email.')
             : __('Congrats! Your payment was confirmed successfully. We sent the confirmation by email.');
     }
     $homeUrl = route('app.home', ['locale' => app()->getLocale()]);
-    $shouldAutoRedirectHome = $payment->isPaid() && $payment->fulfilled_at !== null;
+    $shouldAutoRedirectHome = $payment->isApplied();
     $isSubscriptionCheckout = $payment->isProviderSubscriptionObject();
     $providerObjectLabel = $isSubscriptionCheckout ? __('Subscription') : __('Payment');
     $providerObjectLabelLower = $isSubscriptionCheckout ? __('subscription checkout') : __('payment');
@@ -469,7 +480,8 @@ class extends Component
      data-payment-status-endpoint="{{ $statusEndpoint }}"
      data-payment-status-interval="{{ $pollIntervalMs }}"
      data-payment-status-max-ms="{{ $pollMaxDurationMs }}"
-     data-payment-current-status="{{ $payment->status->value }}">
+     data-payment-current-status="{{ $payment->status->value }}"
+     data-payment-current-application-status="{{ $payment->applicationStatusLabel() }}">
     <div class="col-xl-10">
         @if ($statusAlertMessage)
             <div class="alert alert-{{ $statusAlertClass }}">{{ $statusAlertMessage }}</div>
@@ -607,6 +619,14 @@ class extends Component
 
                                 <dt class="col-sm-5 text-muted">{{ __('Payment Mode') }}</dt>
                                 <dd class="col-sm-7">{{ __($resolvedPaymentMode->label()) }}</dd>
+
+                                <dt class="col-sm-5 text-muted">{{ __('Application State') }}</dt>
+                                <dd class="col-sm-7">{{ \Illuminate\Support\Str::headline(str_replace('_', ' ', $payment->applicationStatusLabel())) }}</dd>
+
+                                @if ($payment->reviewMessage())
+                                    <dt class="col-sm-5 text-muted">{{ __('Review Note') }}</dt>
+                                    <dd class="col-sm-7 text-warning">{{ $payment->reviewMessage() }}</dd>
+                                @endif
 
                                 <dt class="col-sm-5 text-muted">{{ __('Renewal') }}</dt>
                                 <dd class="col-sm-7">{{ $paymentModeDescription }}</dd>
@@ -885,11 +905,14 @@ class extends Component
 
                 consecutiveFailures = 0;
                 const latestStatus = String(payload.status || '').toLowerCase();
+                const latestApplicationStatus = String(payload.internal_status || '').toLowerCase();
                 const currentStatus = String(wrapper.getAttribute('data-payment-current-status') || '').toLowerCase();
+                const currentApplicationStatus = String(wrapper.getAttribute('data-payment-current-application-status') || '').toLowerCase();
                 const isTerminal = Boolean(payload.is_terminal);
                 const providerStatus = String(payload.provider_status || '').trim();
 
-                if (latestStatus !== '' && latestStatus !== currentStatus) {
+                if ((latestStatus !== '' && latestStatus !== currentStatus)
+                    || (latestApplicationStatus !== '' && latestApplicationStatus !== currentApplicationStatus)) {
                     refreshUi('');
                     return;
                 }

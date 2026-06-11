@@ -36,8 +36,11 @@ class FibPaymentController extends Controller
 
         $payment = $payment->fresh(['customer.profile']) ?? $payment;
 
-        $isSuccess = $payment->isPaid();
-        $isTerminal = $payment->isTerminal();
+        $isSuccess = $payment->isPaid() && $payment->isApplied();
+        $isTerminal = $payment->isTerminal()
+            && ($payment->status !== \App\Domain\Payments\Enums\PaymentStatus::PAID
+                || $payment->isApplied()
+                || $payment->requiresReview());
         $state = $this->frontendState($payment);
         $message = $isSuccess
             ? $this->successMessage($payment)
@@ -45,6 +48,7 @@ class FibPaymentController extends Controller
 
         return response()->json([
             'status' => $payment->status->value,
+            'internal_status' => $payment->applicationStatusLabel(),
             'state' => $state,
             'is_terminal' => $isTerminal,
             'is_success' => $isSuccess,
@@ -107,8 +111,24 @@ class FibPaymentController extends Controller
     {
         $object = $payment->isProviderSubscriptionObject() ? __('subscription checkout') : __('payment');
 
+        if ($payment->requiresReview()) {
+            return __('We received your FIB :object, but it requires manual review before access can be updated. Please contact support if you need help.', [
+                'object' => $object,
+            ]);
+        }
+
+        if ($payment->status === \App\Domain\Payments\Enums\PaymentStatus::PAID && ! $payment->isApplied()) {
+            return __('We received your FIB :object and are applying it now. Your billing page will update automatically once that finishes.', [
+                'object' => $object,
+            ]);
+        }
+
         return match ($payment->status->value) {
-            'paid' => $this->successMessage($payment),
+            'paid' => $payment->isApplied()
+                ? $this->successMessage($payment)
+                : __('We received your FIB :object and are applying it now. Your billing page will update automatically once that finishes.', [
+                    'object' => $object,
+                ]),
             'failed' => __('Your FIB :object was declined.', ['object' => $object]),
             'canceled' => __('Your FIB :object was canceled before completion.', ['object' => $object]),
             'expired' => __('This FIB :object expired. Please start a new checkout.', ['object' => $object]),
@@ -167,6 +187,14 @@ class FibPaymentController extends Controller
 
     protected function frontendState(Payment $payment): string
     {
+        if ($payment->requiresReview()) {
+            return 'review';
+        }
+
+        if ($payment->status === \App\Domain\Payments\Enums\PaymentStatus::PAID && ! $payment->isApplied()) {
+            return 'pending';
+        }
+
         return match ($payment->status->value) {
             'paid' => 'success',
             'failed' => 'failed',

@@ -107,7 +107,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                         <div class="position-relative h-100 d-flex flex-column">
                             <div class="mb-4">
                                 <a wire:navigate href="/" class="d-block">
-                                    <img src="{{ app('logo_1024_tran') }}" alt="" height="25">
+                                    <img src="{{ app('logo_1024_tran_black') }}" alt="" height="25">
                                     {{ __('MET KURD') }}
                                 </a>
                             </div>
@@ -121,16 +121,28 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                         <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="0" class="active" aria-current="true"></button>
                                         <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="1"></button>
                                         <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="2"></button>
+                                        <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="3"></button>
+                                        <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="4"></button>
+                                        <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="5"></button>
                                     </div>
                                     <div class="carousel-inner text-center text-white pb-5">
                                         <div class="carousel-item active">
-                                            <p class="fs-15 fst-italic">" {{ __('Great! Clean code, clean design, easy for customization. Thanks very much!') }} "</p>
+                                            <p class="fs-15 fst-italic">" {{ __('Tip: Add punctuation like (. , …) in Apollo 1.5V for more natural speech.') }} "</p>
                                         </div>
                                         <div class="carousel-item">
-                                            <p class="fs-15 fst-italic">" {{ __('The theme is really great with an amazing customer support.') }}"</p>
+                                            <p class="fs-15 fst-italic">" {{ __('For better Kurdish voice cloning, use a clean reference audio with no music, echo, or background noise.') }}"</p>
                                         </div>
                                         <div class="carousel-item">
-                                            <p class="fs-15 fst-italic">" {{ __('Great! Clean code, clean design, easy for customization. Thanks very much!') }} "</p>
+                                            <p class="fs-15 fst-italic">" {{ __('Voice cloning works best when the reference audio is in Kurdish Sorani.') }} "</p>
+                                        </div>
+                                        <div class="carousel-item">
+                                            <p class="fs-15 fst-italic">" {{ __('Tip: For Auto Caption, clear audio gives more accurate SRT files.') }} "</p>
+                                        </div>
+                                        <div class="carousel-item">
+                                            <p class="fs-15 fst-italic">" {{ __('If the voice sounds too fast or unnatural, try adding commas and short pauses in the text.') }} "</p>
+                                        </div>
+                                        <div class="carousel-item">
+                                            <p class="fs-15 fst-italic">" {{ __('MetKurd works better with clean Kurdish text and correct spelling.') }} "</p>
                                         </div>
                                     </div>
                                 </div>

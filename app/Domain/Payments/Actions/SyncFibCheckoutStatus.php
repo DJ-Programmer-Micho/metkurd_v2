@@ -4,6 +4,7 @@ namespace App\Domain\Payments\Actions;
 
 use App\Domain\Payments\Data\FibPaymentStatusData;
 use App\Domain\Payments\Data\FibSubscriptionStatusData;
+use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Fib\FibMapper;
@@ -31,11 +32,15 @@ class SyncFibCheckoutStatus
         protected PaymentEventRecorder $events,
         protected SyncProviderSubscriptionLifecycle $lifecycle,
         protected CouponRedemptionService $redemptions,
-    ) {
-    }
+    ) {}
 
-    public function handle(Payment $payment, string $source = 'manual_status_refresh', ?array $callbackPayload = null): Payment
-    {
+    public function handle(
+        Payment $payment,
+        string $source = 'manual_status_refresh',
+        ?array $callbackPayload = null,
+        bool $dispatchFulfillment = true,
+        bool $syncLifecycle = true,
+    ): Payment {
         $payment = $payment->fresh() ?? $payment;
         $objectType = $payment->provider_object_type ?? PaymentProviderObjectType::PAYMENT;
         $shouldDispatch = false;
@@ -101,11 +106,13 @@ class SyncFibCheckoutStatus
 
                 $locked->forceFill(array_filter(array_merge($baseUpdate, [
                     'status' => $nextStatus,
+                    'internal_status' => $this->resolveInternalStatus($locked, $nextStatus),
                     'paid_at' => $nextStatus === PaymentStatus::PAID
                         ? ($locked->paid_at ?? $status->lastPaymentAt ?? now())
                         : ($correctiveReversion ? null : $locked->paid_at),
                     'canceled_at' => $nextStatus === PaymentStatus::CANCELED ? ($locked->canceled_at ?? now()) : $locked->canceled_at,
                     'expired_at' => $nextStatus === PaymentStatus::EXPIRED ? ($locked->expired_at ?? now()) : $locked->expired_at,
+                    'failed_at' => $this->resolvedFailureTimestamp($locked, $nextStatus),
                 ]), static fn (mixed $value) => $value !== null))->save();
                 $audit['local_new_status'] = $locked->status->value;
                 $audit['transition_ignored'] = false;
@@ -123,14 +130,17 @@ class SyncFibCheckoutStatus
                     ],
                 ]);
 
-                $shouldDispatch = $locked->status === PaymentStatus::PAID && $locked->fulfilled_at === null;
+                $shouldDispatch = $locked->status === PaymentStatus::PAID
+                    && $locked->fulfilled_at === null
+                    && $locked->internal_status !== PaymentInternalStatus::REQUIRES_REVIEW
+                    && $locked->internal_status !== PaymentInternalStatus::APPLIED;
 
                 return $locked->fresh();
             });
 
             $this->logSyncAudit($payment, $source, $audit);
 
-            if ($shouldDispatch) {
+            if ($shouldDispatch && $dispatchFulfillment) {
                 event(new PaymentConfirmed((int) $payment->id));
             } elseif ($payment->fulfilled_at === null && in_array($payment->status, [
                 PaymentStatus::FAILED,
@@ -140,7 +150,9 @@ class SyncFibCheckoutStatus
                 $this->redemptions->releaseForPayment($payment, 'subscription_checkout_terminal');
             }
 
-            $this->lifecycle->handle($payment, $source);
+            if ($syncLifecycle) {
+                $this->lifecycle->handle($payment, $source);
+            }
 
             return $payment->fresh();
         }
@@ -202,9 +214,11 @@ class SyncFibCheckoutStatus
 
             $locked->forceFill(array_filter(array_merge($baseUpdate, [
                 'status' => $nextStatus,
+                'internal_status' => $this->resolveInternalStatus($locked, $nextStatus),
                 'paid_at' => $nextStatus === PaymentStatus::PAID ? ($locked->paid_at ?? $status->paidAt ?? now()) : $locked->paid_at,
                 'canceled_at' => $nextStatus === PaymentStatus::CANCELED ? ($locked->canceled_at ?? now()) : $locked->canceled_at,
                 'expired_at' => $nextStatus === PaymentStatus::EXPIRED ? ($locked->expired_at ?? $status->declinedAt ?? now()) : $locked->expired_at,
+                'failed_at' => $this->resolvedFailureTimestamp($locked, $nextStatus, $status->declinedAt),
             ]), static fn (mixed $value) => $value !== null))->save();
             $audit['local_new_status'] = $locked->status->value;
             $audit['transition_ignored'] = false;
@@ -221,14 +235,17 @@ class SyncFibCheckoutStatus
                 ],
             ]);
 
-            $shouldDispatch = $locked->status === PaymentStatus::PAID && $locked->fulfilled_at === null;
+            $shouldDispatch = $locked->status === PaymentStatus::PAID
+                && $locked->fulfilled_at === null
+                && $locked->internal_status !== PaymentInternalStatus::REQUIRES_REVIEW
+                && $locked->internal_status !== PaymentInternalStatus::APPLIED;
 
             return $locked->fresh();
         });
 
         $this->logSyncAudit($payment, $source, $audit);
 
-        if ($shouldDispatch) {
+        if ($shouldDispatch && $dispatchFulfillment) {
             event(new PaymentConfirmed((int) $payment->id));
         } elseif ($payment->fulfilled_at === null && in_array($payment->status, [
             PaymentStatus::FAILED,
@@ -241,8 +258,13 @@ class SyncFibCheckoutStatus
         return $payment->fresh();
     }
 
-    public function handleByFibPaymentId(string $fibPaymentId, string $source = 'callback', ?array $callbackPayload = null): ?Payment
-    {
+    public function handleByFibPaymentId(
+        string $fibPaymentId,
+        string $source = 'callback',
+        ?array $callbackPayload = null,
+        bool $dispatchFulfillment = true,
+        bool $syncLifecycle = true,
+    ): ?Payment {
         $payment = Payment::query()
             ->where('provider_object_type', PaymentProviderObjectType::PAYMENT)
             ->where('fib_payment_id', $fibPaymentId)
@@ -252,11 +274,16 @@ class SyncFibCheckoutStatus
             return null;
         }
 
-        return $this->handle($payment, $source, $callbackPayload);
+        return $this->handle($payment, $source, $callbackPayload, $dispatchFulfillment, $syncLifecycle);
     }
 
-    public function handleByFibSubscriptionId(string $fibSubscriptionId, string $source = 'callback', ?array $callbackPayload = null): ?Payment
-    {
+    public function handleByFibSubscriptionId(
+        string $fibSubscriptionId,
+        string $source = 'callback',
+        ?array $callbackPayload = null,
+        bool $dispatchFulfillment = true,
+        bool $syncLifecycle = true,
+    ): ?Payment {
         $payment = Payment::query()
             ->where('provider_object_type', PaymentProviderObjectType::SUBSCRIPTION)
             ->where('fib_subscription_id', $fibSubscriptionId)
@@ -266,7 +293,7 @@ class SyncFibCheckoutStatus
             return null;
         }
 
-        return $this->handle($payment, $source, $callbackPayload);
+        return $this->handle($payment, $source, $callbackPayload, $dispatchFulfillment, $syncLifecycle);
     }
 
     /**
@@ -356,6 +383,39 @@ class SyncFibCheckoutStatus
     {
         return $currentStatus === PaymentStatus::PAID
             && $this->isFailedLikeStatus($nextStatus);
+    }
+
+    protected function resolveInternalStatus(Payment $payment, PaymentStatus $nextStatus): PaymentInternalStatus
+    {
+        if ($payment->fulfilled_at !== null) {
+            return PaymentInternalStatus::APPLIED;
+        }
+
+        if ($payment->internal_status === PaymentInternalStatus::REQUIRES_REVIEW && $nextStatus === PaymentStatus::PAID) {
+            return PaymentInternalStatus::REQUIRES_REVIEW;
+        }
+
+        return PaymentInternalStatus::fromPaymentStatus($nextStatus);
+    }
+
+    protected function resolvedFailureTimestamp(
+        Payment $payment,
+        PaymentStatus $nextStatus,
+        mixed $fallback = null,
+    ): ?\DateTimeInterface {
+        if (! $this->isFailedLikeStatus($nextStatus)) {
+            return $payment->failed_at;
+        }
+
+        if ($payment->failed_at instanceof \DateTimeInterface) {
+            return $payment->failed_at;
+        }
+
+        if ($fallback instanceof \DateTimeInterface) {
+            return $fallback;
+        }
+
+        return now();
     }
 
     /**

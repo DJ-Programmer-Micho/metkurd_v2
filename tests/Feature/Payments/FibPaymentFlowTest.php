@@ -4,6 +4,7 @@ use App\Domain\Payments\Actions\ConfirmFibPayment;
 use App\Domain\Payments\Actions\CreateAddonPayment;
 use App\Domain\Payments\Actions\CreatePlanSubscriptionPayment;
 use App\Domain\Payments\Actions\CreateStorageSubscriptionPayment;
+use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentMode;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
@@ -11,26 +12,26 @@ use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Exceptions\FibApiException;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Models\PaymentEvent;
-use App\Notifications\Landing\TelegramPayment;
 use App\Models\CreditOrder;
 use App\Models\CreditProduct;
 use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
-use App\Notifications\Payments\TelegramSubscriptionLifecycleAlert;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
+use App\Notifications\Landing\TelegramPayment;
+use App\Notifications\Payments\TelegramSubscriptionLifecycleAlert;
 use App\Services\Billing\PlanSwitcher;
 use App\Services\Billing\ScheduleServicePlanCancellation;
 use App\Services\Billing\ScheduleStoragePlanCancellation;
 use App\Services\Payments\PaymentFeeCalculator;
 use Carbon\Carbon;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 
@@ -109,7 +110,7 @@ function fibFlowCustomer(?string $email = null, ?string $username = null): Custo
 
 function fibFlowStageUrl(string $path): string
 {
-    return 'https://fib-stage.fib.iq' . $path;
+    return 'https://fib-stage.fib.iq'.$path;
 }
 
 function fibFlowCreateResponse(string $paymentId, array $overrides = []): array
@@ -118,9 +119,9 @@ function fibFlowCreateResponse(string $paymentId, array $overrides = []): array
         'paymentId' => $paymentId,
         'readableCode' => 'CODE-123',
         'qrCode' => 'data:image/png;base64,fake-qr',
-        'personalAppLink' => 'https://fib.iq/personal/' . $paymentId,
-        'businessAppLink' => 'https://fib.iq/business/' . $paymentId,
-        'corporateAppLink' => 'https://fib.iq/corporate/' . $paymentId,
+        'personalAppLink' => 'https://fib.iq/personal/'.$paymentId,
+        'businessAppLink' => 'https://fib.iq/business/'.$paymentId,
+        'corporateAppLink' => 'https://fib.iq/corporate/'.$paymentId,
         'validUntil' => '2026-05-01T10:15:00Z',
     ], $overrides);
 }
@@ -144,7 +145,7 @@ function fibFlowSubscriptionCreateResponse(string $subscriptionId, array $overri
         'subscriptionId' => $subscriptionId,
         'readableCode' => 'SUB-CODE-123',
         'qrCode' => 'data:image/png;base64,fake-subscription-qr',
-        'appLink' => 'https://fib.iq/app/' . $subscriptionId,
+        'appLink' => 'https://fib.iq/app/'.$subscriptionId,
         'validUntil' => '2026-05-01T10:15:00Z',
     ], $overrides);
 }
@@ -166,7 +167,7 @@ function fibFlowSubscriptionStatusResponse(string $subscriptionId, string $statu
         'validUntil' => '2026-05-01T10:15:00Z',
         'activeUntil' => '2026-06-01T10:15:00Z',
         'lastPaymentAt' => '2026-05-01T10:05:00Z',
-        'appLink' => 'https://fib.iq/app/' . $subscriptionId,
+        'appLink' => 'https://fib.iq/app/'.$subscriptionId,
     ], $overrides);
 }
 
@@ -275,7 +276,7 @@ it('routes plan subscription checkout-created telegram notifications to TELEGRAM
     Notification::assertSentOnDemand(
         TelegramSubscriptionLifecycleAlert::class,
         function (TelegramSubscriptionLifecycleAlert $notification, array $channels, $notifiable) use ($expectedCheckoutGroup): bool {
-            $title = strtolower((string) data_get($notification->toArray(new AnonymousNotifiable()), 'title', ''));
+            $title = strtolower((string) data_get($notification->toArray(new AnonymousNotifiable), 'title', ''));
 
             return in_array(\NotificationChannels\Telegram\TelegramChannel::class, $channels, true)
                 && str_contains($title, 'checkout created')
@@ -344,7 +345,7 @@ it('routes storage subscription checkout-created telegram notifications to TELEG
     Notification::assertSentOnDemand(
         TelegramSubscriptionLifecycleAlert::class,
         function (TelegramSubscriptionLifecycleAlert $notification, array $channels, $notifiable) use ($expectedCheckoutGroup): bool {
-            $payload = $notification->toArray(new AnonymousNotifiable());
+            $payload = $notification->toArray(new AnonymousNotifiable);
             $title = strtolower((string) data_get($payload, 'title', ''));
             $type = (string) data_get($payload, 'details.Type', '');
 
@@ -380,7 +381,7 @@ it('routes addon checkout-created telegram notifications to TELEGRAM_GROUP_CHK',
     Notification::assertSentOnDemand(
         TelegramSubscriptionLifecycleAlert::class,
         function (TelegramSubscriptionLifecycleAlert $notification, array $channels, $notifiable) use ($expectedCheckoutGroup): bool {
-            $payload = $notification->toArray(new AnonymousNotifiable());
+            $payload = $notification->toArray(new AnonymousNotifiable);
             $title = strtolower((string) data_get($payload, 'title', ''));
             $type = (string) data_get($payload, 'details.Type', '');
 
@@ -489,7 +490,7 @@ it('updates storage subscription state from a validated callback and fulfills it
     Notification::assertSentOnDemand(
         TelegramPayment::class,
         function (TelegramPayment $notification, array $channels, $notifiable): bool {
-            $payload = $notification->toArray(new AnonymousNotifiable());
+            $payload = $notification->toArray(new AnonymousNotifiable);
 
             return in_array(\NotificationChannels\Telegram\TelegramChannel::class, $channels, true)
                 && (string) data_get($payload, 'payment_type', '') === 'Storage Plan'
@@ -765,6 +766,104 @@ it('ignores duplicate callbacks without double-fulfilling addon credits', functi
     );
 });
 
+it('marks a late mismatched paid plan checkout for review instead of overriding the current subscription', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $studentPlan = ServicePlan::query()->where('code', 'student')->firstOrFail();
+    $proPlan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-student-review-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-student-review-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-student-review-123', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T10:15:00Z',
+                'lastPaymentAt' => '2026-05-01T10:05:00Z',
+            ]),
+            200
+        ),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $studentPlan->id, 'monthly');
+
+    app(PlanSwitcher::class)->switchServicePlan($customer->fresh(), $proPlan->id, [
+        'provider' => 'admin_manual',
+        'billing_cycle' => 'monthly',
+        'provider_ref' => 'ADMIN-PRO-LOCK',
+        'payment_method' => 'admin_manual',
+    ]);
+
+    $this->postJson(
+        route('payments.fib.subscription.callback'),
+        ['id' => $payment->fib_subscription_id, 'status' => 'ACTIVE'],
+        ['x-callback-secret' => 'fib-callback-secret'],
+    )->assertStatus(202);
+
+    $payment = $payment->fresh();
+
+    expect($payment->status)->toBe(PaymentStatus::PAID)
+        ->and($payment->internal_status)->toBe(PaymentInternalStatus::REQUIRES_REVIEW)
+        ->and($payment->fulfilled_at)->toBeNull()
+        ->and($payment->review_required_at)->not->toBeNull()
+        ->and((string) $payment->mismatch_reason)->toContain((string) $proPlan->name)
+        ->and((string) $payment->mismatch_reason)->toContain((string) $studentPlan->name)
+        ->and($customer->fresh()->currentServicePlanId())->toBe($proPlan->id)
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $payment->id)
+            ->where('event_type', 'payment_requires_review')
+            ->exists())->toBeTrue();
+});
+
+it('reconciles missed one-time fib callbacks and fulfills the payment safely', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    fibFlowGrantPaidPlan($customer);
+    $product = CreditProduct::query()->where('code', 'addon_10000')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/payments') => Http::response(
+            fibFlowCreateResponse('fib-addon-reconcile-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/payments/fib-addon-reconcile-123/status') => Http::response(
+            fibFlowStatusResponse('fib-addon-reconcile-123', 'PAID', [
+                'paidAt' => '2026-05-01T10:05:00Z',
+            ]),
+            200
+        ),
+    ]);
+
+    $payment = app(CreateAddonPayment::class)->handle($customer->fresh(), $product->id);
+    $payment->forceFill([
+        'last_status_checked_at' => now()->subMinutes(20),
+    ])->save();
+
+    $this->artisan('payments:reconcile-fib-payments', [
+        '--customer-id' => $customer->id,
+        '--chunk' => 25,
+        '--stale-minutes' => 0,
+    ])->assertSuccessful();
+
+    $payment = $payment->fresh();
+
+    expect($payment->status)->toBe(PaymentStatus::PAID)
+        ->and($payment->internal_status)->toBe(PaymentInternalStatus::APPLIED)
+        ->and($payment->fulfilled_at)->not->toBeNull()
+        ->and(CreditOrder::query()->where('payment_id', $payment->id)->count())->toBe(1);
+});
+
 it('fulfills a successful plan subscription checkout', function () {
     Http::preventStrayRequests();
 
@@ -813,7 +912,7 @@ it('fulfills a successful plan subscription checkout', function () {
     Notification::assertSentOnDemand(
         TelegramPayment::class,
         function (TelegramPayment $notification, array $channels, $notifiable): bool {
-            $payload = $notification->toArray(new AnonymousNotifiable());
+            $payload = $notification->toArray(new AnonymousNotifiable);
 
             return in_array(\NotificationChannels\Telegram\TelegramChannel::class, $channels, true)
                 && (string) data_get($payload, 'payment_type', '') === 'Subscription Plan'
@@ -882,7 +981,7 @@ it('extends a fulfilled hourly subscription when fib reports a successful renewa
     Notification::assertSentOnDemand(
         TelegramSubscriptionLifecycleAlert::class,
         function (TelegramSubscriptionLifecycleAlert $notification, ...$args): bool {
-            $title = strtolower((string) data_get($notification->toArray(new AnonymousNotifiable()), 'title', ''));
+            $title = strtolower((string) data_get($notification->toArray(new AnonymousNotifiable), 'title', ''));
 
             return str_contains($title, 'renewed');
         }
@@ -1012,10 +1111,10 @@ it('keeps reconciliation renewal events and notifications idempotent across repe
         })->count())->toBe(1);
 
     $renewalAlerts = Notification::sent(
-        new AnonymousNotifiable(),
+        new AnonymousNotifiable,
         TelegramSubscriptionLifecycleAlert::class,
         function (TelegramSubscriptionLifecycleAlert $notification, ...$args): bool {
-            $title = strtolower((string) data_get($notification->toArray(new AnonymousNotifiable()), 'title', ''));
+            $title = strtolower((string) data_get($notification->toArray(new AnonymousNotifiable), 'title', ''));
 
             return str_contains($title, 'renewed');
         }
@@ -1445,7 +1544,7 @@ it('marks first-payment rejected subscriptions as failed without fulfillment sid
             ->exists())->toBeFalse();
 
     $paymentAlerts = Notification::sent(
-        new AnonymousNotifiable(),
+        new AnonymousNotifiable,
         TelegramPayment::class
     );
 
@@ -1673,7 +1772,7 @@ it('hides the cancel button on the checkout page when the known subscription sta
         'payment_mode' => PaymentMode::RECURRING,
         'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
         'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
-        'local_reference' => 'HIDE-CANCEL-' . strtoupper(Str::random(8)),
+        'local_reference' => 'HIDE-CANCEL-'.strtoupper(Str::random(8)),
         'idempotency_key' => (string) Str::uuid(),
         'fib_subscription_id' => 'fib-hide-cancel-123',
         'amount' => $plan->priceIqdForCycle('monthly'),

@@ -2,6 +2,7 @@
 
 namespace App\Domain\Payments\Models;
 
+use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentMode;
 use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
@@ -26,6 +27,7 @@ class Payment extends Model
         'payment_mode',
         'provider_object_type',
         'status',
+        'internal_status',
         'local_reference',
         'idempotency_key',
         'fib_payment_id',
@@ -39,6 +41,7 @@ class Payment extends Model
         'discount_amount_iqd',
         'discounted_amount_iqd',
         'status_reason',
+        'mismatch_reason',
         'declining_reason',
         'provider_status',
         'provider_payment_status',
@@ -61,6 +64,8 @@ class Payment extends Model
         'canceled_at',
         'expired_at',
         'fulfilled_at',
+        'review_required_at',
+        'failed_at',
         'last_status_checked_at',
         'last_callback_received_at',
     ];
@@ -71,6 +76,7 @@ class Payment extends Model
         'payment_mode' => PaymentMode::class,
         'provider_object_type' => PaymentProviderObjectType::class,
         'status' => PaymentStatus::class,
+        'internal_status' => PaymentInternalStatus::class,
         'coupon_id' => 'integer',
         'provider_links' => 'array',
         'callback_payload' => 'array',
@@ -91,6 +97,8 @@ class Payment extends Model
         'canceled_at' => 'datetime',
         'expired_at' => 'datetime',
         'fulfilled_at' => 'datetime',
+        'review_required_at' => 'datetime',
+        'failed_at' => 'datetime',
         'last_status_checked_at' => 'datetime',
         'last_callback_received_at' => 'datetime',
     ];
@@ -143,6 +151,16 @@ class Payment extends Model
     public function isFulfilled(): bool
     {
         return $this->fulfilled_at !== null;
+    }
+
+    public function isApplied(): bool
+    {
+        return $this->fulfilled_at !== null || $this->internal_status === PaymentInternalStatus::APPLIED;
+    }
+
+    public function requiresReview(): bool
+    {
+        return $this->internal_status === PaymentInternalStatus::REQUIRES_REVIEW;
     }
 
     public function isTerminal(): bool
@@ -199,6 +217,23 @@ class Payment extends Model
         return $this->isProviderSubscriptionObject()
             ? ($this->provider_subscription_status ?: $this->provider_status)
             : ($this->provider_payment_status ?: $this->provider_status);
+    }
+
+    public function applicationStatusLabel(): string
+    {
+        return match ($this->internal_status ?? PaymentInternalStatus::fromPaymentStatus($this->status ?? PaymentStatus::PENDING, $this->isApplied(), $this->requiresReview())) {
+            PaymentInternalStatus::APPLIED => 'applied',
+            PaymentInternalStatus::PAID_PENDING_APPLICATION => 'payment_received',
+            PaymentInternalStatus::REQUIRES_REVIEW => 'requires_review',
+            default => (string) (($this->internal_status ?? null)?->value ?? $this->status?->value ?? 'pending'),
+        };
+    }
+
+    public function reviewMessage(): ?string
+    {
+        $reason = trim((string) ($this->mismatch_reason ?? ''));
+
+        return $reason !== '' ? $reason : null;
     }
 
     public function resolvedPaymentMode(PaymentMode $fallback = PaymentMode::ONE_TIME): PaymentMode

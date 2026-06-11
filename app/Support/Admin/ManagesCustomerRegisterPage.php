@@ -40,17 +40,25 @@ trait ManagesCustomerRegisterPage
     public int $perPage = 12;
 
     public string $servicePlanAdjustmentId = '';
+
     public string $servicePlanBillingCycle = 'monthly';
+
     public string $servicePlanProviderRef = '';
+
     public string $servicePlanAdjustmentNote = '';
 
     public string $storagePlanAdjustmentId = '';
+
     public string $storagePlanBillingCycle = 'monthly';
+
     public string $storagePlanProviderRef = '';
+
     public string $storagePlanAdjustmentNote = '';
 
     public string $addonProductAdjustmentId = '';
+
     public string $addonProviderRef = '';
+
     public string $addonAdjustmentNote = '';
 
     public function mount(): void
@@ -220,17 +228,27 @@ trait ManagesCustomerRegisterPage
                         'provider',
                         'purchase_type',
                         'payment_mode',
+                        'provider_object_type',
                         'status',
+                        'internal_status',
                         'amount',
                         'currency',
+                        'purchase_snapshot',
+                        'provider_status',
+                        'provider_payment_status',
+                        'provider_subscription_status',
                         'fib_payment_id',
                         'fib_subscription_id',
+                        'mismatch_reason',
                         'paid_at',
                         'fulfilled_at',
+                        'review_required_at',
+                        'last_callback_received_at',
+                        'last_status_checked_at',
                         'created_at',
                     ])
                     ->latest()
-                    ->limit(8),
+                    ->limit(12),
             ])
             ->find((int) $this->customerFilter);
     }
@@ -253,7 +271,7 @@ trait ManagesCustomerRegisterPage
     {
         $customer = $this->resolveFocusedCustomer();
 
-        if (!$customer) {
+        if (! $customer) {
             return;
         }
 
@@ -268,7 +286,7 @@ trait ManagesCustomerRegisterPage
             ->where('is_active', true)
             ->find((int) $validated['servicePlanAdjustmentId']);
 
-        if (!$plan) {
+        if (! $plan) {
             $this->dispatch('alert', type: 'error', message: __('Selected service plan is inactive or unavailable.'));
 
             return;
@@ -276,7 +294,7 @@ trait ManagesCustomerRegisterPage
 
         $billingCycle = (string) $validated['servicePlanBillingCycle'];
 
-        if (!$plan->supportsBillingInterval($billingCycle)) {
+        if (! $plan->supportsBillingInterval($billingCycle)) {
             $this->dispatch(
                 'alert',
                 type: 'error',
@@ -324,7 +342,7 @@ trait ManagesCustomerRegisterPage
     {
         $customer = $this->resolveFocusedCustomer();
 
-        if (!$customer) {
+        if (! $customer) {
             return;
         }
 
@@ -339,7 +357,7 @@ trait ManagesCustomerRegisterPage
             ->where('is_active', true)
             ->find((int) $validated['storagePlanAdjustmentId']);
 
-        if (!$plan) {
+        if (! $plan) {
             $this->dispatch('alert', type: 'error', message: __('Selected storage plan is inactive or unavailable.'));
 
             return;
@@ -347,7 +365,7 @@ trait ManagesCustomerRegisterPage
 
         $billingCycle = (string) $validated['storagePlanBillingCycle'];
 
-        if (!$plan->supportsBillingInterval($billingCycle)) {
+        if (! $plan->supportsBillingInterval($billingCycle)) {
             $this->dispatch(
                 'alert',
                 type: 'error',
@@ -395,7 +413,7 @@ trait ManagesCustomerRegisterPage
     {
         $customer = $this->resolveFocusedCustomer();
 
-        if (!$customer) {
+        if (! $customer) {
             return;
         }
 
@@ -409,7 +427,7 @@ trait ManagesCustomerRegisterPage
             ->where('is_active', true)
             ->find((int) $validated['addonProductAdjustmentId']);
 
-        if (!$product) {
+        if (! $product) {
             $this->dispatch('alert', type: 'error', message: __('Selected addon pack is inactive or unavailable.'));
 
             return;
@@ -462,7 +480,7 @@ trait ManagesCustomerRegisterPage
 
         $customer = Customer::query()->find($customerId);
 
-        if (!$customer) {
+        if (! $customer) {
             $this->dispatch('alert', type: 'error', message: __('The selected customer could not be found.'));
 
             return null;
@@ -473,7 +491,7 @@ trait ManagesCustomerRegisterPage
 
     protected function prefillManualAdjustmentsFromCustomer(?Customer $customer): void
     {
-        if (!$customer) {
+        if (! $customer) {
             $this->resetManualAdjustmentForms();
 
             return;
@@ -503,7 +521,7 @@ trait ManagesCustomerRegisterPage
             return substr($value, 0, 191);
         }
 
-        return $prefix . '-' . now()->format('YmdHis') . '-' . random_int(1000, 9999);
+        return $prefix.'-'.now()->format('YmdHis').'-'.random_int(1000, 9999);
     }
 
     protected function resetManualAdjustmentForms(): void

@@ -84,13 +84,13 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
                                     </div>
                                     <div class="carousel-inner text-center text-white pb-5">
                                         <div class="carousel-item active">
-                                            <p class="fs-15 fst-italic">{{ __('" Great! Clean code, clean design, easy for customization. Thanks very much! "') }}</p>
+                                            <p class="fs-15 fst-italic">{{ __('" Make Sure of all GPUS are working "') }}</p>
                                         </div>
                                         <div class="carousel-item">
-                                            <p class="fs-15 fst-italic">{{ __('" The theme is really great with an amazing customer support."') }}</p>
+                                            <p class="fs-15 fst-italic">{{ __('" Always Check Customer Support Tickets"') }}</p>
                                         </div>
                                         <div class="carousel-item">
-                                            <p class="fs-15 fst-italic">{{ __('" Great! Clean code, clean design, easy for customization. Thanks very much! "') }}</p>
+                                            <p class="fs-15 fst-italic">{{ __('" If you found any issue, Immediately contact the METIraq Team "') }}</p>
                                         </div>
                                     </div>
                                 </div>

@@ -13,8 +13,7 @@ class FibTokenService
         protected HttpFactory $http,
         protected FibConfiguration $config,
         protected FibDiagnostics $diagnostics,
-    ) {
-    }
+    ) {}
 
     public function getToken(string $profile = 'payment'): FibTokenData
     {
@@ -71,7 +70,16 @@ class FibTokenService
                 'response_status' => $response->status(),
             ]);
 
-            throw new FibApiException($this->errorMessage('FIB authentication failed.', $payload), $payload);
+            throw new FibApiException(
+                $this->errorMessage('FIB authentication failed.', $payload),
+                $payload,
+                [
+                    'profile' => $profile,
+                    'token_url' => $this->config->url($profile, 'token'),
+                    'response_status' => $response->status(),
+                ],
+                $response->status(),
+            );
         }
 
         $token = FibTokenData::fromArray($payload);

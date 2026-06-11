@@ -4,14 +4,14 @@ namespace App\Domain\Payments\Fib;
 
 use App\Domain\Payments\Exceptions\FibApiException;
 use App\Domain\Payments\Models\Payment;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
 class FibSubscriptionCancellationService
 {
     public function __construct(
         protected FibSubscriptionService $subscriptions,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{
@@ -49,7 +49,7 @@ class FibSubscriptionCancellationService
 
         if (! $this->subscriptions->isCancelableProviderStatus($providerStatus)) {
             return array_merge($base, [
-                'result' => $this->resultForClosedStatus($providerStatus, $status->activeUntil),
+                'result' => $this->resultForClosedStatus($providerStatus, $status->activeUntil, $status->lastPaymentAt),
             ]);
         }
 
@@ -58,7 +58,7 @@ class FibSubscriptionCancellationService
         } catch (FibApiException $exception) {
             if ($this->subscriptions->isCancelTransitionConflict($exception)) {
                 return array_merge($base, [
-                    'result' => $this->resultForClosedStatus($providerStatus, $status->activeUntil),
+                    'result' => $this->resultForClosedStatus($providerStatus, $status->activeUntil, $status->lastPaymentAt),
                     'trace_id' => $exception->traceId(),
                     'error_codes' => $exception->errorCodes(),
                 ]);
@@ -76,9 +76,9 @@ class FibSubscriptionCancellationService
         ]);
     }
 
-    protected function resultForClosedStatus(?string $providerStatus, ?Carbon $activeUntil): string
+    protected function resultForClosedStatus(?string $providerStatus, ?Carbon $activeUntil, ?Carbon $lastPaymentAt): string
     {
-        if (in_array($providerStatus, ['CANCELED', 'CANCELLED'], true) && $activeUntil?->isFuture()) {
+        if (in_array($providerStatus, ['CANCELED', 'CANCELLED'], true) && $this->hasScheduledCancellationBoundary($activeUntil, $lastPaymentAt)) {
             return 'already_scheduled';
         }
 
@@ -87,5 +87,18 @@ class FibSubscriptionCancellationService
         }
 
         return 'non_cancelable';
+    }
+
+    protected function hasScheduledCancellationBoundary(?CarbonInterface $activeUntil, ?CarbonInterface $lastPaymentAt): bool
+    {
+        if (! $activeUntil instanceof CarbonInterface) {
+            return false;
+        }
+
+        if ($lastPaymentAt instanceof CarbonInterface) {
+            return $activeUntil->greaterThan($lastPaymentAt);
+        }
+
+        return $activeUntil->isFuture();
     }
 }

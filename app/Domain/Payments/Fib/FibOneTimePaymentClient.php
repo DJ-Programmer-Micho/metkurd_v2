@@ -65,7 +65,16 @@ class FibOneTimePaymentClient extends FibAuthorizedClient implements PaymentGate
                 'provider_payment_id' => $providerPaymentId,
             ]);
 
-            throw new FibApiException($this->errorMessage('FIB status check failed.', $payload), $payload);
+            throw new FibApiException(
+                $this->errorMessage('FIB status check failed.', $payload),
+                $payload,
+                [
+                    'response_status' => $response->status(),
+                    'url' => $this->config->url($this->tokenProfile(), 'payment_status', ['paymentId' => $providerPaymentId]),
+                    'provider_payment_id' => $providerPaymentId,
+                ],
+                $response->status(),
+            );
         }
 
         $data = FibPaymentStatusData::fromArray($payload);

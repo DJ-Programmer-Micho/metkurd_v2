@@ -2,6 +2,7 @@
 
 namespace App\Domain\Payments\Actions;
 
+use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentMode;
 use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
@@ -40,8 +41,7 @@ class CreateStorageSubscriptionPayment
         protected CheckoutAuthorizationService $checkoutAuthorization,
         protected PaymentMethodCatalog $paymentMethods,
         protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
-    ) {
-    }
+    ) {}
 
     public function handle(
         Customer $customer,
@@ -53,8 +53,9 @@ class CreateStorageSubscriptionPayment
         $plan = StoragePlan::query()->where('is_active', true)->findOrFail($planId);
         $paymentMode = $plan->checkoutPaymentMode();
         $currentPlan = $customer->currentStoragePlan();
+        $currentPlanId = (int) ($currentPlan?->id ?? 0);
 
-        if ((int) ($currentPlan?->id ?? 0) === (int) $plan->id) {
+        if ($currentPlanId === (int) $plan->id) {
             throw ValidationException::withMessages([
                 'plan' => __('This is already your current storage plan.'),
             ]);
@@ -122,7 +123,7 @@ class CreateStorageSubscriptionPayment
         $providerObjectType = $paymentMode->isRecurring()
             ? PaymentProviderObjectType::SUBSCRIPTION
             : PaymentProviderObjectType::PAYMENT;
-        $payment = DB::transaction(function () use ($customer, $plan, $provider, $paymentMethod, $paymentMode, $providerObjectType, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay) {
+        $payment = DB::transaction(function () use ($customer, $plan, $provider, $paymentMethod, $paymentMode, $providerObjectType, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay, $currentPlan, $currentPlanId) {
             $payment = Payment::create([
                 'uuid' => (string) Str::uuid(),
                 'customer_id' => $customer->id,
@@ -133,6 +134,7 @@ class CreateStorageSubscriptionPayment
                 'payment_mode' => $paymentMode,
                 'provider_object_type' => $providerObjectType,
                 'status' => PaymentStatus::PENDING,
+                'internal_status' => PaymentInternalStatus::PENDING,
                 'local_reference' => $this->localReference('STORAGE'),
                 'idempotency_key' => (string) Str::uuid(),
                 'amount' => $grossAmountIqd,
@@ -141,6 +143,11 @@ class CreateStorageSubscriptionPayment
                 'discount_amount_iqd' => $discountAmountIqd,
                 'discounted_amount_iqd' => $baseAmountIqd,
                 'purchase_snapshot' => [
+                    'intended_plan' => [
+                        'id' => (int) $plan->id,
+                        'code' => (string) $plan->code,
+                        'name' => (string) $plan->name,
+                    ],
                     'code' => (string) $plan->code,
                     'name' => (string) $plan->name,
                     'billing_cycle' => $billingCycle,
@@ -167,6 +174,11 @@ class CreateStorageSubscriptionPayment
                     'renewal_strategy' => $paymentMode->isRecurring()
                         ? PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
                         : PaymentRecurringStrategy::MANUAL_RENEWAL->value,
+                    'checkout_context' => [
+                        'current_storage_plan_id' => $currentPlanId > 0 ? $currentPlanId : null,
+                        'current_storage_plan_code' => $currentPlan?->code,
+                        'current_storage_plan_name' => $currentPlan?->name,
+                    ],
                 ],
                 'meta' => [
                     'locale' => app()->getLocale(),
@@ -216,6 +228,7 @@ class CreateStorageSubscriptionPayment
 
             $payment->forceFill([
                 'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
+                'internal_status' => PaymentInternalStatus::AWAITING_CUSTOMER_ACTION,
                 'provider_status' => (string) data_get($response->raw, 'status', 'UNPAID'),
                 'provider_subscription_status' => (string) data_get($response->raw, 'status', 'UNPAID'),
                 'fib_subscription_id' => $response->subscriptionId,
@@ -232,7 +245,7 @@ class CreateStorageSubscriptionPayment
             $event = $this->events->record($payment, [
                 'event_type' => 'provider_subscription_created',
                 'source' => 'customer_checkout',
-                'event_key' => 'provider-subscription-created:' . $payment->id,
+                'event_key' => 'provider-subscription-created:'.$payment->id,
                 'before_status' => PaymentStatus::PENDING->value,
                 'after_status' => PaymentStatus::AWAITING_CUSTOMER_ACTION->value,
                 'payload' => $response->raw,
@@ -267,7 +280,9 @@ class CreateStorageSubscriptionPayment
         } catch (\Throwable $exception) {
             $payment->forceFill([
                 'status' => PaymentStatus::FAILED,
+                'internal_status' => PaymentInternalStatus::FAILED,
                 'status_reason' => $exception->getMessage(),
+                'failed_at' => now(),
             ])->save();
 
             $this->redemptions->releaseForPayment($payment, 'provider_create_failed');
@@ -304,6 +319,7 @@ class CreateStorageSubscriptionPayment
 
             $payment->forceFill([
                 'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
+                'internal_status' => PaymentInternalStatus::AWAITING_CUSTOMER_ACTION,
                 'provider_status' => 'UNPAID',
                 'provider_payment_status' => 'UNPAID',
                 'fib_payment_id' => $response->paymentId,
@@ -318,7 +334,7 @@ class CreateStorageSubscriptionPayment
             $event = $this->events->record($payment, [
                 'event_type' => 'provider_payment_created',
                 'source' => 'customer_checkout',
-                'event_key' => 'provider-payment-created:' . $payment->id,
+                'event_key' => 'provider-payment-created:'.$payment->id,
                 'before_status' => PaymentStatus::PENDING->value,
                 'after_status' => PaymentStatus::AWAITING_CUSTOMER_ACTION->value,
                 'payload' => $response->raw,
@@ -353,7 +369,9 @@ class CreateStorageSubscriptionPayment
         } catch (\Throwable $exception) {
             $payment->forceFill([
                 'status' => PaymentStatus::FAILED,
+                'internal_status' => PaymentInternalStatus::FAILED,
                 'status_reason' => $exception->getMessage(),
+                'failed_at' => now(),
             ])->save();
 
             $this->redemptions->releaseForPayment($payment, 'provider_create_failed');

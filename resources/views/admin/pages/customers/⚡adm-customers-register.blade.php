@@ -370,44 +370,76 @@ class extends Component
             <div class="col-xl-6 mb-3">
                 <div class="card h-100">
                     <div class="card-header border-0">
-                        <h5 class="card-title mb-0">{{ __('Recent Payments') }}</h5>
+                        <h5 class="card-title mb-0">{{ __('FIB Payment Ledger') }}</h5>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
                             <table class="table table-sm align-middle mb-0">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>{{ __('UUID') }}</th>
-                                        <th>{{ __('Type') }}</th>
-                                        <th>{{ __('Status') }}</th>
-                                        <th>{{ __('Fulfilled') }}</th>
+                                        <th>{{ __('Reference') }}</th>
+                                        <th>{{ __('Intended Item') }}</th>
+                                        <th>{{ __('Provider State') }}</th>
+                                        <th>{{ __('Application') }}</th>
+                                        <th>{{ __('Current Customer Plan') }}</th>
+                                        <th>{{ __('Dates') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @forelse ($focusedCustomer->payments as $payment)
+                                        @php
+                                            $snapshot = $payment->snapshot();
+                                            $intendedName = (string) data_get($snapshot, 'name', __('n/a'));
+                                            $intendedCode = (string) data_get($snapshot, 'code', '');
+                                            $providerReference = $payment->fib_subscription_id ?: $payment->fib_payment_id ?: __('n/a');
+                                            $currentCustomerPlan = match ($payment->purchase_type?->value ?? $payment->purchase_type) {
+                                                'storage_subscription' => $focusedCustomer->activeStorageSubscription?->storagePlan?->name,
+                                                default => $focusedCustomer->activeServiceSubscription?->servicePlan?->name,
+                                            };
+                                        @endphp
                                         <tr>
                                             <td>
-                                                <div class="small fw-semibold">{{ $payment->uuid }}</div>
-                                                <div class="text-muted small">{{ $payment->fib_subscription_id ?: $payment->fib_payment_id ?: __('n/a') }}</div>
+                                                <div class="small fw-semibold">{{ $providerReference }}</div>
+                                                <div class="text-muted small">{{ $payment->uuid }}</div>
                                             </td>
                                             <td>
-                                                <div class="small">{{ $payment->purchase_type?->value ?? $payment->purchase_type ?? __('n/a') }}</div>
-                                                <div class="text-muted small">{{ $payment->payment_mode?->value ?? $payment->payment_mode ?? __('n/a') }}</div>
+                                                <div class="small fw-semibold">{{ $intendedName }}</div>
+                                                <div class="text-muted small">
+                                                    {{ $intendedCode !== '' ? strtoupper($intendedCode) . ' · ' : '' }}
+                                                    {{ \Illuminate\Support\Str::headline((string) ($payment->purchase_type?->value ?? $payment->purchase_type ?? __('n/a'))) }}
+                                                </div>
                                             </td>
                                             <td>
-                                                <span class="badge bg-light text-body">{{ $payment->status?->value ?? $payment->status ?? __('n/a') }}</span>
+                                                <div>
+                                                    <span class="badge bg-light text-body">{{ strtoupper((string) ($payment->providerStatusLabel() ?? __('n/a'))) }}</span>
+                                                </div>
+                                                <div class="text-muted small mt-1">{{ \Illuminate\Support\Str::headline((string) ($payment->payment_mode?->value ?? $payment->payment_mode ?? __('n/a'))) }}</div>
                                             </td>
                                             <td>
-                                                @if ($payment->fulfilled_at)
-                                                    <span class="badge bg-success-subtle text-success">{{ __('Yes') }}</span>
-                                                @else
-                                                    <span class="badge bg-danger-subtle text-danger">{{ __('No') }}</span>
+                                                <div>
+                                                    <span class="badge {{ $payment->requiresReview() ? 'bg-warning-subtle text-warning' : ($payment->isApplied() ? 'bg-success-subtle text-success' : 'bg-info-subtle text-info') }}">
+                                                        {{ \Illuminate\Support\Str::headline($payment->applicationStatusLabel()) }}
+                                                    </span>
+                                                </div>
+                                                <div class="text-muted small mt-1">{{ \Illuminate\Support\Str::headline((string) ($payment->status?->value ?? $payment->status ?? __('n/a'))) }}</div>
+                                                @if ($payment->reviewMessage())
+                                                    <div class="text-warning small mt-1">{{ $payment->reviewMessage() }}</div>
                                                 @endif
+                                            </td>
+                                            <td>
+                                                <div class="small fw-semibold">{{ $currentCustomerPlan ?: __('No active plan') }}</div>
+                                                <div class="text-muted small">{{ __('Callback') }}: {{ $payment->last_callback_received_at?->diffForHumans() ?? __('n/a') }}</div>
+                                                <div class="text-muted small">{{ __('Status check') }}: {{ $payment->last_status_checked_at?->diffForHumans() ?? __('n/a') }}</div>
+                                            </td>
+                                            <td>
+                                                <div class="small">{{ __('Created') }}: {{ $payment->created_at?->format('M d, Y H:i') ?? __('n/a') }}</div>
+                                                <div class="text-muted small">{{ __('Paid') }}: {{ $payment->paid_at?->format('M d, Y H:i') ?? __('n/a') }}</div>
+                                                <div class="text-muted small">{{ __('Applied') }}: {{ $payment->fulfilled_at?->format('M d, Y H:i') ?? __('n/a') }}</div>
                                             </td>
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="4" class="text-center py-3 text-muted">{{ __('No recent payments for this customer.') }}</td>
+                                            <td colspan="6" class="text-center py-3 text-muted">{{ __('No recent payments for this customer.') }}</td>
                                         </tr>
                                     @endforelse
                                 </tbody>

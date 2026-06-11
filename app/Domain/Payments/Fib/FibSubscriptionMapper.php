@@ -61,7 +61,7 @@ class FibSubscriptionMapper
             return true;
         }
 
-        return $this->canInferInitialChargeFromActiveStatus($status);
+        return false;
     }
 
     protected function isExplicitlyPaidStatus(string $status): bool
@@ -92,22 +92,6 @@ class FibSubscriptionMapper
         }
 
         return false;
-    }
-
-    protected function canInferInitialChargeFromActiveStatus(FibSubscriptionStatusData $status): bool
-    {
-        $normalizedStatus = $this->normalizeStatus($status->status);
-
-        if (! in_array($normalizedStatus, ['ACTIVE', 'SUBSCRIBED'], true)) {
-            return false;
-        }
-
-        // Keep trial subscriptions in awaiting state until explicit payment evidence exists.
-        if ($this->hasNonZeroTrialPeriod($status->trialPeriod)) {
-            return false;
-        }
-
-        return (int) data_get($status->amount, 'amount', 0) > 0;
     }
 
     protected function hasNonZeroTrialPeriod(?string $trialPeriod): bool

@@ -46,6 +46,13 @@ if ((bool) config('fib.reconciliation.enabled', true)) {
     $graceMinutes = max(0, (int) config('fib.reconciliation.local_expiry_grace_minutes', 0));
 
     $applySchedulerGuards(Schedule::command(sprintf(
+        'payments:reconcile-fib-payments --chunk=%d --stale-minutes=%d',
+        $chunkSize,
+        $staleMinutes
+    ))
+        ->everyFiveMinutes(), 'payments:reconcile-fib-payments', 4);
+
+    $applySchedulerGuards(Schedule::command(sprintf(
         'subscriptions:reconcile --chunk=%d --stale-minutes=%d --grace-minutes=%d',
         $chunkSize,
         $staleMinutes,

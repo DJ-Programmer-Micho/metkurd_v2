@@ -4,11 +4,12 @@ namespace App\Domain\Payments\Actions;
 
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
-use App\Domain\Payments\Fib\FibSubscriptionCancellationService;
 use App\Domain\Payments\Fib\FibOneTimePaymentService;
+use App\Domain\Payments\Fib\FibSubscriptionCancellationService;
 use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
+use Carbon\CarbonInterface;
 
 class CancelFibCheckout
 {
@@ -18,8 +19,7 @@ class CancelFibCheckout
         protected FibSubscriptionCancellationService $subscriptionCancellation,
         protected SyncFibCheckoutStatus $sync,
         protected PaymentEventRecorder $events,
-    ) {
-    }
+    ) {}
 
     public function handle(Payment $payment, string $source = 'manual_cancel'): Payment
     {
@@ -137,7 +137,8 @@ class CancelFibCheckout
     {
         $providerStatus = $this->subscriptions->normalizeProviderStatus($payment->providerStatusLabel());
 
-        if (in_array($providerStatus, ['CANCELED', 'CANCELLED'], true) && $payment->active_until?->isFuture()) {
+        if (in_array($providerStatus, ['CANCELED', 'CANCELLED'], true)
+            && $this->hasScheduledCancellationBoundary($payment->active_until, $payment->last_payment_at)) {
             return 'already_scheduled';
         }
 
@@ -150,5 +151,18 @@ class CancelFibCheckout
         }
 
         return $fallback;
+    }
+
+    protected function hasScheduledCancellationBoundary(?CarbonInterface $activeUntil, ?CarbonInterface $lastPaymentAt): bool
+    {
+        if (! $activeUntil instanceof CarbonInterface) {
+            return false;
+        }
+
+        if ($lastPaymentAt instanceof CarbonInterface) {
+            return $activeUntil->greaterThan($lastPaymentAt);
+        }
+
+        return $activeUntil->isFuture();
     }
 }

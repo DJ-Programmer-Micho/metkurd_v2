@@ -2,6 +2,7 @@
 
 namespace App\Domain\Payments\Actions;
 
+use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentMode;
 use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
@@ -32,8 +33,7 @@ class CreateAddonPayment
         protected CouponService $coupons,
         protected CouponRedemptionService $redemptions,
         protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
-    ) {
-    }
+    ) {}
 
     public function handle(Customer $customer, int $productId, ?string $couponCode = null): Payment
     {
@@ -73,6 +73,7 @@ class CreateAddonPayment
                 'payment_mode' => PaymentMode::ONE_TIME,
                 'provider_object_type' => PaymentProviderObjectType::PAYMENT,
                 'status' => PaymentStatus::PENDING,
+                'internal_status' => PaymentInternalStatus::PENDING,
                 'local_reference' => $this->localReference('ADDON'),
                 'idempotency_key' => (string) Str::uuid(),
                 'amount' => $grossAmountIqd,
@@ -140,6 +141,7 @@ class CreateAddonPayment
 
             $payment->forceFill([
                 'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
+                'internal_status' => PaymentInternalStatus::AWAITING_CUSTOMER_ACTION,
                 'provider_status' => 'UNPAID',
                 'provider_payment_status' => 'UNPAID',
                 'fib_payment_id' => $response->paymentId,
@@ -154,7 +156,7 @@ class CreateAddonPayment
             $event = $this->events->record($payment, [
                 'event_type' => 'provider_payment_created',
                 'source' => 'customer_checkout',
-                'event_key' => 'provider-payment-created:' . $payment->id,
+                'event_key' => 'provider-payment-created:'.$payment->id,
                 'before_status' => PaymentStatus::PENDING->value,
                 'after_status' => PaymentStatus::AWAITING_CUSTOMER_ACTION->value,
                 'payload' => $response->raw,
@@ -189,7 +191,9 @@ class CreateAddonPayment
         } catch (\Throwable $exception) {
             $payment->forceFill([
                 'status' => PaymentStatus::FAILED,
+                'internal_status' => PaymentInternalStatus::FAILED,
                 'status_reason' => $exception->getMessage(),
+                'failed_at' => now(),
             ])->save();
 
             $this->redemptions->releaseForPayment($payment, 'provider_create_failed');

@@ -253,17 +253,29 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                         <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="0" class="active" aria-current="true"></button>
                                         <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="1"></button>
                                         <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="2"></button>
+                                        <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="3"></button>
+                                        <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="4"></button>
+                                        <button type="button" data-bs-target="#qoutescarouselIndicators" data-bs-slide-to="5"></button>                                        
                                     </div>
                                     <div class="carousel-inner text-center text-white pb-5">
                                         <div class="carousel-item active">
-                                            <p class="fs-15 fst-italic">" {{ __('Great! Clean code, clean design, easy for customization. Thanks very much!') }} "</p>
+                                            <p class="fs-15 fst-italic">" {{ __('For emotional speech, choose the right voice style and make the sentence expressive.') }} "</p>
                                         </div>
                                         <div class="carousel-item">
-                                            <p class="fs-15 fst-italic">" {{ __('The theme is really great with an amazing customer support.') }}"</p>
+                                            <p class="fs-15 fst-italic">" {{ __('Tip: Short sentences usually create better Kurdish TTS results.') }}"</p>
                                         </div>
                                         <div class="carousel-item">
-                                            <p class="fs-15 fst-italic">" {{ __('Great! Clean code, clean design, easy for customization. Thanks very much!') }} "</p>
+                                            <p class="fs-15 fst-italic">" {{ __('In Apollo 1.5V, add punctuation like commas, full stops, and pauses to get more natural speech.') }} "</p>
                                         </div>
+                                        <div class="carousel-item">
+                                            <p class="fs-15 fst-italic">" {{ __('For Auto Caption, upload clear audio to get more accurate SRT subtitles.') }} "</p>
+                                        </div>
+                                        <div class="carousel-item">
+                                            <p class="fs-15 fst-italic">" {{ __('Tip: Kurdish voice cloning works best with clean Sorani reference audio.') }} "</p>
+                                        </div>
+                                        <div class="carousel-item">
+                                            <p class="fs-15 fst-italic">" {{ __('MetKurd works better with clean Kurdish text and correct spelling.') }} "</p>
+                                        </div>                                        
                                     </div>
                                 </div>
 

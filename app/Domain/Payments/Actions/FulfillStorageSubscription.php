@@ -3,6 +3,7 @@
 namespace App\Domain\Payments\Actions;
 
 use App\Domain\Payments\Contracts\RecurringPaymentHandler;
+use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
@@ -10,6 +11,7 @@ use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Enums\PaymentRecurringStrategy;
 use App\Services\Billing\PlanSwitcher;
 use App\Services\Coupons\CouponRedemptionService;
+use App\Services\Payments\PaymentApplicationService;
 use App\Support\CustomerEmailNotifier;
 use App\Support\TelegramPaymentNotifier;
 use Illuminate\Support\Facades\DB;
@@ -20,8 +22,8 @@ class FulfillStorageSubscription implements RecurringPaymentHandler
         protected PaymentEventRecorder $events,
         protected PlanSwitcher $switcher,
         protected CouponRedemptionService $redemptions,
-    ) {
-    }
+        protected PaymentApplicationService $application,
+    ) {}
 
     public function supports(PurchaseType $purchaseType): bool
     {
@@ -35,6 +37,18 @@ class FulfillStorageSubscription implements RecurringPaymentHandler
             $locked = Payment::query()->lockForUpdate()->with(['customer.profile', 'purchasable'])->findOrFail($payment->id);
 
             if ($locked->fulfilled_at !== null || $locked->status !== PaymentStatus::PAID) {
+                return;
+            }
+
+            $assessment = $this->application->assess($locked);
+
+            if (! ($assessment['can_apply'] ?? false)) {
+                $this->application->markRequiresReview(
+                    $locked,
+                    (string) ($assessment['reason'] ?? __('Payment received but the storage subscription requires manual review.')),
+                    (array) ($assessment['context'] ?? []),
+                );
+
                 return;
             }
 
@@ -69,6 +83,9 @@ class FulfillStorageSubscription implements RecurringPaymentHandler
 
             $locked->forceFill([
                 'fulfilled_at' => now(),
+                'internal_status' => PaymentInternalStatus::APPLIED,
+                'review_required_at' => null,
+                'mismatch_reason' => null,
                 'meta' => array_merge((array) $locked->meta, [
                     'fulfilled_storage_subscription_id' => $subscription->id,
                 ]),

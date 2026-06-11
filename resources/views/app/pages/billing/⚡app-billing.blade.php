@@ -494,11 +494,6 @@ class extends Component
         $checkouts = Payment::query()
             ->where('customer_id', $customerId)
             ->whereBetween('created_at', [$from, $to])
-            ->where(function ($query) {
-                $query
-                    ->whereNull('fulfilled_at')
-                    ->orWhereIn('status', ['pending', 'awaiting_customer_action', 'failed', 'canceled', 'expired']);
-            })
             ->latest('created_at')
             ->get()
             ->map(function (Payment $payment) {
@@ -508,7 +503,7 @@ class extends Component
                 $discountDisplay = (array) data_get($snapshot, 'discount_display', []);
                 $billingCycle = (string) data_get($snapshot, 'billing_cycle', '');
                 $flowLabel = $this->flowLabel($payment->payment_mode?->value, $billingCycle);
-                $status = (string) ($payment->status?->value ?? $payment->status ?? 'pending');
+                $status = $payment->applicationStatusLabel();
                 $providerStatus = trim((string) ($payment->providerStatusLabel() ?? ''));
 
                 return [
@@ -532,7 +527,7 @@ class extends Component
                     'discount_display_amount' => data_get($discountDisplay, 'display_amount_rounded'),
                     'discount_display_currency_code' => (string) data_get($discountDisplay, 'display_currency_code', ''),
                     'status' => $status,
-                    'status_label' => $providerStatus !== '' ? $providerStatus : $status,
+                    'status_label' => $status,
                     'coupon_code' => (string) ($payment->coupon_code ?? ''),
                     'action_url' => route('payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $payment]),
                 ];
@@ -542,6 +537,7 @@ class extends Component
             ->with(['servicePlan', 'creditProduct', 'payment'])
             ->where('customer_id', $customerId)
             ->whereBetween('created_at', [$from, $to])
+            ->whereNull('payment_id')
             ->get()
             ->map(function (CreditOrder $order) {
                 $category = match (true) {
@@ -708,14 +704,28 @@ class extends Component
     public function checkoutStatusHint(Payment $payment): ?string
     {
         $status = strtolower((string) ($payment->status?->value ?? $payment->status ?? 'pending'));
+        $applicationStatus = strtolower($payment->applicationStatusLabel());
+
+        if ($applicationStatus === 'requires_review') {
+            return $payment->reviewMessage()
+                ?: __('Payment received and queued for manual review before access is changed.');
+        }
+
+        if ($applicationStatus === 'payment_received') {
+            return __('Payment received. We are applying your access now.');
+        }
+
+        if ($applicationStatus === 'applied') {
+            return $payment->active_until
+                ? __('Applied successfully. Active until :date', ['date' => $this->formatTimestamp($payment->active_until)])
+                : __('Payment was applied successfully.');
+        }
 
         return match ($status) {
             'awaiting_customer_action', 'pending' => $payment->valid_until
                 ? __('Complete checkout before :date', ['date' => $this->formatTimestamp($payment->valid_until)])
                 : __('Waiting for provider confirmation.'),
-            'paid' => $payment->active_until
-                ? __('Active until :date', ['date' => $this->formatTimestamp($payment->active_until)])
-                : __('Payment was confirmed successfully.'),
+            'paid' => __('Payment was confirmed successfully.'),
             'canceled' => $payment->active_until
                 ? __('Cancellation is scheduled. Access remains until :date', ['date' => $this->formatTimestamp($payment->active_until)])
                 : __('This checkout was canceled.'),
@@ -731,10 +741,6 @@ class extends Component
 
     public function checkoutLifecycleDetails(Payment $payment, ?string $providerStatus = null): array
     {
-        if ($payment->payment_mode !== PaymentMode::RECURRING) {
-            return [];
-        }
-
         $meta = (array) ($payment->meta ?? []);
         $lifecycle = (array) data_get($meta, 'subscription_lifecycle', []);
         $cancelSource = trim((string) data_get($lifecycle, 'cancel_source', ''));
@@ -745,9 +751,17 @@ class extends Component
             $facts[] = __('Provider status: :status', ['status' => $providerStatus]);
         }
 
+        $facts[] = __('Application status: :status', [
+            'status' => Str::headline(str_replace('_', ' ', $payment->applicationStatusLabel())),
+        ]);
+
         $facts[] = __('Local status: :status', [
             'status' => Str::headline((string) ($payment->status?->value ?? $payment->status ?? 'pending')),
         ]);
+
+        if ($payment->reviewMessage()) {
+            $facts[] = __('Review reason: :reason', ['reason' => $payment->reviewMessage()]);
+        }
 
         if ($payment->last_payment_at) {
             $facts[] = __('Last payment at: :date', ['date' => $this->formatTimestamp($payment->last_payment_at)]);
@@ -761,11 +775,15 @@ class extends Component
             $facts[] = __('Last sync: :date', ['date' => $this->formatTimestamp($payment->last_status_checked_at)]);
         }
 
-        if ($syncSource !== '') {
+        if ($payment->last_callback_received_at) {
+            $facts[] = __('Callback received: :date', ['date' => $this->formatTimestamp($payment->last_callback_received_at)]);
+        }
+
+        if ($payment->payment_mode === PaymentMode::RECURRING && $syncSource !== '') {
             $facts[] = __('Sync source: :source', ['source' => Str::headline(str_replace('_', ' ', $syncSource))]);
         }
 
-        if ($cancelSource !== '') {
+        if ($payment->payment_mode === PaymentMode::RECURRING && $cancelSource !== '') {
             $facts[] = __('Cancellation source: :source', ['source' => Str::headline(str_replace('_', ' ', $cancelSource))]);
         }
 
@@ -798,7 +816,9 @@ class extends Component
     public function statusBadgeClass(?string $status): string
     {
         return match (strtolower((string) $status)) {
-            'done', 'paid', 'success', 'credit', 'fulfilled' => 'success',
+            'done', 'paid', 'success', 'credit', 'fulfilled', 'applied' => 'success',
+            'payment_received', 'paid_pending_application' => 'info',
+            'requires_review' => 'warning',
             'failed', 'debit' => 'danger',
             'queued', 'running', 'saving', 'processing', 'pending', 'awaiting_customer_action', 'awaiting customer action' => 'warning',
             'canceled', 'cancelled', 'expired' => 'secondary',
@@ -825,6 +845,21 @@ class extends Component
     public function toolLabel(?string $tool): string
     {
         return CustomerFacingToolName::translated($tool);
+    }
+
+    public function supportLabel(?string $label, ?string $rowType = null): string
+    {
+        $label = trim((string) $label);
+
+        if ($label === '') {
+            return '';
+        }
+
+        if (in_array($rowType, ['checkout', 'order'], true)) {
+            return $label;
+        }
+
+        return $this->toolLabel($label);
     }
 
     protected function normalizeToolFilter(string $tool): string
@@ -1440,7 +1475,7 @@ class extends Component
                                         <td>
                                             @if(!empty($row['support_label']))
                                                 <span class="badge bg-{{ $row['support_badge_class'] ?? 'secondary' }}-subtle text-{{ $row['support_badge_class'] ?? 'secondary' }}">
-                                                    {{ $this->toolLabel((string) $row['support_label']) }}
+                                                    {{ $this->supportLabel((string) $row['support_label'], (string) ($row['row_type'] ?? '')) }}
                                                 </span>
                                             @else
                                                 <span class="text-muted">{{ __('Not applicable') }}</span>
