@@ -2,46 +2,12 @@
 
 namespace App\Console\Commands\Concerns;
 
-use App\Domain\Payments\Enums\PaymentInternalStatus;
-use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Models\Payment;
+use App\Domain\Payments\Support\PaymentReconciliationPolicy;
 use Illuminate\Database\Eloquent\Builder;
 
 trait InteractsWithFibCheckoutReconciliation
 {
-    protected function unresolvedCheckoutQuery(Builder $query): Builder
-    {
-        return $query->where(function ($builder) {
-            $builder
-                ->whereIn('status', [
-                    PaymentStatus::PENDING->value,
-                    PaymentStatus::AWAITING_CUSTOMER_ACTION->value,
-                ])
-                ->orWhere(function ($paidLike) {
-                    $paidLike
-                        ->where('status', PaymentStatus::PAID->value)
-                        ->whereNull('fulfilled_at')
-                        ->where(function ($statuses) {
-                            $statuses
-                                ->whereNull('internal_status')
-                                ->orWhereIn('internal_status', [
-                                    PaymentInternalStatus::PENDING->value,
-                                    PaymentInternalStatus::AWAITING_CUSTOMER_ACTION->value,
-                                    PaymentInternalStatus::PAID_PENDING_APPLICATION->value,
-                                ]);
-                        });
-                });
-        })->where(function ($builder) {
-            $builder
-                ->whereNull('internal_status')
-                ->orWhereIn('internal_status', [
-                    PaymentInternalStatus::PENDING->value,
-                    PaymentInternalStatus::AWAITING_CUSTOMER_ACTION->value,
-                    PaymentInternalStatus::PAID_PENDING_APPLICATION->value,
-                ]);
-        })->whereNull('review_required_at');
-    }
-
     /**
      * @return array{candidates_scanned:int,skipped_applied:int,skipped_review_required:int,skipped_terminal:int,processed_unresolved:int,updated:int,failed:int}
      */
@@ -58,7 +24,19 @@ trait InteractsWithFibCheckoutReconciliation
         ];
 
         $query
-            ->select(['id', 'status', 'internal_status', 'fulfilled_at', 'review_required_at'])
+            ->select([
+                'id',
+                'status',
+                'internal_status',
+                'fulfilled_at',
+                'review_required_at',
+                'provider_object_type',
+                'payment_mode',
+                'provider_status',
+                'provider_payment_status',
+                'provider_subscription_status',
+                'active_until',
+            ])
             ->orderBy('id')
             ->chunkById(500, function ($payments) use (&$summary) {
                 foreach ($payments as $payment) {
@@ -79,48 +57,7 @@ trait InteractsWithFibCheckoutReconciliation
 
     protected function candidateBucket(Payment $payment): string
     {
-        $status = $this->rawPaymentStatus($payment);
-        $internalStatus = $this->rawInternalStatus($payment);
-
-        if ($payment->fulfilled_at !== null || in_array($internalStatus, ['applied', 'fulfilled'], true)) {
-            return 'applied';
-        }
-
-        if ($internalStatus === PaymentInternalStatus::REQUIRES_REVIEW->value || $payment->review_required_at !== null) {
-            return 'review';
-        }
-
-        if (in_array($status, [
-            PaymentStatus::FAILED->value,
-            PaymentStatus::CANCELED->value,
-            PaymentStatus::EXPIRED->value,
-            PaymentStatus::REFUND_REQUESTED->value,
-            PaymentStatus::REFUNDED->value,
-            'declined',
-        ], true) || in_array($internalStatus, [
-            PaymentInternalStatus::FAILED->value,
-            PaymentInternalStatus::CANCELED->value,
-            PaymentInternalStatus::EXPIRED->value,
-            PaymentInternalStatus::REFUND_REQUESTED->value,
-            PaymentInternalStatus::REFUNDED->value,
-        ], true)) {
-            return 'terminal';
-        }
-
-        if (in_array($status, [
-            PaymentStatus::PENDING->value,
-            PaymentStatus::AWAITING_CUSTOMER_ACTION->value,
-        ], true)) {
-            return 'unresolved';
-        }
-
-        if ($status === PaymentStatus::PAID->value
-            && $payment->fulfilled_at === null
-            && in_array($internalStatus, [null, '', PaymentInternalStatus::PENDING->value, PaymentInternalStatus::AWAITING_CUSTOMER_ACTION->value, PaymentInternalStatus::PAID_PENDING_APPLICATION->value], true)) {
-            return 'unresolved';
-        }
-
-        return 'terminal';
+        return $this->checkoutReconciliationPolicy()->checkoutCandidateBucket($payment);
     }
 
     protected function renderSummary(array $summary, bool $dryRun): void
@@ -138,17 +75,8 @@ trait InteractsWithFibCheckoutReconciliation
         }
     }
 
-    protected function rawPaymentStatus(Payment $payment): ?string
+    protected function checkoutReconciliationPolicy(): PaymentReconciliationPolicy
     {
-        $value = trim((string) $payment->getRawOriginal('status'));
-
-        return $value !== '' ? strtolower($value) : null;
-    }
-
-    protected function rawInternalStatus(Payment $payment): ?string
-    {
-        $value = trim((string) $payment->getRawOriginal('internal_status'));
-
-        return $value !== '' ? strtolower($value) : null;
+        return app(PaymentReconciliationPolicy::class);
     }
 }

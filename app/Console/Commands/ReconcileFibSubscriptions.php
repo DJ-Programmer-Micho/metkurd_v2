@@ -58,7 +58,6 @@ class ReconcileFibSubscriptions extends Command
         }
 
         $summary = $this->candidateSummary(clone $baseQuery);
-        $query = $this->unresolvedCheckoutQuery(clone $baseQuery);
         $candidateCount = (int) ($summary['processed_unresolved'] ?? 0);
 
         if ($candidateCount === 0) {
@@ -72,10 +71,14 @@ class ReconcileFibSubscriptions extends Command
         $updated = 0;
         $failed = 0;
 
-        $query
+        $baseQuery
             ->orderBy('id')
             ->chunkById($chunk, function ($payments) use ($sync, $events, $failures, $limit, $dryRun, &$processed, &$updated, &$failed) {
                 foreach ($payments as $payment) {
+                    if ($this->candidateBucket($payment) !== 'unresolved') {
+                        continue;
+                    }
+
                     if ($limit > 0 && $processed >= $limit) {
                         return false;
                     }

@@ -7,6 +7,7 @@ use App\Domain\Payments\Fib\FibFailureInterpreter;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Models\PaymentEvent;
 use App\Domain\Payments\Support\PaymentEventRecorder;
+use App\Domain\Payments\Support\PaymentReconciliationPolicy;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 
@@ -15,6 +16,7 @@ class PaymentSyncFailureService
     public function __construct(
         protected FibFailureInterpreter $interpreter,
         protected PaymentEventRecorder $events,
+        protected PaymentReconciliationPolicy $reconciliationPolicy,
     ) {}
 
     /**
@@ -59,6 +61,17 @@ class PaymentSyncFailureService
         bool $markRequiresReview,
     ): array {
         $payment = $payment->fresh() ?? $payment;
+        $source = $this->reconciliationPolicy->normalizeScheduledSource($payment, $source, $eventType);
+
+        if ($this->reconciliationPolicy->shouldSkipProviderFailureEvent($payment, $source, $eventType)) {
+            return [
+                'event_type' => $eventType,
+                'source' => $source,
+                'skipped' => true,
+                'safe_message' => 'Skipped provider failure capture for a payment that is not eligible for scheduled checkout failure recording.',
+            ];
+        }
+
         $now = now();
         $providerReferenceType = $payment->isProviderSubscriptionObject() ? 'subscription' : 'payment';
         $details = $this->interpreter->describe(

@@ -465,6 +465,158 @@ it('does not downgrade applied fib subscriptions when active renewal metadata is
             ->count())->toBe(1);
 });
 
+it('keeps subscriptions reconcile focused on unresolved checkout rows and avoids legacy sync failure noise', function () {
+    Http::preventStrayRequests();
+    reconcileFibConfigure();
+    Carbon::setTestNow('2026-06-01 10:30:00');
+
+    $customer = reconcileCustomer('reconcile_mixed_checkout');
+    $servicePlan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    CustomerServiceSubscription::query()
+        ->where('customer_id', $customer->id)
+        ->where('status', 'active')
+        ->update(['status' => 'ended', 'ends_at' => now()->subDay()]);
+
+    $awaitingPayment = Payment::create([
+        'uuid' => (string) Str::uuid(),
+        'customer_id' => $customer->id,
+        'provider' => PaymentProvider::FIB,
+        'purchase_type' => PurchaseType::PLAN_SUBSCRIPTION,
+        'payment_mode' => PaymentMode::RECURRING,
+        'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
+        'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
+        'internal_status' => PaymentInternalStatus::AWAITING_CUSTOMER_ACTION,
+        'local_reference' => 'REC-MIXED-AWAIT-'.strtoupper(Str::random(8)),
+        'idempotency_key' => (string) Str::uuid(),
+        'fib_subscription_id' => 'fib-mixed-awaiting-123',
+        'amount' => 25000,
+        'currency' => 'IQD',
+        'provider_subscription_status' => 'UNPAID',
+        'last_status_checked_at' => now()->subMinutes(30),
+        'purchase_snapshot' => [
+            'billing_cycle' => 'monthly',
+            'renewal_strategy' => 'provider_schedule',
+        ],
+        'purchasable_type' => ServicePlan::class,
+        'purchasable_id' => $servicePlan->id,
+    ]);
+
+    $reviewPayment = Payment::create([
+        'uuid' => (string) Str::uuid(),
+        'customer_id' => $customer->id,
+        'provider' => PaymentProvider::FIB,
+        'purchase_type' => PurchaseType::PLAN_SUBSCRIPTION,
+        'payment_mode' => PaymentMode::RECURRING,
+        'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
+        'status' => PaymentStatus::PAID,
+        'internal_status' => PaymentInternalStatus::REQUIRES_REVIEW,
+        'local_reference' => 'REC-MIXED-REVIEW-'.strtoupper(Str::random(8)),
+        'idempotency_key' => (string) Str::uuid(),
+        'fib_subscription_id' => 'fib-mixed-review-123',
+        'amount' => 25000,
+        'currency' => 'IQD',
+        'provider_subscription_status' => 'DRAFT',
+        'review_required_at' => now()->subHour(),
+        'paid_at' => now()->subHour(),
+        'last_status_checked_at' => now()->subMinutes(30),
+        'purchase_snapshot' => [
+            'billing_cycle' => 'monthly',
+            'renewal_strategy' => 'provider_schedule',
+        ],
+        'purchasable_type' => ServicePlan::class,
+        'purchasable_id' => $servicePlan->id,
+    ]);
+
+    $appliedRejectedPayment = fibSubscriptionPayment(
+        customer: $customer,
+        purchaseType: PurchaseType::PLAN_SUBSCRIPTION,
+        purchasableId: $servicePlan->id,
+        subscriptionId: 'fib-mixed-applied-rejected-123',
+        providerStatus: 'REJECTED',
+        activeUntil: null,
+        lastPaymentAt: null,
+        overrides: [
+            'last_status_checked_at' => now()->subMinutes(30),
+        ],
+    );
+
+    $missingMetadataPayment = fibSubscriptionPayment(
+        customer: $customer,
+        purchaseType: PurchaseType::PLAN_SUBSCRIPTION,
+        purchasableId: $servicePlan->id,
+        subscriptionId: 'fib-mixed-missing-metadata-123',
+        providerStatus: 'ACTIVE',
+        activeUntil: null,
+        lastPaymentAt: null,
+        overrides: [
+            'last_status_checked_at' => now()->subMinutes(30),
+        ],
+    );
+
+    $activeSubscription = CustomerServiceSubscription::create([
+        'customer_id' => $customer->id,
+        'payment_id' => $missingMetadataPayment->id,
+        'service_plan_id' => $servicePlan->id,
+        'status' => 'active',
+        'source' => 'fib',
+        'provider_ref' => $missingMetadataPayment->providerReference(),
+        'starts_at' => now()->subMonth(),
+        'auto_renew' => true,
+        'renewal_strategy' => 'provider_schedule',
+        'cycle_started_on' => now()->subMonth()->toDateString(),
+        'cycle_ends_on' => now()->subDay()->toDateString(),
+        'next_renewal_on' => now()->subDay()->toDateString(),
+    ]);
+
+    Http::fake([
+        reconcileStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-subscription-access-token',
+            'expires_in' => 60,
+        ], 200),
+        reconcileStageUrl('/protected/v1/subscriptions/fib-mixed-awaiting-123') => Http::response(
+            reconcileSubscriptionStatusResponse('fib-mixed-awaiting-123', 'UNPAID', [
+                'activeUntil' => null,
+                'lastPaymentAt' => null,
+            ]),
+            200
+        ),
+        reconcileStageUrl('/protected/v1/subscriptions/fib-mixed-missing-metadata-123') => Http::response(
+            reconcileSubscriptionStatusResponse('fib-mixed-missing-metadata-123', 'ACTIVE', [
+                'activeUntil' => null,
+                'lastPaymentAt' => null,
+            ]),
+            200
+        ),
+    ]);
+
+    $this->artisan('subscriptions:reconcile', [
+        '--customer' => $customer->id,
+        '--chunk' => 50,
+        '--stale-minutes' => 0,
+        '--grace-minutes' => 0,
+    ])
+        ->expectsOutputToContain('Service skipped missing renewal metadata: 1')
+        ->assertSuccessful();
+
+    $protectedIds = [
+        $reviewPayment->id,
+        $appliedRejectedPayment->id,
+        $missingMetadataPayment->id,
+    ];
+
+    expect(PaymentEvent::query()
+        ->whereIn('payment_id', $protectedIds)
+        ->where('event_type', 'provider_status_sync_failed')
+        ->count())->toBe(0)
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $awaitingPayment->id)
+            ->where('event_type', 'provider_status_checked')
+            ->count())->toBeGreaterThan(0)
+        ->and($activeSubscription->fresh()->status)->toBe('active')
+        ->and(data_get($activeSubscription->fresh()->meta, 'renewal_metadata_missing'))->toBeTrue();
+});
+
 it('still downgrades fib subscriptions when active_until exists and is expired beyond grace period', function () {
     Carbon::setTestNow('2026-06-01 10:30:00');
 

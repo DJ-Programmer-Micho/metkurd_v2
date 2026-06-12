@@ -83,7 +83,7 @@ function billingPagePendingPlanCheckout(Customer $customer, ServicePlan $plan, s
         'last_status_checked_at' => now()->subMinutes(2),
         'meta' => [
             'subscription_lifecycle' => [
-                'sync_source' => 'scheduled_reconciliation',
+                'sync_source' => 'scheduled_subscription_checkout_reconciliation',
                 'cancel_source' => 'provider_app',
             ],
         ],

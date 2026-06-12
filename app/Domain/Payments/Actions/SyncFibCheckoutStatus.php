@@ -14,6 +14,7 @@ use App\Domain\Payments\Fib\FibSubscriptionMapper;
 use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
+use App\Domain\Payments\Support\PaymentReconciliationPolicy;
 use App\Domain\Payments\Support\PaymentTransitions;
 use App\Events\Payments\PaymentConfirmed;
 use App\Services\Billing\SyncProviderSubscriptionLifecycle;
@@ -30,6 +31,7 @@ class SyncFibCheckoutStatus
         protected FibSubscriptionMapper $subscriptionMapper,
         protected FibStatusReasonParser $statusReasonParser,
         protected PaymentEventRecorder $events,
+        protected PaymentReconciliationPolicy $reconciliationPolicy,
         protected SyncProviderSubscriptionLifecycle $lifecycle,
         protected CouponRedemptionService $redemptions,
     ) {}
@@ -42,6 +44,18 @@ class SyncFibCheckoutStatus
         bool $syncLifecycle = true,
     ): Payment {
         $payment = $payment->fresh() ?? $payment;
+        $source = $this->reconciliationPolicy->normalizeScheduledSource($payment, $source);
+
+        if ($this->reconciliationPolicy->isScheduledCheckoutSource($source)
+            && ! $this->reconciliationPolicy->canScheduledCheckoutPoll($payment)) {
+            return $payment;
+        }
+
+        if ($this->reconciliationPolicy->isScheduledRenewalSource($source)
+            && ! $this->reconciliationPolicy->canScheduledRenewalPoll($payment)) {
+            return $payment;
+        }
+
         $objectType = $payment->provider_object_type ?? PaymentProviderObjectType::PAYMENT;
         $shouldDispatch = false;
 
