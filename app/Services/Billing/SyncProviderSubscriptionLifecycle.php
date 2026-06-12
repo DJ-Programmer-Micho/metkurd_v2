@@ -24,8 +24,7 @@ class SyncProviderSubscriptionLifecycle
         protected PaymentEventRecorder $events,
         protected CouponLifecycleService $couponLifecycle,
         protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
-    ) {
-    }
+    ) {}
 
     public function handle(Payment $payment, string $source = 'provider_status_sync'): void
     {
@@ -83,8 +82,7 @@ class SyncProviderSubscriptionLifecycle
         Payment $payment,
         string $eventPrefix,
         string $source,
-    ): void
-    {
+    ): void {
         $providerStatus = $this->fibSubscriptions->normalizeProviderStatus(
             $payment->provider_subscription_status ?: $payment->provider_status
         );
@@ -160,11 +158,11 @@ class SyncProviderSubscriptionLifecycle
 
         if ($renewalDetected) {
             $renewalEvent = $this->events->record($payment, [
-                'event_type' => $eventPrefix . '_renewed',
+                'event_type' => $eventPrefix.'_renewed',
                 'source' => $source,
                 'event_key' => $this->lifecycleEventKey(
                     $payment,
-                    $eventPrefix . '_renewed',
+                    $eventPrefix.'_renewed',
                     [
                         $payment->last_payment_at?->toIso8601String(),
                         $periodEndsAt?->toIso8601String(),
@@ -198,11 +196,11 @@ class SyncProviderSubscriptionLifecycle
 
         if ($wasAutoRenewing && ! $shouldAutoRenew && ! $shouldEndNow) {
             $cancelAtPeriodEndEvent = $this->events->record($payment, [
-                'event_type' => $eventPrefix . '_cancel_at_period_end',
+                'event_type' => $eventPrefix.'_cancel_at_period_end',
                 'source' => $source,
                 'event_key' => $this->lifecycleEventKey(
                     $payment,
-                    $eventPrefix . '_cancel_at_period_end',
+                    $eventPrefix.'_cancel_at_period_end',
                     [
                         $providerStatus,
                         $periodEndsAt?->toIso8601String(),
@@ -235,11 +233,11 @@ class SyncProviderSubscriptionLifecycle
 
         if ($previousStatus !== 'ended' && $shouldEndNow) {
             $endedEvent = $this->events->record($payment, [
-                'event_type' => $eventPrefix . '_ended',
+                'event_type' => $eventPrefix.'_ended',
                 'source' => $source,
                 'event_key' => $this->lifecycleEventKey(
                     $payment,
-                    $eventPrefix . '_ended',
+                    $eventPrefix.'_ended',
                     [
                         $providerStatus,
                         $periodEndsAt?->toIso8601String(),
@@ -290,7 +288,7 @@ class SyncProviderSubscriptionLifecycle
         }
     }
 
-    protected function resolvePeriodEnd(Payment $payment, array $subscriptionMeta, string $billingCycle): Carbon
+    protected function resolvePeriodEnd(Payment $payment, array $subscriptionMeta, string $billingCycle): ?CarbonInterface
     {
         if ($payment->active_until instanceof CarbonInterface) {
             return Carbon::instance($payment->active_until);
@@ -310,9 +308,11 @@ class SyncProviderSubscriptionLifecycle
             }
         }
 
-        $startAt = $payment->last_payment_at instanceof CarbonInterface
-            ? Carbon::instance($payment->last_payment_at)
-            : now();
+        if (! $payment->last_payment_at instanceof CarbonInterface) {
+            return null;
+        }
+
+        $startAt = Carbon::instance($payment->last_payment_at);
 
         return match ($billingCycle) {
             'yearly' => $startAt->copy()->addYear(),
@@ -414,7 +414,7 @@ class SyncProviderSubscriptionLifecycle
             ->values()
             ->implode('|');
 
-        return 'subscription-lifecycle:' . $eventType . ':' . $payment->id . ':' . sha1($fingerprint);
+        return 'subscription-lifecycle:'.$eventType.':'.$payment->id.':'.sha1($fingerprint);
     }
 
     /**

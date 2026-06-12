@@ -2,6 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Domain\Payments\Enums\PaymentInternalStatus;
+use App\Domain\Payments\Enums\PaymentMode;
+use App\Domain\Payments\Enums\PaymentProvider;
+use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
@@ -89,8 +93,10 @@ class ReconcileSubscriptions extends Command
         $threshold = now()->subMinutes($graceMinutes);
         $summary = [
             'service_candidates' => 0,
+            'service_skipped_missing_metadata' => 0,
             'service_updated' => 0,
             'storage_candidates' => 0,
+            'storage_skipped_missing_metadata' => 0,
             'storage_updated' => 0,
         ];
 
@@ -108,6 +114,7 @@ class ReconcileSubscriptions extends Command
             defaultPlanId: $defaultServicePlanId,
         );
         $summary['service_candidates'] = $serviceResult['candidates'];
+        $summary['service_skipped_missing_metadata'] = $serviceResult['skipped_missing_metadata'];
         $summary['service_updated'] = $serviceResult['updated'];
 
         if ($limit > 0) {
@@ -126,16 +133,19 @@ class ReconcileSubscriptions extends Command
             defaultPlanId: $defaultStoragePlanId,
         );
         $summary['storage_candidates'] = $storageResult['candidates'];
+        $summary['storage_skipped_missing_metadata'] = $storageResult['skipped_missing_metadata'];
         $summary['storage_updated'] = $storageResult['updated'];
 
         $this->info($dryRun
             ? 'Subscription reconciliation dry-run completed.'
             : 'Subscription reconciliation completed.');
         $this->line('Service candidates: '.number_format($summary['service_candidates']));
+        $this->line('Service skipped missing renewal metadata: '.number_format($summary['service_skipped_missing_metadata']));
         $this->line($dryRun
             ? 'Service would downgrade: '.number_format($summary['service_updated'])
             : 'Service downgraded: '.number_format($summary['service_updated']));
         $this->line('Storage candidates: '.number_format($summary['storage_candidates']));
+        $this->line('Storage skipped missing renewal metadata: '.number_format($summary['storage_skipped_missing_metadata']));
         $this->line($dryRun
             ? 'Storage would downgrade: '.number_format($summary['storage_updated'])
             : 'Storage downgraded: '.number_format($summary['storage_updated']));
@@ -144,7 +154,7 @@ class ReconcileSubscriptions extends Command
     }
 
     /**
-     * @return array{candidates:int, processed:int, updated:int}
+     * @return array{candidates:int, processed:int, updated:int, skipped_missing_metadata:int}
      */
     protected function reconcileLocalOverdue(
         string $modelClass,
@@ -162,6 +172,7 @@ class ReconcileSubscriptions extends Command
         $candidates = 0;
         $processed = 0;
         $updated = 0;
+        $skippedMissingMetadata = 0;
         $previewPrinted = 0;
 
         if ($queryCount === 0) {
@@ -169,6 +180,7 @@ class ReconcileSubscriptions extends Command
                 'candidates' => 0,
                 'processed' => 0,
                 'updated' => 0,
+                'skipped_missing_metadata' => 0,
             ];
         }
 
@@ -185,25 +197,21 @@ class ReconcileSubscriptions extends Command
                 &$candidates,
                 &$processed,
                 &$updated,
+                &$skippedMissingMetadata,
                 &$previewPrinted
             ) {
                 foreach ($subscriptions as $subscription) {
-                    if (! $this->isOverdueForDowngrade($subscription, $threshold)) {
+                    $disposition = $this->localOverdueDisposition($subscription, $threshold);
+
+                    if ($disposition === 'skip') {
                         continue;
                     }
 
-                    if ($limit > 0 && $processed >= $limit) {
-                        return false;
-                    }
-
-                    $processed++;
                     $candidates++;
 
                     $payment = $subscription->payment;
 
                     if ($dryRun) {
-                        $updated++;
-
                         if ($previewPrinted < 20) {
                             $previewPrinted++;
                             $this->line(sprintf(
@@ -217,8 +225,35 @@ class ReconcileSubscriptions extends Command
                             ));
                         }
 
+                        if ($disposition === 'missing_metadata') {
+                            $skippedMissingMetadata++;
+                        }
+
+                        if ($disposition === 'downgrade') {
+                            $updated++;
+                        }
+
                         continue;
                     }
+
+                    if ($disposition === 'missing_metadata') {
+                        $skippedMissingMetadata++;
+
+                        $this->markRenewalMetadataMissing(
+                            modelClass: $modelClass,
+                            subscriptionId: (int) $subscription->id,
+                            scopeLabel: $scopeLabel,
+                            events: $events,
+                        );
+
+                        continue;
+                    }
+
+                    if ($limit > 0 && $processed >= $limit) {
+                        return false;
+                    }
+
+                    $processed++;
 
                     if ($this->markOverdueSubscriptionEnded(
                         modelClass: $modelClass,
@@ -239,6 +274,7 @@ class ReconcileSubscriptions extends Command
             'candidates' => $candidates,
             'processed' => $processed,
             'updated' => $updated,
+            'skipped_missing_metadata' => $skippedMissingMetadata,
         ];
     }
 
@@ -265,6 +301,9 @@ class ReconcileSubscriptions extends Command
                         $payment
                             ->whereNotNull('active_until')
                             ->where('active_until', '<=', $threshold);
+                    })
+                    ->orWhereHas('payment', function ($payment) {
+                        $this->applyMissingRenewalMetadataPaymentScope($payment);
                     });
             });
 
@@ -376,6 +415,10 @@ class ReconcileSubscriptions extends Command
         CustomerServiceSubscription|CustomerStorageSubscription $subscription,
         CarbonInterface $threshold
     ): bool {
+        if ($this->hasMissingRenewalMetadata($subscription)) {
+            return false;
+        }
+
         $periodEnd = $this->resolvePeriodEnd($subscription);
 
         if (! $periodEnd instanceof CarbonInterface) {
@@ -391,6 +434,19 @@ class ReconcileSubscriptions extends Command
         }
 
         return true;
+    }
+
+    protected function localOverdueDisposition(
+        CustomerServiceSubscription|CustomerStorageSubscription $subscription,
+        CarbonInterface $threshold
+    ): string {
+        if ($this->hasMissingRenewalMetadata($subscription)) {
+            return 'missing_metadata';
+        }
+
+        return $this->isOverdueForDowngrade($subscription, $threshold)
+            ? 'downgrade'
+            : 'skip';
     }
 
     protected function hasSuccessfulRenewalExtendingPeriod(
@@ -435,6 +491,65 @@ class ReconcileSubscriptions extends Command
         return $query->exists();
     }
 
+    protected function applyMissingRenewalMetadataPaymentScope(Builder $payment): void
+    {
+        $payment
+            ->where('provider', PaymentProvider::FIB->value)
+            ->where('payment_mode', PaymentMode::RECURRING->value)
+            ->where('provider_object_type', PaymentProviderObjectType::SUBSCRIPTION->value)
+            ->where('status', PaymentStatus::PAID->value)
+            ->where(function ($applied) {
+                $applied
+                    ->whereNotNull('fulfilled_at')
+                    ->orWhere('internal_status', PaymentInternalStatus::APPLIED->value);
+            })
+            ->whereNull('active_until')
+            ->where(function ($status) {
+                $status
+                    ->whereIn('provider_subscription_status', ['ACTIVE', 'PAID', 'SUBSCRIBED'])
+                    ->orWhere(function ($fallback) {
+                        $fallback
+                            ->whereNull('provider_subscription_status')
+                            ->whereIn('provider_status', ['ACTIVE', 'PAID', 'SUBSCRIBED']);
+                    });
+            });
+    }
+
+    protected function hasMissingRenewalMetadata(
+        CustomerServiceSubscription|CustomerStorageSubscription $subscription
+    ): bool {
+        $payment = $subscription->payment;
+
+        if (! $payment instanceof Payment) {
+            return false;
+        }
+
+        if ($payment->provider !== PaymentProvider::FIB
+            || ($payment->provider_object_type ?? PaymentProviderObjectType::PAYMENT) !== PaymentProviderObjectType::SUBSCRIPTION
+            || ! $payment->resolvedPaymentMode()->isRecurring()
+            || $payment->status !== PaymentStatus::PAID
+            || ! $payment->isApplied()) {
+            return false;
+        }
+
+        $renewalStrategy = strtolower(trim((string) (
+            $subscription->renewal_strategy
+            ?? data_get($payment->purchase_snapshot, 'renewal_strategy', PaymentRecurringStrategy::NONE->value)
+        )));
+
+        if ($renewalStrategy !== PaymentRecurringStrategy::PROVIDER_SCHEDULE->value) {
+            return false;
+        }
+
+        $providerStatus = strtoupper(trim((string) ($payment->providerStatusLabel() ?? '')));
+
+        if (! in_array($providerStatus, ['ACTIVE', 'PAID', 'SUBSCRIBED'], true)) {
+            return false;
+        }
+
+        return ! ($payment->active_until instanceof CarbonInterface);
+    }
+
     protected function resolvePeriodEnd(
         CustomerServiceSubscription|CustomerStorageSubscription $subscription
     ): ?CarbonInterface {
@@ -471,6 +586,73 @@ class ReconcileSubscriptions extends Command
         }
 
         return null;
+    }
+
+    protected function markRenewalMetadataMissing(
+        string $modelClass,
+        int $subscriptionId,
+        string $scopeLabel,
+        PaymentEventRecorder $events,
+    ): void {
+        DB::transaction(function () use ($modelClass, $subscriptionId, $scopeLabel, $events) {
+            /** @var CustomerServiceSubscription|CustomerStorageSubscription|null $subscription */
+            $subscription = $modelClass::query()
+                ->with('payment')
+                ->lockForUpdate()
+                ->find($subscriptionId);
+
+            if (! $subscription instanceof CustomerServiceSubscription
+                && ! $subscription instanceof CustomerStorageSubscription) {
+                return;
+            }
+
+            if (! $this->hasMissingRenewalMetadata($subscription)) {
+                return;
+            }
+
+            $payment = $subscription->payment;
+            $now = now();
+            $providerStatus = $payment?->providerStatusLabel();
+            $meta = (array) ($subscription->meta ?? []);
+            $firstDetectedAt = (string) data_get($meta, 'renewal_metadata_missing_detected_at', $now->toIso8601String());
+            $meta['renewal_metadata_missing'] = true;
+            $meta['renewal_metadata_missing_reason'] = 'provider_active_without_active_until';
+            $meta['renewal_metadata_missing_detected_at'] = $firstDetectedAt;
+            $meta['renewal_metadata_missing_last_seen_at'] = $now->toIso8601String();
+            $meta['renewal_metadata_missing_provider_status'] = $providerStatus;
+            $meta['renewal_metadata_missing_source'] = 'subscriptions:reconcile';
+
+            $subscription->forceFill(['meta' => $meta])->save();
+
+            if (! $payment instanceof Payment) {
+                return;
+            }
+
+            $paymentMeta = (array) ($payment->meta ?? []);
+            $paymentMeta['renewal_metadata_missing'] = [
+                'state' => true,
+                'reason' => 'provider_active_without_active_until',
+                'first_detected_at' => (string) data_get($paymentMeta, 'renewal_metadata_missing.first_detected_at', $firstDetectedAt),
+                'last_seen_at' => $now->toIso8601String(),
+                'provider_status' => $providerStatus,
+                'source' => 'subscriptions:reconcile',
+            ];
+            $payment->forceFill(['meta' => $paymentMeta])->save();
+
+            $events->record($payment, [
+                'event_type' => 'subscription_renewal_metadata_missing',
+                'source' => 'scheduled_reconciliation_metadata_guard',
+                'event_key' => 'subscription-renewal-metadata-missing:'.$scopeLabel.':'.$subscription->id.':'.$now->format('Ymd'),
+                'before_status' => $payment->status->value,
+                'after_status' => $payment->status->value,
+                'meta' => [
+                    'provider_status' => $providerStatus,
+                    'payment_id' => (int) $payment->id,
+                    'subscription_id' => (int) $subscription->id,
+                    'reason' => 'provider_active_without_active_until',
+                ],
+            ]);
+        }, 3);
     }
 
     protected function ensureDefaultSubscriptionActive(
