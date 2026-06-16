@@ -31,8 +31,8 @@ class CustomerSocialAuthService
             ->keys()
             ->map(fn (string $provider): string => strtolower(trim($provider)))
             ->filter(function (string $provider): bool {
-                return filled(config('services.' . $provider . '.client_id'))
-                    && filled(config('services.' . $provider . '.client_secret'));
+                return filled(config('services.'.$provider.'.client_id'))
+                    && filled(config('services.'.$provider.'.client_secret'));
             })
             ->values()
             ->all();
@@ -244,7 +244,7 @@ class CustomerSocialAuthService
         $i = 1;
 
         while (Customer::query()->where('username', $username)->exists()) {
-            $username = $base . '_' . $i++;
+            $username = $base.'_'.$i++;
         }
 
         return $username;
@@ -261,7 +261,7 @@ class CustomerSocialAuthService
         }
 
         if (str_contains($url, 'githubusercontent.com')) {
-            return $url . (str_contains($url, '?') ? '&' : '?') . 's=256';
+            return $url.(str_contains($url, '?') ? '&' : '?').'s=256';
         }
 
         return $url;

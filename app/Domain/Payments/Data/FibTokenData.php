@@ -13,8 +13,7 @@ final class FibTokenData
         public readonly string $tokenType,
         public readonly ?string $scope,
         public readonly array $raw,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload

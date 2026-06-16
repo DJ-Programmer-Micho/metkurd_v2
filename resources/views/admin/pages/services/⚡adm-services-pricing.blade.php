@@ -24,7 +24,7 @@ class extends Component
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
                     <h4 class="mb-sm-0">{{ __('Service Pricing') }}</h4>
-                    <p class="text-muted mb-0">{{ __('Manage metering rules, plan overrides, and credit charging logic for every tool action.') }}</p>
+                    <p class="text-muted mb-0">{{ __('Manage grouped App, Mobile, and API metering rules while keeping legacy all-channel fallback safe at runtime.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <a wire:navigate href="{{ route('admin.services.entitlements', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-secondary">{{ __('View Entitlements') }}</a>
@@ -67,8 +67,8 @@ class extends Component
             <div class="card card-animate h-100">
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-1">{{ __('Current Scope') }}</p>
-                    <h2 class="mb-1">{{ number_format($this->pricingRules->total()) }}</h2>
-                    <p class="text-muted mb-0">{{ __('Pricing rows that match the active filters below.') }}</p>
+                    <h2 class="mb-1">{{ number_format($this->groupedPricingRules->total()) }}</h2>
+                    <p class="text-muted mb-0">{{ __('Grouped pricing configurations that match the active filters below.') }}</p>
                 </div>
             </div>
         </div>
@@ -128,6 +128,15 @@ class extends Component
                         <option value="plan">{{ __('Plan') }}</option>
                     </select>
                 </div>
+                <div class="col-xl-2 col-md-4">
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Channel') }}</label>
+                    <select class="form-select" wire:model.live="channelFilter">
+                        <option value="all">{{ __('Any') }}</option>
+                        <option value="app">{{ __('App') }}</option>
+                        <option value="api">{{ __('API') }}</option>
+                        <option value="mobile">{{ __('Mobile') }}</option>
+                    </select>
+                </div>
             </div>
         </div>
     </div>
@@ -136,7 +145,7 @@ class extends Component
         <div class="card-header border-0">
             <div>
                 <h5 class="card-title mb-1">{{ __('Pricing Rules') }}</h5>
-                <p class="text-muted mb-0">{{ __('Define the metering logic and credit charge for each tool action.') }}</p>
+                <p class="text-muted mb-0">{{ __('Define shared metering settings and grouped App, Mobile, and API credit prices for each tool action.') }}</p>
             </div>
         </div>
         <div class="card-body p-0">
@@ -146,59 +155,97 @@ class extends Component
                         <tr class="text-uppercase">
                             <th>{{ __('Tool Action') }}</th>
                             <th>{{ __('Plan') }}</th>
-                            <th>{{ __('Type / Scope') }}</th>
-                            <th>{{ __('Metering') }}</th>
-                            <th>{{ __('Credits') }}</th>
+                            <th>{{ __('Rule Type') }}</th>
+                            <th>{{ __('Metric') }}</th>
+                            <th>{{ __('App Price') }}</th>
+                            <th>{{ __('Mobile Price') }}</th>
+                            <th>{{ __('API Price') }}</th>
                             <th>{{ __('Status') }}</th>
                             <th class="text-end">{{ __('Actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @forelse ($this->pricingRules as $rule)
-                            <tr wire:key="pricing-rule-{{ $rule->id }}">
+                        @forelse ($this->groupedPricingRules as $group)
+                            @php
+                                $appPrice = $this->pricingGroupChannelValue($group, 'app');
+                                $mobilePrice = $this->pricingGroupChannelValue($group, 'mobile');
+                                $apiPrice = $this->pricingGroupChannelValue($group, 'api');
+                                $legacyAllRule = $group['legacy_all_rule'];
+                                $seedRule = $group['seed_rule'];
+                            @endphp
+                            <tr wire:key="pricing-group-{{ md5((string) $group['group_key']) }}">
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $rule->toolAction?->name ?? __('Unknown Action') }}</span>
-                                        <span class="text-muted small">{{ $rule->toolAction?->full_code ?? __('n/a') }}</span>
-                                    </div>
-                                </td>
-                                <td>
-                                    <span class="badge bg-light text-body">{{ $rule->servicePlan?->name ?? __('Global Default') }}</span>
-                                </td>
-                                <td>
-                                    <div class="d-flex flex-column">
-                                        <span class="fw-semibold text-capitalize">{{ $rule->rule_type }}</span>
-                                        <span class="text-muted small">{{ $rule->service_plan_id ? __('Plan override') : __('Global rule') }}</span>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $rule->metric_code }}</span>
-                                        <span class="text-muted small">{{ __('Unit size: :value', ['value' => $this->formatDecimal($rule->unit_size, 4)]) }}</span>
-                                        <span class="text-muted small">{{ __('Priority: :value', ['value' => number_format((int) $rule->priority)]) }}</span>
+                                        <span class="fw-semibold">{{ $group['tool_action']?->name ?? __('Unknown Action') }}</span>
+                                        <span class="text-muted small">{{ $group['tool_action']?->full_code ?? __('n/a') }}</span>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ __(':value credits', ['value' => $this->formatDecimal($rule->credits_per_unit, 4)]) }}</span>
-                                        <span class="text-muted small">{{ __(':mode / step :step', ['mode' => $rule->rounding_mode, 'step' => $this->formatDecimal($rule->rounding_step, 4)]) }}</span>
-                                        <span class="text-muted small">{{ __('Minimum :value', ['value' => number_format((int) $rule->minimum_credits)]) }}</span>
+                                        <span class="badge bg-light text-body align-self-start">{{ $group['service_plan']?->name ?? __('Global Default') }}</span>
+                                        <span class="text-muted small">{{ $group['service_plan'] ? __('Plan override') : __('Global default') }}</span>
                                     </div>
                                 </td>
                                 <td>
-                                    <span class="badge {{ $this->statusBadgeClasses((bool) $rule->is_active) }}">{{ $rule->is_active ? __('Active') : __('Inactive') }}</span>
+                                    <div class="d-flex flex-column">
+                                        <span class="fw-semibold text-capitalize">{{ $group['rule_type'] }}</span>
+                                        <span class="text-muted small">{{ $group['service_plan'] ? __('Plan override') : __('Global rule') }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column">
+                                        <span class="fw-semibold">{{ $group['metric_code'] }}</span>
+                                        <span class="text-muted small">{{ __('Unit size: :value', ['value' => $this->formatDecimal($group['unit_size'], 4)]) }}</span>
+                                        <span class="text-muted small">{{ __('Priority: :value', ['value' => number_format((int) $group['priority'])]) }}</span>
+                                        <span class="text-muted small">{{ __(':mode / step :step', ['mode' => $group['rounding_mode'], 'step' => $this->formatDecimal($group['rounding_step'], 4)]) }}</span>
+                                        <span class="text-muted small">{{ __('Minimum :value', ['value' => number_format((int) $group['minimum_credits'])]) }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column">
+                                        <span class="fw-semibold">{{ $appPrice['label'] }}</span>
+                                        @if ($legacyAllRule && ! $group['app_rule'])
+                                            <span class="text-muted small">{{ __('Legacy All: :value credits', ['value' => $this->formatDecimal($legacyAllRule->credits_per_unit, 4)]) }}</span>
+                                        @endif
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column">
+                                        <span class="fw-semibold">{{ $mobilePrice['label'] }}</span>
+                                        @if ($legacyAllRule && ! $group['mobile_rule'])
+                                            <span class="text-muted small">{{ __('Legacy All: :value credits', ['value' => $this->formatDecimal($legacyAllRule->credits_per_unit, 4)]) }}</span>
+                                        @endif
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column">
+                                        <span class="fw-semibold">{{ $apiPrice['label'] }}</span>
+                                        @if ($legacyAllRule && ! $group['api_rule'])
+                                            <span class="text-muted small">{{ __('Legacy All: :value credits', ['value' => $this->formatDecimal($legacyAllRule->credits_per_unit, 4)]) }}</span>
+                                        @endif
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column gap-1">
+                                        <span class="badge {{ $this->groupedStatusBadgeClasses($group['status_variant']) }} align-self-start">{{ $group['status_label'] }}</span>
+                                        <div class="d-flex flex-wrap gap-1">
+                                            @foreach ($this->groupedStatusChannelBadges($group) as $badge)
+                                                <span class="badge {{ $badge['classes'] }}">{{ $badge['label'] }}</span>
+                                            @endforeach
+                                        </div>
+                                    </div>
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-success" wire:click="togglePricingRuleStatus({{ $rule->id }})">{{ $rule->is_active ? __('Disable') : __('Enable') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openPricingRuleEditModal({{ $rule->id }})">{{ __('Edit') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmPricingRuleDelete({{ $rule->id }})">{{ __('Delete') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-success" wire:click="togglePricingRuleStatus({{ $group['seed_rule_id'] }})">{{ $group['has_active_primary'] ? __('Disable') : __('Enable') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openPricingRuleEditModal({{ $group['seed_rule_id'] }})">{{ __('Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmPricingRuleDelete({{ $group['seed_rule_id'] }})">{{ __('Delete') }}</button>
                                     </div>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="text-center py-5 text-muted">{{ __('No pricing rules matched the current filters.') }}</td>
+                                <td colspan="9" class="text-center py-5 text-muted">{{ __('No pricing rules matched the current filters.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -206,7 +253,7 @@ class extends Component
             </div>
         </div>
         <div class="card-footer bg-dark">
-            {{ $this->pricingRules->onEachSide(1)->links() }}
+            {{ $this->groupedPricingRules->onEachSide(1)->links() }}
         </div>
     </div>
 
@@ -216,7 +263,7 @@ class extends Component
                 <form wire:submit.prevent="savePricingRule">
                     @csrf
                     <div class="modal-header">
-                        <h5 class="modal-title">{{ $editingRuleId ? __('Edit Pricing Rule') : __('Create Pricing Rule') }}</h5>
+                        <h5 class="modal-title">{{ $editingRuleId ? __('Edit Pricing Group') : __('Create Pricing Group') }}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetRuleForm"></button>
                     </div>
                     <div class="modal-body">
@@ -241,7 +288,7 @@ class extends Component
                                 </select>
                                 @error('ruleServicePlanId') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <label class="form-label">{{ __('Rule Type') }}</label>
                                 <select class="form-select" wire:model.defer="ruleType">
                                     <option value="free">{{ __('Free') }}</option>
@@ -250,12 +297,12 @@ class extends Component
                                     <option value="matrix">{{ __('Matrix') }}</option>
                                 </select>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <label class="form-label">{{ __('Priority') }}</label>
                                 <input type="number" min="0" class="form-control @error('rulePriority') is-invalid @enderror" wire:model.defer="rulePriority">
                                 @error('rulePriority') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <label class="form-label">{{ __('Metric Code') }}</label>
                                 <input type="text" class="form-control @error('ruleMetricCode') is-invalid @enderror" wire:model.defer="ruleMetricCode" placeholder="character">
                                 @error('ruleMetricCode') <div class="invalid-feedback">{{ $message }}</div> @enderror
@@ -272,10 +319,23 @@ class extends Component
                                 <input type="number" step="0.0001" min="0.0001" class="form-control @error('ruleUnitSize') is-invalid @enderror" wire:model.defer="ruleUnitSize">
                                 @error('ruleUnitSize') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
-                            <div class="col-md-3">
-                                <label class="form-label">{{ __('Credits / Unit') }}</label>
-                                <input type="number" step="0.0001" min="0" class="form-control @error('ruleCreditsPerUnit') is-invalid @enderror" wire:model.defer="ruleCreditsPerUnit">
-                                @error('ruleCreditsPerUnit') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            <div class="col-md-4">
+                                <label class="form-label">{{ __('App Dashboard Credits / Unit') }}</label>
+                                <input type="number" step="0.0001" min="0" class="form-control @error('ruleAppCreditsPerUnit') is-invalid @enderror" wire:model.defer="ruleAppCreditsPerUnit">
+                                <div class="form-text">{{ __('Dashboard and normal web app usage.') }}</div>
+                                @error('ruleAppCreditsPerUnit') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">{{ __('Mobile API Credits / Unit') }}</label>
+                                <input type="number" step="0.0001" min="0" class="form-control @error('ruleMobileCreditsPerUnit') is-invalid @enderror" wire:model.defer="ruleMobileCreditsPerUnit">
+                                <div class="form-text">{{ __('Mobile client API pricing.') }}</div>
+                                @error('ruleMobileCreditsPerUnit') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">{{ __('Public API Credits / Unit') }}</label>
+                                <input type="number" step="0.0001" min="0" class="form-control @error('ruleApiCreditsPerUnit') is-invalid @enderror" wire:model.defer="ruleApiCreditsPerUnit">
+                                <div class="form-text">{{ __('Public Customer API pricing.') }}</div>
+                                @error('ruleApiCreditsPerUnit') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">{{ __('Rounding Mode') }}</label>
@@ -333,7 +393,9 @@ class extends Component
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetDeleteState"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="mb-0">{{ __('Delete') }} <span class="fw-semibold">{{ $deleteLabel }}</span>? {{ __('Historical usage rows will keep their recorded values even if the admin rule is removed later.') }}</p>
+                    <p class="mb-2">{{ __('Delete this pricing group?') }}</p>
+                    <p class="mb-2"><span class="fw-semibold">{{ $deleteLabel }}</span></p>
+                    <p class="mb-0 text-muted">{{ __('This will remove App, Mobile, and Public API pricing rows for this tool/action configuration. Legacy All Channel fallback rows will be preserved unless explicitly handled.') }}</p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetDeleteState">{{ __('Cancel') }}</button>

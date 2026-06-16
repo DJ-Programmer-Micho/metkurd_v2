@@ -13,8 +13,7 @@ class MobileTtsVoicesController extends MobileApiController
     public function __construct(
         protected MobileTtsVoiceCatalog $voices,
         protected MobileTtsVoiceAssetService $assets,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): JsonResponse
     {

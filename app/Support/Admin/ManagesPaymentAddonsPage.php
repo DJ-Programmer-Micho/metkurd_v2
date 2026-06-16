@@ -29,14 +29,21 @@ trait ManagesPaymentAddonsPage
     public ?int $editingProductId = null;
 
     public string $code = '';
+
     public string $name = '';
+
     public $creditsAmount = '';
+
     public $priceIqd = '';
+
     public bool $isActive = true;
+
     public $sortOrder = 0;
+
     public string $metaJson = '';
 
     public ?int $deleteProductId = null;
+
     public string $deleteProductLabel = '';
 
     public function updatingSearch(): void
@@ -62,7 +69,7 @@ trait ManagesPaymentAddonsPage
     {
         $allowed = ['sort_order', 'name', 'credits_amount', 'price_iqd', 'paid_orders', 'revenue'];
 
-        if (!in_array($column, $allowed, true)) {
+        if (! in_array($column, $allowed, true)) {
             return;
         }
 
@@ -81,7 +88,7 @@ trait ManagesPaymentAddonsPage
     protected function productFormRules(): array
     {
         return [
-            'code' => 'required|string|max:50|alpha_dash|unique:credit_products,code,' . ($this->editingProductId ?? 'NULL') . ',id',
+            'code' => 'required|string|max:50|alpha_dash|unique:credit_products,code,'.($this->editingProductId ?? 'NULL').',id',
             'name' => 'required|string|max:120',
             'creditsAmount' => 'required|integer|min:0',
             'priceIqd' => 'required|integer|min:0',
@@ -95,6 +102,7 @@ trait ManagesPaymentAddonsPage
     {
         $canonicalAmountSql = $this->canonicalAmountSql('credit_orders');
         $summary = CreditOrder::query()
+            ->revenueIncluded()
             ->where('status', 'paid')
             ->whereNotNull('credit_product_id')
             ->selectRaw('COUNT(*) as orders')
@@ -116,6 +124,7 @@ trait ManagesPaymentAddonsPage
         $canonicalAmountSql = $this->canonicalAmountSql('credit_orders');
         $priceIqdSql = $this->effectiveCatalogAmountSql('credit_products', 'price_iqd', 'price_usd');
         $orderStats = CreditOrder::query()
+            ->revenueIncluded()
             ->where('status', 'paid')
             ->whereNotNull('credit_product_id')
             ->groupBy('credit_product_id')
@@ -202,7 +211,7 @@ trait ManagesPaymentAddonsPage
 
         $product = $this->editingProductId
             ? CreditProduct::query()->findOrFail($this->editingProductId)
-            : new CreditProduct();
+            : new CreditProduct;
         $payload = [
             'code' => $validated['code'],
             'name' => $validated['name'],
@@ -233,7 +242,7 @@ trait ManagesPaymentAddonsPage
     public function toggleProductStatus(int $productId): void
     {
         $product = CreditProduct::query()->findOrFail($productId);
-        $product->update(['is_active' => !$product->is_active]);
+        $product->update(['is_active' => ! $product->is_active]);
 
         $this->dispatch(
             'alert',

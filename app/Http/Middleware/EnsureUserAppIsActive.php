@@ -21,7 +21,7 @@ class EnsureUserAppIsActive
                 return $next($request);
             }
 
-            return redirect()->route('app.suspended',['locale' => "en"]); // 302 is fine
+            return redirect()->route('app.suspended', ['locale' => 'en']); // 302 is fine
         }
 
         return $next($request);

@@ -23,10 +23,15 @@ new
 class extends Component
 {
     public Payment $payment;
+
     public string $couponCode = '';
+
     public array $couponPreview = [];
+
     public string $couponMessage = '';
+
     public string $couponMessageType = 'info';
+
     public bool $showCouponInput = false;
 
     public function mount(Payment $payment): void
@@ -41,7 +46,7 @@ class extends Component
     {
         $payment = $this->payment->fresh(['customer.profile']) ?? $this->payment;
 
-        if ($payment->isTerminal()) {
+        if ($payment->isTerminal() && ! ($payment->isPaid() && ! $payment->isApplied() && ! $payment->requiresReview())) {
             $this->payment = $payment;
 
             return;
@@ -451,7 +456,8 @@ class extends Component
     $showCancel = $payment->status->value === 'awaiting_customer_action'
         && ! in_array($cancelResult, ['already_scheduled', 'already_canceled', 'non_cancelable'], true)
         && (! $isSubscriptionCheckout || $knownProviderStatus === null || $fibSubscriptions->isCancelableProviderStatus($knownProviderStatus));
-    $showRefresh = in_array($payment->status->value, ['awaiting_customer_action', 'pending'], true);
+    $showRefresh = in_array($payment->status->value, ['awaiting_customer_action', 'pending'], true)
+        || ($payment->isPaid() && ! $payment->isApplied() && ! $payment->requiresReview());
     $resolvedPaymentMode = \App\Domain\Payments\Enums\PaymentMode::fromValue($payment->payment_mode ?? null, \App\Domain\Payments\Enums\PaymentMode::ONE_TIME);
     $paymentModeDescription = $payment->purchase_type->value === 'addon_credits'
         ? __('One-time purchase')

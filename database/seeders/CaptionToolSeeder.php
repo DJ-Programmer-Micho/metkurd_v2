@@ -59,6 +59,7 @@ class CaptionToolSeeder extends Seeder
                         [
                             'service_plan_id' => (int) $plan->id,
                             'tool_action_id' => (int) $action->id,
+                            'entitlement_channel' => 'all',
                         ],
                         [
                             'allowed' => true,
@@ -71,6 +72,7 @@ class CaptionToolSeeder extends Seeder
                 [
                     'tool_action_id' => (int) $action->id,
                     'service_plan_id' => null,
+                    'pricing_channel' => 'all',
                     'priority' => 100,
                 ],
                 [
@@ -93,4 +95,3 @@ class CaptionToolSeeder extends Seeder
         });
     }
 }
-

@@ -54,7 +54,7 @@ class QasrJobSyncService
         $normalizedText = $text !== '' ? $text : $this->fallbackTranscript($srt, $segments);
 
         $hasAsrOutput = $normalizedText !== '';
-        $hasCaptionOutput = $outputType === 'caption' && ($normalizedText !== '' || $srt !== '' || !empty($segments));
+        $hasCaptionOutput = $outputType === 'caption' && ($normalizedText !== '' || $srt !== '' || ! empty($segments));
         $hasRenderableOutput = $hasAsrOutput || $hasCaptionOutput;
 
         $mapped = match ($rawStatus) {
@@ -67,7 +67,7 @@ class QasrJobSyncService
 
         $this->locks->refreshLock((string) $job->id, 60);
 
-        if ($mapped === 'failed' && !$hasRenderableOutput) {
+        if ($mapped === 'failed' && ! $hasRenderableOutput) {
             $message = $errMsg !== '' ? $errMsg : (
                 in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true)
                     ? 'RunPod completed but returned no transcription text.'
@@ -113,7 +113,7 @@ class QasrJobSyncService
         return DB::transaction(function () use ($job, $tool, $outputType, $transcriptionText, $srt, $segments, $language, $providerPayload) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
-            if (!$fresh) {
+            if (! $fresh) {
                 throw new \RuntimeException('ASR Job not found during finalize.');
             }
 
@@ -130,12 +130,10 @@ class QasrJobSyncService
                 (int) $fresh->customer_id,
                 $txtKey,
                 $transcriptionText,
-                [
-                    'job_id' => (string) $fresh->id,
-                    'tool' => $toolDir,
-                    'purpose' => 'transcription',
-                    'mime' => 'text/plain; charset=UTF-8',
-                ]
+                array_merge(
+                    $this->storage->apiOutputMeta($fresh, $toolDir, 'transcription'),
+                    ['mime' => 'text/plain; charset=UTF-8']
+                )
             );
 
             $savedSrt = null;
@@ -145,12 +143,10 @@ class QasrJobSyncService
                     (int) $fresh->customer_id,
                     "{$base}/captions.srt",
                     $srt,
-                    [
-                        'job_id' => (string) $fresh->id,
-                        'tool' => $toolDir,
-                        'purpose' => 'caption',
-                        'mime' => 'application/x-subrip; charset=UTF-8',
-                    ]
+                    array_merge(
+                        $this->storage->apiOutputMeta($fresh, $toolDir, 'caption', 'srt'),
+                        ['mime' => 'application/x-subrip; charset=UTF-8']
+                    )
                 );
             }
 
@@ -221,7 +217,7 @@ class QasrJobSyncService
         DB::transaction(function () use ($job) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
-            if (!$fresh || !in_array((string) $fresh->status, ['done', 'delete_failed'], true)) {
+            if (! $fresh || ! in_array((string) $fresh->status, ['done', 'delete_failed'], true)) {
                 throw new \RuntimeException('Transcription not found or already deleted.');
             }
 
@@ -373,7 +369,7 @@ class QasrJobSyncService
         $segmentParts = [];
 
         foreach ($segments as $segment) {
-            if (!is_array($segment)) {
+            if (! is_array($segment)) {
                 continue;
             }
 
@@ -389,7 +385,7 @@ class QasrJobSyncService
             }
         }
 
-        if (!empty($segmentParts)) {
+        if (! empty($segmentParts)) {
             return trim(preg_replace('/\s+/u', ' ', implode(' ', $segmentParts)) ?? '');
         }
 
@@ -424,7 +420,7 @@ class QasrJobSyncService
             'result.chunks',
         ] as $key) {
             $value = data_get($output, $key, null);
-            if (is_array($value) && !empty($value)) {
+            if (is_array($value) && ! empty($value)) {
                 return array_values($value);
             }
         }
@@ -451,6 +447,7 @@ class QasrJobSyncService
     protected function unicodeWordCount(string $text): int
     {
         preg_match_all('/[\p{L}\p{N}\']+/u', $text, $m);
+
         return count($m[0] ?? []);
     }
 

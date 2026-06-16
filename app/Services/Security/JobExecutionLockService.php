@@ -589,7 +589,7 @@ class JobExecutionLockService
             return $ownerId;
         }
 
-        return 'owner:' . hash('sha256', implode('|', [
+        return 'owner:'.hash('sha256', implode('|', [
             $scope,
             $customerId,
             config('app.key'),

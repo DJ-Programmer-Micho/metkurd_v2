@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CreditOrder;
 use App\Models\Customer;
 use App\Models\ServicePlan;
 use App\Models\User;
@@ -30,8 +31,8 @@ function adminDashboardCustomer(): Customer
     $suffix = Str::lower(Str::random(8));
 
     return Customer::create([
-        'username' => 'dashboard_' . $suffix,
-        'email' => 'dashboard-' . $suffix . '@example.com',
+        'username' => 'dashboard_'.$suffix,
+        'email' => 'dashboard-'.$suffix.'@example.com',
         'password' => 'Secret123!',
         'status' => 1,
         'email_verify' => true,
@@ -95,4 +96,57 @@ it('keeps dashboard totals and chart revenue numerically consistent across the I
         ->and((float) data_get($usdCharts, 'purchase_mix.revenue.0'))->toBe($expectedUsdRevenue)
         ->and((int) data_get($iqdCharts, 'purchase_mix.revenue.0'))->toBe((int) round((float) $iqdStats['revenue_total']))
         ->and((int) data_get($iqdCharts, 'plan_mix.subscribers.0'))->toBeGreaterThan(0);
+});
+
+it('excludes internal non-revenue orders from dashboard revenue totals', function () {
+    $admin = adminDashboardAdmin();
+    $customer = adminDashboardCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    app(PlanSwitcher::class)->switchServicePlan($customer, $plan->id, [
+        'provider' => 'fake',
+        'billing_cycle' => 'monthly',
+    ]);
+
+    $realOrder = CreditOrder::query()->latest('id')->firstOrFail();
+
+    CreditOrder::create([
+        'customer_id' => $customer->id,
+        'payment_id' => null,
+        'order_type' => 'subscription',
+        'source_type' => 'service_plan',
+        'service_plan_id' => $plan->id,
+        'status' => 'paid',
+        'credits_amount' => (int) $plan->appMonthlyCredits(),
+        'amount_usd' => 999.99,
+        'currency' => 'IQD',
+        'base_currency_code' => 'IQD',
+        'base_amount_iqd' => 999999,
+        'original_amount_iqd' => 999999,
+        'discount_amount_iqd' => 0,
+        'discounted_amount_iqd' => 999999,
+        'gross_amount_iqd' => 999999,
+        'surcharge_amount_iqd' => 0,
+        'provider_fee_amount_iqd' => 0,
+        'net_amount_iqd' => 999999,
+        'fee_currency_code' => 'IQD',
+        'provider' => 'admin_manual',
+        'payment_method' => 'admin_manual',
+        'provider_ref' => 'ADMIN-NON-REVENUE-001',
+        'paid_at' => now(),
+        'meta' => [
+            'billing_source' => 'admin_manual_grant',
+            'revenue_record' => false,
+            'revenue_excluded' => true,
+        ],
+    ]);
+
+    Cache::flush();
+    $this->actingAs($admin, 'admin');
+
+    $component = Livewire::test('admin::pages.home.app-home');
+    $stats = (fn () => $this->overviewStats)->call($component->instance());
+
+    expect((float) $stats['revenue_total'])->toBe((float) $realOrder->base_amount_iqd)
+        ->and((int) $stats['period_orders'])->toBe(1);
 });

@@ -3,18 +3,17 @@
 namespace App\Support;
 
 use App\Models\Customer;
-use App\Models\CustomerEntitlement;
 use App\Models\MlJob;
-use App\Models\PlanEntitlement;
 use App\Models\ToolAction;
 use App\Services\Billing\CustomerUsageSummaryService;
+use App\Services\CustomerApi\CustomerApiAccessService;
 use App\Services\Plans\PlanConcurrencyService;
 use Illuminate\Support\Facades\Cache;
 
 class AppShellData
 {
     /**
-     * @var array<int, array<string, mixed>>
+     * @var array<string, array<string, mixed>>
      */
     protected static array $cache = [];
 
@@ -29,7 +28,13 @@ class AppShellData
 
     public static function forgetForCustomerId(int $customerId): void
     {
-        unset(self::$cache[$customerId]);
+        $prefix = $customerId.':';
+
+        foreach (array_keys(self::$cache) as $cacheKey) {
+            if ($cacheKey === (string) $customerId || str_starts_with($cacheKey, $prefix)) {
+                unset(self::$cache[$cacheKey]);
+            }
+        }
 
         if ($customerId <= 0) {
             return;
@@ -38,7 +43,14 @@ class AppShellData
         Cache::forget("app-shell:{$customerId}:access-map");
         Cache::forget("app-shell:{$customerId}:active-jobs");
         Cache::forget("app-shell:{$customerId}:usage-summary");
+        Cache::forget("app-shell:{$customerId}:usage-summary:app");
+        Cache::forget("app-shell:{$customerId}:usage-summary:api");
         Cache::forget("app-shell:{$customerId}:allowed-slots");
+        $version = self::servicePlanCacheVersion();
+        Cache::forget("app-shell:{$customerId}:access-map:v{$version}");
+        Cache::forget("app-shell:{$customerId}:usage-summary:app:v{$version}");
+        Cache::forget("app-shell:{$customerId}:usage-summary:api:v{$version}");
+        Cache::forget("app-shell:{$customerId}:allowed-slots:v{$version}");
     }
 
     /**
@@ -53,19 +65,22 @@ class AppShellData
         }
 
         $customerId = (int) $customer->id;
+        $planCacheVersion = self::servicePlanCacheVersion();
+        $requestCacheKey = $this->cacheKeyForCustomerId($customerId, $planCacheVersion);
 
         if ($forceRefresh) {
             self::forgetForCustomerId($customerId);
         }
 
-        if (isset(self::$cache[$customerId])) {
-            return self::$cache[$customerId];
+        if (isset(self::$cache[$requestCacheKey])) {
+            return self::$cache[$requestCacheKey];
         }
 
         $customer->loadMissing([
             'profile',
             'usage',
             'wallet',
+            'apiWallet',
         ]);
 
         $servicePlan = method_exists($customer, 'currentServicePlan')
@@ -81,25 +96,34 @@ class AppShellData
                 : ($customer->storagePlan ?: $customer->activeStorageSubscription?->storagePlan));
         $wallet = $customer->wallet;
         $usage = $customer->usage;
-        $usageSummary = Cache::remember(
-            "app-shell:{$customerId}:usage-summary",
+        $apiAccessService = app(CustomerApiAccessService::class);
+        $apiAccessEnabled = $apiAccessService->customerHasApiAccess($customer);
+        $appUsageSummary = Cache::remember(
+            "app-shell:{$customerId}:usage-summary:app:v{$planCacheVersion}",
             now()->addSeconds(10),
-            fn () => app(CustomerUsageSummaryService::class)->forCustomer($customer)
+            fn () => app(CustomerUsageSummaryService::class)->forAppCustomer($customer)
         );
+        $apiUsageSummary = $apiAccessEnabled
+            ? Cache::remember(
+                "app-shell:{$customerId}:usage-summary:api:v{$planCacheVersion}",
+                now()->addSeconds(10),
+                fn () => app(CustomerUsageSummaryService::class)->forApiCustomer($customer)
+            )
+            : null;
 
         $planCode = strtolower((string) ($customer->serviceCode() ?: 'free'));
-        $monthlyCredits = data_get($usageSummary, 'credits.monthly', (int) ($servicePlan?->monthly_credits ?? 0));
-        $creditBalance = data_get($usageSummary, 'credits.balance', (int) ($wallet?->balance_credits ?? 0));
-        $quotaMb = data_get($usageSummary, 'storage.quota_mb', (int) ($storageState['current_limit_mb'] ?? $storagePlan?->quota_mb ?? 512));
-        $usedBytes = data_get($usageSummary, 'storage.used_bytes', (int) ($storageState['used_bytes'] ?? $usage?->storage_used_bytes ?? 0));
-        $usedMb = data_get($usageSummary, 'storage.used_mb', (int) ($storageState['used_mb'] ?? round($usedBytes / 1024 / 1024)));
+        $monthlyCredits = data_get($appUsageSummary, 'credits.monthly', (int) ($servicePlan?->appMonthlyCredits() ?? $servicePlan?->monthly_credits ?? 0));
+        $creditBalance = data_get($appUsageSummary, 'credits.balance', (int) ($wallet?->balance_credits ?? 0));
+        $quotaMb = data_get($appUsageSummary, 'storage.quota_mb', (int) ($storageState['current_limit_mb'] ?? $storagePlan?->quota_mb ?? 512));
+        $usedBytes = data_get($appUsageSummary, 'storage.used_bytes', (int) ($storageState['used_bytes'] ?? $usage?->storage_used_bytes ?? 0));
+        $usedMb = data_get($appUsageSummary, 'storage.used_mb', (int) ($storageState['used_mb'] ?? round($usedBytes / 1024 / 1024)));
         $allowedSlots = (int) Cache::remember(
-            "app-shell:{$customerId}:allowed-slots",
+            "app-shell:{$customerId}:allowed-slots:v{$planCacheVersion}",
             now()->addSeconds(60),
             fn () => app(PlanConcurrencyService::class)->allowedConcurrentJobsForPlan($servicePlan)
         );
 
-        return self::$cache[$customerId] = [
+        return self::$cache[$requestCacheKey] = [
             'customer' => $customer,
             'profile' => $customer->profile,
             'plan_code' => $planCode,
@@ -111,18 +135,31 @@ class AppShellData
                 default => 'bg-secondary',
             },
             'access_map' => Cache::remember(
-                "app-shell:{$customerId}:access-map",
+                "app-shell:{$customerId}:access-map:v{$planCacheVersion}",
                 now()->addSeconds(60),
                 fn () => $this->buildAccessMap($customer)
             ),
             'credit_balance' => $creditBalance,
             'monthly_credits' => $monthlyCredits,
-            'credits_pct' => (int) (data_get($usageSummary, 'credits.percent_remaining') ?? 0),
+            'credits_pct' => (int) (data_get($appUsageSummary, 'credits.percent_remaining') ?? 0),
+            'app_credits' => $this->creditShellSummary(
+                $appUsageSummary,
+                (int) ($wallet?->balance_credits ?? 0),
+                (int) ($servicePlan?->appMonthlyCredits() ?? $servicePlan?->monthly_credits ?? 0)
+            ),
+            'api_credits' => $apiUsageSummary !== null
+                ? $this->creditShellSummary(
+                    $apiUsageSummary,
+                    (int) ($customer->apiWallet?->balance_credits ?? 0),
+                    (int) ($servicePlan?->apiMonthlyCredits() ?? 0)
+                )
+                : null,
             'storage_quota_mb' => $quotaMb,
             'storage_used_mb' => $usedMb,
-            'storage_pct' => (int) (data_get($usageSummary, 'storage.percent_used') ?? 0),
-            'storage_over_quota' => (bool) data_get($usageSummary, 'storage.over_quota', $storageState['over_quota'] ?? false),
+            'storage_pct' => (int) (data_get($appUsageSummary, 'storage.percent_used') ?? 0),
+            'storage_over_quota' => (bool) data_get($appUsageSummary, 'storage.over_quota', $storageState['over_quota'] ?? false),
             'storage_cancellation_scheduled' => (bool) ($storageState['cancellation_scheduled'] ?? false),
+            'api_access_enabled' => $apiAccessEnabled,
             'allowed_slots' => $allowedSlots,
             'active_jobs' => Cache::remember(
                 "app-shell:{$customerId}:active-jobs",
@@ -130,6 +167,24 @@ class AppShellData
                 fn () => $this->activeJobsCount($customerId)
             ),
         ];
+    }
+
+    protected function cacheKeyForCustomerId(int $customerId, int $planCacheVersion): string
+    {
+        if ($customerId <= 0) {
+            return '0';
+        }
+
+        if (! app()->bound('request')) {
+            return "{$customerId}:{$planCacheVersion}";
+        }
+
+        return $customerId.':'.$planCacheVersion.':'.spl_object_id(request());
+    }
+
+    protected static function servicePlanCacheVersion(): int
+    {
+        return max(1, (int) Cache::get('service-plans:cache-version', 1));
     }
 
     /**
@@ -147,12 +202,15 @@ class AppShellData
             'credit_balance' => 0,
             'monthly_credits' => 0,
             'credits_pct' => 0,
+            'app_credits' => $this->creditShellSummary([], 0, 0),
+            'api_credits' => null,
             'storage_quota_mb' => 512,
             'storage_used_mb' => 0,
             'storage_pct' => 0,
             'storage_over_quota' => false,
             'storage_cancellation_scheduled' => false,
-            'allowed_slots' => 2,
+            'api_access_enabled' => false,
+            'allowed_slots' => PlanConcurrencyService::DEFAULT_LIMIT,
             'active_jobs' => 0,
         ];
     }
@@ -166,7 +224,7 @@ class AppShellData
         $map = array_fill_keys($toolCodes, false);
 
         $actions = ToolAction::query()
-            ->select(['id', 'tool_code'])
+            ->select(['id', 'tool_code', 'full_code'])
             ->whereIn('tool_code', $toolCodes)
             ->where('is_active', true)
             ->whereHas('tool', fn ($query) => $query->where('is_active', true))
@@ -175,51 +233,18 @@ class AppShellData
 
         if ($actions->isEmpty()) {
             $map['youtube_download'] = false;
+
             return $map;
         }
 
-        $actionIds = $actions->pluck('id')->all();
-        $now = now();
-
-        $overrides = CustomerEntitlement::query()
-            ->select(['tool_action_id', 'allowed'])
-            ->where('customer_id', (int) $customer->id)
-            ->whereIn('tool_action_id', $actionIds)
-            ->where(function ($query) use ($now) {
-                $query->whereNull('starts_at')->orWhere('starts_at', '<=', $now);
-            })
-            ->where(function ($query) use ($now) {
-                $query->whereNull('ends_at')->orWhere('ends_at', '>=', $now);
-            })
-            ->get()
-            ->keyBy('tool_action_id');
-
-        $planId = method_exists($customer, 'currentServicePlanId')
-            ? (int) ($customer->currentServicePlanId() ?? 0)
-            : 0;
-
-        $planEntitlements = $planId > 0
-            ? PlanEntitlement::query()
-                ->select(['tool_action_id', 'allowed'])
-                ->where('service_plan_id', $planId)
-                ->whereIn('tool_action_id', $actionIds)
-                ->get()
-                ->keyBy('tool_action_id')
-            : collect();
-
         foreach ($actions as $action) {
-            $override = $overrides->get($action->id);
             $toolCode = strtolower(trim((string) $action->tool_code));
 
-            if ($toolCode === '' || !array_key_exists($toolCode, $map)) {
+            if ($toolCode === '' || ! array_key_exists($toolCode, $map)) {
                 continue;
             }
 
-            $allowed = $override && $override->allowed !== null
-                ? (bool) $override->allowed
-                : (bool) data_get($planEntitlements->get($action->id), 'allowed', false);
-
-            if ($allowed) {
+            if ($customer->isAllowed((string) $action->full_code, \App\Models\PlanEntitlement::CHANNEL_APP)) {
                 $map[$toolCode] = true;
             }
         }
@@ -244,5 +269,20 @@ class AppShellData
                 });
             })
             ->count();
+    }
+
+    /**
+     * @param  array<string, mixed>  $usageSummary
+     * @return array<string, int|null>
+     */
+    protected function creditShellSummary(array $usageSummary, int $fallbackBalance, int $fallbackMonthly): array
+    {
+        return [
+            'balance' => (int) data_get($usageSummary, 'credits.balance', $fallbackBalance),
+            'monthly' => data_get($usageSummary, 'credits.monthly', $fallbackMonthly),
+            'used' => data_get($usageSummary, 'credits.used'),
+            'percent_used' => data_get($usageSummary, 'credits.percent_used'),
+            'percent_remaining' => data_get($usageSummary, 'credits.percent_remaining'),
+        ];
     }
 }

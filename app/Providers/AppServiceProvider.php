@@ -8,16 +8,16 @@ use App\Domain\Payments\Fib\FibOneTimePaymentClient;
 use App\Domain\Payments\Models\Payment;
 use App\Events\Payments\PaymentConfirmed;
 use App\Http\Middleware\LocalizationMainMiddleware;
+use App\Listeners\Payments\RunPaymentFulfillment;
 use App\Models\Customer;
 use App\Observers\CustomerObserver;
 use App\Policies\PaymentPolicy;
-use App\Listeners\Payments\RunPaymentFulfillment;
 use App\Services\Payments\Areeba\AreebaHttpGateway;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -27,6 +27,7 @@ use Livewire\Livewire;
 class AppServiceProvider extends ServiceProvider
 {
     public $hetzner_S3_domain = 'https://fsn1.your-objectstorage.com/metkurd-v1/';
+
     /**
      * Register any application services.
      */
@@ -56,43 +57,43 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton('cloudfront', function () {
             return $this->hetzner_S3_domain;
         });
-        
+
         $this->app->singleton('logo_57', function () {
-            return  "/app/logo/logo_icon_xml/57.png";
+            return '/app/logo/logo_icon_xml/57.png';
         });
         $this->app->singleton('logo_72', function () {
-            return  "/app/logo/logo_icon_xml/72.png";
+            return '/app/logo/logo_icon_xml/72.png';
         });
         $this->app->singleton('logo_114', function () {
-            return  "/app/logo/logo_icon_xml/114.png";
+            return '/app/logo/logo_icon_xml/114.png';
         });
         $this->app->singleton('logo_144', function () {
-            return  "/app/logo/logo_icon_xml/144.png";
+            return '/app/logo/logo_icon_xml/144.png';
         });
         $this->app->singleton('logo_1024', function () {
-            return  "/app/logo/logo_icon_xml/1024.png";
+            return '/app/logo/logo_icon_xml/1024.png';
         });
         $this->app->singleton('logo_1024_tran', function () {
-            return  "/app/logo/black_logo.png";
+            return '/app/logo/black_logo.png';
         });
 
         $this->app->singleton('logo_57_dark', function () {
-            return  "/app/logo/logo_icon_xml/57.png";
+            return '/app/logo/logo_icon_xml/57.png';
         });
         $this->app->singleton('logo_72_dark', function () {
-            return  "/app/logo/logo_icon_xml/72.png";
+            return '/app/logo/logo_icon_xml/72.png';
         });
         $this->app->singleton('logo_114_dark', function () {
-            return  "/app/logo/logo_icon_xml/114.png";
+            return '/app/logo/logo_icon_xml/114.png';
         });
         $this->app->singleton('logo_144_dark', function () {
-            return  "/app/logo/logo_icon_xml/144.png";
+            return '/app/logo/logo_icon_xml/144.png';
         });
         $this->app->singleton('logo_1024_dark', function () {
-            return  "/app/logo/logo_icon_xml/1024.png";
+            return '/app/logo/logo_icon_xml/1024.png';
         });
         $this->app->singleton('logo_1024_tran_black', function () {
-            return  "/app/logo/white_logo.png";
+            return '/app/logo/white_logo.png';
         });
 
         $this->app->singleton('userImg', function () {
@@ -108,14 +109,14 @@ class AppServiceProvider extends ServiceProvider
             return asset('app/images/icons/sms.png');
         });
         $this->app->singleton('glocales', function () {
-            return config('app.locales'); 
+            return config('app.locales');
         });
         $this->app->singleton('g_review', function () {
-            return asset('app/logo/google_review.png'); 
+            return asset('app/logo/google_review.png');
         });
 
         $this->app->singleton('aurl', function () {
-            return  "adm";
+            return 'adm';
         });
     }
 

@@ -226,7 +226,7 @@ class LandingToolPageCatalog
                     return null;
                 }
 
-                return trim($title . ($copy !== '' ? ' - ' . $copy : ''));
+                return trim($title.($copy !== '' ? ' - '.$copy : ''));
             })
             ->filter()
             ->values()
@@ -429,7 +429,6 @@ class LandingToolPageCatalog
     }
 
     /**
-     * @param  mixed  $value
      * @return string[]
      */
     protected function normalizeStringList(mixed $value): array
@@ -665,7 +664,7 @@ class LandingToolPageCatalog
         $value = data_get($content, "{$locale}.features");
 
         if (! is_array($value) || $value === []) {
-            $value = data_get($content, "en.features", []);
+            $value = data_get($content, 'en.features', []);
         }
 
         $cards = [];
@@ -684,6 +683,7 @@ class LandingToolPageCatalog
                         'copy' => '',
                         'sort_order' => $index,
                     ];
+
                     continue;
                 }
 

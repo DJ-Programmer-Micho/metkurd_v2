@@ -57,7 +57,7 @@ trait ManagesCustomerSuspendedPage
     {
         $allowed = ['created_at', 'username', 'consumed_credits', 'paid_order_amount'];
 
-        if (!in_array($column, $allowed, true)) {
+        if (! in_array($column, $allowed, true)) {
             return;
         }
 

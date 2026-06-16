@@ -10,7 +10,9 @@ use Illuminate\Support\Facades\Log;
 class ConversionTrackingService
 {
     public const SIGNUP_EVENT = 'metkurd_signup';
+
     public const PURCHASE_EVENT = 'metkurd_purchase';
+
     public const SIGNUP_SESSION_KEY = 'metkurd_signup_conversion';
 
     public function queueSignupConversion(Customer $customer, string $signupMethod): void
@@ -242,4 +244,3 @@ class ConversionTrackingService
             && app()->environment(['local', 'staging']);
     }
 }
-

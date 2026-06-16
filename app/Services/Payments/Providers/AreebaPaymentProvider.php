@@ -11,8 +11,7 @@ class AreebaPaymentProvider extends AbstractConfiguredPaymentProvider
 {
     public function __construct(
         protected AreebaGatewayInterface $gateway,
-    ) {
-    }
+    ) {}
 
     public function driver(): string
     {

@@ -7,13 +7,15 @@ use Illuminate\Support\Facades\Http;
 class StandingTechSms
 {
     protected string $base;
+
     protected string $token;
+
     protected string $sender;
 
     public function __construct()
     {
-        $this->base   = config('services.standingtech.base',   env('STANDINGTECH_BASE_URL'));
-        $this->token  = config('services.standingtech.token',  env('STANDINGTECH_TOKEN'));
+        $this->base = config('services.standingtech.base', env('STANDINGTECH_BASE_URL'));
+        $this->token = config('services.standingtech.token', env('STANDINGTECH_TOKEN'));
         $this->sender = config('services.standingtech.sender', env('STANDINGTECH_SENDER_ID'));
     }
 
@@ -33,9 +35,9 @@ class StandingTechSms
         $payload = [
             'recipient' => $recipient, // no +
             'sender_id' => $this->sender,
-            'type'      => $type,      // whatsapp | telegram
-            'message'   => (string) $message,
-            'lang'      => $lang,
+            'type' => $type,      // whatsapp | telegram
+            'message' => (string) $message,
+            'lang' => $lang,
         ];
 
         if ($fallback) {
@@ -54,9 +56,9 @@ class StandingTechSms
         $payload = [
             'recipient' => $recipient, // no +
             'sender_id' => $this->sender,
-            'type'      => 'sms',
-            'message'   => (string) $message,
-            'lang'      => $lang,
+            'type' => 'sms',
+            'message' => (string) $message,
+            'lang' => $lang,
         ];
 
         $response = $this->client()->post('/api/v4/sms/send', $payload);
@@ -69,12 +71,14 @@ class StandingTechSms
     public function sendAuto(string $type, string $recipient, ?string $fallback = null, string $lang = 'en'): array
     {
         $otp = random_int(100000, 999999);
-        return $this->sendText($type, $recipient, (string)$otp, $fallback, $lang);
+
+        return $this->sendText($type, $recipient, (string) $otp, $fallback, $lang);
     }
 
     public function sendSmsAuto(string $recipient, string $lang = 'en'): array
     {
         $otp = random_int(100000, 999999);
-        return $this->sendSmsText($recipient, (string)$otp, $lang);
+
+        return $this->sendSmsText($recipient, (string) $otp, $lang);
     }
 }

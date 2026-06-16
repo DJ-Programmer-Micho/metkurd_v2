@@ -15,6 +15,7 @@ class CustomerPricingRule extends Model
     protected $fillable = [
         'customer_id',
         'tool_action_id',
+        'pricing_channel',
         'rule_type',
         'priority',
         'metric_code',

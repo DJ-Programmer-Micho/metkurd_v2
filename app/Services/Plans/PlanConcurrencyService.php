@@ -11,7 +11,7 @@ class PlanConcurrencyService
 {
     public const CACHE_KEY = 'service-plan-concurrency-limits:v1';
 
-    public const DEFAULT_LIMIT = 2;
+    public const DEFAULT_LIMIT = 1;
 
     /**
      * @var array{by_id: array<int, int>, by_code: array<string, int>}|null

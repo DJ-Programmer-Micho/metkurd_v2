@@ -2,24 +2,29 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
-
+use App\Models\CreditProduct;
+use App\Models\PlanEntitlement;
+use App\Models\PlanVoiceAccess;
+use App\Models\PricingRule;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
 use App\Models\Tool;
 use App\Models\ToolAction;
-use App\Models\PlanEntitlement;
-use App\Models\PricingRule;
-use App\Models\CreditProduct;
 use App\Models\Voice;
-use App\Models\PlanVoiceAccess;
 use App\Services\Billing\BillingCurrencyService;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class DevDefaultSeeder extends Seeder
 {
     public function run(): void
     {
+        if (! app()->environment(['local', 'testing'])) {
+            $this->command?->warn('DevDefaultSeeder is intended for local/testing only. Skipping.');
+
+            return;
+        }
+
         DB::transaction(function () {
             $plans = $this->seedServicePlans();
             $this->seedStoragePlans();
@@ -42,7 +47,13 @@ class DevDefaultSeeder extends Seeder
                 'name' => 'Free',
                 'billing_interval' => 'monthly',
                 'monthly_credits' => 10000,
-                'concurrent_jobs_limit' => 2,
+                'app_monthly_credits' => 10000,
+                'api_monthly_credits' => 0,
+                'concurrent_jobs_limit' => 1,
+                'api_enabled' => false,
+                'api_requests_per_minute' => 0,
+                'api_concurrent_jobs' => 0,
+                'api_allowed_tools' => [],
                 'is_free' => true,
                 'is_active' => true,
                 'sort_order' => 1,
@@ -56,8 +67,14 @@ class DevDefaultSeeder extends Seeder
                 'code' => 'student',
                 'name' => 'Student',
                 'billing_interval' => 'monthly',
-                'monthly_credits' => 50000,
-                'concurrent_jobs_limit' => 3,
+                'monthly_credits' => 100000,
+                'app_monthly_credits' => 100000,
+                'api_monthly_credits' => 150000,
+                'concurrent_jobs_limit' => 2,
+                'api_enabled' => true,
+                'api_requests_per_minute' => 60,
+                'api_concurrent_jobs' => 2,
+                'api_allowed_tools' => ['tts:apollo-1-0v', 'tts:apollo-1-5v', 'tts:delta-1-0v', 'tts:vector-1-0', 'tts:vector-1-5', 'asr:wasr', 'asr:qasr', 'caption:qasr', 'ocr:generate', 'translation:generate', 'stem:generate', 'usage:read'],
                 'is_free' => false,
                 'is_active' => true,
                 'sort_order' => 2,
@@ -71,8 +88,14 @@ class DevDefaultSeeder extends Seeder
                 'code' => 'pro',
                 'name' => 'Pro',
                 'billing_interval' => 'monthly',
-                'monthly_credits' => 100000,
-                'concurrent_jobs_limit' => 4,
+                'monthly_credits' => 250000,
+                'app_monthly_credits' => 250000,
+                'api_monthly_credits' => 300000,
+                'concurrent_jobs_limit' => 3,
+                'api_enabled' => true,
+                'api_requests_per_minute' => 300,
+                'api_concurrent_jobs' => 10,
+                'api_allowed_tools' => ['tts:apollo-1-0v', 'tts:apollo-1-5v', 'tts:delta-1-0v', 'tts:vector-1-0', 'tts:vector-1-5', 'asr:wasr', 'asr:qasr', 'caption:qasr', 'ocr:generate', 'translation:generate', 'stem:generate', 'usage:read'],
                 'is_free' => false,
                 'is_active' => true,
                 'sort_order' => 3,
@@ -86,8 +109,14 @@ class DevDefaultSeeder extends Seeder
                 'code' => 'premium',
                 'name' => 'Premium',
                 'billing_interval' => 'monthly',
-                'monthly_credits' => 250000,
+                'monthly_credits' => 600000,
+                'app_monthly_credits' => 600000,
+                'api_monthly_credits' => 800000,
                 'concurrent_jobs_limit' => 5,
+                'api_enabled' => true,
+                'api_requests_per_minute' => 1000,
+                'api_concurrent_jobs' => 50,
+                'api_allowed_tools' => ['tts:apollo-1-0v', 'tts:apollo-1-5v', 'tts:delta-1-0v', 'tts:vector-1-0', 'tts:vector-1-5', 'asr:wasr', 'asr:qasr', 'caption:qasr', 'ocr:generate', 'translation:generate', 'stem:generate', 'usage:read'],
                 'is_free' => false,
                 'is_active' => true,
                 'sort_order' => 4,
@@ -402,11 +431,12 @@ class DevDefaultSeeder extends Seeder
             ['code' => 'clone_tts',      'name' => 'Clone Text To Speech',  'sort_order' => 3],
             ['code' => 'asr',            'name' => 'Automatic Speech Recognition', 'sort_order' => 4],
             ['code' => 'qasr',           'name' => 'Qwen Automatic Speech Recognition', 'sort_order' => 5],
-            ['code' => 'tran',           'name' => 'MET Translation',       'sort_order' => 6],
-            ['code' => 'stem',           'name' => 'Stem Separation',       'sort_order' => 7],
-            ['code' => 'ocr',            'name' => 'OCR',                   'sort_order' => 8],
-            ['code' => 'youtube_audio',  'name' => 'YouTube Audio Downloader', 'sort_order' => 9],
-            ['code' => 'youtube_video',  'name' => 'YouTube Video Downloader', 'sort_order' => 10],
+            ['code' => 'caption',        'name' => 'Kurdish Caption',       'sort_order' => 6],
+            ['code' => 'tran',           'name' => 'MET Translation',       'sort_order' => 7],
+            ['code' => 'stem',           'name' => 'Stem Separation',       'sort_order' => 8],
+            ['code' => 'ocr',            'name' => 'OCR',                   'sort_order' => 9],
+            ['code' => 'youtube_audio',  'name' => 'YouTube Audio Downloader', 'sort_order' => 10],
+            ['code' => 'youtube_video',  'name' => 'YouTube Video Downloader', 'sort_order' => 11],
         ];
 
         $tools = [];
@@ -426,11 +456,10 @@ class DevDefaultSeeder extends Seeder
         $actionRows = [
             ['tool_code' => 'tts',           'action_code' => 'standard', 'name' => 'TTS Standard',         'metric' => 'character'],
             ['tool_code' => 'ftts',          'action_code' => 'standard', 'name' => 'F5 TTS Standard',      'metric' => 'character'],
-
             ['tool_code' => 'clone_tts',     'action_code' => 'standard', 'name' => 'Clone TTS Standard',   'metric' => 'character'],
-
             ['tool_code' => 'asr',           'action_code' => 'standard', 'name' => 'ASR Standard',         'metric' => 'minute'],
             ['tool_code' => 'qasr',          'action_code' => 'standard', 'name' => 'QASR Standard',        'metric' => 'minute'],
+            ['tool_code' => 'caption',       'action_code' => 'standard', 'name' => 'Caption Standard',     'metric' => 'minute'],
             ['tool_code' => 'tran',          'action_code' => 'standard', 'name' => 'Translation Standard', 'metric' => 'character'],
 
             ['tool_code' => 'stem',          'action_code' => 'sep2',     'name' => 'Stem Separation 2',    'metric' => 'stem_output'],
@@ -450,7 +479,7 @@ class DevDefaultSeeder extends Seeder
         $actions = [];
 
         foreach ($actionRows as $row) {
-            $fullCode = $row['tool_code'] . '.' . $row['action_code'];
+            $fullCode = $row['tool_code'].'.'.$row['action_code'];
 
             $actions[$fullCode] = ToolAction::updateOrCreate(
                 ['full_code' => $fullCode],
@@ -479,6 +508,7 @@ class DevDefaultSeeder extends Seeder
                     [
                         'service_plan_id' => $plan->id,
                         'tool_action_id' => $action->id,
+                        'entitlement_channel' => 'all',
                     ],
                     [
                         'allowed' => $allowed,
@@ -622,6 +652,7 @@ class DevDefaultSeeder extends Seeder
             PricingRule::updateOrCreate(
                 [
                     'tool_action_id' => $action->id,
+                    'pricing_channel' => 'all',
                     'priority' => 100,
                 ],
                 [

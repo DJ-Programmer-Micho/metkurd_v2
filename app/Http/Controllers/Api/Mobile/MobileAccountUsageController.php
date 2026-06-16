@@ -11,8 +11,7 @@ class MobileAccountUsageController extends MobileApiController
 {
     public function __construct(
         protected MobileAccountUsageSummaryService $summary,
-    ) {
-    }
+    ) {}
 
     public function show(Request $request): MobileAccountUsageResource|JsonResponse
     {

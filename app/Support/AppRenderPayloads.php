@@ -33,7 +33,7 @@ class AppRenderPayloads
                 'locale' => $locale,
                 'jobId' => (string) $job->id,
                 'track' => $track,
-            ]) . '?proxy=1';
+            ]).'?proxy=1';
 
             $downloads[$track] = route('app.renders.stem.download', [
                 'locale' => $locale,
@@ -104,7 +104,7 @@ class AppRenderPayloads
             'input_url' => $inputPath !== '' ? route('app.renders.ocr.input', [
                 'locale' => $locale,
                 'jobId' => $jobId,
-            ]) . '?proxy=1' : null,
+            ]).'?proxy=1' : null,
             'page_range' => (string) data_get($job->input, 'page_range', ''),
             'pages' => (int) data_get($job->input, 'pages_estimated', 0),
             'lang' => (string) data_get($job->input, 'lang', 'ckb'),
@@ -115,7 +115,7 @@ class AppRenderPayloads
             'text_view_url' => $textPath !== '' ? route('app.renders.ocr.text.view', [
                 'locale' => $locale,
                 'jobId' => $jobId,
-            ]) . '?proxy=1' : null,
+            ]).'?proxy=1' : null,
             'text_download_url' => $textPath !== '' ? route('app.renders.ocr.text', [
                 'locale' => $locale,
                 'jobId' => $jobId,
@@ -123,7 +123,7 @@ class AppRenderPayloads
             'json_view_url' => $jsonPath !== '' ? route('app.renders.ocr.json.view', [
                 'locale' => $locale,
                 'jobId' => $jobId,
-            ]) . '?proxy=1' : null,
+            ]).'?proxy=1' : null,
             'json_download_url' => $jsonPath !== '' ? route('app.renders.ocr.json', [
                 'locale' => $locale,
                 'jobId' => $jobId,
@@ -161,7 +161,7 @@ class AppRenderPayloads
             'json_view_url' => $jsonPath !== '' ? route('app.renders.ocr.json.view', [
                 'locale' => $locale,
                 'jobId' => $jobId,
-            ]) . '?proxy=1' : null,
+            ]).'?proxy=1' : null,
             'created_at' => optional($job->finished_at ?? $job->created_at)->format('Y-m-d H:i'),
             'created_at_human' => optional($job->finished_at ?? $job->created_at)->diffForHumans(),
         ];

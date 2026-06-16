@@ -4,8 +4,8 @@ namespace App\Notifications\Landing;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
-use NotificationChannels\Telegram\TelegramChannel;
 use NotificationChannels\Telegram\Enums\ParseMode;
+use NotificationChannels\Telegram\TelegramChannel;
 use NotificationChannels\Telegram\TelegramMessage;
 
 class TelegramContactUs extends Notification
@@ -13,15 +13,25 @@ class TelegramContactUs extends Notification
     use Queueable;
 
     protected string $s_id;
+
     protected string $resturant_name;
+
     protected string $name;
+
     protected string $email;
+
     protected string $subject;
+
     protected string $message;
+
     protected string $phone;
+
     protected mixed $location;
+
     protected ?string $guestIdentifier;
+
     protected ?string $deviceIdentifier;
+
     protected ?string $tele_id;
 
     public function __construct(
@@ -57,20 +67,20 @@ class TelegramContactUs extends Notification
 
     public function toTelegram($notifiable): TelegramMessage
     {
-        $registrationId = '#S-' . random_int(10, 99);
+        $registrationId = '#S-'.random_int(10, 99);
         $registration3Id = random_int(100, 999);
         $location = is_object($this->location) ? $this->location : null;
         $sections = [];
 
         $sections[] = [
             '<b>NEW SUPPORT MESSAGE</b>',
-            '<b>MKC-ID:</b> ' . $this->escapeTelegram($registrationId . '-' . $this->s_id . '-' . $registration3Id),
-            '<b>Business Name:</b> ' . $this->escapeTelegram($this->resturant_name),
-            '<b>Name:</b> ' . $this->escapeTelegram($this->name),
-            '<b>Email Address:</b> ' . $this->escapeTelegram($this->email),
-            '<b>Phone Number:</b> ' . $this->escapeTelegram($this->phone),
-            '<b>Subject:</b> ' . $this->escapeTelegram($this->subject),
-            '<b>Message:</b> ' . $this->escapeTelegram($this->message),
+            '<b>MKC-ID:</b> '.$this->escapeTelegram($registrationId.'-'.$this->s_id.'-'.$registration3Id),
+            '<b>Business Name:</b> '.$this->escapeTelegram($this->resturant_name),
+            '<b>Name:</b> '.$this->escapeTelegram($this->name),
+            '<b>Email Address:</b> '.$this->escapeTelegram($this->email),
+            '<b>Phone Number:</b> '.$this->escapeTelegram($this->phone),
+            '<b>Subject:</b> '.$this->escapeTelegram($this->subject),
+            '<b>Message:</b> '.$this->escapeTelegram($this->message),
         ];
 
         $this->appendSection($sections, [
@@ -159,7 +169,7 @@ class TelegramContactUs extends Notification
             return null;
         }
 
-        return '<b>' . $this->escapeTelegram($label) . ':</b> ' . $this->escapeTelegram($value);
+        return '<b>'.$this->escapeTelegram($label).':</b> '.$this->escapeTelegram($value);
     }
 
     protected function escapeTelegram(string $value): string

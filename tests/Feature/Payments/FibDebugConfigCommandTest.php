@@ -8,7 +8,7 @@ function fibDebugJwt(string $issuer): string
         return rtrim(strtr(base64_encode(json_encode($payload, JSON_UNESCAPED_SLASHES)), '+/', '-_'), '=');
     };
 
-    return $encode(['alg' => 'HS256', 'typ' => 'JWT']) . '.' . $encode(['iss' => $issuer]) . '.signature';
+    return $encode(['alg' => 'HS256', 'typ' => 'JWT']).'.'.$encode(['iss' => $issuer]).'.signature';
 }
 
 beforeEach(function () {

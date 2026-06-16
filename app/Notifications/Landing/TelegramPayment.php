@@ -13,16 +13,27 @@ class TelegramPayment extends Notification
     use Queueable;
 
     protected string $name;
+
     protected string $username;
+
     protected string $email;
+
     protected string $jobTitle;
+
     protected string $phone;
+
     protected string $paymentType;
+
     protected string $selectedPlan;
+
     protected array $paymentDetails;
+
     protected mixed $location;
+
     protected ?string $guestIdentifier;
+
     protected ?string $deviceIdentifier;
+
     protected ?string $teleId;
 
     public function __construct(
@@ -61,18 +72,18 @@ class TelegramPayment extends Notification
     public function toTelegram($notifiable): TelegramMessage
     {
         $location = is_object($this->location) ? $this->location : null;
-        $paymentId = '#P-' . random_int(10, 99);
+        $paymentId = '#P-'.random_int(10, 99);
         $paymentIdSuffix = random_int(100, 999);
         $sections = [];
 
         $sections[] = [
             '<b>NEW PAYMENT MESSAGE</b>',
-            '<b>MKP-ID:</b> ' . $this->escapeTelegram($paymentId . '-Payment-' . $paymentIdSuffix),
-            '<b>Name:</b> ' . $this->escapeTelegram($this->name),
-            '<b>Username:</b> ' . $this->escapeTelegram($this->username),
-            '<b>Email Address:</b> ' . $this->escapeTelegram($this->email),
-            '<b>Phone Number:</b> ' . $this->escapeTelegram($this->phone !== '' ? $this->phone : 'N/A'),
-            '<b>Job Title:</b> ' . $this->escapeTelegram($this->jobTitle !== '' ? $this->jobTitle : 'N/A'),
+            '<b>MKP-ID:</b> '.$this->escapeTelegram($paymentId.'-Payment-'.$paymentIdSuffix),
+            '<b>Name:</b> '.$this->escapeTelegram($this->name),
+            '<b>Username:</b> '.$this->escapeTelegram($this->username),
+            '<b>Email Address:</b> '.$this->escapeTelegram($this->email),
+            '<b>Phone Number:</b> '.$this->escapeTelegram($this->phone !== '' ? $this->phone : 'N/A'),
+            '<b>Job Title:</b> '.$this->escapeTelegram($this->jobTitle !== '' ? $this->jobTitle : 'N/A'),
         ];
 
         $paymentLines = [
@@ -176,7 +187,7 @@ class TelegramPayment extends Notification
             return null;
         }
 
-        return '<b>' . $this->escapeTelegram($label) . ':</b> ' . $this->escapeTelegram($value);
+        return '<b>'.$this->escapeTelegram($label).':</b> '.$this->escapeTelegram($value);
     }
 
     protected function escapeTelegram(string $value): string

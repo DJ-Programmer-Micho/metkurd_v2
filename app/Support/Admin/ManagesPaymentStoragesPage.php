@@ -31,15 +31,23 @@ trait ManagesPaymentStoragesPage
     public ?int $editingStorageId = null;
 
     public string $code = '';
+
     public string $name = '';
+
     public string $paymentMode = 'recurring';
+
     public array $billingIntervals = ['monthly'];
+
     public $quotaMb = '';
+
     public $priceIqd = '';
+
     public bool $isActive = true;
+
     public $sortOrder = 0;
 
     public ?int $deleteStorageId = null;
+
     public string $deleteStorageLabel = '';
 
     public function updatingSearch(): void
@@ -65,7 +73,7 @@ trait ManagesPaymentStoragesPage
     {
         $allowed = ['sort_order', 'name', 'quota_mb', 'price_iqd', 'active_subscribers', 'estimated_revenue', 'historical_assignments'];
 
-        if (!in_array($column, $allowed, true)) {
+        if (! in_array($column, $allowed, true)) {
             return;
         }
 
@@ -84,7 +92,7 @@ trait ManagesPaymentStoragesPage
     protected function storageFormRules(): array
     {
         return [
-            'code' => 'required|string|max:40|alpha_dash|unique:storage_plans,code,' . ($this->editingStorageId ?? 'NULL') . ',id',
+            'code' => 'required|string|max:40|alpha_dash|unique:storage_plans,code,'.($this->editingStorageId ?? 'NULL').',id',
             'name' => 'required|string|max:80',
             'paymentMode' => 'required|string|in:one_time,recurring',
             'billingIntervals' => 'required|array|min:1',
@@ -226,7 +234,7 @@ trait ManagesPaymentStoragesPage
 
         $plan = $this->editingStorageId
             ? StoragePlan::query()->findOrFail($this->editingStorageId)
-            : new StoragePlan();
+            : new StoragePlan;
         $originalMode = $plan->checkoutPaymentMode();
         $payload = [
             'code' => $validated['code'],
@@ -284,7 +292,7 @@ trait ManagesPaymentStoragesPage
     public function toggleStorageStatus(int $storageId): void
     {
         $plan = StoragePlan::query()->findOrFail($storageId);
-        $plan->update(['is_active' => !$plan->is_active]);
+        $plan->update(['is_active' => ! $plan->is_active]);
 
         $this->dispatch(
             'alert',

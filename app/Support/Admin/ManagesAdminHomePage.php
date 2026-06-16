@@ -38,7 +38,7 @@ trait ManagesAdminHomePage
 
     protected function analyticsCacheKey(string $section): string
     {
-        return 'admin-dashboard:' . $section . ':' . $this->periodFilter;
+        return 'admin-dashboard:'.$section.':'.$this->periodFilter;
     }
 
     protected function analyticsCacheTtl(): CarbonInterface
@@ -71,10 +71,18 @@ trait ManagesAdminHomePage
         $canonicalRevenueSql = $this->paymentCanonicalAmountSql('credit_orders');
         $classifiedOrders = DB::table('credit_orders')
             ->where('status', 'paid')
+            ->where(function ($query) {
+                $query
+                    ->whereNull('meta->revenue_excluded')
+                    ->orWhere('meta->revenue_excluded', false)
+                    ->orWhere('meta->revenue_excluded', 0)
+                    ->orWhere('meta->revenue_excluded', '0')
+                    ->orWhere('meta->revenue_excluded', 'false');
+            })
             ->when($windowStart, fn ($query) => $query->where('created_at', '>=', $windowStart))
             ->select('customer_id', 'credits_amount')
-            ->selectRaw($canonicalRevenueSql . ' as amount_iqd')
-            ->selectRaw($this->paymentSourceKeyExpression() . ' as source_key');
+            ->selectRaw($canonicalRevenueSql.' as amount_iqd')
+            ->selectRaw($this->paymentSourceKeyExpression().' as source_key');
 
         return DB::query()
             ->fromSub($classifiedOrders, 'classified_orders')
@@ -127,21 +135,22 @@ trait ManagesAdminHomePage
                 ->first();
 
             $orderSummary = CreditOrder::query()
+                ->revenueIncluded()
                 ->where('status', 'paid')
                 ->selectRaw('COUNT(*) as paid_orders')
                 ->selectRaw('COUNT(DISTINCT customer_id) as purchasing_customers')
-                ->selectRaw('COALESCE(SUM(' . $this->paymentCanonicalAmountSql('credit_orders') . '), 0) as revenue_total')
+                ->selectRaw('COALESCE(SUM('.$this->paymentCanonicalAmountSql('credit_orders').'), 0) as revenue_total')
                 ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits_sold_total');
 
             if ($windowStart) {
                 $orderSummary
                     ->selectRaw('SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as period_orders', [$windowStart])
-                    ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN ' . $this->paymentCanonicalAmountSql('credit_orders') . ' ELSE 0 END), 0) as revenue_period', [$windowStart])
+                    ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN '.$this->paymentCanonicalAmountSql('credit_orders').' ELSE 0 END), 0) as revenue_period', [$windowStart])
                     ->selectRaw('COALESCE(SUM(CASE WHEN created_at >= ? THEN credits_amount ELSE 0 END), 0) as credits_sold_period', [$windowStart]);
             } else {
                 $orderSummary
                     ->selectRaw('COUNT(*) as period_orders')
-                    ->selectRaw('COALESCE(SUM(' . $this->paymentCanonicalAmountSql('credit_orders') . '), 0) as revenue_period')
+                    ->selectRaw('COALESCE(SUM('.$this->paymentCanonicalAmountSql('credit_orders').'), 0) as revenue_period')
                     ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits_sold_period');
             }
 
@@ -234,20 +243,21 @@ trait ManagesAdminHomePage
                 ->selectRaw('COUNT(*) as active_subscribers');
 
             $planRevenue = CreditOrder::query()
+                ->revenueIncluded()
                 ->where('status', 'paid')
                 ->whereNotNull('service_plan_id')
                 ->when($windowStart, fn ($query) => $query->where('created_at', '>=', $windowStart))
                 ->groupBy('service_plan_id')
                 ->selectRaw('service_plan_id')
                 ->selectRaw('COUNT(*) as paid_orders')
-                ->selectRaw('COALESCE(SUM(' . $this->paymentCanonicalAmountSql('credit_orders') . '), 0) as revenue')
+                ->selectRaw('COALESCE(SUM('.$this->paymentCanonicalAmountSql('credit_orders').'), 0) as revenue')
                 ->selectRaw('COALESCE(SUM(credits_amount), 0) as credits_sold');
 
             return ServicePlan::query()
                 ->leftJoinSub($activeSubscribers, 'plan_active_subscribers', fn ($join) => $join->on('plan_active_subscribers.service_plan_id', '=', 'service_plans.id'))
                 ->leftJoinSub($planRevenue, 'plan_revenue', fn ($join) => $join->on('plan_revenue.service_plan_id', '=', 'service_plans.id'))
                 ->select('service_plans.id', 'service_plans.code', 'service_plans.name', 'service_plans.is_free', 'service_plans.monthly_credits', 'service_plans.sort_order')
-                ->selectRaw($this->paymentEffectiveCatalogAmountSql('service_plans', 'price_iqd_monthly', 'price_usd_monthly') . ' as catalog_price_iqd')
+                ->selectRaw($this->paymentEffectiveCatalogAmountSql('service_plans', 'price_iqd_monthly', 'price_usd_monthly').' as catalog_price_iqd')
                 ->selectRaw('COALESCE(plan_active_subscribers.active_subscribers, 0) as active_subscribers')
                 ->selectRaw('COALESCE(plan_revenue.paid_orders, 0) as paid_orders')
                 ->selectRaw('COALESCE(plan_revenue.revenue, 0) as revenue')
@@ -284,8 +294,8 @@ trait ManagesAdminHomePage
                 ->leftJoin('tools as action_tools', 'action_tools.code', '=', 'tool_actions.tool_code')
                 ->where('ml_jobs.status', '!=', 'deleted')
                 ->when($windowStart, fn ($query) => $query->where('ml_jobs.created_at', '>=', $windowStart))
-                ->selectRaw($toolNameExpression . ' as tool_name')
-                ->selectRaw($toolCodeExpression . ' as tool_code')
+                ->selectRaw($toolNameExpression.' as tool_name')
+                ->selectRaw($toolCodeExpression.' as tool_code')
                 ->selectRaw('COUNT(*) as jobs')
                 ->selectRaw('COUNT(DISTINCT ml_jobs.customer_id) as customers')
                 ->selectRaw("SUM(CASE WHEN ml_jobs.status = 'done' THEN 1 ELSE 0 END) as completed_jobs")
@@ -307,11 +317,12 @@ trait ManagesAdminHomePage
             $windowStart = $this->analyticsWindowStart();
 
             $customerRevenue = CreditOrder::query()
+                ->revenueIncluded()
                 ->where('status', 'paid')
                 ->when($windowStart, fn ($query) => $query->where('created_at', '>=', $windowStart))
                 ->groupBy('customer_id')
                 ->selectRaw('customer_id')
-                ->selectRaw('COALESCE(SUM(' . $this->paymentCanonicalAmountSql('credit_orders') . '), 0) as revenue');
+                ->selectRaw('COALESCE(SUM('.$this->paymentCanonicalAmountSql('credit_orders').'), 0) as revenue');
 
             return DB::table('customers')
                 ->join('customer_profiles', 'customer_profiles.customer_id', '=', 'customers.id')
@@ -345,9 +356,17 @@ trait ManagesAdminHomePage
 
             $orderRows = DB::table('credit_orders')
                 ->where('status', 'paid')
+                ->where(function ($query) {
+                    $query
+                        ->whereNull('meta->revenue_excluded')
+                        ->orWhere('meta->revenue_excluded', false)
+                        ->orWhere('meta->revenue_excluded', 0)
+                        ->orWhere('meta->revenue_excluded', '0')
+                        ->orWhere('meta->revenue_excluded', 'false');
+                })
                 ->where('created_at', '>=', $timelineStart)
                 ->selectRaw('DATE(created_at) as day')
-                ->selectRaw('COALESCE(SUM(' . $this->paymentCanonicalAmountSql('credit_orders') . '), 0) as revenue')
+                ->selectRaw('COALESCE(SUM('.$this->paymentCanonicalAmountSql('credit_orders').'), 0) as revenue')
                 ->groupBy($dateExpression)
                 ->pluck('revenue', 'day');
 
@@ -476,7 +495,7 @@ trait ManagesAdminHomePage
 
     public function formatPercent($value, int $precision = 1): string
     {
-        return number_format((float) ($value ?? 0), $precision) . '%';
+        return number_format((float) ($value ?? 0), $precision).'%';
     }
 
     public function trendWidth($value, $max): string

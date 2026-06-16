@@ -40,8 +40,8 @@ class FakePaymentProvider extends AbstractConfiguredPaymentProvider
         array $purpose,
         array $options = [],
     ): array {
-        $providerPaymentId = 'FAKE-' . strtoupper(Str::random(16));
-        $providerTransactionId = 'FAKE-TX-' . strtoupper(Str::random(14));
+        $providerPaymentId = 'FAKE-'.strtoupper(Str::random(16));
+        $providerTransactionId = 'FAKE-TX-'.strtoupper(Str::random(14));
 
         return [
             'payment_method' => $method->code,

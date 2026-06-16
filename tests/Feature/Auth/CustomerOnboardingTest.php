@@ -35,7 +35,7 @@ it('assigns the free plan with the registration timestamp when a customer is cre
 it('assigns the free plan when socialite creates a customer on first login', function () {
     Carbon::setTestNow('2026-03-22 14:15:16');
 
-    $socialiteUser = new SocialiteUser();
+    $socialiteUser = new SocialiteUser;
     $socialiteUser->map([
         'id' => 'google-123',
         'name' => 'Social Person',

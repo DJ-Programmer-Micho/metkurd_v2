@@ -1,13 +1,14 @@
 <?php
 
-use Livewire\Component;
-use Livewire\Attributes\On;
-use Livewire\Attributes\Computed;
 use App\Support\AppShellData;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
+use Livewire\Component;
 
 new class extends Component
 {
     public array $shell = [];
+
     public int $refreshKey = 0;
 
     public function mount(): void
@@ -41,21 +42,21 @@ new class extends Component
     }
 
     #[Computed]
-    public function balance(): int
+    public function appCredits(): array
     {
-        return (int) ($this->shell['credit_balance'] ?? 0);
+        return (array) ($this->shell['app_credits'] ?? []);
     }
 
     #[Computed]
-    public function monthly(): int
+    public function apiCredits(): array
     {
-        return (int) ($this->shell['monthly_credits'] ?? 0);
+        return (array) ($this->shell['api_credits'] ?? []);
     }
 
     #[Computed]
-    public function creditsPct(): int
+    public function showApiCredits(): bool
     {
-        return (int) ($this->shell['credits_pct'] ?? 0);
+        return (bool) ($this->shell['api_access_enabled'] ?? false) && $this->apiCredits !== [];
     }
 
     #[Computed]
@@ -89,20 +90,45 @@ new class extends Component
 };
 ?>
 
-<div style="min-width:220px;" class="px-0 mb-3" wire:key="header-chip-{{ $refreshKey }}">
+<div class="px-0 mb-0 app-sidebar-credit-chip" wire:key="header-chip-{{ $refreshKey }}">
+    @php
+        $appMonthly = data_get($this->appCredits, 'monthly');
+        $appPercent = (int) (data_get($this->appCredits, 'percent_remaining') ?? 0);
+        $apiMonthly = data_get($this->apiCredits, 'monthly');
+        $apiPercent = (int) (data_get($this->apiCredits, 'percent_remaining') ?? 0);
+    @endphp
+
     <div class="d-flex justify-content-between align-items-center mb-1">
-        <small class="text-muted">{{ __('Credits') }}</small>
-        <small class="fw-semibold">{{ number_format($this->balance) }} / {{ number_format($this->monthly) }}</small>
+        <small class="text-muted">{{ __('App Credits') }}</small>
+        <small class="fw-semibold text-end">
+            {{ number_format((int) data_get($this->appCredits, 'balance', 0)) }}
+            /
+            {{ $appMonthly === null ? __('Unlimited') : number_format((int) $appMonthly) }}
+        </small>
     </div>
-    <div class="progress" style="height:6px;">
-        <div class="progress-bar" style="width: {{ $this->creditsPct }}%;"></div>
+    <div class="progress" style="height:5px;">
+        <div class="progress-bar" style="width: {{ $appMonthly === null ? 100 : $appPercent }}%;"></div>
     </div>
+
+    @if($this->showApiCredits)
+        <div class="d-flex justify-content-between align-items-center mt-2 mb-1">
+            <small class="text-muted">{{ __('API Credits') }}</small>
+            <small class="fw-semibold text-end">
+                {{ number_format((int) data_get($this->apiCredits, 'balance', 0)) }}
+                /
+                {{ $apiMonthly === null ? __('Unlimited') : number_format((int) $apiMonthly) }}
+            </small>
+        </div>
+        <div class="progress" style="height:5px;">
+            <div class="progress-bar bg-success" style="width: {{ $apiMonthly === null ? 100 : $apiPercent }}%;"></div>
+        </div>
+    @endif
 
     <div class="d-flex justify-content-between align-items-center mt-2 mb-1">
         <small class="text-muted">{{ __('Storage') }}</small>
-        <small class="fw-semibold">{{ __(':used MB / :total MB', ['used' => number_format($this->usedMb), 'total' => number_format($this->quotaMb)]) }}</small>
+        <small class="fw-semibold text-end">{{ __(':used MB / :total MB', ['used' => number_format($this->usedMb), 'total' => number_format($this->quotaMb)]) }}</small>
     </div>
-    <div class="progress" style="height:6px;">
+    <div class="progress" style="height:5px;">
         <div class="progress-bar bg-info" style="width: {{ $this->storagePct }}%;"></div>
     </div>
 </div>

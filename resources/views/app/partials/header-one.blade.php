@@ -138,6 +138,14 @@
             </form> --}}
         </div>
 
+        @php
+            $shell = app(\App\Support\AppShellData::class)->forCurrentCustomer();
+            $apiAccessEnabled = (bool) ($shell['api_access_enabled'] ?? false);
+            $apiRoute = $apiAccessEnabled
+                ? route('app.api-access', ['locale' => app()->getLocale()])
+                : route('subscription-plan', ['locale' => app()->getLocale()]);
+        @endphp
+
         <div class="d-flex align-items-center">
             {{-- <div class="dropdown d-md-none topbar-head-dropdown header-item">
                 <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle" id="page-header-search-dropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
@@ -195,6 +203,21 @@ $notifications = [];
                 <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle light-dark-mode">
                     <i class='bx bx-moon fs-22'></i>
                 </button>
+            </div>
+
+            <div class="ms-2 header-item d-none d-md-flex">
+                <a
+                    wire:navigate
+                    href="{{ $apiRoute }}"
+                    class="btn btn-sm {{ $apiAccessEnabled ? 'btn-info' : 'btn-outline-secondary opacity-75' }} d-inline-flex align-items-center gap-2 rounded-pill px-3"
+                    aria-label="{{ $apiAccessEnabled ? __('Open API Access') : __('View API subscription options') }}"
+                >
+                    <i class="mdi mdi-api"></i>
+                    <span>{{ __('API') }}</span>
+                    @unless($apiAccessEnabled)
+                        <span class="badge bg-warning-subtle text-warning">{{ __('Subscribe') }}</span>
+                    @endunless
+                </a>
             </div>
             
             <div class="dropdown topbar-head-dropdown ms-1 header-item" id="notificationDropdown">
@@ -452,7 +475,6 @@ $notifications = [];
             
             <livewire:partials.process-slots />
             @php
-                $shell = app(\App\Support\AppShellData::class)->forCurrentCustomer();
                 $profile = $shell['profile'] ?? null;
                 $fallbackAvatarUrl = app(\App\Support\AvatarFallbackUrl::class)->customer();
                 $avatarUrl = $profile?->avatar_url ?: $fallbackAvatarUrl;
@@ -503,6 +525,13 @@ $notifications = [];
                     <a wire:navigate class="dropdown-item" href="{{ route('app.billing',['locale' => app()->getLocale()]) }}">
                         <i class="mdi mdi-chart-pie text-muted fs-16 align-middle me-1"></i>
                         <span class="align-middle">{{__('Billing')}}</span>
+                    </a>
+                    <a wire:navigate class="dropdown-item" href="{{ $apiRoute }}">
+                        <i class="mdi mdi-api text-muted fs-16 align-middle me-1"></i>
+                        <span class="align-middle">{{__('API Access')}}</span>
+                        @unless($apiAccessEnabled)
+                            <span class="badge bg-warning-subtle text-warning ms-2">{{ __('Subscribe') }}</span>
+                        @endunless
                     </a>
                     <hr class="my-1">
                     <a wire:navigate class="dropdown-item" href="{{ route('subscription-plan',['locale' => app()->getLocale()]) }}">

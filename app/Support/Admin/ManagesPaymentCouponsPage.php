@@ -44,30 +44,53 @@ trait ManagesPaymentCouponsPage
     public ?int $editingCouponId = null;
 
     public string $code = '';
+
     public string $name = '';
+
     public string $description = '';
+
     public bool $isActive = true;
+
     public bool $isPublic = true;
+
     public bool $isStackable = false;
+
     public string $discountType = 'percent';
+
     public $discountValue = '';
+
     public string $targetType = 'plan_subscription';
+
     public array $selectedPaymentMethods = ['fib'];
+
     public array $selectedServicePlanCodes = [];
+
     public array $selectedStoragePlanCodes = [];
+
     public array $selectedAddonCodes = [];
+
     public array $selectedBillingCycles = [];
+
     public bool $firstTimeSubscribersOnly = false;
+
     public string $durationType = 'forever';
+
     public $durationCycles = '';
+
     public $maxTotalUses = '';
+
     public $maxUsesPerCustomer = '';
+
     public $minimumAmountIqd = '';
+
     public string $startsAtLocal = '';
+
     public string $endsAtLocal = '';
+
     public string $metadataJson = '';
 
     public ?int $deleteCouponId = null;
+
     public string $deleteCouponLabel = '';
 
     public function updatingSearch(): void
@@ -148,7 +171,7 @@ trait ManagesPaymentCouponsPage
     protected function couponFormRules(): array
     {
         return [
-            'code' => 'required|string|max:80|alpha_dash|unique:coupons,code,' . ($this->editingCouponId ?? 'NULL') . ',id',
+            'code' => 'required|string|max:80|alpha_dash|unique:coupons,code,'.($this->editingCouponId ?? 'NULL').',id',
             'name' => 'required|string|max:120',
             'description' => 'nullable|string',
             'discountType' => 'required|string|in:percent,fixed',
@@ -412,7 +435,7 @@ trait ManagesPaymentCouponsPage
 
         $coupon = $this->editingCouponId
             ? Coupon::query()->findOrFail($this->editingCouponId)
-            : new Coupon();
+            : new Coupon;
 
         $coupon->fill([
             'code' => strtoupper(trim($validated['code'])),
@@ -988,8 +1011,7 @@ trait ManagesPaymentCouponsPage
         mixed $durationType,
         mixed $durationCycles,
         array $selectedPaymentMethods = ['fib'],
-    ): string
-    {
+    ): string {
         if ($this->isAddonTarget($targetType)) {
             return CouponDurationType::ONCE->value;
         }

@@ -13,8 +13,7 @@ class MobilePricingMetadataService
 {
     public function __construct(
         protected MobileAppCatalog $apps,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{
@@ -70,7 +69,7 @@ class MobilePricingMetadataService
             ->orderBy('tool_code')
             ->orderBy('full_code')
             ->get()
-            ->filter(fn (ToolAction $action): bool => $customer->isAllowed((string) $action->full_code))
+            ->filter(fn (ToolAction $action): bool => $customer->isAllowed((string) $action->full_code, \App\Models\PlanEntitlement::CHANNEL_MOBILE))
             ->values();
     }
 
@@ -91,8 +90,13 @@ class MobilePricingMetadataService
             ->where(function ($query) use ($now) {
                 $query->whereNull('ends_at')->orWhere('ends_at', '>=', $now);
             })
-            ->orderBy('priority')
-            ->orderBy('id')
+            ->whereIn('pricing_channel', PricingRule::fallbackChannels(PricingRule::CHANNEL_MOBILE))
+            ->orderByRaw(
+                'CASE WHEN pricing_channel = ? THEN 0 WHEN pricing_channel = ? THEN 1 ELSE 2 END',
+                [PricingRule::CHANNEL_MOBILE, PricingRule::CHANNEL_ALL]
+            )
+            ->orderByDesc('priority')
+            ->orderByDesc('id')
             ->get();
     }
 
@@ -122,18 +126,23 @@ class MobilePricingMetadataService
                 $builder->whereNull('service_plan_id');
             });
 
+        $query->whereIn('pricing_channel', PricingRule::fallbackChannels(PricingRule::CHANNEL_MOBILE));
+
         if ($planId > 0) {
             $query->orderByRaw('CASE WHEN service_plan_id = ? THEN 0 ELSE 1 END', [$planId]);
         }
 
         return $query
-            ->orderBy('priority')
-            ->orderBy('id')
+            ->orderByRaw(
+                'CASE WHEN pricing_channel = ? THEN 0 WHEN pricing_channel = ? THEN 1 ELSE 2 END',
+                [PricingRule::CHANNEL_MOBILE, PricingRule::CHANNEL_ALL]
+            )
+            ->orderByDesc('priority')
+            ->orderByDesc('id')
             ->get();
     }
 
     /**
-     * @param  PricingRule|CustomerPricingRule  $rule
      * @return array<string, mixed>
      */
     protected function serializeRule(PricingRule|CustomerPricingRule $rule, ToolAction $action): array

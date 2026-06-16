@@ -17,8 +17,7 @@ final class FibCreateSubscriptionResponseData
         public readonly array $providerLinks,
         public readonly ?Carbon $validUntil,
         public readonly array $raw,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload

@@ -19,8 +19,7 @@ class CouponService
 {
     public function __construct(
         protected CouponLifecycleService $lifecycle,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array<string, mixed>

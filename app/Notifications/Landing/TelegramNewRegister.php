@@ -4,8 +4,8 @@ namespace App\Notifications\Landing;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
-use NotificationChannels\Telegram\TelegramChannel;
 use NotificationChannels\Telegram\Enums\ParseMode;
+use NotificationChannels\Telegram\TelegramChannel;
 use NotificationChannels\Telegram\TelegramMessage;
 
 class TelegramNewRegister extends Notification
@@ -13,7 +13,7 @@ class TelegramNewRegister extends Notification
     use Queueable;
 
     /**
-     * @param array<string, string> $payload
+     * @param  array<string, string>  $payload
      */
     public function __construct(
         protected array $payload,
@@ -28,7 +28,7 @@ class TelegramNewRegister extends Notification
     public function toTelegram($notifiable): TelegramMessage
     {
         $lines = array_filter([
-            '<b>' . $this->escapeTelegram((string) ($this->payload['title'] ?? 'New Register')) . '</b>',
+            '<b>'.$this->escapeTelegram((string) ($this->payload['title'] ?? 'New Register')).'</b>',
             // $this->formatLine('User ID', $this->payload['user_id'] ?? null),
             $this->formatLine('Name', $this->payload['name'] ?? null),
             $this->formatLine('Username', $this->payload['username'] ?? null),
@@ -69,7 +69,7 @@ class TelegramNewRegister extends Notification
             return null;
         }
 
-        return '<b>' . $this->escapeTelegram($label) . ':</b> ' . $this->escapeTelegram($value);
+        return '<b>'.$this->escapeTelegram($label).':</b> '.$this->escapeTelegram($value);
     }
 
     protected function escapeTelegram(string $value): string

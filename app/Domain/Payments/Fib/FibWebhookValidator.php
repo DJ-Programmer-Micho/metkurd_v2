@@ -2,6 +2,4 @@
 
 namespace App\Domain\Payments\Fib;
 
-class FibWebhookValidator extends FibOneTimeWebhookValidator
-{
-}
+class FibWebhookValidator extends FibOneTimeWebhookValidator {}

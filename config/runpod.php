@@ -2,7 +2,7 @@
 
 return [
     'base_url' => env('RUNPOD_BASE_URL', 'https://api.runpod.ai'),
-    'api_key'  => env('RUNPOD_API_KEY'),
+    'api_key' => env('RUNPOD_API_KEY'),
 
     // fallback endpoints (if tool.meta not set)
     'endpoints' => [

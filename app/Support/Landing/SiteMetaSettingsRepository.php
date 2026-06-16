@@ -10,6 +10,7 @@ use Illuminate\Support\Str;
 class SiteMetaSettingsRepository
 {
     protected const STORAGE_DIR = 'web-setting/site-meta';
+
     protected const PATH_VERSION_KEYS = [
         'meta.favicon_path' => 'meta.favicon_updated_at',
         'meta.app_icon_192_path' => 'meta.app_icon_192_updated_at',
@@ -18,13 +19,15 @@ class SiteMetaSettingsRepository
         'meta.og_image_path' => 'meta.og_image_updated_at',
         'meta.twitter_image_path' => 'meta.twitter_image_updated_at',
     ];
+
     /** @var array<string, mixed>|null */
     protected ?array $settingsCache = null;
+
     protected ?bool $hasTableCache = null;
 
     public function defaultMetaTitle(): string
     {
-        $fallback = trim(LandingContent::text('site.name') . ' | ' . LandingContent::text('site.tagline'));
+        $fallback = trim(LandingContent::text('site.name').' | '.LandingContent::text('site.tagline'));
 
         return $this->getString('meta.default_title', $fallback);
     }
@@ -162,7 +165,7 @@ class SiteMetaSettingsRepository
 
         $separator = str_contains($url, '?') ? '&' : '?';
 
-        return $url . $separator . 'v=' . $lastModified;
+        return $url.$separator.'v='.$lastModified;
     }
 
     /**
@@ -291,12 +294,12 @@ class SiteMetaSettingsRepository
         $extension = $extension !== '' ? $extension : 'png';
 
         $filename = $basename
-            . '-'
-            . now()->format('YmdHisv')
-            . '-'
-            . Str::lower(Str::random(6))
-            . '.'
-            . $extension;
+            .'-'
+            .now()->format('YmdHisv')
+            .'-'
+            .Str::lower(Str::random(6))
+            .'.'
+            .$extension;
         $storedPath = $uploadedFile->storeAs(self::STORAGE_DIR, $filename, $this->mediaStorage()->diskName());
 
         if (! is_string($storedPath) || trim($storedPath) === '') {
@@ -325,6 +328,7 @@ class SiteMetaSettingsRepository
 
         if (! $this->hasTable()) {
             $this->settingsCache = [];
+
             return $this->settingsCache;
         }
 

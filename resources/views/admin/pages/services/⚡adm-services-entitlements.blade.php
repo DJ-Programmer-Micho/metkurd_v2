@@ -24,7 +24,7 @@ class extends Component
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
                     <h4 class="mb-sm-0">{{ __('Plan Entitlements') }}</h4>
-                    <p class="text-muted mb-0">{{ __('Control which plans can access which tool actions, plus optional per-plan limits payloads.') }}</p>
+                    <p class="text-muted mb-0">{{ __('Control tool access per plan and per channel, while keeping Public API tool scopes aligned with plan API settings.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <a wire:navigate href="{{ route('admin.services.pricing', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-secondary">{{ __('View Pricing') }}</a>
@@ -110,6 +110,15 @@ class extends Component
                         <option value="blocked">{{ __('Blocked Only') }}</option>
                     </select>
                 </div>
+                <div class="col-xl-2 col-md-4">
+                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Channel') }}</label>
+                    <select class="form-select" wire:model.live="channelFilter">
+                        <option value="all">{{ __('All Channels') }}</option>
+                        <option value="app">{{ __('App') }}</option>
+                        <option value="api">{{ __('API') }}</option>
+                        <option value="mobile">{{ __('Mobile') }}</option>
+                    </select>
+                </div>
             </div>
         </div>
     </div>
@@ -128,6 +137,7 @@ class extends Component
                         <tr class="text-uppercase">
                             <th>{{ __('Plan') }}</th>
                             <th>{{ __('Tool Action') }}</th>
+                            <th>{{ __('Channel') }}</th>
                             <th>{{ __('Allowed') }}</th>
                             <th>{{ __('Limits') }}</th>
                             <th>{{ __('Updated') }}</th>
@@ -143,6 +153,11 @@ class extends Component
                                         <span class="fw-semibold">{{ $entitlement->toolAction?->name ?? __('Unknown Action') }}</span>
                                         <span class="text-muted small">{{ $entitlement->toolAction?->full_code ?? __('n/a') }}</span>
                                     </div>
+                                </td>
+                                <td>
+                                    <span class="badge {{ $this->channelBadgeClasses((string) ($entitlement->entitlement_channel ?? 'app')) }}">
+                                        {{ strtoupper((string) ($entitlement->entitlement_channel ?? 'app')) }}
+                                    </span>
                                 </td>
                                 <td><span class="badge {{ $this->statusBadgeClasses((bool) $entitlement->allowed) }}">{{ $entitlement->allowed ? __('Allowed') : __('Blocked') }}</span></td>
                                 <td>
@@ -163,7 +178,7 @@ class extends Component
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="text-center py-5 text-muted">{{ __('No entitlements matched the current filters.') }}</td>
+                                <td colspan="7" class="text-center py-5 text-muted">{{ __('No entitlements matched the current filters.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -207,13 +222,23 @@ class extends Component
                                 @error('entitlementToolActionId') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
+                                <label class="form-label">{{ __('Entitlement Channel') }}</label>
+                                <select class="form-select @error('entitlementChannel') is-invalid @enderror" wire:model.defer="entitlementChannel">
+                                    <option value="app">{{ __('App Dashboard') }}</option>
+                                    <option value="api">{{ __('Public API') }}</option>
+                                    <option value="mobile">{{ __('Mobile API') }}</option>
+                                </select>
+                                <div class="form-text">{{ __('API rows also align known Public API tool scopes on the plan record.') }}</div>
+                                @error('entitlementChannel') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-4">
                                 <label class="form-label">{{ __('Access') }}</label>
                                 <select class="form-select" wire:model.defer="entitlementAllowed">
                                     <option value="allowed">{{ __('Allowed') }}</option>
                                     <option value="blocked">{{ __('Blocked') }}</option>
                                 </select>
                             </div>
-                            <div class="col-md-8">
+                            <div class="col-md-12">
                                 <label class="form-label">{{ __('Limits JSON') }}</label>
                                 <textarea class="form-control font-monospace @error('entitlementLimitsJson') is-invalid @enderror" rows="4" wire:model.defer="entitlementLimitsJson"></textarea>
                                 @error('entitlementLimitsJson') <div class="invalid-feedback">{{ $message }}</div> @enderror

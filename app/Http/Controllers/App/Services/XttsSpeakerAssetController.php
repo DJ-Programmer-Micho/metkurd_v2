@@ -25,7 +25,7 @@ class XttsSpeakerAssetController extends Controller
                 return redirect()->away($target);
             }
 
-            if (!Storage::disk('s3')->exists($target)) {
+            if (! Storage::disk('s3')->exists($target)) {
                 continue;
             }
 
@@ -33,7 +33,7 @@ class XttsSpeakerAssetController extends Controller
             $filename = basename($target);
 
             if ($filename === '' || $filename === '.' || $filename === DIRECTORY_SEPARATOR) {
-                $filename = $voiceCode . match ($mime) {
+                $filename = $voiceCode.match ($mime) {
                     'audio/mpeg' => '.mp3',
                     'audio/mp4' => '.m4a',
                     'audio/aac' => '.aac',
@@ -62,7 +62,7 @@ class XttsSpeakerAssetController extends Controller
             return redirect()->away($target);
         }
 
-        if (!Storage::disk('s3')->exists($target)) {
+        if (! Storage::disk('s3')->exists($target)) {
             $target = $this->defaultAvatarPath;
         }
 
@@ -81,7 +81,7 @@ class XttsSpeakerAssetController extends Controller
         abort_unless(auth('app')->check(), 404);
 
         return cache()->remember(
-            $this->voiceAssetCachePrefix . $voiceCode,
+            $this->voiceAssetCachePrefix.$voiceCode,
             now()->addMinutes(15),
             function () use ($voiceCode): array {
                 return Voice::query()
@@ -159,7 +159,7 @@ class XttsSpeakerAssetController extends Controller
         }
 
         return array_map(
-            static fn (string $extension) => $normalizedPath . '.' . $extension,
+            static fn (string $extension) => $normalizedPath.'.'.$extension,
             ['mp3', 'm4a', 'wav']
         );
     }
@@ -170,11 +170,11 @@ class XttsSpeakerAssetController extends Controller
             return $path;
         }
 
-        if (Str::startsWith($path, $this->previewFolder . '/')) {
-            return 'metkurd_audio_data/' . $path;
+        if (Str::startsWith($path, $this->previewFolder.'/')) {
+            return 'metkurd_audio_data/'.$path;
         }
 
-        return 'metkurd_audio_data/' . $this->previewFolder . '/' . $path;
+        return 'metkurd_audio_data/'.$this->previewFolder.'/'.$path;
     }
 
     protected function avatarTarget(array $voice): ?string
@@ -193,7 +193,7 @@ class XttsSpeakerAssetController extends Controller
             return $avatar;
         }
 
-        return 'metkurd_audio_data/' . $avatar;
+        return 'metkurd_audio_data/'.$avatar;
     }
 
     protected function respondFromDisk(Request $request, string $path, string $mime, string $filename)
@@ -201,10 +201,10 @@ class XttsSpeakerAssetController extends Controller
         $disk = Storage::disk('s3');
         $cacheControl = 'private, max-age=600, stale-while-revalidate=60';
 
-        if (!$request->boolean('proxy') && method_exists($disk, 'temporaryUrl')) {
+        if (! $request->boolean('proxy') && method_exists($disk, 'temporaryUrl')) {
             $url = $disk->temporaryUrl($path, now()->addMinutes(20), [
                 'ResponseContentType' => $mime,
-                'ResponseContentDisposition' => 'inline; filename="' . $filename . '"',
+                'ResponseContentDisposition' => 'inline; filename="'.$filename.'"',
                 'ResponseCacheControl' => $cacheControl,
             ]);
 
@@ -216,7 +216,7 @@ class XttsSpeakerAssetController extends Controller
 
         $headers = [
             'Content-Type' => $mime,
-            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
             'Cache-Control' => $cacheControl,
             'Accept-Ranges' => 'bytes',
         ];

@@ -14,8 +14,7 @@ class MobileFilesController extends MobileApiController
     public function __construct(
         protected MobileUploadService $uploads,
         protected CustomerOutputStorage $storage,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request, string $app)
     {

@@ -27,7 +27,7 @@ class FibDebugConfig extends Command
             $summary = $this->config->debugSummary($profile);
 
             $this->newLine();
-            $this->info(strtoupper($profile) . ' PROFILE');
+            $this->info(strtoupper($profile).' PROFILE');
             $this->table(['Key', 'Value'], [
                 ['environment', $summary['environment']],
                 ['config_cached', $summary['config_cached'] ? 'yes' : 'no'],
@@ -100,17 +100,17 @@ class FibDebugConfig extends Command
 
         $tokenPayload = $tokenResponse->json() ?? ['body' => $tokenResponse->body()];
 
-        $this->line('  - token_status: ' . $tokenResponse->status());
+        $this->line('  - token_status: '.$tokenResponse->status());
 
         if (! $tokenResponse->successful()) {
-            $this->line('  - token_error: ' . $this->stringifyPayload($tokenPayload));
+            $this->line('  - token_error: '.$this->stringifyPayload($tokenPayload));
 
             return;
         }
 
         $token = (string) ($tokenPayload['access_token'] ?? '');
         $issuer = $this->jwtIssuer($token);
-        $this->line('  - token_issuer: ' . ($issuer ?? 'n/a'));
+        $this->line('  - token_issuer: '.($issuer ?? 'n/a'));
 
         [$probePath, $idKey] = $profile === 'subscription'
             ? ['subscription_status', 'subscriptionId']
@@ -123,8 +123,8 @@ class FibDebugConfig extends Command
             ->timeout((int) config('fib.http.timeout', 15))
             ->get($this->config->path($probePath, [$idKey => 'not-a-real-id']));
 
-        $this->line('  - protected_status: ' . $probeResponse->status());
-        $this->line('  - protected_body: ' . $this->stringifyPayload($probeResponse->json() ?? ['body' => $probeResponse->body()]));
+        $this->line('  - protected_status: '.$probeResponse->status());
+        $this->line('  - protected_body: '.$this->stringifyPayload($probeResponse->json() ?? ['body' => $probeResponse->body()]));
     }
 
     /**

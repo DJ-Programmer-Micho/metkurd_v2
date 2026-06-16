@@ -8,8 +8,7 @@ class CancelFibPayment
 {
     public function __construct(
         protected CancelFibCheckout $cancel,
-    ) {
-    }
+    ) {}
 
     public function handle(Payment $payment, string $source = 'manual_cancel'): Payment
     {

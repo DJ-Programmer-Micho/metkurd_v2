@@ -33,28 +33,47 @@ trait ManagesServiceVoicesPage
     public array $expandedVoices = [];
 
     public ?int $editingVoiceId = null;
+
     public string $voiceCode = '';
+
     public string $voiceName = '';
+
     public string $voiceEngine = '';
+
     public string $voiceGender = '';
+
     public string $voiceNotes = '';
+
     public int $voiceSortOrder = 0;
+
     public string $voiceVisibility = 'public';
+
     public string $voiceStatus = 'active';
+
     public string $voiceMetaJson = '';
 
     public ?int $editingAccessId = null;
+
     public ?int $accessPlanId = null;
+
     public ?int $accessVoiceId = null;
+
     public string $accessVisibility = 'public';
+
     public string $accessStatus = 'active';
+
     public int $accessSortOrder = 0;
+
     public string $accessNotes = '';
+
     public string $accessMetaJson = '';
 
     public ?int $voiceIdPendingDelete = null;
+
     public ?int $accessIdPendingDelete = null;
+
     public string $deleteTarget = '';
+
     public string $deleteLabel = '';
 
     public function updatingSearch(): void
@@ -239,7 +258,7 @@ trait ManagesServiceVoicesPage
             'voiceMetaJson' => ['nullable', 'string'],
         ];
 
-        if (!$this->editingVoiceId) {
+        if (! $this->editingVoiceId) {
             $rules['voiceCode'] = ['required', 'string', 'max:60', 'regex:/^[a-z0-9_]+$/', Rule::unique('voices', 'code')];
         }
 
@@ -247,7 +266,7 @@ trait ManagesServiceVoicesPage
 
         $voice = $this->editingVoiceId
             ? Voice::query()->findOrFail($this->editingVoiceId)
-            : new Voice();
+            : new Voice;
 
         $meta = $this->decodeJsonField($this->voiceMetaJson, 'voiceMetaJson');
         $meta['engine'] = $this->emptyToNull($this->voiceEngine);
@@ -274,7 +293,7 @@ trait ManagesServiceVoicesPage
     public function toggleVoiceStatus(int $voiceId): void
     {
         $voice = Voice::query()->findOrFail($voiceId);
-        $voice->update(['is_active' => !$voice->is_active]);
+        $voice->update(['is_active' => ! $voice->is_active]);
         $this->dispatch('alert', type: 'success', message: $voice->is_active ? __('Voice activated.') : __('Voice moved to maintenance.'));
     }
 
@@ -334,7 +353,7 @@ trait ManagesServiceVoicesPage
 
         $access = $this->editingAccessId
             ? PlanVoiceAccess::query()->findOrFail($this->editingAccessId)
-            : new PlanVoiceAccess();
+            : new PlanVoiceAccess;
 
         $access->fill([
             'service_plan_id' => $this->accessPlanId,
@@ -355,7 +374,7 @@ trait ManagesServiceVoicesPage
     public function toggleAccessStatus(int $accessId): void
     {
         $access = PlanVoiceAccess::query()->findOrFail($accessId);
-        $access->update(['is_active' => !$access->is_active]);
+        $access->update(['is_active' => ! $access->is_active]);
         $this->dispatch('alert', type: 'success', message: $access->is_active ? __('Plan access activated.') : __('Plan access moved to maintenance.'));
     }
 
@@ -375,7 +394,7 @@ trait ManagesServiceVoicesPage
         $this->accessIdPendingDelete = $access->id;
         $this->voiceIdPendingDelete = null;
         $this->deleteTarget = 'access';
-        $this->deleteLabel = ($access->servicePlan?->name ?? __('Plan')) . ' / ' . ($access->voice?->name ?? __('Voice'));
+        $this->deleteLabel = ($access->servicePlan?->name ?? __('Plan')).' / '.($access->voice?->name ?? __('Voice'));
         $this->dispatch('services-voices:modal-show', id: 'serviceVoiceDeleteModal');
     }
 
@@ -451,7 +470,7 @@ trait ManagesServiceVoicesPage
 
         $decoded = json_decode($raw, true);
 
-        if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
             throw ValidationException::withMessages([
                 $field => __('Please enter a valid JSON object.'),
             ]);

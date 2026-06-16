@@ -16,7 +16,7 @@ class FibSubscriptionMapper
         }
 
         if ($this->isPaidLifecycleStatus($normalized)) {
-            return $this->hasConfirmedPayment($status)
+            return $this->hasConfirmedPaymentEvidence($status)
                 ? PaymentStatus::PAID
                 : PaymentStatus::AWAITING_CUSTOMER_ACTION;
         }
@@ -37,7 +37,7 @@ class FibSubscriptionMapper
             return PaymentStatus::FAILED;
         }
 
-        if ($this->hasConfirmedPayment($status)) {
+        if ($this->hasConfirmedPaymentEvidence($status)) {
             return PaymentStatus::PAID;
         }
 
@@ -51,40 +51,83 @@ class FibSubscriptionMapper
         return $status === '' ? null : strtoupper($status);
     }
 
-    protected function hasConfirmedPayment(FibSubscriptionStatusData $status): bool
+    public function hasConfirmedPaymentEvidence(FibSubscriptionStatusData $status, ?array ...$payloads): bool
     {
         if ($status->lastPaymentAt !== null) {
             return true;
         }
 
-        if ($this->hasPositivePaidFlagFromRaw($status)) {
+        if ($this->paidStatusFromPayload($status->raw) !== null) {
             return true;
+        }
+
+        if ($this->hasPositivePaidFlagFromPayload($status->raw)) {
+            return true;
+        }
+
+        foreach ($payloads as $payload) {
+            if (! is_array($payload) || $payload === []) {
+                continue;
+            }
+
+            if ($this->paidStatusFromPayload($payload) !== null) {
+                return true;
+            }
+
+            if ($this->hasPositivePaidFlagFromPayload($payload)) {
+                return true;
+            }
         }
 
         return false;
     }
 
-    protected function isExplicitlyPaidStatus(string $status): bool
+    public function explicitPaidStatusFromPayloads(FibSubscriptionStatusData $status, ?array ...$payloads): ?string
     {
-        return in_array($status, ['PAID', 'APPROVED', 'CONFIRMED', 'CAPTURED', 'SETTLED', 'SUCCESS'], true);
+        $statusValue = $this->paidStatusFromPayload($status->raw);
+
+        if ($statusValue !== null) {
+            return $statusValue;
+        }
+
+        foreach ($payloads as $payload) {
+            if (! is_array($payload) || $payload === []) {
+                continue;
+            }
+
+            $statusValue = $this->paidStatusFromPayload($payload);
+
+            if ($statusValue !== null) {
+                return $statusValue;
+            }
+        }
+
+        return null;
     }
 
-    protected function isPaidLifecycleStatus(string $status): bool
+    public function isPaidLifecycleStatusValue(?string $status): bool
     {
-        return in_array($status, ['ACTIVE', 'SUBSCRIBED'], true);
+        $normalized = $this->normalizeStatus($status);
+
+        return $normalized !== null && $this->isPaidLifecycleStatus($normalized);
     }
 
-    protected function hasPositivePaidFlagFromRaw(FibSubscriptionStatusData $status): bool
+    protected function hasConfirmedPayment(FibSubscriptionStatusData $status): bool
     {
-        $raw = $status->raw;
+        return $this->hasConfirmedPaymentEvidence($status);
+    }
 
+    protected function hasPositivePaidFlagFromPayload(array $payload): bool
+    {
         foreach ([
-            data_get($raw, 'isPaid'),
-            data_get($raw, 'paid'),
-            data_get($raw, 'paymentCompleted'),
-            data_get($raw, 'isPaymentCompleted'),
-            data_get($raw, 'latestPayment.isPaid'),
-            data_get($raw, 'latestPayment.paid'),
+            data_get($payload, 'isPaid'),
+            data_get($payload, 'paid'),
+            data_get($payload, 'paymentCompleted'),
+            data_get($payload, 'isPaymentCompleted'),
+            data_get($payload, 'latestPayment.isPaid'),
+            data_get($payload, 'latestPayment.paid'),
+            data_get($payload, 'payment.isPaid'),
+            data_get($payload, 'payment.paid'),
         ] as $flag) {
             if (is_bool($flag) && $flag) {
                 return true;
@@ -92,6 +135,34 @@ class FibSubscriptionMapper
         }
 
         return false;
+    }
+
+    protected function paidStatusFromPayload(array $payload): ?string
+    {
+        foreach ([
+            data_get($payload, 'paymentStatus'),
+            data_get($payload, 'payment.status'),
+            data_get($payload, 'latestPayment.status'),
+            data_get($payload, 'latestPayment.paymentStatus'),
+            data_get($payload, 'subscription.paymentStatus'),
+        ] as $candidate) {
+            $normalized = $this->normalizeStatus(is_scalar($candidate) ? (string) $candidate : null);
+
+            if ($normalized !== null && $this->isExplicitlyPaidStatus($normalized)) {
+                return $normalized;
+            }
+        }
+
+        return null;
+    }
+
+    protected function hasPositivePaidFlagFromRaw(FibSubscriptionStatusData $status): bool
+    {
+        if ($this->paidStatusFromPayload($status->raw) !== null) {
+            return true;
+        }
+
+        return $this->hasPositivePaidFlagFromPayload($status->raw);
     }
 
     protected function hasNonZeroTrialPeriod(?string $trialPeriod): bool
@@ -109,6 +180,16 @@ class FibSubscriptionMapper
     {
         return str_contains($status, 'UNPAID')
             || in_array($status, ['PENDING', 'CREATED', 'INITIATED', 'PROCESSING'], true);
+    }
+
+    protected function isExplicitlyPaidStatus(string $status): bool
+    {
+        return in_array($status, ['PAID', 'APPROVED', 'CONFIRMED', 'CAPTURED', 'SETTLED', 'SUCCESS'], true);
+    }
+
+    protected function isPaidLifecycleStatus(string $status): bool
+    {
+        return in_array($status, ['ACTIVE', 'SUBSCRIBED'], true);
     }
 
     protected function isCanceledStatus(string $status): bool

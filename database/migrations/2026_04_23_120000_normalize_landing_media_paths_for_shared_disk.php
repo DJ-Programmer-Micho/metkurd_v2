@@ -147,8 +147,8 @@ return new class extends Migration
     {
         $appUrl = rtrim((string) config('app.url', ''), '/');
 
-        if ($appUrl !== '' && Str::startsWith($url, $appUrl . '/storage/')) {
-            return trim((string) Str::after($url, $appUrl . '/storage/'));
+        if ($appUrl !== '' && Str::startsWith($url, $appUrl.'/storage/')) {
+            return trim((string) Str::after($url, $appUrl.'/storage/'));
         }
 
         $urlHost = parse_url($url, PHP_URL_HOST);

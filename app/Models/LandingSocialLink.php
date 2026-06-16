@@ -20,4 +20,3 @@ class LandingSocialLink extends Model
         'meta' => 'array',
     ];
 }
-

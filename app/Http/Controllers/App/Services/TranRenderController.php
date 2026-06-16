@@ -23,7 +23,7 @@ class TranRenderController extends Controller
             ])
             ->where('id', $jobId)
             ->where('customer_id', auth('app')->id())
-            ->when(!empty($toolIds), fn ($query) => $query->whereIn('tool_id', $toolIds))
+            ->when(! empty($toolIds), fn ($query) => $query->whereIn('tool_id', $toolIds))
             ->where('status', 'done')
             ->firstOrFail();
 

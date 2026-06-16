@@ -24,6 +24,7 @@ class SyncProviderSubscriptionLifecycle
         protected PaymentEventRecorder $events,
         protected CouponLifecycleService $couponLifecycle,
         protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
+        protected CreditService $credits,
     ) {}
 
     public function handle(Payment $payment, string $source = 'provider_status_sync'): void
@@ -95,6 +96,7 @@ class SyncProviderSubscriptionLifecycle
         ));
         $periodEndsAt = $this->resolvePeriodEnd($payment, (array) ($subscription->meta ?? []), $billingCycle);
         $renewalDetected = $this->renewalDetected($subscription, $payment);
+        $renewalCycleKey = $this->renewalCycleKey($payment);
         $shouldAutoRenew = $this->shouldAutoRenew($providerStatus);
         $shouldEndNow = $this->shouldEndNow($providerStatus, $periodEndsAt);
         $wasAutoRenewing = (bool) ($subscription->auto_renew ?? false);
@@ -114,6 +116,8 @@ class SyncProviderSubscriptionLifecycle
         $meta['provider_lifecycle_synced_at'] = now()->toIso8601String();
         $meta['provider_lifecycle_sync_source'] = $source;
         $meta['discount_cycles_consumed'] = $discountCyclesConsumed;
+        $renewalApplied = false;
+        $renewalAlreadyApplied = false;
         $cancelSource = $this->resolveCancelSource(
             $subscription,
             $payment,
@@ -150,11 +154,33 @@ class SyncProviderSubscriptionLifecycle
             'period_ends_at' => $periodEndsAt?->toIso8601String(),
             'provider_status' => $providerStatus,
             'provider_last_payment_at' => $payment->last_payment_at?->toIso8601String(),
+            'provider_cycle_key' => $renewalCycleKey,
             'cancel_source' => $cancelSource,
             'synced_at' => now()->toIso8601String(),
             'sync_source' => $source,
         ], static fn (mixed $value): bool => $value !== null && $value !== '');
         $payment->forceFill(['meta' => $paymentMeta])->save();
+
+        if ($renewalDetected
+            && $subscription instanceof CustomerServiceSubscription
+            && $payment->last_payment_at instanceof CarbonInterface
+            && $renewalCycleKey !== null) {
+            $renewalResult = $this->credits->applyProviderRenewalCycle($subscription, [
+                'provider_cycle_key' => $renewalCycleKey,
+                'provider_last_payment_at' => $payment->last_payment_at->toIso8601String(),
+                'billing_cycle' => $billingCycle,
+                'cycle_started_at' => $payment->last_payment_at,
+                'cycle_ends_at' => $periodEndsAt,
+                'source' => $source,
+                'source_type' => 'subscription_refill',
+                'payment_id' => $payment->id,
+                'provider_reference' => $payment->providerReference(),
+            ]);
+
+            $renewalApplied = (bool) ($renewalResult['applied'] ?? false);
+            $renewalAlreadyApplied = (bool) ($renewalResult['already_applied'] ?? false);
+            $subscription = $subscription->fresh() ?? $subscription;
+        }
 
         if ($renewalDetected) {
             $renewalEvent = $this->events->record($payment, [
@@ -175,6 +201,9 @@ class SyncProviderSubscriptionLifecycle
                     'previous_provider_status' => $previousProviderStatus !== '' ? $previousProviderStatus : null,
                     'previous_period_ends_at' => $previousPeriodEndsAt,
                     'period_ends_at' => $periodEndsAt?->toIso8601String(),
+                    'provider_cycle_key' => $renewalCycleKey,
+                    'renewal_applied' => $renewalApplied,
+                    'renewal_already_applied' => $renewalAlreadyApplied,
                     'sync_source' => $source,
                 ],
             ]);
@@ -189,6 +218,8 @@ class SyncProviderSubscriptionLifecycle
                     'Previous period end' => $this->valueOrDash($previousPeriodEndsAt),
                     'New period end' => $this->valueOrDash($periodEndsAt?->toIso8601String()),
                     'Last payment at' => $this->valueOrDash($payment->last_payment_at?->toIso8601String()),
+                    'Renewal cycle key' => $this->valueOrDash($renewalCycleKey),
+                    'Renewal applied' => $renewalApplied ? 'yes' : ($renewalAlreadyApplied ? 'already applied' : 'no'),
                     'Sync source' => $source,
                 ],
             );
@@ -286,6 +317,11 @@ class SyncProviderSubscriptionLifecycle
         } catch (\Throwable) {
             return true;
         }
+    }
+
+    protected function renewalCycleKey(Payment $payment): ?string
+    {
+        return $payment->providerRecurringCycleKey();
     }
 
     protected function resolvePeriodEnd(Payment $payment, array $subscriptionMeta, string $billingCycle): ?CarbonInterface

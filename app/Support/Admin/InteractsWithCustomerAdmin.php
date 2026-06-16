@@ -56,6 +56,7 @@ trait InteractsWithCustomerAdmin
             'profile:id,customer_id,first_name,last_name,job_title,brand_name,country,city,address,zip_code,phone_number,avatar',
             'usage:id,customer_id,storage_used_bytes,jobs_total,jobs_succeeded,jobs_failed',
             'wallet:id,customer_id,balance_credits,subscription_balance_credits,addon_balance_credits,lifetime_earned,lifetime_spent,lifetime_refunded,cycle_started_on,cycle_ends_on,last_granted_at,last_charged_at',
+            'apiWallet:id,customer_id,balance_credits,subscription_balance_credits,addon_balance_credits,lifetime_earned,lifetime_spent,lifetime_refunded,cycle_started_on,cycle_ends_on,last_granted_at,last_charged_at',
             'servicePlan' => fn ($planQuery) => $planQuery->select('service_plans.id', 'service_plans.code', 'service_plans.name'),
             'activeServiceSubscription' => fn ($subscriptionQuery) => $subscriptionQuery->select(
                 'customer_service_subscriptions.id',
@@ -165,6 +166,10 @@ trait InteractsWithCustomerAdmin
     {
         $query->where('status', 'paid');
 
+        if (method_exists($query->getModel(), 'scopeRevenueIncluded')) {
+            $query->revenueIncluded();
+        }
+
         if ($windowStart) {
             $query->where('created_at', '>=', $windowStart);
         }
@@ -264,7 +269,7 @@ trait InteractsWithCustomerAdmin
     {
         $windowStart = $this->windowStartFromFilter($joinedFilter);
 
-        if (!$windowStart) {
+        if (! $windowStart) {
             return $query;
         }
 
@@ -308,9 +313,26 @@ trait InteractsWithCustomerAdmin
     {
         $firstName = trim((string) data_get($customer, 'profile.first_name', ''));
         $lastName = trim((string) data_get($customer, 'profile.last_name', ''));
-        $fullName = trim($firstName . ' ' . $lastName);
+        $fullName = trim($firstName.' '.$lastName);
 
         return $fullName !== '' ? $fullName : (string) ($customer->username ?? __('Customer'));
+    }
+
+    public function customerIdentityLabel($customer): string
+    {
+        $displayName = $this->customerDisplayName($customer);
+        $email = trim((string) ($customer->email ?? ''));
+        $username = trim((string) ($customer->username ?? ''));
+
+        if ($email !== '') {
+            return sprintf('%s (%s)', $displayName, $email);
+        }
+
+        if ($username !== '') {
+            return sprintf('%s (@%s)', $displayName, $username);
+        }
+
+        return $displayName;
     }
 
     public function customerLocation($customer): string
@@ -363,7 +385,7 @@ trait InteractsWithCustomerAdmin
 
     public function formatMoney($value): string
     {
-        return '$' . number_format((float) ($value ?? 0), 2);
+        return '$'.number_format((float) ($value ?? 0), 2);
     }
 
     public function formatBytes($bytes): string
@@ -371,7 +393,7 @@ trait InteractsWithCustomerAdmin
         $value = max(0, (int) ($bytes ?? 0));
 
         if ($value < 1024) {
-            return $value . ' B';
+            return $value.' B';
         }
 
         $units = ['KB', 'MB', 'GB', 'TB'];
@@ -379,12 +401,12 @@ trait InteractsWithCustomerAdmin
 
         foreach ($units as $unit) {
             if ($size < 1024 || $unit === 'TB') {
-                return number_format($size, $size >= 100 ? 0 : 1) . ' ' . $unit;
+                return number_format($size, $size >= 100 ? 0 : 1).' '.$unit;
             }
 
             $size /= 1024;
         }
 
-        return number_format($size, 1) . ' TB';
+        return number_format($size, 1).' TB';
     }
 }

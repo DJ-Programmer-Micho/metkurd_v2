@@ -2,13 +2,13 @@
 
 namespace App\Services\Billing;
 
-use App\Models\Customer;
-use App\Models\CustomerUsage;
 use App\Models\CreditLedger;
 use App\Models\CreditMonthlyGrant;
 use App\Models\CreditWallet;
+use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
+use App\Models\CustomerUsage;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
 use Illuminate\Support\Facades\DB;
@@ -101,20 +101,19 @@ class CustomerOnboardingService
             );
 
             $wallet = CreditWallet::firstOrCreate(
-                ['customer_id' => $customer->id],
                 [
-                    'balance_credits' => 0,
-                    'subscription_balance_credits' => 0,
-                    'addon_balance_credits' => 0,
-                    'lifetime_earned' => 0,
-                    'lifetime_spent' => 0,
-                    'lifetime_refunded' => 0,
-                    'cycle_started_on' => $registeredAt->copy()->startOfMonth()->toDateString(),
-                    'cycle_ends_on' => $registeredAt->copy()->endOfMonth()->toDateString(),
-                    'current_cycle_key' => $registeredAt->format('Y-m'),
-                    'last_granted_at' => null,
-                    'last_charged_at' => null,
-                ]
+                    'customer_id' => $customer->id,
+                    'wallet_type' => CreditWallet::TYPE_APP,
+                ],
+                CreditWallet::defaultAttributes((int) $customer->id, CreditWallet::TYPE_APP, $registeredAt)
+            );
+
+            $apiWallet = CreditWallet::firstOrCreate(
+                [
+                    'customer_id' => $customer->id,
+                    'wallet_type' => CreditWallet::TYPE_API,
+                ],
+                CreditWallet::defaultAttributes((int) $customer->id, CreditWallet::TYPE_API, $registeredAt)
             );
 
             $yearMonth = $registeredAt->format('Y-m');
@@ -128,7 +127,8 @@ class CustomerOnboardingService
                 return;
             }
 
-            $grant = (int) $servicePlan->monthly_credits;
+            $grant = (int) $servicePlan->appMonthlyCredits();
+            $apiGrant = (int) $servicePlan->apiMonthlyCredits();
 
             $monthlyGrant = CreditMonthlyGrant::create([
                 'customer_id' => $customer->id,
@@ -139,11 +139,14 @@ class CustomerOnboardingService
                 'granted_at' => $registeredAt,
                 'meta' => [
                     'plan_code' => $servicePlan->code,
+                    'app_granted_credits' => $grant,
+                    'api_granted_credits' => $apiGrant,
                 ],
             ]);
 
+            $appBalanceBefore = (int) ($wallet->balance_credits ?? 0);
             $wallet->subscription_balance_credits = (int) $wallet->subscription_balance_credits + $grant;
-            $wallet->balance_credits = (int) $wallet->subscription_balance_credits + (int) $wallet->addon_balance_credits;
+            $wallet->syncCombinedBalance();
             $wallet->lifetime_earned = (int) $wallet->lifetime_earned + $grant;
             $wallet->cycle_started_on = $registeredAt->copy()->startOfMonth()->toDateString();
             $wallet->cycle_ends_on = $registeredAt->copy()->endOfMonth()->toDateString();
@@ -151,24 +154,74 @@ class CustomerOnboardingService
             $wallet->last_granted_at = $registeredAt;
             $wallet->save();
 
+            $apiBalanceBefore = (int) ($apiWallet->balance_credits ?? 0);
+
+            if ($apiGrant > 0) {
+                $apiWallet->subscription_balance_credits = (int) $apiWallet->subscription_balance_credits + $apiGrant;
+                $apiWallet->syncCombinedBalance();
+                $apiWallet->lifetime_earned = (int) $apiWallet->lifetime_earned + $apiGrant;
+                $apiWallet->cycle_started_on = $registeredAt->copy()->startOfMonth()->toDateString();
+                $apiWallet->cycle_ends_on = $registeredAt->copy()->endOfMonth()->toDateString();
+                $apiWallet->current_cycle_key = $yearMonth;
+                $apiWallet->last_granted_at = $registeredAt;
+                $apiWallet->save();
+            }
+
             CreditLedger::create([
                 'customer_id' => $customer->id,
+                'wallet_type' => CreditWallet::TYPE_APP,
                 'type' => 'monthly_grant',
+                'source_type' => 'subscription_refill',
+                'direction' => 'credit',
+                'amount' => $grant,
                 'bucket' => 'subscription',
                 'credits_delta' => $grant, // positive credit
+                'balance_before' => $appBalanceBefore,
                 'balance_after' => (int) $wallet->balance_credits,
                 'subscription_balance_after' => (int) $wallet->subscription_balance_credits,
                 'addon_balance_after' => (int) $wallet->addon_balance_credits,
                 'related_type' => CreditMonthlyGrant::class,
                 'related_id' => (string) $monthlyGrant->id,
-                'reference_code' => 'monthly_grant:' . $customer->id . ':' . $yearMonth,
+                'source_id' => (string) $monthlyGrant->id,
+                'reference_code' => 'monthly_grant:'.$customer->id.':'.$yearMonth,
                 'meta' => [
                     'plan_code' => $servicePlan->code,
                     'year_month' => $yearMonth,
                     'subscription_id' => $serviceSubscription->id,
+                    'app_granted_credits' => $grant,
+                    'api_granted_credits' => $apiGrant,
                 ],
                 'created_at' => $registeredAt,
             ]);
+
+            if ($apiGrant > 0) {
+                CreditLedger::create([
+                    'customer_id' => $customer->id,
+                    'wallet_type' => CreditWallet::TYPE_API,
+                    'type' => 'monthly_grant',
+                    'source_type' => 'subscription_refill',
+                    'source_id' => (string) $monthlyGrant->id,
+                    'direction' => 'credit',
+                    'amount' => $apiGrant,
+                    'bucket' => 'subscription',
+                    'credits_delta' => $apiGrant,
+                    'balance_before' => $apiBalanceBefore,
+                    'balance_after' => (int) $apiWallet->balance_credits,
+                    'subscription_balance_after' => (int) $apiWallet->subscription_balance_credits,
+                    'addon_balance_after' => (int) $apiWallet->addon_balance_credits,
+                    'related_type' => CreditMonthlyGrant::class,
+                    'related_id' => (string) $monthlyGrant->id,
+                    'reference_code' => 'monthly_grant:api:'.$customer->id.':'.$yearMonth,
+                    'meta' => [
+                        'plan_code' => $servicePlan->code,
+                        'year_month' => $yearMonth,
+                        'subscription_id' => $serviceSubscription->id,
+                        'app_granted_credits' => $grant,
+                        'api_granted_credits' => $apiGrant,
+                    ],
+                    'created_at' => $registeredAt,
+                ]);
+            }
         });
     }
 

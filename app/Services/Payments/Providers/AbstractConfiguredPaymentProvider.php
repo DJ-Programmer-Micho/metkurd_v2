@@ -112,7 +112,7 @@ abstract class AbstractConfiguredPaymentProvider implements PaymentProviderInter
      */
     protected function config(): array
     {
-        return (array) config('payments.providers.' . $this->driver(), []);
+        return (array) config('payments.providers.'.$this->driver(), []);
     }
 
     /**

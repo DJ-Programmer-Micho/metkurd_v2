@@ -16,9 +16,7 @@ class VerifyRegisterMail extends Mailable
     public function __construct(
         public string $otpCode,
         public int $expiresMinutes = 5
-    )
-    {
-    }
+    ) {}
 
     public function build()
     {

@@ -42,8 +42,8 @@ class AsrJobSyncService
         $st = $runpod->status($endpointId, $providerJobId);
 
         $rawStatus = strtoupper((string) data_get($st, 'status', ''));
-        $output    = data_get($st, 'output');
-        $errMsg    = (string) (data_get($st, 'error') ?: data_get($output, 'error') ?: '');
+        $output = data_get($st, 'output');
+        $errMsg = (string) (data_get($st, 'error') ?: data_get($output, 'error') ?: '');
 
         $text = $this->extractTranscriptionText($st);
         $chunks = $this->extractChunks($st);
@@ -51,10 +51,10 @@ class AsrJobSyncService
 
         $mapped = match ($rawStatus) {
             'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 'queued',
-            'IN_PROGRESS', 'RUNNING'            => 'running',
-            'COMPLETED', 'SUCCESS'              => ($text !== '' ? 'saving' : 'failed'),
-            'FAILED', 'CANCELLED', 'TIMED_OUT'  => 'failed',
-            default                             => 'running',
+            'IN_PROGRESS', 'RUNNING' => 'running',
+            'COMPLETED', 'SUCCESS' => ($text !== '' ? 'saving' : 'failed'),
+            'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
+            default => 'running',
         };
 
         $this->locks->refreshLock((string) $job->id, 60);
@@ -74,7 +74,7 @@ class AsrJobSyncService
         }
 
         MlJob::query()->where('id', $job->id)->update([
-            'status'     => $mapped,
+            'status' => $mapped,
             'updated_at' => now(),
         ]);
 
@@ -93,7 +93,7 @@ class AsrJobSyncService
         return DB::transaction(function () use ($job, $tool, $transcriptionText, $chunks, $providerPayload) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
-            if (!$fresh) {
+            if (! $fresh) {
                 throw new \RuntimeException('ASR Job not found during finalize.');
             }
 
@@ -101,19 +101,17 @@ class AsrJobSyncService
                 return $this->payload($fresh, 100);
             }
 
-            $base   = $this->storage->renderBaseDir($fresh, 'wasr');
+            $base = $this->storage->renderBaseDir($fresh, 'wasr');
             $txtKey = "{$base}/transcription.txt";
 
             $savedTxt = $this->storage->saveTextToS3(
                 (int) $fresh->customer_id,
                 $txtKey,
                 $transcriptionText,
-                [
-                    'job_id'  => (string) $fresh->id,
-                    'tool'    => (string) ($tool->code ?: 'wasr'),
-                    'purpose' => 'transcription',
-                    'mime'    => 'text/plain; charset=UTF-8',
-                ]
+                array_merge(
+                    $this->storage->apiOutputMeta($fresh, (string) ($tool->code ?: 'wasr'), 'transcription'),
+                    ['mime' => 'text/plain; charset=UTF-8']
+                )
             );
 
             $charCount = mb_strlen($transcriptionText);
@@ -122,12 +120,12 @@ class AsrJobSyncService
 
             $fresh->status = 'done';
             $fresh->output = [
-                'disk'       => $savedTxt['disk'],
-                'path'       => $savedTxt['path'],
-                'bytes'      => $savedTxt['bytes'],
-                'mime'       => $savedTxt['mime'],
-                'text'       => $transcriptionText,
-                'chunks'     => $chunks,
+                'disk' => $savedTxt['disk'],
+                'path' => $savedTxt['path'],
+                'bytes' => $savedTxt['bytes'],
+                'mime' => $savedTxt['mime'],
+                'text' => $transcriptionText,
+                'chunks' => $chunks,
                 'char_count' => $charCount,
                 'word_count' => $wordCount,
                 'provider_output' => $providerOutput,
@@ -146,10 +144,10 @@ class AsrJobSyncService
     protected function failJob(MlJob $job, string $message): array
     {
         MlJob::query()->where('id', $job->id)->update([
-            'status'      => 'failed',
-            'error'       => ['message' => $message],
+            'status' => 'failed',
+            'error' => ['message' => $message],
             'finished_at' => now(),
-            'updated_at'  => now(),
+            'updated_at' => now(),
         ]);
 
         $this->locks->releaseLock((string) $job->id);
@@ -164,7 +162,7 @@ class AsrJobSyncService
         DB::transaction(function () use ($job) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
-            if (!$fresh || !in_array((string) $fresh->status, ['done', 'delete_failed'], true)) {
+            if (! $fresh || ! in_array((string) $fresh->status, ['done', 'delete_failed'], true)) {
                 throw new \RuntimeException('Transcription not found or already deleted.');
             }
 
@@ -177,9 +175,9 @@ class AsrJobSyncService
             $fresh = MlJob::query()->findOrFail($job->id);
             $customerId = (int) $fresh->customer_id;
 
-            $txtPath  = (string) data_get($fresh->output, 'path', '');
+            $txtPath = (string) data_get($fresh->output, 'path', '');
             $txtBytes = (int) data_get($fresh->output, 'bytes', 0);
-            $jsonPath  = (string) data_get($fresh->output, 'json_path', '');
+            $jsonPath = (string) data_get($fresh->output, 'json_path', '');
             $jsonBytes = (int) data_get($fresh->output, 'json_bytes', 0);
 
             if ($txtPath !== '') {
@@ -190,7 +188,7 @@ class AsrJobSyncService
                 $this->storage->deleteFromS3AndUncount($customerId, $jsonPath, $jsonBytes);
             }
 
-            $audioPath  = (string) data_get($fresh->input, 'audio_path', '');
+            $audioPath = (string) data_get($fresh->input, 'audio_path', '');
             $audioBytes = (int) ((int) $fresh->storage_in_bytes ?: data_get($fresh->input, 'audio_bytes', 0));
 
             if ($audioPath !== '') {
@@ -198,19 +196,19 @@ class AsrJobSyncService
             }
 
             MlJob::query()->where('id', $fresh->id)->update([
-                'status'            => 'deleted',
-                'output'            => null,
-                'storage_in_bytes'  => 0,
+                'status' => 'deleted',
+                'output' => null,
+                'storage_in_bytes' => 0,
                 'storage_out_bytes' => 0,
-                'error'             => null,
-                'updated_at'        => now(),
+                'error' => null,
+                'updated_at' => now(),
             ]);
 
             $this->locks->releaseLock((string) $fresh->id);
         } catch (\Throwable $e) {
             MlJob::query()->where('id', $job->id)->update([
-                'status'     => 'delete_failed',
-                'error'      => ['message' => $e->getMessage()],
+                'status' => 'delete_failed',
+                'error' => ['message' => $e->getMessage()],
                 'updated_at' => now(),
             ]);
 
@@ -254,7 +252,7 @@ class AsrJobSyncService
             'result.segments',
         ] as $key) {
             $value = data_get($output, $key, null);
-            if (is_array($value) && !empty($value)) {
+            if (is_array($value) && ! empty($value)) {
                 return array_values($value);
             }
         }
@@ -271,16 +269,17 @@ class AsrJobSyncService
 
         return match (strtoupper((string) data_get($statusPayload, 'status', ''))) {
             'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 10,
-            'IN_PROGRESS', 'RUNNING'   => 45,
-            'COMPLETED', 'SUCCESS'     => 95,
-            'FAILED', 'TIMED_OUT'      => 100,
-            default                    => 0,
+            'IN_PROGRESS', 'RUNNING' => 45,
+            'COMPLETED', 'SUCCESS' => 95,
+            'FAILED', 'TIMED_OUT' => 100,
+            default => 0,
         };
     }
 
     protected function unicodeWordCount(string $text): int
     {
         preg_match_all('/[\p{L}\p{N}\']+/u', $text, $m);
+
         return count($m[0] ?? []);
     }
 
@@ -289,19 +288,19 @@ class AsrJobSyncService
         $status = (string) $job->status;
 
         return [
-            'job_id'   => (string) $job->id,
-            'status'   => $status,
+            'job_id' => (string) $job->id,
+            'status' => $status,
             'progress' => $progress ?: match ($status) {
-                'queued'         => 10,
-                'running'        => 45,
-                'saving'         => 90,
+                'queued' => 10,
+                'running' => 45,
+                'saving' => 90,
                 'done', 'failed' => 100,
-                default          => 0,
+                default => 0,
             },
-            'done'     => $status === 'done',
-            'failed'   => $status === 'failed',
-            'message'  => (string) data_get($job->error, 'message', ''),
-            'text'     => (string) data_get($job->output, 'text', ''),
+            'done' => $status === 'done',
+            'failed' => $status === 'failed',
+            'message' => (string) data_get($job->error, 'message', ''),
+            'text' => (string) data_get($job->output, 'text', ''),
         ];
     }
 }

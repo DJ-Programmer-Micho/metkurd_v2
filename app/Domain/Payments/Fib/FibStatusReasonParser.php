@@ -95,4 +95,3 @@ class FibStatusReasonParser
         return $value === '' ? null : $value;
     }
 }
-

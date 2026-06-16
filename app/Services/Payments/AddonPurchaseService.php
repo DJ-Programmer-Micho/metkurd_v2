@@ -13,8 +13,7 @@ class AddonPurchaseService
 {
     public function __construct(
         protected CheckoutAuthorizationService $authorization,
-    ) {
-    }
+    ) {}
 
     public function purchase(Customer $customer, int $productId, array $meta = []): CreditOrder
     {
@@ -32,7 +31,7 @@ class AddonPurchaseService
             $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd($baseAmountIqd, $customer);
 
             $provider = (string) ($meta['provider'] ?? 'fake');
-            $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-ADDON-' . now()->format('YmdHis') . '-' . random_int(1000, 9999)));
+            $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-ADDON-'.now()->format('YmdHis').'-'.random_int(1000, 9999)));
             $grossAmount = (int) ($meta['gross_amount_iqd'] ?? $baseAmountIqd);
             $surchargeAmount = (int) ($meta['surcharge_amount_iqd'] ?? 0);
             $providerFeeAmount = (int) ($meta['provider_fee_amount_iqd'] ?? 0);
@@ -93,7 +92,7 @@ class AddonPurchaseService
                 meta: [
                     'related_type' => CreditOrder::class,
                     'related_id' => (string) $order->id,
-                    'reference_code' => 'ADDON-' . $order->id,
+                    'reference_code' => 'ADDON-'.$order->id,
                     'product_id' => (int) $product->id,
                     'product_code' => (string) $product->code,
                     'product_name' => (string) $product->name,

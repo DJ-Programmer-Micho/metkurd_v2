@@ -13,8 +13,7 @@ class FibDiagnostics
 
     public function __construct(
         protected FibConfiguration $config,
-    ) {
-    }
+    ) {}
 
     public function debug(string $event, string $profile, array $context = []): void
     {
@@ -32,7 +31,7 @@ class FibDiagnostics
     public function warnOnAmbiguousProfile(string $profile): void
     {
         foreach ($this->config->warnings($profile) as $warning) {
-            $key = sha1($profile . '|' . $warning);
+            $key = sha1($profile.'|'.$warning);
 
             if (isset(self::$warningCache[$key])) {
                 continue;

@@ -16,8 +16,8 @@ afterEach(function () {
 function staleJobsCustomer(): Customer
 {
     return Customer::create([
-        'username' => 'stale_jobs_' . Str::lower(Str::random(8)),
-        'email' => 'stale-jobs-' . Str::lower(Str::random(8)) . '@example.com',
+        'username' => 'stale_jobs_'.Str::lower(Str::random(8)),
+        'email' => 'stale-jobs-'.Str::lower(Str::random(8)).'@example.com',
         'password' => 'Secret123!',
         'status' => 1,
         'email_verify' => true,
@@ -94,4 +94,3 @@ it('marks stale queued and processing jobs as failed while keeping fresh jobs un
 
     expect($freshQueued->status)->toBe('queued');
 });
-

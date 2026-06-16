@@ -9,6 +9,7 @@ use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
 use App\Services\Billing\CustomerBillingStateService;
+use App\Support\TelegramSubscriptionLifecycleNotifier;
 use Illuminate\Support\Facades\Log;
 
 class PaymentApplicationService
@@ -16,6 +17,7 @@ class PaymentApplicationService
     public function __construct(
         protected CustomerBillingStateService $billingState,
         protected PaymentEventRecorder $events,
+        protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
     ) {}
 
     /**
@@ -76,6 +78,22 @@ class PaymentApplicationService
             'reason' => $reason,
             'context' => $context,
         ]);
+
+        $this->telegramLifecycleNotifier->send(
+            'FIB payment requires review',
+            [
+                'Customer ID' => $payment->customer_id,
+                'Username' => (string) ($payment->customer?->username ?? ''),
+                'Purchase Type' => (string) ($payment->purchase_type?->value ?? ''),
+                'Payment Status' => (string) ($payment->status?->value ?? ''),
+                'Application Status' => $payment->applicationStatusLabel(),
+                'Provider Ref' => $payment->providerReference(),
+                'Local Ref' => (string) $payment->local_reference,
+                'Amount' => (string) round((float) $payment->amount).' '.(string) $payment->currency,
+                'Reason' => $reason,
+            ],
+            'FIB payment review alert'
+        );
     }
 
     /**

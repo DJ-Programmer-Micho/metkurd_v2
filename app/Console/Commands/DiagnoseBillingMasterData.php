@@ -253,35 +253,35 @@ class DiagnoseBillingMasterData extends Command
             'active+visible service-plan checkout method available',
             $serviceCheckoutMethods !== [],
             'critical',
-            'methods=' . ($serviceCheckoutMethods === [] ? '-' : implode(',', $serviceCheckoutMethods))
+            'methods='.($serviceCheckoutMethods === [] ? '-' : implode(',', $serviceCheckoutMethods))
         );
         $this->pushCheck(
             $checks,
             'active+visible recurring service-plan method available',
             $serviceRecurringMethods !== [],
             'critical',
-            'methods=' . ($serviceRecurringMethods === [] ? '-' : implode(',', $serviceRecurringMethods))
+            'methods='.($serviceRecurringMethods === [] ? '-' : implode(',', $serviceRecurringMethods))
         );
         $this->pushCheck(
             $checks,
             'active+visible storage-plan checkout method available',
             $storageCheckoutMethods !== [],
             'critical',
-            'methods=' . ($storageCheckoutMethods === [] ? '-' : implode(',', $storageCheckoutMethods))
+            'methods='.($storageCheckoutMethods === [] ? '-' : implode(',', $storageCheckoutMethods))
         );
         $this->pushCheck(
             $checks,
             'active+visible recurring storage-plan method available',
             $storageRecurringMethods !== [],
             'critical',
-            'methods=' . ($storageRecurringMethods === [] ? '-' : implode(',', $storageRecurringMethods))
+            'methods='.($storageRecurringMethods === [] ? '-' : implode(',', $storageRecurringMethods))
         );
         $this->pushCheck(
             $checks,
             'active+visible add-on checkout method available',
             $addonCheckoutMethods !== [],
             'warning',
-            'methods=' . ($addonCheckoutMethods === [] ? '-' : implode(',', $addonCheckoutMethods))
+            'methods='.($addonCheckoutMethods === [] ? '-' : implode(',', $addonCheckoutMethods))
         );
     }
 

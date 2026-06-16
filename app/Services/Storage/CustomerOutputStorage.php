@@ -9,10 +9,10 @@ use App\Models\MlJob;
 use App\Services\Billing\CustomerBillingStateService;
 use App\Support\CustomerFolder;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class CustomerOutputStorage
 {
@@ -56,8 +56,11 @@ class CustomerOutputStorage
         $bytes = strlen($bin);
         $mime = $meta['mime'] ?? 'audio/wav';
         $startedAt = microtime(true);
+        $countsTowardQuota = (bool) ($meta['counts_toward_quota'] ?? true);
 
-        $this->assertCanConsumeStorage($customerId, $bytes);
+        if ($countsTowardQuota) {
+            $this->assertCanConsumeStorage($customerId, $bytes);
+        }
 
         // Log::info('CUSTOMER_OUTPUT_S3_SAVE_START', [
         //     'disk' => $disk,
@@ -107,8 +110,11 @@ class CustomerOutputStorage
         $disk = 's3';
         $bytes = strlen($content);
         $mime = $meta['mime'] ?? 'text/plain';
+        $countsTowardQuota = (bool) ($meta['counts_toward_quota'] ?? true);
 
-        $this->assertCanConsumeStorage($customerId, $bytes);
+        if ($countsTowardQuota) {
+            $this->assertCanConsumeStorage($customerId, $bytes);
+        }
 
         Storage::disk($disk)->put($path, $content, [
             'visibility' => 'private',
@@ -122,21 +128,24 @@ class CustomerOutputStorage
 
     public function saveUploadedFileToS3(int $customerId, UploadedFile $file, string $path, array $meta = []): array
     {
-        if (!$file->isValid()) {
+        if (! $file->isValid()) {
             throw new \RuntimeException('Uploaded file is not valid.');
         }
 
         $disk = 's3';
         $stream = $this->openUploadedFileReadStream($file);
 
-        if (!is_resource($stream)) {
+        if (! is_resource($stream)) {
             throw new \RuntimeException('Unable to open uploaded file stream.');
         }
 
         $mime = $file->getMimeType() ?: 'application/octet-stream';
         $bytes = (int) $file->getSize();
+        $countsTowardQuota = (bool) ($meta['counts_toward_quota'] ?? true);
 
-        $this->assertCanConsumeStorage($customerId, $bytes);
+        if ($countsTowardQuota) {
+            $this->assertCanConsumeStorage($customerId, $bytes);
+        }
 
         try {
             Storage::disk($disk)->put($path, $stream, [
@@ -263,10 +272,11 @@ class CustomerOutputStorage
             if ($file && (string) $file->status !== 'deleted') {
                 $file->status = 'deleted';
                 $file->deleted_at = now();
+                $file->delete_reason = $file->delete_reason ?: 'deleted';
                 $file->save();
             }
 
-            if ($actualBytes > 0) {
+            if ($actualBytes > 0 && (bool) ($file?->counts_toward_quota ?? true)) {
                 $usage = CustomerUsage::query()
                     ->where('customer_id', $customerId)
                     ->lockForUpdate()
@@ -282,7 +292,7 @@ class CustomerOutputStorage
 
     public function registerExistingObject(int $customerId, string $disk, string $path, array $meta = []): ?array
     {
-        if ($path === '' || !Storage::disk($disk)->exists($path)) {
+        if ($path === '' || ! Storage::disk($disk)->exists($path)) {
             return null;
         }
 
@@ -295,9 +305,12 @@ class CustomerOutputStorage
 
         $bytes = (int) Storage::disk($disk)->size($path);
         $mime = (string) (Storage::disk($disk)->mimeType($path) ?: ($meta['mime'] ?? 'application/octet-stream'));
+        $countsTowardQuota = (bool) ($meta['counts_toward_quota'] ?? true);
 
-        if (!$existing) {
-            $this->assertCanConsumeStorage($customerId, $bytes);
+        if (! $existing) {
+            if ($countsTowardQuota) {
+                $this->assertCanConsumeStorage($customerId, $bytes);
+            }
             $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
         }
 
@@ -313,31 +326,41 @@ class CustomerOutputStorage
         array $meta = []
     ): void {
         DB::transaction(function () use ($customerId, $disk, $path, $bytes, $mime, $meta) {
+            $countsTowardQuota = (bool) ($meta['counts_toward_quota'] ?? true);
+
             CustomerFile::create([
                 'customer_id' => $customerId,
-                'purpose'     => $meta['purpose'] ?? 'render',
-                'tool_code'   => $meta['tool'] ?? 'tts',
-                'disk'        => $disk,
-                'path'        => $path,
-                'size_bytes'  => $bytes,
-                'mime'        => $mime,
-                'checksum'    => $meta['checksum'] ?? null,
-                'status'      => 'active',
-                'meta'        => $meta,
+                'purpose' => $meta['purpose'] ?? 'render',
+                'tool_code' => $meta['tool'] ?? 'tts',
+                'disk' => $disk,
+                'path' => $path,
+                'size_bytes' => $bytes,
+                'mime' => $mime,
+                'checksum' => $meta['checksum'] ?? null,
+                'status' => 'active',
+                'retention_mode' => $meta['retention_mode'] ?? null,
+                'expires_at' => $meta['expires_at'] ?? null,
+                'delete_reason' => null,
+                'source_type' => $meta['source_type'] ?? null,
+                'source_id' => isset($meta['source_id']) ? (string) $meta['source_id'] : null,
+                'counts_toward_quota' => $countsTowardQuota,
+                'meta' => $meta,
             ]);
 
-            $usage = CustomerUsage::query()->lockForUpdate()->firstOrCreate(
-                ['customer_id' => $customerId],
-                [
-                    'storage_used_bytes' => 0,
-                    'jobs_total'         => 0,
-                    'jobs_succeeded'     => 0,
-                    'jobs_failed'        => 0,
-                ]
-            );
+            if ($countsTowardQuota) {
+                $usage = CustomerUsage::query()->lockForUpdate()->firstOrCreate(
+                    ['customer_id' => $customerId],
+                    [
+                        'storage_used_bytes' => 0,
+                        'jobs_total' => 0,
+                        'jobs_succeeded' => 0,
+                        'jobs_failed' => 0,
+                    ]
+                );
 
-            $usage->storage_used_bytes = (int) $usage->storage_used_bytes + $bytes;
-            $usage->save();
+                $usage->storage_used_bytes = (int) $usage->storage_used_bytes + $bytes;
+                $usage->save();
+            }
         }, 3);
     }
 
@@ -368,9 +391,9 @@ class CustomerOutputStorage
             ];
 
         return [
-            'original'    => "{$base}/original.wav",
+            'original' => "{$base}/original.wav",
             'result_json' => "{$base}/result.json",
-            'stems'       => $stems,
+            'stems' => $stems,
         ];
     }
 
@@ -494,32 +517,34 @@ class CustomerOutputStorage
 
     public function registerStemArtifacts(MlJob $job, array $output, string $toolCode = 'stem'): int
     {
+        return $this->registerStemArtifactsWithMeta($job, $output, $toolCode);
+    }
+
+    public function registerStemArtifactsWithMeta(MlJob $job, array $output, string $toolCode = 'stem', array $metaOverrides = []): int
+    {
         $disk = (string) data_get($output, 'disk', $this->stemDisk());
         $customerId = (int) $job->customer_id;
         $total = 0;
 
         $artifacts = array_filter([
-            'original'    => data_get($output, 'original.path'),
+            'original' => data_get($output, 'original.path'),
             'result_json' => data_get($output, 'result_json.path'),
-            'vocals'      => data_get($output, 'stems.vocals.path'),
-            'instrumental'=> data_get($output, 'stems.instrumental.path'),
-            'drums'       => data_get($output, 'stems.drums.path'),
-            'bass'        => data_get($output, 'stems.bass.path'),
-            'other'       => data_get($output, 'stems.other.path'),
+            'vocals' => data_get($output, 'stems.vocals.path'),
+            'instrumental' => data_get($output, 'stems.instrumental.path'),
+            'drums' => data_get($output, 'stems.drums.path'),
+            'bass' => data_get($output, 'stems.bass.path'),
+            'other' => data_get($output, 'stems.other.path'),
         ]);
 
         foreach ($artifacts as $role => $path) {
-            $saved = $this->registerExistingObject($customerId, $disk, (string) $path, [
-                'job_id'  => (string) $job->id,
-                'tool'    => $toolCode,
-                'purpose' => 'render',
-                'role'    => $role,
-                'mime'    => match ($role) {
+            $saved = $this->registerExistingObject($customerId, $disk, (string) $path, array_merge($this->apiOutputMeta($job, $toolCode, 'render', $role), [
+                'job_id' => (string) $job->id,
+                'mime' => match ($role) {
                     'result_json' => 'application/json',
                     'original' => 'audio/wav',
                     default => 'audio/mpeg',
                 },
-            ]);
+            ], $metaOverrides));
 
             $total += (int) ($saved['bytes'] ?? 0);
         }
@@ -542,7 +567,7 @@ class CustomerOutputStorage
             ['disk' => $outputDisk, 'path' => (string) data_get($output, 'stems.bass.path', ''), 'bytes' => (int) data_get($output, 'stems.bass.bytes', 0)],
             ['disk' => $outputDisk, 'path' => (string) data_get($output, 'stems.other.path', ''), 'bytes' => (int) data_get($output, 'stems.other.bytes', 0)],
             ['disk' => $inputDisk,  'path' => (string) data_get($job->input, 'audio_path', ''), 'bytes' => (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'audio_bytes', 0))],
-        ], fn ($item) => !empty($item['path']));
+        ], fn ($item) => ! empty($item['path']));
 
         foreach ($paths as $file) {
             $this->deleteFromDiskAndUncount(
@@ -554,12 +579,12 @@ class CustomerOutputStorage
         }
 
         MlJob::query()->where('id', $job->id)->update([
-            'status'            => 'deleted',
-            'output'            => null,
-            'storage_in_bytes'  => 0,
+            'status' => 'deleted',
+            'output' => null,
+            'storage_in_bytes' => 0,
             'storage_out_bytes' => 0,
-            'error'             => null,
-            'updated_at'        => now(),
+            'error' => null,
+            'updated_at' => now(),
         ]);
     }
 
@@ -606,7 +631,7 @@ class CustomerOutputStorage
         ];
     }
 
-    public function registerOcrArtifacts(MlJob $job, array $output, string $toolCode = 'ocr'): int
+    public function registerOcrArtifacts(MlJob $job, array $output, string $toolCode = 'ocr', array $metaOverrides = []): int
     {
         $disk = (string) data_get($output, 'disk', $this->ocrDisk());
         $customerId = (int) $job->customer_id;
@@ -618,13 +643,10 @@ class CustomerOutputStorage
         ]);
 
         foreach ($artifacts as $role => $path) {
-            $saved = $this->registerExistingObject($customerId, $disk, (string) $path, [
+            $saved = $this->registerExistingObject($customerId, $disk, (string) $path, array_merge($this->apiOutputMeta($job, $toolCode, 'render', $role), [
                 'job_id' => (string) $job->id,
-                'tool' => $toolCode,
-                'purpose' => 'render',
-                'role' => $role,
                 'mime' => $role === 'json' ? 'application/json' : 'text/plain; charset=UTF-8',
-            ]);
+            ], $metaOverrides));
 
             $total += (int) ($saved['bytes'] ?? 0);
         }
@@ -655,7 +677,7 @@ class CustomerOutputStorage
         ];
 
         foreach ($candidates as $candidate) {
-            if (!is_string($candidate) || $candidate === '' || !is_file($candidate) || !is_readable($candidate)) {
+            if (! is_string($candidate) || $candidate === '' || ! is_file($candidate) || ! is_readable($candidate)) {
                 continue;
             }
 
@@ -678,7 +700,7 @@ class CustomerOutputStorage
             ['disk' => $outputDisk, 'path' => (string) data_get($output, 'text.path', ''), 'bytes' => (int) data_get($output, 'text.bytes', 0)],
             ['disk' => $outputDisk, 'path' => (string) data_get($output, 'json.path', ''), 'bytes' => (int) data_get($output, 'json.bytes', 0)],
             ['disk' => $inputDisk, 'path' => (string) data_get($job->input, 'file_path', ''), 'bytes' => (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'file_bytes', 0))],
-        ], fn ($item) => !empty($item['path']));
+        ], fn ($item) => ! empty($item['path']));
 
         foreach ($paths as $file) {
             $this->deleteFromDiskAndUncount(
@@ -724,5 +746,25 @@ class CustomerOutputStorage
                 __('This action would exceed your current storage quota. Delete files or upgrade your storage plan and try again.')
             );
         }
+    }
+
+    public function apiOutputMeta(MlJob $job, string $toolCode, string $purpose = 'render', ?string $role = null): array
+    {
+        $apiJobId = trim((string) data_get($job->input, 'api_job_id', ''));
+        $retentionMode = (string) data_get($job->input, 'api_storage_mode') === 'temporary'
+            ? 'temporary'
+            : 'permanent';
+
+        return array_filter([
+            'job_id' => (string) $job->id,
+            'tool' => $toolCode,
+            'purpose' => $purpose,
+            'role' => $role,
+            'retention_mode' => $retentionMode,
+            'expires_at' => data_get($job->input, 'api_expires_at'),
+            'source_type' => $apiJobId !== '' ? 'api_job' : 'ml_job',
+            'source_id' => $apiJobId !== '' ? $apiJobId : (string) $job->id,
+            'counts_toward_quota' => $retentionMode !== 'temporary',
+        ], static fn (mixed $value): bool => $value !== null);
     }
 }

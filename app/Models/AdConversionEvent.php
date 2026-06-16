@@ -23,4 +23,3 @@ class AdConversionEvent extends Model
         'fired_at' => 'datetime',
     ];
 }
-

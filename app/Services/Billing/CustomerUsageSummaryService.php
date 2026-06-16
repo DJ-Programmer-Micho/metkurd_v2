@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\CreditWallet;
 use App\Models\Customer;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
@@ -12,8 +13,7 @@ class CustomerUsageSummaryService
 
     public function __construct(
         protected CustomerBillingStateService $billingState,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{
@@ -42,21 +42,24 @@ class CustomerUsageSummaryService
      *     }
      * }
      */
-    public function forCustomer(Customer $customer): array
+    public function forCustomer(Customer $customer, string $walletType = CreditWallet::TYPE_APP): array
     {
+        $walletRelation = $walletType === CreditWallet::TYPE_API ? 'apiWallet' : 'wallet';
+
         $customer->loadMissing([
             'usage',
-            'wallet',
+            $walletRelation,
             'activeServiceSubscription.servicePlan',
             'activeStorageSubscription.storagePlan',
         ]);
 
-        $servicePlan = $customer->currentServicePlan() ?: $this->billingState->defaultServicePlan();
-        $storagePlan = $customer->currentStoragePlan() ?: $this->billingState->defaultStoragePlan();
+        $servicePlan = $this->resolveFreshServicePlan($customer);
+        $storagePlan = $this->resolveFreshStoragePlan($customer);
         $storageState = $this->billingState->storageQuotaState($customer);
+        $wallet = $this->walletForCustomer($customer, $walletType);
 
-        $monthlyCredits = $this->monthlyCreditsForPlan($servicePlan);
-        $creditBalance = max(0, (int) ($customer->wallet?->balance_credits ?? 0));
+        $monthlyCredits = $this->monthlyCreditsForPlan($servicePlan, $walletType);
+        $creditBalance = max(0, (int) ($wallet?->balance_credits ?? 0));
         $creditUsed = $monthlyCredits !== null
             ? max($monthlyCredits - $creditBalance, 0)
             : null;
@@ -106,11 +109,22 @@ class CustomerUsageSummaryService
             'meta' => [
                 'plan_code' => (string) ($servicePlan?->code ?? 'free'),
                 'plan_name' => (string) ($servicePlan?->name ?? 'Free'),
+                'wallet_type' => $walletType,
             ],
         ];
     }
 
-    protected function monthlyCreditsForPlan(?ServicePlan $plan): ?int
+    public function forApiCustomer(Customer $customer): array
+    {
+        return $this->forCustomer($customer, CreditWallet::TYPE_API);
+    }
+
+    public function forAppCustomer(Customer $customer): array
+    {
+        return $this->forCustomer($customer, CreditWallet::TYPE_APP);
+    }
+
+    protected function monthlyCreditsForPlan(?ServicePlan $plan, string $walletType): ?int
     {
         if (! $plan instanceof ServicePlan) {
             return 0;
@@ -120,9 +134,32 @@ class CustomerUsageSummaryService
             return null;
         }
 
-        $value = $plan->getAttribute('monthly_credits');
+        $value = $walletType === CreditWallet::TYPE_API
+            ? $plan->apiMonthlyCredits()
+            : $plan->appMonthlyCredits();
 
         return $value === null ? null : max(0, (int) $value);
+    }
+
+    protected function walletForCustomer(Customer $customer, string $walletType): ?CreditWallet
+    {
+        if ($walletType === CreditWallet::TYPE_API) {
+            if ($customer->relationLoaded('apiWallet')) {
+                $wallet = $customer->getRelation('apiWallet');
+
+                return $wallet instanceof CreditWallet ? $wallet : null;
+            }
+
+            return $customer->apiWallet()->first();
+        }
+
+        if ($customer->relationLoaded('wallet')) {
+            $wallet = $customer->getRelation('wallet');
+
+            return $wallet instanceof CreditWallet ? $wallet : null;
+        }
+
+        return $customer->wallet()->first();
     }
 
     protected function storageQuotaMbForPlan(?StoragePlan $plan): ?int
@@ -134,6 +171,28 @@ class CustomerUsageSummaryService
         $value = $plan->getAttribute('quota_mb');
 
         return $value === null ? null : max(0, (int) $value);
+    }
+
+    protected function resolveFreshServicePlan(Customer $customer): ?ServicePlan
+    {
+        $planId = (int) ($customer->currentServicePlanId() ?? 0);
+
+        if ($planId > 0) {
+            return ServicePlan::query()->find($planId) ?: $this->billingState->defaultServicePlan();
+        }
+
+        return $this->billingState->defaultServicePlan();
+    }
+
+    protected function resolveFreshStoragePlan(Customer $customer): ?StoragePlan
+    {
+        $planId = (int) ($customer->currentStoragePlan()?->id ?? 0);
+
+        if ($planId > 0) {
+            return StoragePlan::query()->find($planId) ?: $this->billingState->defaultStoragePlan();
+        }
+
+        return $this->billingState->defaultStoragePlan();
     }
 
     protected function percentage(int $part, ?int $whole): ?int

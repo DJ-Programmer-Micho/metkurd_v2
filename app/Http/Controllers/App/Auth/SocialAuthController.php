@@ -16,8 +16,7 @@ class SocialAuthController extends Controller
     public function __construct(
         protected CustomerSocialAuthService $socialAuth,
         protected ConversionTrackingService $conversionTracking,
-    ) {
-    }
+    ) {}
 
     public function googleRedirect()
     {

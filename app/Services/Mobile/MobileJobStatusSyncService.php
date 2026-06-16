@@ -21,8 +21,7 @@ class MobileJobStatusSyncService
         protected StemJobSyncService $stem,
         protected OcrJobSyncService $ocr,
         protected TranJobSyncService $tran,
-    ) {
-    }
+    ) {}
 
     public function refresh(MlJob $job): MlJob
     {
@@ -88,7 +87,7 @@ class MobileJobStatusSyncService
             }
         }
 
-        throw new \RuntimeException('Tool not found for mobile job sync: ' . ($toolCode !== '' ? $toolCode : implode(',', $fallbackCodes)));
+        throw new \RuntimeException('Tool not found for mobile job sync: '.($toolCode !== '' ? $toolCode : implode(',', $fallbackCodes)));
     }
 
     protected function freshJob(MlJob $job): MlJob

@@ -62,7 +62,7 @@ class MobileApiTokenService
     }
 
     /**
-     * @param array<int, string> $abilities
+     * @param  array<int, string>  $abilities
      * @return array{plain_text_token: string, abilities: array<int, string>, expires_at: string|null}
      */
     protected function issueWithAbilities(

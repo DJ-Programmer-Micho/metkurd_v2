@@ -25,7 +25,7 @@ class WasrRenderController extends Controller
             ])
             ->where('id', $jobId)
             ->where('customer_id', auth('app')->id())
-            ->when(!empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
+            ->when(! empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
             ->where('status', 'done')
             ->firstOrFail();
 
@@ -36,9 +36,9 @@ class WasrRenderController extends Controller
 
     public function downloadTxt(string $locale, string $jobId)
     {
-        $job  = $this->jobOrFail($jobId);
+        $job = $this->jobOrFail($jobId);
         $disk = (string) data_get($job->output, 'disk', 's3');
-        $key  = (string) data_get($job->output, 'path', '');
+        $key = (string) data_get($job->output, 'path', '');
         $mime = 'text/plain; charset=UTF-8';
 
         abort_if($key === '', 404, 'Text output missing.');
@@ -51,9 +51,9 @@ class WasrRenderController extends Controller
 
     public function downloadJson(string $locale, string $jobId)
     {
-        $job  = $this->jobOrFail($jobId);
+        $job = $this->jobOrFail($jobId);
         $disk = (string) data_get($job->output, 'disk', 's3');
-        $key  = (string) (data_get($job->output, 'json.path') ?: data_get($job->output, 'json_path', ''));
+        $key = (string) (data_get($job->output, 'json.path') ?: data_get($job->output, 'json_path', ''));
         $mime = (string) (data_get($job->output, 'json.mime') ?: data_get($job->output, 'json_mime', 'application/json'));
 
         abort_if($key === '', 404, 'JSON output missing.');
@@ -66,18 +66,18 @@ class WasrRenderController extends Controller
 
     public function viewJson(Request $request, string $locale, string $jobId)
     {
-        $job  = $this->jobOrFail($jobId);
+        $job = $this->jobOrFail($jobId);
         $disk = (string) data_get($job->output, 'disk', 's3');
-        $key  = (string) (data_get($job->output, 'json.path') ?: data_get($job->output, 'json_path', ''));
+        $key = (string) (data_get($job->output, 'json.path') ?: data_get($job->output, 'json_path', ''));
         $mime = (string) (data_get($job->output, 'json.mime') ?: data_get($job->output, 'json_mime', 'application/json'));
 
         abort_if($key === '', 404, 'JSON output missing.');
 
         try {
-            if (!$request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
+            if (! $request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($key, now()->addMinutes(20), [
                     'ResponseContentType' => $mime,
-                    'ResponseContentDisposition' => 'inline; filename="' . (basename($key) ?: 'transcription.json') . '"',
+                    'ResponseContentDisposition' => 'inline; filename="'.(basename($key) ?: 'transcription.json').'"',
                 ]);
 
                 return redirect()->away($url);
@@ -111,18 +111,18 @@ class WasrRenderController extends Controller
 
     public function inputAudio(Request $request, string $locale, string $jobId)
     {
-        $job  = $this->jobOrFail($jobId);
+        $job = $this->jobOrFail($jobId);
         $disk = (string) data_get($job->input, 'audio_disk', 's3');
-        $key  = (string) data_get($job->input, 'audio_path', '');
+        $key = (string) data_get($job->input, 'audio_path', '');
         $mime = (string) data_get($job->input, 'audio_mime', 'audio/mpeg');
 
         abort_if($key === '', 404, 'Input audio missing.');
 
         try {
-            if (!$request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
+            if (! $request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($key, now()->addMinutes(20), [
                     'ResponseContentType' => $mime,
-                    'ResponseContentDisposition' => 'inline; filename="' . (basename($key) ?: 'input-audio') . '"',
+                    'ResponseContentDisposition' => 'inline; filename="'.(basename($key) ?: 'input-audio').'"',
                 ]);
 
                 return redirect()->away($url);
@@ -142,12 +142,12 @@ class WasrRenderController extends Controller
                     }
                 }
             }, 200, [
-                'Content-Type'  => $mime,
+                'Content-Type' => $mime,
                 'Cache-Control' => 'private, max-age=600, stale-while-revalidate=60',
             ]);
         } catch (\Throwable $e) {
             Log::error('WASR_INPUT_AUDIO_STREAM_FAIL', [
-                'job_id'  => $jobId,
+                'job_id' => $jobId,
                 'message' => $e->getMessage(),
             ]);
 

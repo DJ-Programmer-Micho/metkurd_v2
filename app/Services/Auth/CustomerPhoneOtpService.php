@@ -61,7 +61,7 @@ class CustomerPhoneOtpService
             $digits = substr($digits, 2);
         }
 
-        return $digits !== '' ? '+' . $digits : '';
+        return $digits !== '' ? '+'.$digits : '';
     }
 
     public function normalizeOtpCode(?string $value): string
@@ -185,21 +185,21 @@ class CustomerPhoneOtpService
 
     protected function expiresKey(Customer $customer): string
     {
-        return 'phone_otp_expires_' . (int) $customer->id;
+        return 'phone_otp_expires_'.(int) $customer->id;
     }
 
     protected function attemptsKey(Customer $customer): string
     {
-        return 'phone_otp_attempts_' . (int) $customer->id;
+        return 'phone_otp_attempts_'.(int) $customer->id;
     }
 
     protected function lockKey(Customer $customer): string
     {
-        return 'phone_otp_lock_' . (int) $customer->id;
+        return 'phone_otp_lock_'.(int) $customer->id;
     }
 
     protected function cooldownKey(Customer $customer): string
     {
-        return 'phone_otp_cooldown_' . (int) $customer->id;
+        return 'phone_otp_cooldown_'.(int) $customer->id;
     }
 }

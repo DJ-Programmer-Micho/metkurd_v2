@@ -7,8 +7,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Voice extends Model
 {
-    protected $fillable = ['code','name','is_public','is_active','sort_order','meta'];
-    protected $casts = ['is_public'=>'boolean','is_active'=>'boolean','meta'=>'array'];
+    protected $fillable = ['code', 'name', 'is_public', 'is_active', 'sort_order', 'meta'];
+
+    protected $casts = ['is_public' => 'boolean', 'is_active' => 'boolean', 'meta' => 'array'];
 
     public function planAccesses(): HasMany
     {

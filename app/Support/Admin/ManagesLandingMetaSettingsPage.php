@@ -8,24 +8,39 @@ use Illuminate\Validation\ValidationException;
 trait ManagesLandingMetaSettingsPage
 {
     public string $defaultMetaTitle = '';
+
     public string $defaultMetaDescription = '';
+
     public string $defaultOgTitle = '';
+
     public string $defaultOgDescription = '';
+
     public string $defaultTwitterTitle = '';
+
     public string $defaultTwitterDescription = '';
 
     public ?string $faviconPath = null;
+
     public ?string $appIcon192Path = null;
+
     public ?string $appIcon512Path = null;
+
     public ?string $appleTouchIconPath = null;
+
     public ?string $ogImagePath = null;
+
     public ?string $twitterImagePath = null;
 
     public $faviconUpload = null;
+
     public $appIcon192Upload = null;
+
     public $appIcon512Upload = null;
+
     public $appleTouchIconUpload = null;
+
     public $ogImageUpload = null;
+
     public $twitterImageUpload = null;
 
     public function mount(): void

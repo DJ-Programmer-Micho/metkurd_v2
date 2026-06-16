@@ -29,13 +29,13 @@ class MobileTtsVoiceCatalog
         $planId = (int) ($customer->currentServicePlanId() ?? 0);
 
         if ($planId <= 0) {
-            return new Collection();
+            return new Collection;
         }
 
         $toolCodes = $this->allowedToolCodesForCustomer($customer, $toolCode);
 
         if ($toolCodes === []) {
-            return new Collection();
+            return new Collection;
         }
 
         $engines = collect($toolCodes)
@@ -45,7 +45,7 @@ class MobileTtsVoiceCatalog
             ->all();
 
         if ($engines === []) {
-            return new Collection();
+            return new Collection;
         }
 
         return Voice::query()
@@ -134,7 +134,7 @@ class MobileTtsVoiceCatalog
             ->filter(function (string $toolCode) use ($customer): bool {
                 $actionCode = $this->actionCodeForToolCode($toolCode);
 
-                return $actionCode !== null && $customer->isAllowed($actionCode);
+                return $actionCode !== null && $customer->isAllowed($actionCode, \App\Models\PlanEntitlement::CHANNEL_MOBILE);
             })
             ->values()
             ->all();

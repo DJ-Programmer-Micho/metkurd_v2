@@ -15,8 +15,7 @@ class OcrJobSyncService
         protected RunPodProvider $runpod,
         protected CustomerOutputStorage $storage,
         protected JobExecutionLockService $locks,
-    ) {
-    }
+    ) {}
 
     public function buildRunpodInput(
         MlJob $job,
@@ -41,7 +40,7 @@ class OcrJobSyncService
             expiresAt: now()->addHours(8),
             options: [
                 'ResponseContentType' => $fileMime !== '' ? $fileMime : 'application/pdf',
-                'ResponseContentDisposition' => 'inline; filename="' . ($fileName !== '' ? $fileName : basename($inputPath)) . '"',
+                'ResponseContentDisposition' => 'inline; filename="'.($fileName !== '' ? $fileName : basename($inputPath)).'"',
             ]
         );
 
@@ -138,7 +137,7 @@ class OcrJobSyncService
     {
         return DB::transaction(function () use ($job, $response) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
-            if (!$fresh) {
+            if (! $fresh) {
                 throw new \RuntimeException('OCR job not found during finalize.');
             }
 
@@ -152,25 +151,19 @@ class OcrJobSyncService
             $textPath = (string) (data_get($response, 'output.uploaded_keys.text') ?: $paths['text']);
             $jsonPath = (string) (data_get($response, 'output.uploaded_keys.json') ?: $paths['json']);
 
-            $textObject = $this->storage->registerExistingObject((int) $fresh->customer_id, $disk, $textPath, [
-                'job_id' => (string) $fresh->id,
-                'tool' => 'ocr',
-                'purpose' => 'render',
-                'role' => 'text',
-                'mime' => 'text/plain; charset=UTF-8',
-            ]);
+            $textObject = $this->storage->registerExistingObject((int) $fresh->customer_id, $disk, $textPath, array_merge(
+                $this->storage->apiOutputMeta($fresh, 'ocr', 'render', 'text'),
+                ['mime' => 'text/plain; charset=UTF-8']
+            ));
 
-            if (!$textObject) {
+            if (! $textObject) {
                 return $this->failJob($fresh, 'OCR text output missing after completion.', $response);
             }
 
-            $jsonObject = $this->storage->registerExistingObject((int) $fresh->customer_id, $disk, $jsonPath, [
-                'job_id' => (string) $fresh->id,
-                'tool' => 'ocr',
-                'purpose' => 'render',
-                'role' => 'json',
-                'mime' => 'application/json',
-            ]);
+            $jsonObject = $this->storage->registerExistingObject((int) $fresh->customer_id, $disk, $jsonPath, array_merge(
+                $this->storage->apiOutputMeta($fresh, 'ocr', 'render', 'json'),
+                ['mime' => 'application/json']
+            ));
 
             $output = [
                 'disk' => $disk,

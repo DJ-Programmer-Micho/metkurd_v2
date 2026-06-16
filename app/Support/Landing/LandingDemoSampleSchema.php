@@ -69,7 +69,6 @@ class LandingDemoSampleSchema
     }
 
     /**
-     * @param  mixed  $rawConfig
      * @return array<string, mixed>
      */
     public function normalizeConfig(?string $rawType, mixed $rawConfig, string $slug = ''): array
@@ -157,7 +156,6 @@ class LandingDemoSampleSchema
     }
 
     /**
-     * @param  mixed  $item
      * @return array<string, mixed>
      */
     protected function normalizeItem(string $type, mixed $item): array
@@ -200,7 +198,7 @@ class LandingDemoSampleSchema
             fn ($item) => is_array($item) && $item !== []
         ));
 
-        $fallbackKey = 'group_' . ($index + 1);
+        $fallbackKey = 'group_'.($index + 1);
         if ($key === '' && $engine !== '') {
             $key = Str::of($engine)->replace(['.', '/', '\\', ' '], '_')->trim('_')->value();
         }
@@ -492,6 +490,7 @@ class LandingDemoSampleSchema
         return collect($models)
             ->map(function ($model) use ($source): array {
                 $row = is_array($model) ? $model : [];
+
                 return [
                     'title' => trim((string) data_get($row, 'label', 'ASR Example')),
                     'audio' => data_get($row, 'audio', $source),

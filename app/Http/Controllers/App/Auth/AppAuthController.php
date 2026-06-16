@@ -2,19 +2,18 @@
 
 namespace App\Http\Controllers\App\Auth;
 
-use App\Models\Customer;
-use Illuminate\Support\Str;
-use Illuminate\Http\Request;
-use App\Models\CustomerProfile;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
+use App\Models\Customer;
+use App\Models\CustomerProfile;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
-use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-
 
 class AppAuthController extends Controller
 {
@@ -24,13 +23,14 @@ class AppAuthController extends Controller
         if (Auth::guard('app')->check()) {
             return redirect()->route('app.home');
         }
+
         return view('app.auth.signin-one');
     }
 
     public function handleSignIn(Request $request)
     {
         $credentials = $request->validate([
-            'login'    => ['required', 'string'], // can be email or username
+            'login' => ['required', 'string'], // can be email or username
             'password' => ['required', 'string'],
         ]);
 
@@ -48,7 +48,7 @@ class AppAuthController extends Controller
             $request->session()->regenerate();
 
             return response()->json([
-                'status'  => 'success',
+                'status' => 'success',
                 'message' => 'Welcome back!',
                 'redirect' => route('app.home'),
             ]);
@@ -58,7 +58,9 @@ class AppAuthController extends Controller
             'login' => __('Invalid credentials or account not found.'),
         ]);
     }
-    public function signUp(){
+
+    public function signUp()
+    {
         return view('app.auth.signup-one');
     }
 
@@ -70,25 +72,26 @@ class AppAuthController extends Controller
 
         return redirect()->route('app.signin');
     }
+
     public function handleSignup(Request $request)
     {
         $data = $request->validate([
-            'first_name' => ['required','string','max:100'],
-            'last_name'  => ['required','string','max:100'],
-            'username'   => ['required','string','min:3','max:50', Rule::unique('customers','username')],
-            'job_title'  => ['nullable','string','max:100'],
-            'phone'      => ['required','string','max:20','regex:/^\+\d{10,15}$/',Rule::unique('customer_profiles','phone_number')],
-            'email'      => ['required','email','max:255', Rule::unique('customers','email')],
+            'first_name' => ['required', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'username' => ['required', 'string', 'min:3', 'max:50', Rule::unique('customers', 'username')],
+            'job_title' => ['nullable', 'string', 'max:100'],
+            'phone' => ['required', 'string', 'max:20', 'regex:/^\+\d{10,15}$/', Rule::unique('customer_profiles', 'phone_number')],
+            'email' => ['required', 'email', 'max:255', Rule::unique('customers', 'email')],
             'password' => [
-                        'required',
-                        'confirmed',
-                        'min:8',
-                        'regex:/[a-z]/',          // lowercase
-                        'regex:/[A-Z]/',          // uppercase
-                        'regex:/\d/',             // number
-                        'regex:/[^A-Za-z0-9]/',   // special char
-                        ],
-        ],[
+                'required',
+                'confirmed',
+                'min:8',
+                'regex:/[a-z]/',          // lowercase
+                'regex:/[A-Z]/',          // uppercase
+                'regex:/\d/',             // number
+                'regex:/[^A-Za-z0-9]/',   // special char
+            ],
+        ], [
             'password.regex' => 'Password must include lowercase, uppercase, number, and special character.',
 
         ]);
@@ -97,20 +100,20 @@ class AppAuthController extends Controller
 
         $customer = DB::transaction(function () use ($data, $otp) {
             $customer = Customer::create([
-                'username'      => $data['username'],
-                'email'         => $data['email'],
-                'password'      => Hash::make($data['password']),
-                'email_verify'  => false,
-                'phone_verify'  => false,
-                'email_otp_number' => (string)$otp,
-                'uid'           => Str::ulid(),  // internal UID if you like
+                'username' => $data['username'],
+                'email' => $data['email'],
+                'password' => Hash::make($data['password']),
+                'email_verify' => false,
+                'phone_verify' => false,
+                'email_otp_number' => (string) $otp,
+                'uid' => Str::ulid(),  // internal UID if you like
             ]);
 
             CustomerProfile::create([
                 'customer_id' => $customer->id,
-                'first_name'  => $data['first_name'],
-                'last_name'   => $data['last_name'],
-                'job_title'   => $data['job_title'] ?? null,
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'],
+                'job_title' => $data['job_title'] ?? null,
                 'phone_number' => $data['phone'],
                 // country/city/address/zip_code/avatar left null for later
             ]);
@@ -127,16 +130,24 @@ class AppAuthController extends Controller
         return redirect()->route('app.email.otp')
             ->with('status', 'We sent you a 6-digit code to verify your email.');
     }
-    public function emailOtp(){
+
+    public function emailOtp()
+    {
         return view('app.auth.email-otp');
     }
-    public function phoneOtp(){
+
+    public function phoneOtp()
+    {
         return view('app.auth.phone-otp');
     }
-    public function lock(){
+
+    public function lock()
+    {
         return view('app.auth.lock-one');
     }
-    public function accountSus(){
+
+    public function accountSus()
+    {
         return view('app.auth.suspend-one');
     }
 
@@ -145,57 +156,58 @@ class AppAuthController extends Controller
         if (Auth::guard('app')->check()) {
             Auth::guard('app')->logout();
         }
+
         return view('app.auth.forgot-password-one');
     }
 
-public function sendResetLink(Request $request)
-{
-    $request->validate([
-        'email' => ['required','email'],
-        'g-recaptcha-response' => ['required', new \App\Rules\Recaptcha],
-    ]);
+    public function sendResetLink(Request $request)
+    {
+        $request->validate([
+            'email' => ['required', 'email'],
+            'g-recaptcha-response' => ['required', new \App\Rules\Recaptcha],
+        ]);
 
-    $status = Password::broker('customers')->sendResetLink($request->only('email'));
+        $status = Password::broker('customers')->sendResetLink($request->only('email'));
 
-    return back()->with('status', 'If your email exists in our system, a reset link has been sent.');
-}
-
-public function showResetForm(string $token)
-{
-    return view('app.auth.reset-password-one', [
-        'token' => $token,
-        'email' => request('email'), // from query string
-    ]);
-}
-
-public function handleReset(Request $request)
-{
-    $request->validate([
-        'token'    => ['required'],
-        'email'    => ['required','email'],
-        'password' => [
-            'required','confirmed','min:8',
-            'regex:/[a-z]/','regex:/[A-Z]/','regex:/\d/','regex:/[^A-Za-z0-9]/',
-        ],
-    ],[
-        'password.regex' => 'Password must include lowercase, uppercase, number, and special character.',
-    ]);
-
-    $status = Password::broker('customers')->reset(
-        $request->only('email','password','password_confirmation','token'),
-        function ($user, $password) {
-            $user->forceFill(['password' => Hash::make($password)])
-                 ->setRememberToken(Str::random(60))
-                 ->save();
-
-            event(new PasswordReset($user));
-        }
-    );
-
-    if ($status === Password::PASSWORD_RESET) {
-        return redirect()->route('app.signin')->with('status', __($status));
+        return back()->with('status', 'If your email exists in our system, a reset link has been sent.');
     }
 
-    return back()->withErrors(['email' => __($status)]);
-}
+    public function showResetForm(string $token)
+    {
+        return view('app.auth.reset-password-one', [
+            'token' => $token,
+            'email' => request('email'), // from query string
+        ]);
+    }
+
+    public function handleReset(Request $request)
+    {
+        $request->validate([
+            'token' => ['required'],
+            'email' => ['required', 'email'],
+            'password' => [
+                'required', 'confirmed', 'min:8',
+                'regex:/[a-z]/', 'regex:/[A-Z]/', 'regex:/\d/', 'regex:/[^A-Za-z0-9]/',
+            ],
+        ], [
+            'password.regex' => 'Password must include lowercase, uppercase, number, and special character.',
+        ]);
+
+        $status = Password::broker('customers')->reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->forceFill(['password' => Hash::make($password)])
+                    ->setRememberToken(Str::random(60))
+                    ->save();
+
+                event(new PasswordReset($user));
+            }
+        );
+
+        if ($status === Password::PASSWORD_RESET) {
+            return redirect()->route('app.signin')->with('status', __($status));
+        }
+
+        return back()->withErrors(['email' => __($status)]);
+    }
 }

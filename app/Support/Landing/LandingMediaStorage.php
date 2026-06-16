@@ -98,6 +98,7 @@ class LandingMediaStorage
     {
         try {
             $mime = Storage::disk($this->diskName())->mimeType($path);
+
             return is_string($mime) && trim($mime) !== '' ? $mime : null;
         } catch (\Throwable) {
             return null;
@@ -108,6 +109,7 @@ class LandingMediaStorage
     {
         try {
             $size = Storage::disk($this->diskName())->size($path);
+
             return is_numeric($size) ? (int) $size : null;
         } catch (\Throwable) {
             return null;
@@ -118,6 +120,7 @@ class LandingMediaStorage
     {
         try {
             $modified = Storage::disk($this->diskName())->lastModified($path);
+
             return is_numeric($modified) ? (int) $modified : null;
         } catch (\Throwable) {
             return null;
@@ -156,7 +159,7 @@ class LandingMediaStorage
                 continue;
             }
 
-            if (Str::startsWith($normalized, $prefix . '/')) {
+            if (Str::startsWith($normalized, $prefix.'/')) {
                 return true;
             }
 
@@ -197,8 +200,8 @@ class LandingMediaStorage
     {
         $appUrl = rtrim((string) config('app.url', ''), '/');
 
-        if ($appUrl !== '' && Str::startsWith($url, $appUrl . '/storage/')) {
-            return $this->normalizeRelativePath((string) Str::after($url, $appUrl . '/storage/'));
+        if ($appUrl !== '' && Str::startsWith($url, $appUrl.'/storage/')) {
+            return $this->normalizeRelativePath((string) Str::after($url, $appUrl.'/storage/'));
         }
 
         $urlHost = parse_url($url, PHP_URL_HOST);
@@ -221,7 +224,7 @@ class LandingMediaStorage
             return null;
         }
 
-        $diskConfig = (array) config('filesystems.disks.' . $this->diskName(), []);
+        $diskConfig = (array) config('filesystems.disks.'.$this->diskName(), []);
         $bucket = trim((string) ($diskConfig['bucket'] ?? ''));
 
         $baseCandidates = array_values(array_filter([
@@ -242,12 +245,12 @@ class LandingMediaStorage
 
             $basePath = trim((string) parse_url($baseUrl, PHP_URL_PATH), '/');
 
-            if ($basePath !== '' && Str::startsWith($normalizedUrlPath, $basePath . '/')) {
-                return $this->normalizeRelativePath((string) Str::after($normalizedUrlPath, $basePath . '/'));
+            if ($basePath !== '' && Str::startsWith($normalizedUrlPath, $basePath.'/')) {
+                return $this->normalizeRelativePath((string) Str::after($normalizedUrlPath, $basePath.'/'));
             }
 
-            if ($bucket !== '' && Str::startsWith($normalizedUrlPath, $bucket . '/')) {
-                return $this->normalizeRelativePath((string) Str::after($normalizedUrlPath, $bucket . '/'));
+            if ($bucket !== '' && Str::startsWith($normalizedUrlPath, $bucket.'/')) {
+                return $this->normalizeRelativePath((string) Str::after($normalizedUrlPath, $bucket.'/'));
             }
         }
 
@@ -270,7 +273,7 @@ class LandingMediaStorage
             ->map(fn (string $segment) => rawurlencode($segment))
             ->implode('/');
 
-        return url('media/web/' . $encoded);
+        return url('media/web/'.$encoded);
     }
 
     protected function absoluteUrl(string $path): string
@@ -289,7 +292,7 @@ class LandingMediaStorage
             $scheme = (string) parse_url((string) config('app.url', ''), PHP_URL_SCHEME);
             $scheme = $scheme !== '' ? $scheme : 'https';
 
-            return $scheme . ':' . $path;
+            return $scheme.':'.$path;
         }
 
         return url(ltrim($path, '/'));

@@ -22,8 +22,7 @@ class MobileSocialAuthController extends MobileApiController
         protected CustomerPhoneOtpService $phoneOtp,
         protected MobileApiTokenService $tokens,
         protected MobileAppCatalog $catalog,
-    ) {
-    }
+    ) {}
 
     public function login(Request $request, string $provider): JsonResponse
     {
@@ -127,7 +126,7 @@ class MobileSocialAuthController extends MobileApiController
     }
 
     /**
-     * @param array<string, array<int, string>> $errors
+     * @param  array<string, array<int, string>>  $errors
      */
     protected function validationErrorResponse(array $errors): JsonResponse
     {

@@ -16,6 +16,7 @@ use App\Models\StoragePlan;
 use App\Services\Billing\BillingCurrencyService;
 use App\Services\Billing\CustomerBillingStateService;
 use App\Services\Billing\ScheduleStoragePlanCancellation;
+use App\Services\Storage\StorageFileDeletionService;
 use App\Services\Payments\PaymentMethodCatalog;
 use App\Support\CustomerFacingToolName;
 use App\Support\StorageBrowser;
@@ -499,52 +500,39 @@ class extends Component
 
         try {
             $browser = app(StorageBrowser::class);
+            $deletions = app(StorageFileDeletionService::class);
+            $prefix = $this->pendingDeleteType === 'folder'
+                ? $this->pendingDeletePath
+                : $this->resolveDeletePrefixForFile($this->pendingDeletePath);
 
-            DB::transaction(function () use ($customer, $browser) {
-                $prefix = $this->pendingDeleteType === 'folder'
-                    ? $this->pendingDeletePath
-                    : $this->resolveDeletePrefixForFile($this->pendingDeletePath);
+            $targets = $browser->deleteTargetsByPrefix($customer, $prefix);
 
-                $targets = $browser->deleteTargetsByPrefix($customer, $prefix);
+            foreach ($targets as $target) {
+                $file = CustomerFile::query()
+                    ->where('customer_id', (int) $customer->id)
+                    ->find((int) $target['id']);
 
-                if ($targets->isEmpty()) {
-                    return;
+                if ($file instanceof CustomerFile) {
+                    $deletions->delete($file, 'customer_deleted');
                 }
+            }
 
-                foreach ($targets as $file) {
-                    $disk = (string) ($file['disk'] ?: 's3');
-                    $path = (string) $file['path'];
+            $this->recalculateUsage((int) $customer->id);
 
-                    if ($path !== '' && Storage::disk($disk)->exists($path)) {
-                        Storage::disk($disk)->delete($path);
-                    }
-
-                    CustomerFile::query()
-                        ->where('id', $file['id'])
-                        ->update([
-                            'status'     => 'deleted',
-                            'deleted_at' => now(),
-                            'updated_at' => now(),
-                        ]);
-                }
-
-                $this->recalculateUsage((int) $customer->id);
-
-                $jobId = $this->extractJobIdFromRelativePrefix($prefix);
-                if ($jobId) {
-                    MlJob::query()
-                        ->where('customer_id', (int) $customer->id)
-                        ->where('id', $jobId)
-                        ->update([
-                            'status'            => 'deleted',
-                            'output'            => null,
-                            'storage_in_bytes'  => 0,
-                            'storage_out_bytes' => 0,
-                            'error'             => null,
-                            'updated_at'        => now(),
-                        ]);
-                }
-            }, 3);
+            $jobId = $this->extractJobIdFromRelativePrefix($prefix);
+            if ($jobId) {
+                MlJob::query()
+                    ->where('customer_id', (int) $customer->id)
+                    ->where('id', $jobId)
+                    ->update([
+                        'status'            => 'deleted',
+                        'output'            => null,
+                        'storage_in_bytes'  => 0,
+                        'storage_out_bytes' => 0,
+                        'error'             => null,
+                        'updated_at'        => now(),
+                    ]);
+            }
 
             if ($this->path !== '' && !$this->pathExists($this->path)) {
                 $this->path = $this->parentPath($this->path);
@@ -861,6 +849,7 @@ class extends Component
         $bytes = (int) CustomerFile::query()
             ->where('customer_id', $customerId)
             ->where('status', 'active')
+            ->where('counts_toward_quota', true)
             ->sum('size_bytes');
 
         CustomerUsage::query()->updateOrCreate(

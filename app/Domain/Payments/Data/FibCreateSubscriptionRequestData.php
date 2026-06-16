@@ -13,8 +13,7 @@ final class FibCreateSubscriptionRequestData
         public readonly ?string $trialPeriod,
         public readonly ?string $expiresIn,
         public readonly string $statusCallbackUrl,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array<string, mixed>

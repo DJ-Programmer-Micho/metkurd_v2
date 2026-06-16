@@ -80,5 +80,70 @@ it('shows review-required fib payments in the admin customer support view', func
         ->set('customerFilter', (string) $customer->id)
         ->assertSee('FIB Payment Ledger')
         ->assertSee('Requires Review')
+        ->assertSee('Review')
+        ->assertSee('Attach Correct FIB Reference')
+        ->assertSee('Mark Invalid / Expired')
+        ->assertSee('Mark As Non-Revenue Internal Record')
         ->assertSee('Customer currently has Pro but this FIB payment was created for Student.');
+});
+
+it('opens the guided payment review panel and can close a review row as invalid without fulfillment', function () {
+    $admin = adminPaymentsReviewAdmin();
+    $customer = adminPaymentsReviewCustomer();
+    $studentPlan = ServicePlan::query()->where('code', 'student')->firstOrFail();
+
+    $payment = Payment::create([
+        'uuid' => (string) Str::uuid(),
+        'customer_id' => $customer->id,
+        'provider' => PaymentProvider::FIB,
+        'purchase_type' => PurchaseType::PLAN_SUBSCRIPTION,
+        'payment_mode' => PaymentMode::RECURRING,
+        'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
+        'status' => PaymentStatus::PAID,
+        'internal_status' => PaymentInternalStatus::REQUIRES_REVIEW,
+        'local_reference' => 'ADMIN-REVIEW-CLOSE-'.strtoupper(Str::random(8)),
+        'idempotency_key' => (string) Str::uuid(),
+        'fib_subscription_id' => 'fib-admin-review-close-123',
+        'amount' => $studentPlan->priceIqdForCycle('monthly'),
+        'currency' => 'IQD',
+        'provider_subscription_status' => 'NOT_FOUND',
+        'mismatch_reason' => 'Stored subscription id was not found at the provider and should not be fulfilled automatically.',
+        'review_required_at' => now(),
+        'paid_at' => now(),
+        'callback_payload' => [
+            'id' => 'fib-admin-review-close-123',
+            'status' => 'NOT_FOUND',
+        ],
+        'status_response' => [
+            'error' => 'Subscription was not found',
+        ],
+        'purchase_snapshot' => [
+            'code' => $studentPlan->code,
+            'name' => $studentPlan->name,
+            'billing_cycle' => 'monthly',
+        ],
+        'purchasable_type' => ServicePlan::class,
+        'purchasable_id' => $studentPlan->id,
+    ]);
+
+    $this->actingAs($admin, 'admin');
+
+    Livewire::test('admin::pages.customers.adm-customers-register')
+        ->set('customerFilter', (string) $customer->id)
+        ->call('openReviewPayment', (int) $payment->id)
+        ->assertSet('reviewPaymentId', (string) $payment->id)
+        ->assertSee('Review Payment')
+        ->assertSee('Stored FIB Subscription ID')
+        ->assertSee('Callback Payload')
+        ->set('reviewResolutionReason', 'Provider lookup confirmed the stored reference is invalid and no paid transaction exists.')
+        ->call('markReviewPaymentInvalid')
+        ->assertHasNoErrors();
+
+    $payment = $payment->fresh();
+
+    expect($payment->status)->toBe(PaymentStatus::EXPIRED)
+        ->and($payment->internal_status)->toBe(PaymentInternalStatus::EXPIRED)
+        ->and($payment->fulfilled_at)->toBeNull()
+        ->and($payment->review_required_at)->toBeNull()
+        ->and(data_get($payment->meta, 'review_resolution.action'))->toBe('mark_invalid_expired');
 });

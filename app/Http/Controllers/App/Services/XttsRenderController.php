@@ -48,10 +48,10 @@ class XttsRenderController extends Controller
         try {
             abort_unless(Storage::disk($disk)->exists($key), 404, 'Audio file not found on storage.');
 
-            if (!$request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
+            if (! $request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($key, now()->addMinutes(20), [
                     'ResponseContentType' => $mime,
-                    'ResponseContentDisposition' => 'inline; filename="' . $filename . '"',
+                    'ResponseContentDisposition' => 'inline; filename="'.$filename.'"',
                 ]);
 
                 return redirect()->away($url);
@@ -70,7 +70,7 @@ class XttsRenderController extends Controller
                 }
             }, 200, [
                 'Content-Type' => $mime,
-                'Content-Disposition' => 'inline; filename="' . $filename . '"',
+                'Content-Disposition' => 'inline; filename="'.$filename.'"',
                 'Cache-Control' => 'private, max-age=600, stale-while-revalidate=60',
                 'Accept-Ranges' => 'bytes',
             ]);

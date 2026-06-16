@@ -25,8 +25,7 @@ final class FibSubscriptionStatusData
         public readonly ?Carbon $lastPaymentAt,
         public readonly array $providerLinks,
         public readonly array $raw,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload

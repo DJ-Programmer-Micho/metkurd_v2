@@ -32,6 +32,10 @@ class PrunePaymentEventNoise extends Command
         'admin_payment_review_resolved',
         'admin_payment_refund_confirmed',
         'admin_payment_applied_manually',
+        'admin_payment_marked_invalid',
+        'admin_payment_marked_non_revenue',
+        'admin_payment_reference_attached',
+        'manual_revenue_reclassified',
     ];
 
     public function handle(): int

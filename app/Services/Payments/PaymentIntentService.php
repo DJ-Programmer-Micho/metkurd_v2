@@ -24,8 +24,7 @@ class PaymentIntentService
         protected PaymentFeeCalculator $feeCalculator,
         protected PaymentFulfillmentService $fulfillmentService,
         protected PaymentIntentReconciliationService $reconciler,
-    ) {
-    }
+    ) {}
 
     public function startCheckout(Customer $customer, PaymentPurposeType|string $purposeType, int $purposeId, array $options = []): PaymentIntent
     {
@@ -217,7 +216,7 @@ class PaymentIntentService
 
     protected function merchantTransactionId(string $driver): string
     {
-        return strtoupper($driver) . '-' . now()->format('YmdHis') . '-' . strtoupper(Str::random(8));
+        return strtoupper($driver).'-'.now()->format('YmdHis').'-'.strtoupper(Str::random(8));
     }
 
     /**

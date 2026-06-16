@@ -1095,10 +1095,11 @@ class LandingContent
     protected static function flattenCatalogValues(array $value, string $prefix, array &$flat): void
     {
         foreach ($value as $key => $item) {
-            $path = $prefix . '.' . $key;
+            $path = $prefix.'.'.$key;
 
             if (is_array($item)) {
                 self::flattenCatalogValues($item, $path, $flat);
+
                 continue;
             }
 
@@ -1137,7 +1138,7 @@ class LandingContent
         $map = [];
 
         foreach ($replace as $key => $item) {
-            $map[':' . $key] = (string) $item;
+            $map[':'.$key] = (string) $item;
         }
 
         return strtr($value, $map);

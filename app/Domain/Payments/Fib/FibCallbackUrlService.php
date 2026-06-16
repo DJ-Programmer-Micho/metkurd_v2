@@ -11,7 +11,7 @@ class FibCallbackUrlService
         $baseUrl = rtrim((string) config('fib.callback_base_url', config('app.url')), '/');
         $path = route($routeName, absolute: false);
 
-        return $baseUrl . $path;
+        return $baseUrl.$path;
     }
 
     public function ensurePublicUrl(string $url, string $channel = 'payment'): void

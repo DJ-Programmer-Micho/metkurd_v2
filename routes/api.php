@@ -1,5 +1,15 @@
 <?php
 
+use App\Http\Controllers\Api\Customer\V1\AsrController;
+use App\Http\Controllers\Api\Customer\V1\CaptionController;
+use App\Http\Controllers\Api\Customer\V1\FileController;
+use App\Http\Controllers\Api\Customer\V1\JobController;
+use App\Http\Controllers\Api\Customer\V1\MeController;
+use App\Http\Controllers\Api\Customer\V1\OcrController;
+use App\Http\Controllers\Api\Customer\V1\StemController;
+use App\Http\Controllers\Api\Customer\V1\TranslateController;
+use App\Http\Controllers\Api\Customer\V1\TtsController;
+use App\Http\Controllers\Api\Customer\V1\UsageController;
 use App\Http\Controllers\Api\Mobile\Auth\MobileAuthController;
 use App\Http\Controllers\Api\Mobile\Auth\MobilePhoneVerificationController;
 use App\Http\Controllers\Api\Mobile\Auth\MobileSocialAuthController;
@@ -73,3 +83,47 @@ Route::prefix('mobile')->name('api.mobile.')->group(function () {
             });
     });
 });
+
+Route::prefix('v1')
+    ->name('api.customer.v1.')
+    ->middleware([
+        'customer.api',
+        'customer.api.access',
+        'customer.api.rate_limit',
+    ])
+    ->group(function () {
+        Route::get('/me', MeController::class)->name('me');
+        Route::get('/usage', UsageController::class)->name('usage');
+
+        Route::get('/tts/apollo-1-0v/voices', [TtsController::class, 'apollo10Voices'])->name('tts.apollo10.voices');
+        Route::get('/tts/apollo-1-5v/voices', [TtsController::class, 'apollo15Voices'])->name('tts.apollo15.voices');
+        Route::get('/tts/delta-1-0v/voices', [TtsController::class, 'delta10Voices'])->name('tts.delta10.voices');
+
+        Route::get('/tts/xtts/voices', [TtsController::class, 'xttsVoices'])->name('tts.aliases.xtts.voices');
+        Route::get('/tts/xomni/voices', [TtsController::class, 'xomniVoices'])->name('tts.aliases.xomni.voices');
+        Route::get('/tts/f5tts/voices', [TtsController::class, 'f5ttsVoices'])->name('tts.aliases.f5tts.voices');
+
+        Route::middleware('customer.api.concurrency')->group(function () {
+            Route::post('/tts/apollo-1-0v', [TtsController::class, 'apollo10'])->name('tts.apollo10.submit');
+            Route::post('/tts/apollo-1-5v', [TtsController::class, 'apollo15'])->name('tts.apollo15.submit');
+            Route::post('/tts/delta-1-0v', [TtsController::class, 'delta10'])->name('tts.delta10.submit');
+            Route::post('/tts/vector-1-0', [TtsController::class, 'vector10'])->name('tts.vector10.submit');
+            Route::post('/tts/vector-1-5', [TtsController::class, 'vector15'])->name('tts.vector15.submit');
+
+            Route::post('/tts/xtts', [TtsController::class, 'xtts'])->name('tts.aliases.xtts.submit');
+            Route::post('/tts/xomni', [TtsController::class, 'xomni'])->name('tts.aliases.xomni.submit');
+            Route::post('/tts/f5tts', [TtsController::class, 'f5tts'])->name('tts.aliases.f5tts.submit');
+            Route::post('/tts/clone-xtts', [TtsController::class, 'cloneXtts'])->name('tts.aliases.clone_xtts.submit');
+            Route::post('/tts/clone-xomni', [TtsController::class, 'cloneXomni'])->name('tts.aliases.clone_xomni.submit');
+
+            Route::post('/asr/wasr', [AsrController::class, 'wasr'])->name('asr.wasr.submit');
+            Route::post('/asr/qasr', [AsrController::class, 'qasr'])->name('asr.qasr.submit');
+            Route::post('/caption/qasr', [CaptionController::class, 'qasr'])->name('caption.qasr.submit');
+            Route::post('/ocr', OcrController::class)->name('ocr.submit');
+            Route::post('/translate', TranslateController::class)->name('translate.submit');
+            Route::post('/stem', StemController::class)->name('stem.submit');
+        });
+
+        Route::get('/jobs/{job}', [JobController::class, 'show'])->name('jobs.show');
+        Route::get('/files/{file}/download', [FileController::class, 'download'])->name('files.download');
+    });

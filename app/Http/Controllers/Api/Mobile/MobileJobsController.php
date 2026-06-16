@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Api\Mobile;
 
 use App\Http\Resources\Mobile\MobileJobResource;
+use App\Services\Mobile\MobileJobStatusSyncService;
 use App\Services\Mobile\MobileJobSubmissionException;
 use App\Services\Mobile\MobileJobSubmissionService;
-use App\Services\Mobile\MobileJobStatusSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,8 +14,7 @@ class MobileJobsController extends MobileApiController
     public function __construct(
         protected MobileJobSubmissionService $submissions,
         protected MobileJobStatusSyncService $statusSync,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request, string $app)
     {

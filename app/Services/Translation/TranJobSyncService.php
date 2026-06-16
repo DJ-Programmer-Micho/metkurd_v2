@@ -85,7 +85,7 @@ class TranJobSyncService
         return DB::transaction(function () use ($job, $tool, $translatedText, $providerPayload) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
-            if (!$fresh) {
+            if (! $fresh) {
                 throw new \RuntimeException('Translation job not found during finalize.');
             }
 
@@ -100,12 +100,10 @@ class TranJobSyncService
                 (int) $fresh->customer_id,
                 $targetKey,
                 $translatedText,
-                [
-                    'job_id' => (string) $fresh->id,
-                    'tool' => (string) ($tool->code ?: 'tran'),
-                    'purpose' => 'target_text',
-                    'mime' => 'text/plain; charset=UTF-8',
-                ]
+                array_merge(
+                    $this->storage->apiOutputMeta($fresh, (string) ($tool->code ?: 'tran'), 'target_text'),
+                    ['mime' => 'text/plain; charset=UTF-8']
+                )
             );
 
             $fresh->status = 'done';
@@ -153,7 +151,7 @@ class TranJobSyncService
         DB::transaction(function () use ($job) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
-            if (!$fresh || !in_array((string) $fresh->status, ['done', 'delete_failed'], true)) {
+            if (! $fresh || ! in_array((string) $fresh->status, ['done', 'delete_failed'], true)) {
                 throw new \RuntimeException('Translation not found or already deleted.');
             }
 

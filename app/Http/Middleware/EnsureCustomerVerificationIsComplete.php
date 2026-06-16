@@ -34,4 +34,3 @@ class EnsureCustomerVerificationIsComplete
         return redirect()->route($nextVerificationRoute);
     }
 }
-

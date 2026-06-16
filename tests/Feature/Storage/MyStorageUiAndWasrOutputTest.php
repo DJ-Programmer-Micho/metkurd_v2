@@ -25,8 +25,8 @@ function storageUiCustomer(?string $email = null): Customer
     $suffix = Str::lower(Str::random(10));
 
     return Customer::create([
-        'username' => 'storage_ui_' . $suffix,
-        'email' => $email ?? 'storage-ui-' . $suffix . '@example.com',
+        'username' => 'storage_ui_'.$suffix,
+        'email' => $email ?? 'storage-ui-'.$suffix.'@example.com',
         'password' => 'Secret123!',
         'status' => 1,
         'email_verify' => true,
@@ -49,12 +49,12 @@ it('chunks my-storage folder list in batches of twenty and loads more on demand'
             'purpose' => 'transcription',
             'tool_code' => 'wasr',
             'disk' => 's3',
-            'path' => "renders/{$folder}/wasr/job-" . str_pad((string) $index, 3, '0', STR_PAD_LEFT) . '/transcription.txt',
+            'path' => "renders/{$folder}/wasr/job-".str_pad((string) $index, 3, '0', STR_PAD_LEFT).'/transcription.txt',
             'size_bytes' => 128 + $index,
             'mime' => 'text/plain; charset=UTF-8',
             'status' => 'active',
             'meta' => [
-                'job_id' => 'job-' . str_pad((string) $index, 3, '0', STR_PAD_LEFT),
+                'job_id' => 'job-'.str_pad((string) $index, 3, '0', STR_PAD_LEFT),
                 'tool' => 'wasr',
             ],
         ]);

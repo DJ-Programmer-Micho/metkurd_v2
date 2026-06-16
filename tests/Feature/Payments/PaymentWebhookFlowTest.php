@@ -67,7 +67,7 @@ it('processes a paid provider webhook once and ignores duplicate delivery', func
         'display_country_code' => $snapshot['display_country_code'],
         'status' => PaymentIntentStatus::PENDING->value,
         'idempotency_key' => (string) Str::uuid(),
-        'merchant_transaction_id' => 'AREEBA-TEST-' . strtoupper(Str::random(10)),
+        'merchant_transaction_id' => 'AREEBA-TEST-'.strtoupper(Str::random(10)),
     ]);
 
     $payload = [

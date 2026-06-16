@@ -119,7 +119,7 @@ class extends Component
     #[Computed]
     public function displayName(): string
     {
-        $displayName = trim($this->firstName . ' ' . $this->lastName);
+        $displayName = trim($this->firstName.' '.$this->lastName);
 
         return $displayName !== '' ? $displayName : (string) ($this->user?->username ?? __('Customer'));
     }
@@ -153,7 +153,7 @@ class extends Component
 
         $url = (string) ($this->profile?->avatar_url ?: app(AvatarFallbackUrl::class)->customer());
 
-        return $url . (str_contains($url, '?') ? '&' : '?') . 'v=' . $this->avatarVersion;
+        return $url.(str_contains($url, '?') ? '&' : '?').'v='.$this->avatarVersion;
     }
 
     public function updatedAvatar(): void
@@ -221,7 +221,7 @@ class extends Component
         ]);
 
         if ($this->avatar) {
-            $folder = 'customers/' . $this->customerFolderSlug($user) . '/avatars';
+            $folder = 'customers/'.$this->customerFolderSlug($user).'/avatars';
             $this->deleteStoredAvatar($oldAvatar);
             $profile->avatar = $this->avatar->storePublicly($folder, 's3');
         }
@@ -374,7 +374,7 @@ class extends Component
     {
         $nameSlug = Str::slug(trim($this->displayName), '_');
 
-        return $user->id . ($nameSlug !== '' ? '_' . $nameSlug : '');
+        return $user->id.($nameSlug !== '' ? '_'.$nameSlug : '');
     }
 
     protected function deleteStoredAvatar(?string $storedAvatar): void
@@ -407,7 +407,7 @@ class extends Component
             $digits = substr((string) $digits, 2);
         }
 
-        return $digits ? '+' . $digits : '';
+        return $digits ? '+'.$digits : '';
     }
 
     protected function normalizePhoneCountry(?string $country): string

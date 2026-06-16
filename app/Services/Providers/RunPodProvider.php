@@ -9,7 +9,7 @@ class RunPodProvider
     public function run(string $endpointId, array $input, ?int $timeout = null): array
     {
         $base = rtrim(config('runpod.base_url'), '/');
-        $key  = config('runpod.api_key');
+        $key = config('runpod.api_key');
         $timeout = $timeout ?? (int) config('runpod.timeout', 60);
 
         return Http::withToken($key)
@@ -22,7 +22,7 @@ class RunPodProvider
     public function status(string $endpointId, string $jobId, ?int $timeout = null): array
     {
         $base = rtrim(config('runpod.base_url'), '/');
-        $key  = config('runpod.api_key');
+        $key = config('runpod.api_key');
         $timeout = $timeout ?? (int) config('runpod.timeout', 60);
 
         return Http::withToken($key)

@@ -24,61 +24,93 @@ trait ManagesLandingToolsPage
     public int $perPage = 10;
 
     public ?int $editingToolPageId = null;
+
     public string $slug = '';
+
     public int $sortOrder = 0;
+
     public string $toolStatus = 'active';
+
     public string $demoType = '';
+
     public string $demoConfigJson = '';
+
     /** @var array<string, mixed> */
     public array $demoMeta = ['sample_text' => ''];
+
     /** @var array<int, array<string, mixed>> */
     public array $demoItems = [];
+
     public bool $removeSquareImage = false;
+
     public bool $removeHeroImage = false;
+
     public bool $removeCardImage = false;
 
     public ?string $squareImagePath = null;
+
     public ?string $heroImagePath = null;
+
     public ?string $cardImagePath = null;
 
     public $squareImageUpload = null;
+
     public $heroImageUpload = null;
+
     public $cardImageUpload = null;
 
     /** @var array<string, string> */
     public array $badge = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $title = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $heroText = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $summary = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $aboutTitle = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $aboutCopy = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $useCasesTitle = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $useCasesText = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $toolCardTagsText = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $metaTitle = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $metaDescription = ['en' => '', 'ar' => '', 'ku' => ''];
 
     public bool $appDownloadEnabled = false;
+
     public bool $appDownloadIosEnabled = false;
+
     public string $appDownloadIosUrl = '';
+
     public bool $appDownloadAndroidEnabled = false;
+
     public string $appDownloadAndroidUrl = '';
+
     /** @var array<string, string> */
     public array $appDownloadTitle = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $appDownloadBody = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $appDownloadIosLabel = ['en' => '', 'ar' => '', 'ku' => ''];
+
     /** @var array<string, string> */
     public array $appDownloadAndroidLabel = ['en' => '', 'ar' => '', 'ku' => ''];
 
@@ -93,6 +125,7 @@ trait ManagesLandingToolsPage
     public array $featureItems = [];
 
     public ?int $toolPageIdPendingDelete = null;
+
     public string $toolPageDeleteLabel = '';
 
     public function updatingSearch(): void
@@ -224,7 +257,7 @@ trait ManagesLandingToolsPage
             ->get(['code', 'name'])
             ->mapWithKeys(fn (Voice $voice) => [
                 (string) $voice->code => trim((string) $voice->name) !== ''
-                    ? (string) $voice->name . ' (' . (string) $voice->code . ')'
+                    ? (string) $voice->name.' ('.(string) $voice->code.')'
                     : (string) $voice->code,
             ])
             ->all();
@@ -361,6 +394,7 @@ trait ManagesLandingToolsPage
 
         if ($this->demoType === '') {
             $this->addError('demoType', __('Please choose a demo type first.'));
+
             return;
         }
 
@@ -400,7 +434,7 @@ trait ManagesLandingToolsPage
     {
         $toolPage = $this->editingToolPageId
             ? LandingToolPage::query()->findOrFail($this->editingToolPageId)
-            : new LandingToolPage();
+            : new LandingToolPage;
 
         $featureIconOptions = array_keys($this->featureIconOptions());
 
@@ -507,6 +541,7 @@ trait ManagesLandingToolsPage
 
             if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
                 $this->addError('demoConfigJson', __('Demo config must be a valid JSON object or array.'));
+
                 return;
             }
 
@@ -827,7 +862,7 @@ trait ManagesLandingToolsPage
         }
 
         $base = $this->demoSchema()->normalizeConfig($type, $baseConfig, $slug);
-        $assetBase = $this->demoAssetDirectory($slug) . '/' . $type;
+        $assetBase = $this->demoAssetDirectory($slug).'/'.$type;
         $meta = is_array(data_get($base, 'meta')) ? (array) data_get($base, 'meta') : [];
 
         $sampleText = trim((string) data_get($this->demoMeta, 'sample_text', ''));
@@ -956,7 +991,7 @@ trait ManagesLandingToolsPage
                 $key = $this->inferDemoGroupKeyFromItem($type, ['engine' => $engine]);
             }
             if ($key === '') {
-                $key = $type . '_group_' . ($index + 1);
+                $key = $type.'_group_'.($index + 1);
             }
 
             /** @var array<string, mixed> $base */
@@ -1383,7 +1418,7 @@ trait ManagesLandingToolsPage
 
     protected function newDemoBuilderRowKey(): string
     {
-        return 'demo-' . Str::lower(Str::random(14));
+        return 'demo-'.Str::lower(Str::random(14));
     }
 
     /**
@@ -1415,7 +1450,7 @@ trait ManagesLandingToolsPage
             current: data_get($current, 'audio'),
             urlOrPath: trim((string) data_get($row, 'audio_url', '')),
             upload: data_get($row, 'audio_upload'),
-            directory: $directory . '/audio',
+            directory: $directory.'/audio',
             disk: $disk
         );
 
@@ -1448,14 +1483,14 @@ trait ManagesLandingToolsPage
             current: data_get($current, 'source_audio'),
             urlOrPath: trim((string) data_get($row, 'source_audio_url', '')),
             upload: data_get($row, 'source_audio_upload'),
-            directory: $directory . '/source',
+            directory: $directory.'/source',
             disk: $disk
         );
         $cloned = $this->resolveDemoMediaValue(
             current: data_get($current, 'cloned_audio'),
             urlOrPath: trim((string) data_get($row, 'cloned_audio_url', '')),
             upload: data_get($row, 'cloned_audio_upload'),
-            directory: $directory . '/cloned',
+            directory: $directory.'/cloned',
             disk: $disk
         );
 
@@ -1492,7 +1527,7 @@ trait ManagesLandingToolsPage
             current: data_get($current, 'audio'),
             urlOrPath: trim((string) data_get($row, 'audio_url', '')),
             upload: data_get($row, 'audio_upload'),
-            directory: $directory . '/audio',
+            directory: $directory.'/audio',
             disk: $disk
         );
 
@@ -1525,7 +1560,7 @@ trait ManagesLandingToolsPage
             current: data_get($current, 'original_audio'),
             urlOrPath: trim((string) data_get($row, 'original_audio_url', '')),
             upload: data_get($row, 'original_audio_upload'),
-            directory: $directory . '/mix',
+            directory: $directory.'/mix',
             disk: $disk
         );
 
@@ -1535,7 +1570,7 @@ trait ManagesLandingToolsPage
                 current: data_get($current, "stems.{$stemKey}"),
                 urlOrPath: trim((string) data_get($row, "{$stemKey}_url", '')),
                 upload: data_get($row, "{$stemKey}_upload"),
-                directory: $directory . '/' . $stemKey,
+                directory: $directory.'/'.$stemKey,
                 disk: $disk
             );
         }
@@ -1568,7 +1603,7 @@ trait ManagesLandingToolsPage
             current: data_get($current, 'image'),
             urlOrPath: trim((string) data_get($row, 'image_url', '')),
             upload: data_get($row, 'image_upload'),
-            directory: $directory . '/image',
+            directory: $directory.'/image',
             disk: $disk
         );
 
@@ -1620,13 +1655,9 @@ trait ManagesLandingToolsPage
             ->trim('-')
             ->value();
 
-        return 'landing/demos/' . ($cleanSlug !== '' ? $cleanSlug : 'tool');
+        return 'landing/demos/'.($cleanSlug !== '' ? $cleanSlug : 'tool');
     }
 
-    /**
-     * @param  mixed  $current
-     * @param  mixed  $upload
-     */
     protected function resolveDemoMediaValue(mixed $current, string $urlOrPath, mixed $upload, string $directory, string $disk): ?string
     {
         if ($upload) {
@@ -1850,6 +1881,7 @@ trait ManagesLandingToolsPage
 
         return array_values(array_map(function (array $item, int $index) {
             $item['sort_order'] = $index;
+
             return $item;
         }, $items, array_keys($items)));
     }
@@ -1863,7 +1895,7 @@ trait ManagesLandingToolsPage
         $value = data_get($content, "{$locale}.features");
 
         if (! is_array($value) || $value === []) {
-            $value = data_get($content, "en.features", []);
+            $value = data_get($content, 'en.features', []);
         }
 
         $features = [];
@@ -1877,6 +1909,7 @@ trait ManagesLandingToolsPage
                         'copy' => '',
                         'sort_order' => $index,
                     ];
+
                     continue;
                 }
 
@@ -1993,6 +2026,7 @@ trait ManagesLandingToolsPage
 
         return array_values(array_map(function (array $item, int $index) {
             $item['sort_order'] = $index;
+
             return $item;
         }, $normalized, array_keys($normalized)));
     }
@@ -2061,6 +2095,7 @@ trait ManagesLandingToolsPage
     protected function emptyToNull(?string $value): ?string
     {
         $trimmed = trim((string) $value);
+
         return $trimmed === '' ? null : $trimmed;
     }
 

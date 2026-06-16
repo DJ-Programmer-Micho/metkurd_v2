@@ -56,8 +56,8 @@ it('shows local and live provider status details for a one-time fib payment', fu
     Http::preventStrayRequests();
 
     $customer = Customer::create([
-        'username' => 'fib_diag_' . Str::lower(Str::random(8)),
-        'email' => 'fib-diagnose-' . Str::lower(Str::random(8)) . '@example.com',
+        'username' => 'fib_diag_'.Str::lower(Str::random(8)),
+        'email' => 'fib-diagnose-'.Str::lower(Str::random(8)).'@example.com',
         'password' => 'Secret123!',
         'status' => 1,
         'email_verify' => true,
@@ -72,7 +72,7 @@ it('shows local and live provider status details for a one-time fib payment', fu
         'payment_mode' => PaymentMode::ONE_TIME,
         'provider_object_type' => PaymentProviderObjectType::PAYMENT,
         'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
-        'local_reference' => 'FIB-DIAG-' . strtoupper(Str::random(10)),
+        'local_reference' => 'FIB-DIAG-'.strtoupper(Str::random(10)),
         'idempotency_key' => (string) Str::uuid(),
         'fib_payment_id' => 'fib-prod-payment-123',
         'amount' => 25000,
@@ -103,7 +103,7 @@ it('shows local and live provider status details for a one-time fib payment', fu
         ], 200),
     ]);
 
-    $this->artisan('payments:fib:diagnose ' . $payment->uuid)
+    $this->artisan('payments:fib:diagnose '.$payment->uuid)
         ->expectsOutputToContain('PAYMENT RECORD')
         ->expectsOutputToContain((string) $payment->uuid)
         ->expectsOutputToContain('LIVE PROVIDER STATUS')

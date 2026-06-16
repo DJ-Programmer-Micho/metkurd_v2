@@ -7,8 +7,8 @@ use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
 use App\Models\CreditProduct;
 use App\Models\Customer;
-use App\Models\StoragePlan;
 use App\Models\ServicePlan;
+use App\Models\StoragePlan;
 use App\Services\Billing\PlanSwitcher;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -54,8 +54,8 @@ function myStorageCustomer(?string $email = null): Customer
     $suffix = Str::lower(Str::random(10));
 
     return Customer::create([
-        'username' => 'storage_' . $suffix,
-        'email' => $email ?? 'storage-' . $suffix . '@example.com',
+        'username' => 'storage_'.$suffix,
+        'email' => $email ?? 'storage-'.$suffix.'@example.com',
         'password' => 'Secret123!',
         'status' => 1,
         'email_verify' => true,
@@ -65,7 +65,7 @@ function myStorageCustomer(?string $email = null): Customer
 
 function myStorageStageUrl(string $path): string
 {
-    return 'https://fib-stage.fib.iq' . $path;
+    return 'https://fib-stage.fib.iq'.$path;
 }
 
 function myStorageSubscriptionCreateResponse(string $subscriptionId): array
@@ -74,7 +74,7 @@ function myStorageSubscriptionCreateResponse(string $subscriptionId): array
         'subscriptionId' => $subscriptionId,
         'readableCode' => 'SUB-CODE-123',
         'qrCode' => 'data:image/png;base64,fake-subscription-qr',
-        'appLink' => 'https://fib.iq/app/' . $subscriptionId,
+        'appLink' => 'https://fib.iq/app/'.$subscriptionId,
         'validUntil' => '2026-05-01T10:15:00Z',
     ];
 }
@@ -85,9 +85,9 @@ function myStorageAddonCreateResponse(string $paymentId): array
         'paymentId' => $paymentId,
         'readableCode' => 'PAY-CODE-123',
         'qrCode' => 'data:image/png;base64,fake-payment-qr',
-        'personalAppLink' => 'https://fib.iq/personal/' . $paymentId,
-        'businessAppLink' => 'https://fib.iq/business/' . $paymentId,
-        'corporateAppLink' => 'https://fib.iq/corporate/' . $paymentId,
+        'personalAppLink' => 'https://fib.iq/personal/'.$paymentId,
+        'businessAppLink' => 'https://fib.iq/business/'.$paymentId,
+        'corporateAppLink' => 'https://fib.iq/corporate/'.$paymentId,
         'validUntil' => '2026-05-01T10:15:00Z',
     ];
 }
@@ -186,4 +186,3 @@ it('schedules storage cancellation at period end from my-storage without removin
         ->and($subscription->ends_at)->not->toBeNull()
         ->and($subscription->ends_at->isFuture())->toBeTrue();
 });
-

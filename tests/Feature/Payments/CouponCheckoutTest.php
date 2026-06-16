@@ -79,8 +79,8 @@ function couponFeatureCustomer(?string $email = null): Customer
     $suffix = Str::lower(Str::random(10));
 
     return Customer::create([
-        'username' => 'coupon_' . $suffix,
-        'email' => $email ?? 'coupon-' . $suffix . '@example.com',
+        'username' => 'coupon_'.$suffix,
+        'email' => $email ?? 'coupon-'.$suffix.'@example.com',
         'password' => 'Secret123!',
         'status' => 1,
         'email_verify' => true,
@@ -90,7 +90,7 @@ function couponFeatureCustomer(?string $email = null): Customer
 
 function couponFeatureStageUrl(string $path): string
 {
-    return 'https://fib-stage.fib.iq' . $path;
+    return 'https://fib-stage.fib.iq'.$path;
 }
 
 function couponFeatureGrantPaidPlan(Customer $customer, string $code = 'pro'): ServicePlan
@@ -116,7 +116,7 @@ function couponFeatureFakePlanSubscription(string $subscriptionId = 'fib-plan-co
             'subscriptionId' => $subscriptionId,
             'readableCode' => 'SUB-CODE-123',
             'qrCode' => 'data:image/png;base64,fake-subscription-qr',
-            'appLink' => 'https://fib.iq/app/' . $subscriptionId,
+            'appLink' => 'https://fib.iq/app/'.$subscriptionId,
             'validUntil' => '2026-05-01T10:15:00Z',
         ], 201),
     ]);
@@ -133,9 +133,9 @@ function couponFeatureFakeAddonPayment(string $paymentId = 'fib-addon-coupon-pay
             'paymentId' => $paymentId,
             'readableCode' => 'PAY-CODE-123',
             'qrCode' => 'data:image/png;base64,fake-payment-qr',
-            'personalAppLink' => 'https://fib.iq/personal/' . $paymentId,
-            'businessAppLink' => 'https://fib.iq/business/' . $paymentId,
-            'corporateAppLink' => 'https://fib.iq/corporate/' . $paymentId,
+            'personalAppLink' => 'https://fib.iq/personal/'.$paymentId,
+            'businessAppLink' => 'https://fib.iq/business/'.$paymentId,
+            'corporateAppLink' => 'https://fib.iq/corporate/'.$paymentId,
             'validUntil' => '2026-05-01T10:15:00Z',
         ], 201),
     ]);
@@ -164,8 +164,7 @@ function couponFeaturePlanContext(
     ServicePlan $plan,
     string $cycle = 'monthly',
     string $provider = 'fib',
-): CouponContext
-{
+): CouponContext {
     return new CouponContext(
         customer: $customer,
         purchaseType: PurchaseType::PLAN_SUBSCRIPTION,

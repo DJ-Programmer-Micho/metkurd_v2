@@ -156,7 +156,7 @@ class MobileAppCatalog
             return false;
         }
 
-        return $token->can('mobile:*') || $token->can('mobile:' . strtolower(trim($slug)));
+        return $token->can('mobile:*') || $token->can('mobile:'.strtolower(trim($slug)));
     }
 
     /**
@@ -170,7 +170,7 @@ class MobileAppCatalog
             return ['mobile', 'mobile:*'];
         }
 
-        return ['mobile', 'mobile:' . $slug];
+        return ['mobile', 'mobile:'.$slug];
     }
 
     /**

@@ -67,10 +67,10 @@ it('stores site meta uploads on the configured shared media disk', function () {
 
     $setting = SiteMetaSetting::query()->where('key', 'meta.favicon_path')->firstOrFail();
     $storedPath = trim((string) data_get($setting->value, 'value', ''));
-    $resolvedUrl = app(SiteMetaSettingsRepository::class)->publicUrl('/storage/' . $storedPath);
+    $resolvedUrl = app(SiteMetaSettingsRepository::class)->publicUrl('/storage/'.$storedPath);
 
     expect($storedPath)->toStartWith('web-setting/site-meta/favicon-')
-        ->and($resolvedUrl)->toStartWith(url('media/web/' . $storedPath))
+        ->and($resolvedUrl)->toStartWith(url('media/web/'.$storedPath))
         ->and($resolvedUrl)->toContain('?v=');
 
     Storage::disk('s3')->assertExists($storedPath);
@@ -98,7 +98,7 @@ it('serves public landing media through app route for private buckets', function
     $path = 'web-setting/site-meta/favicon-test.png';
     Storage::disk('s3')->put($path, 'favicon-content');
 
-    $response = $this->get(url('media/web/' . $path));
+    $response = $this->get(url('media/web/'.$path));
 
     $response->assertOk()
         ->assertHeader('Cache-Control');
@@ -110,5 +110,5 @@ it('does not expose non-allowlisted keys through landing media proxy', function 
     $privatePath = 'customers/private/avatar.png';
     Storage::disk('s3')->put($privatePath, 'secret');
 
-    $this->get(url('media/web/' . $privatePath))->assertNotFound();
+    $this->get(url('media/web/'.$privatePath))->assertNotFound();
 });

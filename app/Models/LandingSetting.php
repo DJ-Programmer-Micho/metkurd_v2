@@ -15,4 +15,3 @@ class LandingSetting extends Model
         'value' => 'array',
     ];
 }
-

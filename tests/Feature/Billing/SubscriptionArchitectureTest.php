@@ -92,7 +92,7 @@ function fibRecurringPayment(Customer $customer, PurchaseType $purchaseType, int
         'payment_mode' => PaymentMode::RECURRING,
         'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
         'status' => PaymentStatus::PAID,
-        'local_reference' => 'TEST-' . strtoupper(Str::random(10)),
+        'local_reference' => 'TEST-'.strtoupper(Str::random(10)),
         'idempotency_key' => (string) Str::uuid(),
         'fib_subscription_id' => $subscriptionId,
         'amount' => 25000,
@@ -210,6 +210,51 @@ it('cancels the fib provider subscription when scheduling main plan cancellation
             ->where('payment_id', $payment->id)
             ->where('event_type', 'service_subscription_cancel_requested')
             ->exists())->toBeTrue();
+});
+
+it('does not touch active storage subscriptions when scheduling main plan cancellation', function () {
+    Http::preventStrayRequests();
+    billingConfigureFibRecurring();
+
+    $customer = billingArchitectureCustomer('cancel-main-keep-storage@example.com', 'cancel_main_keep_storage_user');
+    $servicePlan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+    $storagePlan = grantPaidStoragePlan($customer, 'premium-10240');
+    $servicePayment = fibRecurringPayment($customer, PurchaseType::PLAN_SUBSCRIPTION, $servicePlan->id, 'fib-service-only-cancel-123');
+
+    app(PlanSwitcher::class)->switchServicePlan($customer, $servicePlan->id, [
+        'provider' => 'fib',
+        'payment_id' => $servicePayment->id,
+        'provider_ref' => $servicePayment->providerReference(),
+        'billing_cycle' => 'monthly',
+        'renewal_strategy' => 'provider_schedule',
+    ]);
+
+    $storageSubscriptionId = $customer->fresh()->activeStorageSubscription()->firstOrFail()->id;
+
+    Http::fake([
+        'https://fib-stage.fib.iq/auth/realms/fib-online-shop/protocol/openid-connect/token' => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-service-only-cancel-123' => Http::response([
+            'id' => 'fib-service-only-cancel-123',
+            'status' => 'ACTIVE',
+            'activeUntil' => now()->addMonth()->toIso8601String(),
+            'lastPaymentAt' => now()->toIso8601String(),
+        ], 200),
+        'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-service-only-cancel-123/cancel' => Http::response(null, 204),
+    ]);
+
+    app(ScheduleServicePlanCancellation::class)->handle($customer->fresh());
+
+    $freshCustomer = $customer->fresh();
+    $freshStorageSubscription = CustomerStorageSubscription::query()->findOrFail($storageSubscriptionId);
+
+    expect((int) ($freshCustomer->currentStoragePlan()?->id ?? 0))->toBe($storagePlan->id)
+        ->and($freshStorageSubscription->status)->toBe('active')
+        ->and(PaymentEvent::query()
+            ->where('event_type', 'storage_subscription_cancel_requested')
+            ->doesntExist())->toBeTrue();
 });
 
 it('schedules storage cancellation for period end and downgrades entitlement to the free storage plan afterwards', function () {
@@ -355,8 +400,8 @@ it('shows the storage cancellation warning with the current usage, current limit
     Livewire::test('app::pages.storage-plan.storage-plan')
         ->call('openCancelConfirm')
         ->assertSee(__('Current usage:'))
-        ->assertSee(number_format(9728) . ' MB')
-        ->assertSee(number_format(10240) . ' MB')
-        ->assertSee(number_format(512) . ' MB')
+        ->assertSee(number_format(9728).' MB')
+        ->assertSee(number_format(10240).' MB')
+        ->assertSee(number_format(512).' MB')
         ->assertSee('uploads and storage-growing actions will be blocked');
 });

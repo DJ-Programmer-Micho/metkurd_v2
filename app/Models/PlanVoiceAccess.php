@@ -11,8 +11,10 @@ class PlanVoiceAccess extends Model
     use HasFactory;
 
     protected $table = 'plan_voice_access';
-    protected $fillable = ['service_plan_id','voice_id','is_public','is_active','sort_order','meta'];
-    protected $casts = ['is_public'=>'boolean','is_active'=>'boolean','meta'=>'array'];
+
+    protected $fillable = ['service_plan_id', 'voice_id', 'is_public', 'is_active', 'sort_order', 'meta'];
+
+    protected $casts = ['is_public' => 'boolean', 'is_active' => 'boolean', 'meta' => 'array'];
 
     public function servicePlan(): BelongsTo
     {

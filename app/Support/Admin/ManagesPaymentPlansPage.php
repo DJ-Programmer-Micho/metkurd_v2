@@ -6,6 +6,7 @@ use App\Domain\Payments\Enums\PaymentMode;
 use App\Models\CreditOrder;
 use App\Models\CustomerServiceSubscription;
 use App\Models\ServicePlan;
+use App\Services\CustomerApi\CustomerApiAccessService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
@@ -35,20 +36,45 @@ trait ManagesPaymentPlansPage
     public ?int $editingPlanId = null;
 
     public string $code = '';
+
     public string $name = '';
+
     public array $billingIntervals = ['monthly'];
+
     public string $paymentMode = 'recurring';
+
     public $monthlyCredits = '';
+
+    public $appMonthlyCredits = '';
+
+    public $apiMonthlyCredits = 0;
+
     public $concurrentJobsLimit = 2;
+
+    public bool $apiEnabled = false;
+
+    public $apiRequestsPerMinute = 0;
+
+    public $apiConcurrentJobs = 0;
+
+    public string $apiAllowedToolsText = '';
+
     public $priceIqdMonthly = '';
+
     public $priceIqdYearly = '';
+
     public bool $isFree = false;
+
     public bool $isActive = true;
+
     public $sortOrder = 0;
+
     public string $uiFeaturesJson = '';
+
     public string $metaJson = '';
 
     public ?int $deletePlanId = null;
+
     public string $deletePlanLabel = '';
 
     public function updatingSearch(): void
@@ -66,6 +92,16 @@ trait ManagesPaymentPlansPage
         $this->resetPage();
     }
 
+    public function updatedMonthlyCredits($value): void
+    {
+        $this->appMonthlyCredits = $value;
+    }
+
+    public function updatedAppMonthlyCredits($value): void
+    {
+        $this->monthlyCredits = $value;
+    }
+
     public function resetFilters(): void
     {
         $this->search = '';
@@ -80,7 +116,7 @@ trait ManagesPaymentPlansPage
     {
         $allowed = ['sort_order', 'name', 'monthly_credits', 'price_iqd_monthly', 'active_subscribers', 'paid_orders', 'revenue'];
 
-        if (!in_array($column, $allowed, true)) {
+        if (! in_array($column, $allowed, true)) {
             return;
         }
 
@@ -99,13 +135,19 @@ trait ManagesPaymentPlansPage
     protected function planFormRules(): array
     {
         return [
-            'code' => 'required|string|max:50|alpha_dash|unique:service_plans,code,' . ($this->editingPlanId ?? 'NULL') . ',id',
+            'code' => 'required|string|max:50|alpha_dash|unique:service_plans,code,'.($this->editingPlanId ?? 'NULL').',id',
             'name' => 'required|string|max:120',
             'billingIntervals' => 'required|array|min:1',
             'billingIntervals.*' => 'required|string|in:monthly,yearly,lifetime',
             'paymentMode' => 'required|string|in:one_time,recurring',
             'monthlyCredits' => 'required|integer|min:0',
+            'appMonthlyCredits' => 'required|integer|min:0',
+            'apiMonthlyCredits' => 'required|integer|min:0',
             'concurrentJobsLimit' => 'required|integer|min:1|max:65535',
+            'apiEnabled' => 'boolean',
+            'apiRequestsPerMinute' => 'required|integer|min:0|max:65535',
+            'apiConcurrentJobs' => 'required|integer|min:0|max:65535',
+            'apiAllowedToolsText' => 'nullable|string',
             'priceIqdMonthly' => 'nullable|integer|min:0',
             'priceIqdYearly' => 'nullable|integer|min:0',
             'sortOrder' => 'nullable|integer|min:0|max:65535',
@@ -123,6 +165,7 @@ trait ManagesPaymentPlansPage
             ->count();
 
         $orderSummary = CreditOrder::query()
+            ->revenueIncluded()
             ->where('status', 'paid')
             ->whereNotNull('service_plan_id')
             ->selectRaw('COUNT(*) as orders')
@@ -153,6 +196,7 @@ trait ManagesPaymentPlansPage
             ->selectRaw('COUNT(*) as active_subscribers');
 
         $planRevenue = CreditOrder::query()
+            ->revenueIncluded()
             ->where('status', 'paid')
             ->whereNotNull('service_plan_id')
             ->groupBy('service_plan_id')
@@ -166,6 +210,8 @@ trait ManagesPaymentPlansPage
             ->leftJoinSub($activeSubscribers, 'plan_active_subscribers', fn ($join) => $join->on('plan_active_subscribers.service_plan_id', '=', 'service_plans.id'))
             ->leftJoinSub($planRevenue, 'plan_revenue', fn ($join) => $join->on('plan_revenue.service_plan_id', '=', 'service_plans.id'))
             ->select('service_plans.*')
+            ->selectRaw('COALESCE(service_plans.app_monthly_credits, service_plans.monthly_credits, 0) as app_monthly_credits_effective')
+            ->selectRaw('COALESCE(service_plans.api_monthly_credits, 0) as api_monthly_credits_effective')
             ->selectRaw("{$priceIqdMonthlySql} as price_iqd_monthly_effective")
             ->selectRaw("{$priceIqdYearlySql} as price_iqd_yearly_effective")
             ->selectRaw('COALESCE(plan_active_subscribers.active_subscribers, 0) as active_subscribers')
@@ -210,7 +256,7 @@ trait ManagesPaymentPlansPage
 
         $column = match ($this->sortColumn) {
             'name' => 'service_plans.name',
-            'monthly_credits' => 'service_plans.monthly_credits',
+            'monthly_credits' => 'app_monthly_credits_effective',
             'price_iqd_monthly' => 'price_iqd_monthly_effective',
             'active_subscribers' => 'active_subscribers',
             'paid_orders' => 'paid_orders',
@@ -238,14 +284,21 @@ trait ManagesPaymentPlansPage
     public function openEditPlanModal(int $planId): void
     {
         $plan = ServicePlan::query()->findOrFail($planId);
+        $resolvedAppMonthlyCredits = (int) ($plan->app_monthly_credits ?? $plan->monthly_credits ?? 0);
 
         $this->editingPlanId = $plan->id;
         $this->code = (string) $plan->code;
         $this->name = (string) $plan->name;
         $this->billingIntervals = $plan->billingIntervals();
         $this->paymentMode = $plan->checkoutPaymentModeValue();
-        $this->monthlyCredits = (int) ($plan->monthly_credits ?? 0);
+        $this->monthlyCredits = $resolvedAppMonthlyCredits;
+        $this->appMonthlyCredits = $resolvedAppMonthlyCredits;
+        $this->apiMonthlyCredits = (int) ($plan->api_monthly_credits ?? 0);
         $this->concurrentJobsLimit = (int) ($plan->concurrent_jobs_limit ?? 2);
+        $this->apiEnabled = (bool) ($plan->api_enabled ?? false);
+        $this->apiRequestsPerMinute = (int) ($plan->api_requests_per_minute ?? 0);
+        $this->apiConcurrentJobs = (int) ($plan->api_concurrent_jobs ?? 0);
+        $this->apiAllowedToolsText = implode(PHP_EOL, (array) ($plan->api_allowed_tools ?? []));
         $this->priceIqdMonthly = (string) ((int) $plan->priceIqdForCycle('monthly'));
         $this->priceIqdYearly = (string) ((int) $plan->priceIqdForCycle('yearly'));
         $this->isFree = (bool) $plan->is_free;
@@ -261,24 +314,40 @@ trait ManagesPaymentPlansPage
 
     public function savePlan(): void
     {
+        if (($this->appMonthlyCredits === '' || $this->appMonthlyCredits === null) && $this->monthlyCredits !== '') {
+            $this->appMonthlyCredits = $this->monthlyCredits;
+        }
+
+        if (($this->monthlyCredits === '' || $this->monthlyCredits === null) && $this->appMonthlyCredits !== '') {
+            $this->monthlyCredits = $this->appMonthlyCredits;
+        }
+
         $validated = $this->validate($this->planFormRules());
         $billingIntervals = $this->normalizePlanBillingIntervals($validated['billingIntervals'] ?? []);
         $primaryBillingInterval = $this->primaryPlanBillingInterval($billingIntervals);
         $uiFeatures = $this->decodeJsonTextarea($validated['uiFeaturesJson'] ?? '', 'uiFeaturesJson');
         $meta = $this->decodeJsonTextarea($validated['metaJson'] ?? '', 'metaJson');
+        $apiAllowedTools = $this->normalizeApiAllowedToolsText($validated['apiAllowedToolsText'] ?? '');
         $priceIqdMonthly = (int) (($validated['priceIqdMonthly'] !== '' && $validated['priceIqdMonthly'] !== null) ? $validated['priceIqdMonthly'] : 0);
         $priceIqdYearly = (int) (($validated['priceIqdYearly'] !== '' && $validated['priceIqdYearly'] !== null) ? $validated['priceIqdYearly'] : 0);
 
         $plan = $this->editingPlanId
             ? ServicePlan::query()->findOrFail($this->editingPlanId)
-            : new ServicePlan();
+            : new ServicePlan;
         $originalMode = $plan->checkoutPaymentMode();
+        $appMonthlyCredits = (int) ($validated['appMonthlyCredits'] ?? $validated['monthlyCredits']);
         $payload = [
             'code' => $validated['code'],
             'name' => $validated['name'],
             'billing_interval' => $primaryBillingInterval,
-            'monthly_credits' => (int) $validated['monthlyCredits'],
+            'monthly_credits' => $appMonthlyCredits,
+            'app_monthly_credits' => $appMonthlyCredits,
+            'api_monthly_credits' => (int) $validated['apiMonthlyCredits'],
             'concurrent_jobs_limit' => (int) $validated['concurrentJobsLimit'],
+            'api_enabled' => (bool) $validated['apiEnabled'],
+            'api_requests_per_minute' => (int) $validated['apiRequestsPerMinute'],
+            'api_concurrent_jobs' => (int) $validated['apiConcurrentJobs'],
+            'api_allowed_tools' => $apiAllowedTools,
             'price_usd_monthly' => $this->usdReferenceAmount($priceIqdMonthly),
             'price_usd_yearly' => $this->usdReferenceAmount($priceIqdYearly),
             'is_free' => (bool) $this->isFree,
@@ -323,6 +392,7 @@ trait ManagesPaymentPlansPage
         }
 
         $plan->save();
+        unset($this->plans, $this->topStats);
         $updatedMode = $plan->checkoutPaymentMode();
 
         $this->dispatch(
@@ -353,7 +423,8 @@ trait ManagesPaymentPlansPage
     public function togglePlanStatus(int $planId): void
     {
         $plan = ServicePlan::query()->findOrFail($planId);
-        $plan->update(['is_active' => !$plan->is_active]);
+        $plan->update(['is_active' => ! $plan->is_active]);
+        unset($this->plans, $this->topStats);
 
         $this->dispatch(
             'alert',
@@ -395,6 +466,7 @@ trait ManagesPaymentPlansPage
         }
 
         $plan->delete();
+        unset($this->plans, $this->topStats);
         $this->resetDeleteState();
         $this->dispatch('payments-plans:modal-hide', id: 'paymentPlanDeleteModal');
         $this->dispatch('alert', type: 'success', message: __('Service plan deleted successfully.'));
@@ -408,7 +480,13 @@ trait ManagesPaymentPlansPage
         $this->billingIntervals = ['monthly'];
         $this->paymentMode = PaymentMode::RECURRING->value;
         $this->monthlyCredits = '';
+        $this->appMonthlyCredits = '';
+        $this->apiMonthlyCredits = 0;
         $this->concurrentJobsLimit = 2;
+        $this->apiEnabled = false;
+        $this->apiRequestsPerMinute = 0;
+        $this->apiConcurrentJobs = 0;
+        $this->apiAllowedToolsText = '';
         $this->priceIqdMonthly = '';
         $this->priceIqdYearly = '';
         $this->isFree = false;
@@ -450,5 +528,18 @@ trait ManagesPaymentPlansPage
         }
 
         return 'monthly';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function normalizeApiAllowedToolsText(?string $value): array
+    {
+        return collect(preg_split('/[\r\n,]+/', (string) $value) ?: [])
+            ->map(fn ($scope): string => CustomerApiAccessService::canonicalScope((string) $scope))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 }

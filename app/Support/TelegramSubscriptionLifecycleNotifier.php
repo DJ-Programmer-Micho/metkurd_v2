@@ -47,11 +47,18 @@ class TelegramSubscriptionLifecycleNotifier
                     teleId: $teleId,
                 )
             );
+
+            Log::info('fib.telegram.sent', [
+                'title' => $title,
+                'channel' => $channel,
+            ]);
         } catch (\Throwable $exception) {
-            Log::warning($logContext . ' telegram notification failed.', [
+            Log::warning('fib.telegram.failed', [
+                'log_context' => $logContext,
                 'error' => $exception->getMessage(),
                 'title' => $title,
                 'details' => $details,
+                'channel' => $channel,
             ]);
         }
     }

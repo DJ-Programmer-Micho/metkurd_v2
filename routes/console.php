@@ -69,3 +69,9 @@ $applySchedulerGuards(
     'youtube:cleanup-expired',
     9
 );
+
+$applySchedulerGuards(
+    Schedule::command('api:cleanup-expired-files --limit=200')->everyTenMinutes(),
+    'api:cleanup-expired-files',
+    9
+);

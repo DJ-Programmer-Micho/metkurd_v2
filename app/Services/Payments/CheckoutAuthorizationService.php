@@ -15,8 +15,7 @@ class CheckoutAuthorizationService
         protected PaymentMethodCatalog $paymentMethods,
         protected PaymentProviderManager $providers,
         protected CustomerBillingStateService $billingState,
-    ) {
-    }
+    ) {}
 
     public function assertProviderEnabled(string $provider): void
     {

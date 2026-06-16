@@ -131,6 +131,7 @@ class extends Component
         @php
             $focusedCustomer = $this->selectedCustomer;
             $focusedWallet = $focusedCustomer->wallet;
+            $focusedApiWallet = $focusedCustomer->apiWallet;
             $focusedPlan = $focusedCustomer->servicePlan;
             $focusedStoragePlan = $focusedCustomer->activeStorageSubscription?->storagePlan ?? $focusedCustomer->currentStoragePlan();
         @endphp
@@ -159,11 +160,23 @@ class extends Component
                     <div class="card-body">
                         <div class="mb-2"><span class="fw-semibold">{{ __('Service Plan:') }}</span> {{ $focusedPlan?->name ?? __('No active plan') }}</div>
                         <div class="mb-2"><span class="fw-semibold">{{ __('Storage Plan:') }}</span> {{ $focusedStoragePlan?->name ?? __('No active storage plan') }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Wallet Balance:') }}</span> {{ __(':credits credits', ['credits' => $this->formatCredits($focusedWallet?->balance_credits)]) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Subscription Bucket:') }}</span> {{ $this->formatCredits($focusedWallet?->subscription_balance_credits) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Addon Bucket:') }}</span> {{ $this->formatCredits($focusedWallet?->addon_balance_credits) }}</div>
+                        <div class="mb-2"><span class="fw-semibold">{{ __('App Wallet Balance:') }}</span> {{ __(':credits credits', ['credits' => $this->formatCredits($focusedWallet?->balance_credits)]) }}</div>
+                        <div class="mb-2"><span class="fw-semibold">{{ __('App Subscription Bucket:') }}</span> {{ $this->formatCredits($focusedWallet?->subscription_balance_credits) }}</div>
+                        <div class="mb-2"><span class="fw-semibold">{{ __('App Addon Bucket:') }}</span> {{ $this->formatCredits($focusedWallet?->addon_balance_credits) }}</div>
+                        <div class="mb-2"><span class="fw-semibold">{{ __('API Wallet Balance:') }}</span> {{ __(':credits credits', ['credits' => $this->formatCredits($focusedApiWallet?->balance_credits)]) }}</div>
+                        <div class="mb-2"><span class="fw-semibold">{{ __('API Subscription Bucket:') }}</span> {{ $this->formatCredits($focusedApiWallet?->subscription_balance_credits) }}</div>
+                        <div class="mb-2"><span class="fw-semibold">{{ __('API Addon Bucket:') }}</span> {{ $this->formatCredits($focusedApiWallet?->addon_balance_credits) }}</div>
                         <div class="mb-2"><span class="fw-semibold">{{ __('Storage Used:') }}</span> {{ $this->formatBytes(data_get($focusedCustomer, 'usage.storage_used_bytes')) }}</div>
                         <div><span class="fw-semibold">{{ __('Paid Orders:') }}</span> {{ number_format((int) ($focusedCustomer->paid_orders_count ?? 0)) }}</div>
+                        <div class="mt-3">
+                            <button
+                                type="button"
+                                class="btn btn-soft-primary w-100"
+                                onclick="if (confirm(@js(__('This will sync the customer\'s subscription credits with their current plan. It will add missing plan credits only when the current subscription balance is lower than the plan allowance. It will not subtract existing credits or remove add-on credits.')))) { @this.call('syncCustomerCreditsToPlan', {{ $focusedCustomer->id }}); }"
+                            >
+                                {{ __('Sync Credits To Plan') }}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -187,14 +200,31 @@ class extends Component
 
         <div class="card mb-3 border-warning">
             <div class="card-header bg-warning-subtle border-0">
-                <h5 class="card-title mb-1">{{ __('Manual Billing Correction') }}</h5>
-                <p class="text-muted mb-0">{{ __('Use these actions only when a payment is confirmed externally and local fulfillment did not apply correctly.') }}</p>
+                <h5 class="card-title mb-1">{{ __('Manual Billing Actions') }}</h5>
+                <p class="text-muted mb-0">{{ __('Use Manual Grant for internal/non-revenue access and Paid Customer Reconciliation only for real FIB revenue that must be connected safely.') }}</p>
             </div>
             <div class="card-body">
+                @php
+                    $paidPreview = $this->paidReconciliationPreview;
+                    $paidConfirmMessage = $paidReconciliationMode === 'manual_correction_already_applied'
+                        ? __('This will mark/connect the real FIB payment locally without adding credits. Use this only if the customer was already manually corrected.')
+                        : __('This will apply the real FIB payment and run fulfillment once. This may change the customer plan and refill app/API credits.');
+                @endphp
                 <div class="row g-3">
-                    <div class="col-xl-4">
+                    <div class="col-xl-6">
                         <div class="border rounded p-3 h-100">
-                            <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Plan Subscription (Recurring)') }}</h6>
+                            <h6 class="text-uppercase text-muted fs-12 mb-2">{{ __('Manual Plan Grant — No Revenue') }}</h6>
+                            <div class="alert alert-warning small mb-3">
+                                <div>{{ __('This action does not create revenue.') }}</div>
+                                <div>{{ __('This action does not create a FIB payment.') }}</div>
+                                <div>{{ __('This action does not connect to a provider subscription.') }}</div>
+                                <div>{{ __('Use this only for internal/company/testing/partner access.') }}</div>
+                            </div>
+                            <div class="fw-semibold mb-3">{{ __('Manual Grant — No Revenue / No Provider Subscription') }}</div>
+                            <div class="mb-3">
+                                <label class="form-label">{{ __('Customer') }}</label>
+                                <input type="text" class="form-control" value="{{ $this->customerIdentityLabel($focusedCustomer) }}" readonly>
+                            </div>
                             <div class="mb-3">
                                 <label class="form-label">{{ __('Service Plan') }}</label>
                                 <select class="form-select" wire:model="servicePlanAdjustmentId">
@@ -210,6 +240,39 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
+                                <label class="form-label">{{ __('Reason') }}</label>
+                                <select class="form-select" wire:model="servicePlanGrantReason">
+                                    <option value="">{{ __('Select reason') }}</option>
+                                    <option value="internal_team_account">{{ __('Internal team account') }}</option>
+                                    <option value="company_account">{{ __('Company account') }}</option>
+                                    <option value="testing_account">{{ __('Testing account') }}</option>
+                                    <option value="partner_access">{{ __('Partner access') }}</option>
+                                    <option value="founder_admin_access">{{ __('Founder/admin access') }}</option>
+                                    <option value="other">{{ __('Other') }}</option>
+                                </select>
+                                @error('servicePlanGrantReason')
+                                    <div class="text-danger small mt-1">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            @if ($servicePlanGrantReason === 'other')
+                                <div class="mb-3">
+                                    <label class="form-label">{{ __('Other reason explanation') }}</label>
+                                    <textarea class="form-control" rows="3" wire:model.defer="servicePlanGrantReasonOther" placeholder="{{ __('Required explanation for Other...') }}"></textarea>
+                                    @error('servicePlanGrantReasonOther')
+                                        <div class="text-danger small mt-1">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            @endif
+                            <div class="mb-3">
+                                <label class="form-label">{{ __('Credit Sync Policy') }}</label>
+                                <select class="form-select" wire:model="servicePlanCreditSyncPolicy">
+                                    <option value="safe_top_up_only">{{ __('Safe top-up only — never subtract') }}</option>
+                                </select>
+                                @error('servicePlanCreditSyncPolicy')
+                                    <div class="text-danger small mt-1">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            <div class="mb-3">
                                 <label class="form-label">{{ __('Billing Cycle') }}</label>
                                 <select class="form-select" wire:model="servicePlanBillingCycle">
                                     <option value="monthly">{{ __('Monthly') }}</option>
@@ -220,23 +283,110 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Provider Reference (Optional)') }}</label>
-                                <input type="text" class="form-control" wire:model.defer="servicePlanProviderRef" placeholder="{{ __('FIB subscription/payment reference') }}">
-                                @error('servicePlanProviderRef')
-                                    <div class="text-danger small mt-1">{{ $message }}</div>
-                                @enderror
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">{{ __('Admin Note') }}</label>
-                                <textarea class="form-control" rows="3" wire:model.defer="servicePlanAdjustmentNote" placeholder="{{ __('Why this correction is being applied...') }}"></textarea>
+                                <label class="form-label">{{ __('Additional note (optional)') }}</label>
+                                <textarea class="form-control" rows="3" wire:model.defer="servicePlanAdjustmentNote" placeholder="{{ __('Optional internal context for audit history...') }}"></textarea>
                                 @error('servicePlanAdjustmentNote')
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
                             </div>
-                            <button type="button" class="btn btn-primary w-100" wire:click="applyServicePlanAdjustment">{{ __('Apply Plan Correction') }}</button>
+                            <div class="small text-muted mb-3">{{ __('You are about to grant this customer a plan without revenue and without a provider subscription. No FIB payment will be created. No fib_subscription_id will be attached.') }}</div>
+                            <button
+                                type="button"
+                                class="btn btn-primary w-100"
+                                onclick="if (confirm(@js(__('You are about to grant this customer a plan without revenue and without a provider subscription. No FIB payment will be created. No fib_subscription_id will be attached. Continue?')))) { @this.call('applyServicePlanAdjustment'); }"
+                            >
+                                {{ __('Apply Manual Grant') }}
+                            </button>
                         </div>
                     </div>
-                    <div class="col-xl-4">
+                    <div class="col-xl-6">
+                        <div class="border rounded p-3 h-100">
+                            <h6 class="text-uppercase text-muted fs-12 mb-2">{{ __('Paid Customer Reconciliation — Real FIB Payment') }}</h6>
+                            <div class="alert alert-warning small mb-3">
+                                <div>{{ __('Use this only when the customer actually paid through FIB.') }}</div>
+                                <div>{{ __('This keeps or connects a real revenue/payment record.') }}</div>
+                                <div>{{ __('This can mark a provider-paid subscription as locally applied.') }}</div>
+                                <div>{{ __('Be careful not to duplicate credits.') }}</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">{{ __('Customer') }}</label>
+                                <input type="text" class="form-control" value="{{ $this->customerIdentityLabel($focusedCustomer) }}" readonly>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">{{ __('Local Payment ID') }}</label>
+                                <input type="number" min="1" class="form-control" wire:model.defer="paidReconciliationPaymentId" placeholder="{{ __('Existing payment id') }}">
+                                @error('paidReconciliationPaymentId')
+                                    <div class="text-danger small mt-1">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            @if (is_array($paidPreview) && ! data_get($paidPreview, 'missing'))
+                                <div class="border rounded p-3 bg-light-subtle mb-3">
+                                    <div class="fw-semibold mb-2">{{ __('Plan Preview') }}</div>
+                                    <div class="row g-2 small">
+                                        <div class="col-md-6"><span class="text-muted">{{ __('Payment ID') }}:</span> {{ data_get($paidPreview, 'payment_id') }}</div>
+                                        <div class="col-md-6"><span class="text-muted">{{ __('Customer') }}:</span> {{ data_get($paidPreview, 'customer_display') }}</div>
+                                        <div class="col-md-6"><span class="text-muted">{{ __('Plan from payment') }}:</span> {{ data_get($paidPreview, 'plan_from_payment') }}</div>
+                                        <div class="col-md-6"><span class="text-muted">{{ __('Current customer plan') }}:</span> {{ data_get($paidPreview, 'current_customer_plan') }}</div>
+                                        <div class="col-md-6"><span class="text-muted">{{ __('Payment status') }}:</span> {{ data_get($paidPreview, 'payment_status') }}</div>
+                                        <div class="col-md-6"><span class="text-muted">{{ __('Internal status') }}:</span> {{ data_get($paidPreview, 'internal_status') }}</div>
+                                        <div class="col-md-6"><span class="text-muted">{{ __('Provider subscription status') }}:</span> {{ data_get($paidPreview, 'provider_subscription_status') }}</div>
+                                        <div class="col-md-6"><span class="text-muted">{{ __('fib_subscription_id') }}:</span> {{ data_get($paidPreview, 'fib_subscription_id') }}</div>
+                                        <div class="col-md-6"><span class="text-muted">{{ __('paid_at') }}:</span> {{ data_get($paidPreview, 'paid_at') }}</div>
+                                        <div class="col-md-6"><span class="text-muted">{{ __('fulfilled_at') }}:</span> {{ data_get($paidPreview, 'fulfilled_at') }}</div>
+                                    </div>
+                                    @foreach ((array) data_get($paidPreview, 'warnings', []) as $warning)
+                                        <div class="alert alert-secondary py-2 px-3 mt-2 mb-0 small">{{ $warning }}</div>
+                                    @endforeach
+                                </div>
+                            @elseif (is_array($paidPreview) && data_get($paidPreview, 'missing'))
+                                <div class="alert alert-danger small mb-3">{{ __('The selected payment could not be found for preview.') }}</div>
+                            @endif
+                            <div class="mb-3">
+                                <label class="form-label">{{ __('FIB Subscription ID') }}</label>
+                                <input type="text" class="form-control" wire:model.defer="paidReconciliationFibSubscriptionId" placeholder="{{ __('Real fib_subscription_id') }}">
+                                @error('paidReconciliationFibSubscriptionId')
+                                    <div class="text-danger small mt-1">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">{{ __('Reconciliation Mode') }}</label>
+                                <select class="form-select" wire:model="paidReconciliationMode">
+                                    <option value="manual_correction_already_applied">{{ __('Manual correction already applied — no credit refill') }}</option>
+                                    <option value="apply_fulfillment_once">{{ __('Apply fulfillment and credits once') }}</option>
+                                </select>
+                                @error('paidReconciliationMode')
+                                    <div class="text-danger small mt-1">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            @if (is_array($paidPreview) && data_get($paidPreview, 'fulfilled'))
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="paid-reconciliation-status-only" wire:model="paidReconciliationStatusOnlyConfirmation">
+                                    <label class="form-check-label small" for="paid-reconciliation-status-only">
+                                        {{ __('I confirm this is status-only reconciliation for an already fulfilled payment.') }}
+                                    </label>
+                                </div>
+                                @error('paidReconciliationStatusOnlyConfirmation')
+                                    <div class="text-danger small mt-n2 mb-3">{{ $message }}</div>
+                                @enderror
+                            @endif
+                            <div class="mb-3">
+                                <label class="form-label">{{ __('Reason') }}</label>
+                                <textarea class="form-control" rows="3" wire:model.defer="paidReconciliationReason" placeholder="{{ __('Required reason for this paid reconciliation...') }}"></textarea>
+                                @error('paidReconciliationReason')
+                                    <div class="text-danger small mt-1">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            <div class="small text-muted mb-3">{{ $paidConfirmMessage }}</div>
+                            <button
+                                type="button"
+                                class="btn btn-warning w-100"
+                                onclick="if (confirm(@js($paidConfirmMessage))) { @this.call('applyPaidSubscriptionReconciliation'); }"
+                            >
+                                {{ __('Reconcile Paid FIB Subscription') }}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-xl-3">
                         <div class="border rounded p-3 h-100">
                             <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Storage Subscription (Recurring)') }}</h6>
                             <div class="mb-3">
@@ -280,7 +430,7 @@ class extends Component
                             <button type="button" class="btn btn-primary w-100" wire:click="applyStoragePlanAdjustment">{{ __('Apply Storage Correction') }}</button>
                         </div>
                     </div>
-                    <div class="col-xl-4">
+                    <div class="col-xl-3">
                         <div class="border rounded p-3 h-100">
                             <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Addon Credits (One-Time)') }}</h6>
                             <div class="mb-3">
@@ -425,6 +575,48 @@ class extends Component
                                                 @if ($payment->reviewMessage())
                                                     <div class="text-warning small mt-1">{{ $payment->reviewMessage() }}</div>
                                                 @endif
+                                                @if ($payment->requiresOpenReview())
+                                                    <div class="d-flex flex-wrap gap-2 mt-2">
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-soft-warning"
+                                                            wire:click="openReviewPayment({{ $payment->id }})"
+                                                        >
+                                                            {{ __('Review') }}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-soft-info"
+                                                            wire:click="openReviewPayment({{ $payment->id }})"
+                                                        >
+                                                            {{ __('Attach Correct FIB Reference') }}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-soft-secondary"
+                                                            wire:click="openReviewPayment({{ $payment->id }})"
+                                                        >
+                                                            {{ __('Mark Invalid / Expired') }}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-soft-dark"
+                                                            wire:click="openReviewPayment({{ $payment->id }})"
+                                                        >
+                                                            {{ __('Mark As Non-Revenue Internal Record') }}
+                                                        </button>
+                                                    </div>
+                                                @endif
+                                                @if ($payment->isProviderPaidButLocallyUnappliedSubscription())
+                                                    <div class="text-danger small mt-1 fw-semibold">{{ __('Provider Paid / Local Not Applied') }}</div>
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-sm btn-soft-info mt-2"
+                                                        wire:click="prefillPaidSubscriptionReconciliation({{ $payment->id }})"
+                                                    >
+                                                        {{ __('Open Paid Reconciliation') }}
+                                                    </button>
+                                                @endif
                                             </td>
                                             <td>
                                                 <div class="small fw-semibold">{{ $currentCustomerPlan ?: __('No active plan') }}</div>
@@ -449,6 +641,130 @@ class extends Component
                 </div>
             </div>
         </div>
+
+        @php($reviewSelection = $this->selectedReviewPayment)
+        @if ($reviewSelection)
+            <div class="card mb-3 border-warning">
+                <div class="card-header bg-warning-subtle border-0">
+                    <h5 class="card-title mb-1">{{ __('Review Payment') }}</h5>
+                    <p class="text-muted mb-0">{{ __('Use this guided review workflow to reconnect the correct FIB reference, close invalid rows safely, or reclassify internal/manual records without deleting history.') }}</p>
+                </div>
+                <div class="card-body">
+                    @if (data_get($reviewSelection, 'missing'))
+                        <div class="alert alert-danger mb-0">{{ __('The selected review payment could not be loaded. Refresh the page and try again.') }}</div>
+                    @else
+                        <div class="row g-3 mb-3">
+                            <div class="col-xl-6">
+                                <div class="border rounded p-3 h-100">
+                                    <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Payment Details') }}</h6>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Payment ID:') }}</span> {{ $reviewSelection['payment_id'] }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Customer:') }}</span> {{ $reviewSelection['customer'] }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Plan / Intended Item:') }}</span> {{ $reviewSelection['intended_item'] }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Local Reference:') }}</span> {{ $reviewSelection['local_reference'] }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Stored FIB Payment ID:') }}</span> {{ $reviewSelection['fib_payment_id'] }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Stored FIB Subscription ID:') }}</span> {{ $reviewSelection['fib_subscription_id'] }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Provider Status:') }}</span> {{ strtoupper((string) $reviewSelection['provider_status']) }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Created:') }}</span> {{ $reviewSelection['created_at'] }}</div>
+                                    <div class="mb-2"><span class="fw-semibold">{{ __('Paid:') }}</span> {{ $reviewSelection['paid_at'] }}</div>
+                                    <div><span class="fw-semibold">{{ __('Fulfilled:') }}</span> {{ $reviewSelection['fulfilled_at'] }}</div>
+                                </div>
+                            </div>
+                            <div class="col-xl-6">
+                                <div class="border rounded p-3 h-100">
+                                    <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Review Guidance') }}</h6>
+                                    <div class="alert {{ $reviewSelection['requires_open_review'] ? 'alert-warning' : 'alert-secondary' }} mb-3">
+                                        <div class="fw-semibold mb-1">
+                                            {{ $reviewSelection['requires_open_review'] ? __('Requires Review') : __('Review Closed') }}
+                                        </div>
+                                        <div class="small mb-0">{{ $reviewSelection['reason'] }}</div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">{{ __('Operator Reason') }}</label>
+                                        <textarea class="form-control" rows="4" wire:model.defer="reviewResolutionReason" placeholder="{{ __('Explain what you verified, which FIB reference you matched, or why the record should be closed/reclassified.') }}"></textarea>
+                                        @error('reviewResolutionReason')
+                                            <div class="text-danger small mt-1">{{ $message }}</div>
+                                        @enderror
+                                    </div>
+                                    <div class="small text-muted">
+                                        {{ __('Safety: this review flow never refunds, never deletes audit history, and only fulfills when you explicitly choose the one-time fulfillment mode.') }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-xl-6">
+                                <div class="border rounded p-3 h-100">
+                                    <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Attach Correct FIB Reference') }}</h6>
+                                    <div class="mb-3">
+                                        <label class="form-label">{{ __('Correct FIB Subscription ID') }}</label>
+                                        <input type="text" class="form-control" wire:model.defer="reviewCorrectFibSubscriptionId" placeholder="{{ __('For recurring subscription rows') }}">
+                                        @error('reviewCorrectFibSubscriptionId')
+                                            <div class="text-danger small mt-1">{{ $message }}</div>
+                                        @enderror
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">{{ __('Correct FIB Payment ID') }}</label>
+                                        <input type="text" class="form-control" wire:model.defer="reviewCorrectFibPaymentId" placeholder="{{ __('For one-time payment rows or additional provider proof') }}">
+                                        @error('reviewCorrectFibPaymentId')
+                                            <div class="text-danger small mt-1">{{ $message }}</div>
+                                        @enderror
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">{{ __('Reconnect Mode') }}</label>
+                                        <select class="form-select" wire:model="reviewReconnectMode">
+                                            <option value="manual_correction_already_applied">{{ __('Reconnect only, no credit refill') }}</option>
+                                            <option value="apply_fulfillment_once">{{ __('Reconnect and fulfill once') }}</option>
+                                        </select>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        class="btn btn-warning"
+                                        onclick="if (confirm(@js(__('This will attach the corrected FIB reference and continue using the selected reconnect mode. It will not refund, it will not delete audit history, and it will only fulfill if you selected the one-time fulfillment mode. Continue?')))) { @this.call('attachCorrectReviewProviderReference'); }"
+                                    >
+                                        {{ __('Attach Correct FIB Reference') }}
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-xl-6">
+                                <div class="border rounded p-3 h-100">
+                                    <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Review Resolution Actions') }}</h6>
+                                    <div class="mb-3">
+                                        <button
+                                            type="button"
+                                            class="btn btn-soft-secondary me-2 mb-2"
+                                            onclick="if (confirm(@js(__('This will mark the payment as invalid/expired, remove it from actionable review processing, and keep full audit history. It will not fulfill or refill credits. Continue?')))) { @this.call('markReviewPaymentInvalid'); }"
+                                        >
+                                            {{ __('Mark Invalid / Expired') }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-soft-dark mb-2"
+                                            onclick="if (confirm(@js(__('This will exclude this record from revenue totals and mark it as an internal/manual grant. It will not call FIB. It will not refund. It will not delete audit history. Continue?')))) { @this.call('markReviewPaymentNonRevenue'); }"
+                                        >
+                                            {{ __('Reclassify as No-Revenue Manual Grant') }}
+                                        </button>
+                                    </div>
+                                    <div class="small text-muted mb-3">
+                                        {{ __('Use Invalid / Expired when the stored FIB reference is truly wrong or no paid transaction exists. Use No-Revenue Manual Grant only for internal/manual/company/testing access that should never count as revenue.') }}
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-12">
+                                            <label class="form-label">{{ __('Callback Payload') }}</label>
+                                            <textarea class="form-control font-monospace" rows="6" readonly>{{ $reviewSelection['callback_payload'] }}</textarea>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label">{{ __('Status Response') }}</label>
+                                            <textarea class="form-control font-monospace" rows="6" readonly>{{ $reviewSelection['status_response'] }}</textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        @endif
 
         <div class="row mb-3">
             <div class="col-xl-12">
@@ -556,6 +872,13 @@ class extends Component
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
                                         <button type="button" class="btn btn-sm btn-soft-info" wire:click="focusCustomer({{ $customer->id }})">{{ __('Focus') }}</button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-soft-primary"
+                                            onclick="if (confirm(@js(__('This will sync the customer\'s subscription credits with their current plan. It will add missing plan credits only when the current subscription balance is lower than the plan allowance. It will not subtract existing credits or remove add-on credits.')))) { @this.call('syncCustomerCreditsToPlan', {{ $customer->id }}); }"
+                                        >
+                                            {{ __('Sync Credits To Plan') }}
+                                        </button>
                                         <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-secondary">{{ __('Usage') }}</a>
                                         <a wire:navigate href="{{ route('admin.customers.list', ['locale' => app()->getLocale(), 'q' => $customer->username]) }}" class="btn btn-sm btn-soft-primary">{{ __('Locate') }}</a>
                                     </div>
@@ -574,4 +897,5 @@ class extends Component
             {{ $this->registrationCustomers->onEachSide(1)->links() }}
         </div>
     </div>
+
 </div>

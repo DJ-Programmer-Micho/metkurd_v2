@@ -4,6 +4,4 @@ namespace App\Services\Storage;
 
 use RuntimeException;
 
-class StorageQuotaExceededException extends RuntimeException
-{
-}
+class StorageQuotaExceededException extends RuntimeException {}

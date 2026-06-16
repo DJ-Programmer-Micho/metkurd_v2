@@ -14,8 +14,7 @@ class MobileUploadService
     public function __construct(
         protected CustomerOutputStorage $storage,
         protected MobileAppCatalog $catalog,
-    ) {
-    }
+    ) {}
 
     public function store(Customer $customer, string $appSlug, UploadedFile $file): CustomerFile
     {

@@ -63,6 +63,7 @@ class LocalizationMainMiddleware
         }
 
         $prev = $request->headers->get('referer') ?: url()->current();
+
         return redirect()->to($this->replaceLocaleInUrl($prev, $selected));
     }
 
@@ -72,7 +73,7 @@ class LocalizationMainMiddleware
         if (preg_match('#^/(en|ar|ku)/super-admin(?:/|$)#', $request->getPathInfo())) {
             return 'admin';
         }
-        
+
         // App area (your signed-in group lives under /app/...)
         if (preg_match('#^/(en|ar|ku)/app(?:/|$)#', $request->getPathInfo())) {
             return 'app';
@@ -85,21 +86,21 @@ class LocalizationMainMiddleware
     private function replaceLocaleInUrl(string $url, string $newLocale): string
     {
         $parts = parse_url($url) ?: [];
-        $path  = $parts['path'] ?? '/';
-        $path  = ltrim($path, '/');
+        $path = $parts['path'] ?? '/';
+        $path = ltrim($path, '/');
 
         // If path starts with a locale, replace it; else, prepend it
         if (preg_match('#^(en|ar|ku)(/.*|$)#', $path)) {
             $path = preg_replace('#^(en|ar|ku)#', $newLocale, $path, 1);
         } else {
-            $path = $newLocale . '/' . $path;
+            $path = $newLocale.'/'.$path;
         }
-        $path = '/' . trim($path, '/');
+        $path = '/'.trim($path, '/');
 
-        $query = isset($parts['query']) ? '?' . $parts['query'] : '';
-        $host  = ($parts['host'] ?? request()->getHost());
-        $scheme= ($parts['scheme'] ?? request()->getScheme());
-        $port  = isset($parts['port']) ? ':' . $parts['port'] : '';
+        $query = isset($parts['query']) ? '?'.$parts['query'] : '';
+        $host = ($parts['host'] ?? request()->getHost());
+        $scheme = ($parts['scheme'] ?? request()->getScheme());
+        $port = isset($parts['port']) ? ':'.$parts['port'] : '';
 
         return "{$scheme}://{$host}{$port}{$path}{$query}";
     }

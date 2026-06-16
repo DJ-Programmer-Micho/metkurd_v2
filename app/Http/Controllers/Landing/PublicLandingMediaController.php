@@ -35,8 +35,8 @@ class PublicLandingMediaController extends Controller
         $size = $mediaStorage->size($normalizedPath);
         $lastModified = $mediaStorage->lastModified($normalizedPath);
         $maxAge = $mediaStorage->maxAge();
-        $etag = sha1($normalizedPath . '|' . ($size ?? '0') . '|' . ($lastModified ?? '0'));
-        $etagHeader = '"' . $etag . '"';
+        $etag = sha1($normalizedPath.'|'.($size ?? '0').'|'.($lastModified ?? '0'));
+        $etagHeader = '"'.$etag.'"';
 
         if (trim((string) $request->headers->get('If-None-Match', '')) === $etagHeader) {
             if (is_resource($stream)) {
@@ -45,13 +45,13 @@ class PublicLandingMediaController extends Controller
 
             return response('', Response::HTTP_NOT_MODIFIED, [
                 'ETag' => $etagHeader,
-                'Cache-Control' => 'public, max-age=' . $maxAge . ', stale-while-revalidate=60',
+                'Cache-Control' => 'public, max-age='.$maxAge.', stale-while-revalidate=60',
             ]);
         }
 
         $headers = [
             'Content-Type' => $mime,
-            'Cache-Control' => 'public, max-age=' . $maxAge . ', stale-while-revalidate=60',
+            'Cache-Control' => 'public, max-age='.$maxAge.', stale-while-revalidate=60',
             'ETag' => $etagHeader,
             'X-Content-Type-Options' => 'nosniff',
         ];
@@ -61,7 +61,7 @@ class PublicLandingMediaController extends Controller
         }
 
         if (is_int($lastModified) && $lastModified > 0) {
-            $headers['Last-Modified'] = gmdate('D, d M Y H:i:s', $lastModified) . ' GMT';
+            $headers['Last-Modified'] = gmdate('D, d M Y H:i:s', $lastModified).' GMT';
         }
 
         return response()->stream(function () use ($stream): void {

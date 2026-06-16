@@ -6,6 +6,5 @@ class PaymentConfirmed
 {
     public function __construct(
         public readonly int $paymentId,
-    ) {
-    }
+    ) {}
 }

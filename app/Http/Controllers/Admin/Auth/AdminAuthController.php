@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Admin\Auth;
 
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class AdminAuthController extends Controller
@@ -29,7 +29,6 @@ class AdminAuthController extends Controller
     //         'email' => 'Invalid email or password.',
     //     ])->withInput();
     // }
-    
 
     public function logout(Request $request)
     {

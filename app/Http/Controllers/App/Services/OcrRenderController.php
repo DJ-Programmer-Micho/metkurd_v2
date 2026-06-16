@@ -53,10 +53,10 @@ class OcrRenderController extends Controller
         abort_if($path === '', 404, 'Text output missing.');
 
         try {
-            if (!$request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
+            if (! $request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($path, now()->addMinutes(20), [
                     'ResponseContentType' => $mime,
-                    'ResponseContentDisposition' => 'inline; filename="' . (basename($path) ?: 'ocr.txt') . '"',
+                    'ResponseContentDisposition' => 'inline; filename="'.(basename($path) ?: 'ocr.txt').'"',
                 ]);
 
                 return redirect()->away($url);
@@ -112,10 +112,10 @@ class OcrRenderController extends Controller
         abort_if($path === '', 404, 'JSON output missing.');
 
         try {
-            if (!$request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
+            if (! $request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($path, now()->addMinutes(20), [
                     'ResponseContentType' => $mime,
-                    'ResponseContentDisposition' => 'inline; filename="' . (basename($path) ?: 'ocr.json') . '"',
+                    'ResponseContentDisposition' => 'inline; filename="'.(basename($path) ?: 'ocr.json').'"',
                 ]);
 
                 return redirect()->away($url);
@@ -157,10 +157,10 @@ class OcrRenderController extends Controller
         abort_if($path === '', 404, 'Input document missing.');
 
         try {
-            if (!$request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
+            if (! $request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($path, now()->addMinutes(20), [
                     'ResponseContentType' => $mime,
-                    'ResponseContentDisposition' => 'inline; filename="' . (basename($path) ?: 'input') . '"',
+                    'ResponseContentDisposition' => 'inline; filename="'.(basename($path) ?: 'input').'"',
                 ]);
 
                 return redirect()->away($url);

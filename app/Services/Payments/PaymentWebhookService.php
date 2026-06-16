@@ -2,13 +2,9 @@
 
 namespace App\Services\Payments;
 
-use App\Enums\PaymentCardOrigin;
-use App\Enums\PaymentIntentStatus;
-use App\Enums\PaymentTransactionStatus;
 use App\Enums\PaymentTransactionType;
 use App\Enums\PaymentWebhookProcessingStatus;
 use App\Models\PaymentIntent;
-use App\Models\PaymentTransaction;
 use App\Models\PaymentWebhookEvent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,8 +15,7 @@ class PaymentWebhookService
         protected PaymentMethodCatalog $paymentMethods,
         protected PaymentProviderManager $providers,
         protected PaymentIntentReconciliationService $reconciler,
-    ) {
-    }
+    ) {}
 
     public function handle(string $provider, Request $request): PaymentWebhookEvent
     {
@@ -180,5 +175,4 @@ class PaymentWebhookService
 
         return null;
     }
-
 }

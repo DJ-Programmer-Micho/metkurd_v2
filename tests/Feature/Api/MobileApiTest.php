@@ -1,8 +1,8 @@
 <?php
 
 use App\Models\Customer;
-use App\Models\CustomerProfile;
 use App\Models\CustomerFile;
+use App\Models\CustomerProfile;
 use App\Models\MlJob;
 use App\Models\PlanEntitlement;
 use App\Models\PlanVoiceAccess;
@@ -12,9 +12,9 @@ use App\Models\StoragePlan;
 use App\Models\Tool;
 use App\Models\ToolAction;
 use App\Models\Voice;
+use App\Services\Auth\CustomerSocialAuthService;
 use App\Services\Billing\PlanSwitcher;
 use App\Services\Media\AudioProbeService;
-use App\Services\Auth\CustomerSocialAuthService;
 use App\Services\Mobile\MobileApiTokenService;
 use App\Services\Providers\RunPodProvider;
 use App\Support\AppToolCatalog;
@@ -103,8 +103,8 @@ function createMobileJob(
         'finished_at' => $status === 'done' ? now() : null,
         'lock_expires_at' => $liveLock ? now()->addMinutes(30) : null,
         'execution_scope' => $liveLock ? 'customer' : null,
-        'input' => ['audio_name' => strtoupper($jobKind) . ' Input'],
-        'output' => ['text' => strtoupper($jobKind) . ' Output'],
+        'input' => ['audio_name' => strtoupper($jobKind).' Input'],
+        'output' => ['text' => strtoupper($jobKind).' Output'],
     ]);
 }
 
@@ -696,7 +696,7 @@ it('streams mobile voice avatars through the protected endpoint', function () {
     Storage::disk('s3')->put('metkurd_audio_data/xtts/mobile_voice_avatar.png', 'mobile-avatar-image');
 
     $response = $this->withToken(mobileApiToken($customer, 'tts'))
-        ->get('/api/mobile/tts/voices/' . $speaker . '/avatar');
+        ->get('/api/mobile/tts/voices/'.$speaker.'/avatar');
 
     $response->assertOk()
         ->assertHeader('content-type', 'image/png');
@@ -719,7 +719,7 @@ it('returns 404 when a protected mobile voice avatar is missing', function () {
     ]);
 
     $this->withToken(mobileApiToken($customer, 'tts'))
-        ->getJson('/api/mobile/tts/voices/' . $speaker . '/avatar')
+        ->getJson('/api/mobile/tts/voices/'.$speaker.'/avatar')
         ->assertStatus(404)
         ->assertHeader('content-type', 'application/json');
 });
@@ -741,7 +741,7 @@ it('streams mobile voice previews through the protected endpoint', function () {
     Storage::disk('s3')->put('metkurd_audio_data/xtts/mobile_voice_preview.mp3', 'mobile-preview-audio');
 
     $response = $this->withToken(mobileApiToken($customer, 'tts'))
-        ->get('/api/mobile/tts/voices/' . $speaker . '/preview');
+        ->get('/api/mobile/tts/voices/'.$speaker.'/preview');
 
     $response->assertOk()
         ->assertHeader('content-type', 'audio/mpeg');
@@ -764,7 +764,7 @@ it('returns 404 when a protected mobile voice preview is missing', function () {
     ]);
 
     $this->withToken(mobileApiToken($customer, 'tts'))
-        ->getJson('/api/mobile/tts/voices/' . $speaker . '/preview')
+        ->getJson('/api/mobile/tts/voices/'.$speaker.'/preview')
         ->assertStatus(404)
         ->assertHeader('content-type', 'application/json');
 });
@@ -826,7 +826,7 @@ it('syncs an active mobile tts job on the detail endpoint when runpod has comple
     app()->instance(RunPodProvider::class, $mock);
 
     $response = $this->withToken(mobileApiToken($customer, 'tts'))
-        ->getJson('/api/mobile/tts/jobs/' . $job->id);
+        ->getJson('/api/mobile/tts/jobs/'.$job->id);
 
     $outputFile = CustomerFile::query()
         ->where('customer_id', (int) $customer->id)
@@ -852,7 +852,7 @@ it('syncs an active mobile tts job on the detail endpoint when runpod has comple
 
     expect((string) $job->status)->toBe('done')
         ->and($job->finished_at)->not->toBeNull()
-        ->and((string) data_get($job->output, 'path'))->toContain('/tts/' . $job->id . '/');
+        ->and((string) data_get($job->output, 'path'))->toContain('/tts/'.$job->id.'/');
 });
 
 it('returns a clean 404 json response when a job uuid is used in a numeric file download route', function () {
@@ -860,7 +860,7 @@ it('returns a clean 404 json response when a job uuid is used in a numeric file 
     assignMobilePlan($customer, 'premium');
 
     $response = $this->withToken(mobileApiToken($customer, 'tts'))
-        ->getJson('/api/mobile/tts/files/' . Str::uuid() . '/download');
+        ->getJson('/api/mobile/tts/files/'.Str::uuid().'/download');
 
     $response->assertStatus(404)
         ->assertHeader('content-type', 'application/json');
@@ -934,7 +934,7 @@ it('includes consistent output references for completed ocr jobs', function () {
     ]);
 
     $this->withToken(mobileApiToken($customer, 'ocr'))
-        ->getJson('/api/mobile/ocr/jobs/' . $job->id)
+        ->getJson('/api/mobile/ocr/jobs/'.$job->id)
         ->assertOk()
         ->assertJsonPath('data.result.has_output', true)
         ->assertJsonPath('data.result.primary_output.id', (int) $textFile->id)
@@ -985,7 +985,7 @@ it('lists and signs downloads only for files inside the requested mobile app sco
     expect($ids)->toBe([(int) $ttsFile->id]);
 
     $this->withToken($token)
-        ->getJson('/api/mobile/tts/files/' . $ttsFile->id . '/download')
+        ->getJson('/api/mobile/tts/files/'.$ttsFile->id.'/download')
         ->assertOk()
         ->assertJsonPath('data.file.id', (int) $ttsFile->id)
         ->assertJsonPath('data.file.tool_code', 'tts');
@@ -1164,7 +1164,7 @@ it('submits clone tts mobile jobs with direct multipart reference audio', functi
     expect((string) $job->provider_job_id)->toBe('runpod-clone-1')
         ->and((string) $job->job_kind)->toBe('clone_tts')
         ->and((string) data_get($job->input, 'reference_audio_name'))->toBe('voice.mp3')
-        ->and((string) data_get($job->input, 'reference_audio_path'))->toContain('/clone-tts/' . $job->id . '/')
+        ->and((string) data_get($job->input, 'reference_audio_path'))->toContain('/clone-tts/'.$job->id.'/')
         ->and($job->lock_expires_at)->not->toBeNull();
 });
 
@@ -1240,7 +1240,7 @@ it('submits qasr mobile jobs with direct multipart audio', function () {
 
     expect((string) $job->provider_job_id)->toBe('runpod-qasr-1')
         ->and((string) data_get($job->input, 'model_variant'))->toBe('fine_tuned')
-        ->and((string) data_get($job->input, 'audio_path'))->toContain('/qasr/' . $job->id . '/');
+        ->and((string) data_get($job->input, 'audio_path'))->toContain('/qasr/'.$job->id.'/');
 });
 
 it('submits stem mobile jobs with direct multipart audio', function () {
@@ -1358,7 +1358,7 @@ it('submits translation mobile jobs with the web payload contract', function () 
     expect((string) $job->provider_job_id)->toBe('runpod-tran-1')
         ->and((string) data_get($job->input, 'source_lang'))->toBe('ku')
         ->and((string) data_get($job->input, 'target_lang'))->toBe('en')
-        ->and((string) data_get($job->input, 'source_path'))->toContain('/tran/' . $job->id . '/source.txt');
+        ->and((string) data_get($job->input, 'source_path'))->toContain('/tran/'.$job->id.'/source.txt');
 });
 
 it('returns a validation error when tts tool selection is missing', function () {

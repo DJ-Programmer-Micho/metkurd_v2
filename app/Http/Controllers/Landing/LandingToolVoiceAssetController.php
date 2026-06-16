@@ -18,8 +18,7 @@ class LandingToolVoiceAssetController extends Controller
 
     public function __construct(
         protected MobileTtsVoiceAssetService $assets
-    ) {
-    }
+    ) {}
 
     public function preview(Request $request, string $locale, string $voiceCode)
     {
@@ -32,7 +31,7 @@ class LandingToolVoiceAssetController extends Controller
             request: $request,
             path: $path,
             mime: $this->audioMimeForPath($path),
-            filename: basename($path) ?: ((string) $voice->code . '.wav')
+            filename: basename($path) ?: ((string) $voice->code.'.wav')
         );
     }
 
@@ -62,7 +61,7 @@ class LandingToolVoiceAssetController extends Controller
     protected function resolvePublicVoice(string $voiceCode): Voice
     {
         return Cache::remember(
-            'landing-tool-demo-voice:' . Str::lower(trim($voiceCode)),
+            'landing-tool-demo-voice:'.Str::lower(trim($voiceCode)),
             now()->addMinutes(15),
             function () use ($voiceCode): Voice {
                 return Voice::query()
@@ -81,7 +80,7 @@ class LandingToolVoiceAssetController extends Controller
         if (! $request->boolean('proxy') && method_exists($disk, 'temporaryUrl')) {
             $url = $disk->temporaryUrl($path, now()->addMinutes(20), [
                 'ResponseContentType' => $mime,
-                'ResponseContentDisposition' => 'inline; filename="' . $filename . '"',
+                'ResponseContentDisposition' => 'inline; filename="'.$filename.'"',
                 'ResponseCacheControl' => $cacheControl,
             ]);
 
@@ -93,7 +92,7 @@ class LandingToolVoiceAssetController extends Controller
 
         $headers = [
             'Content-Type' => $mime,
-            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
             'Cache-Control' => $cacheControl,
             'Accept-Ranges' => 'bytes',
             'X-Content-Type-Options' => 'nosniff',
@@ -153,7 +152,7 @@ class LandingToolVoiceAssetController extends Controller
     protected function pathExists(string $path): bool
     {
         return Cache::remember(
-            'landing-tool-demo-asset:' . sha1($path),
+            'landing-tool-demo-asset:'.sha1($path),
             now()->addMinutes(10),
             fn (): bool => Storage::disk($this->disk)->exists($path)
         );

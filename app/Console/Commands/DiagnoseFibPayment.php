@@ -89,7 +89,7 @@ class DiagnoseFibPayment extends Command
         $callbackHealth = $this->callbackHealth($callbackUrl, $profile);
 
         $this->newLine();
-        $this->info(strtoupper($profile) . ' PROFILE');
+        $this->info(strtoupper($profile).' PROFILE');
         $this->table(['Key', 'Value'], [
             ['base_url_host', parse_url((string) $summary['base_url'], PHP_URL_HOST) ?: 'n/a'],
             ['token_url_host', parse_url((string) $summary['token_url'], PHP_URL_HOST) ?: 'n/a'],
@@ -109,7 +109,7 @@ class DiagnoseFibPayment extends Command
 
             return 'ok';
         } catch (\Throwable $exception) {
-            return 'invalid: ' . $exception->getMessage();
+            return 'invalid: '.$exception->getMessage();
         }
     }
 
@@ -155,7 +155,7 @@ class DiagnoseFibPayment extends Command
 
             $this->renderLivePaymentStatus($payment);
         } catch (\Throwable $exception) {
-            $this->error('Provider lookup failed: ' . $exception->getMessage());
+            $this->error('Provider lookup failed: '.$exception->getMessage());
         }
     }
 

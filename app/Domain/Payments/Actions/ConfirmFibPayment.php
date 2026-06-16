@@ -8,8 +8,7 @@ class ConfirmFibPayment
 {
     public function __construct(
         protected SyncFibCheckoutStatus $sync,
-    ) {
-    }
+    ) {}
 
     public function handle(Payment $payment, string $source = 'manual_status_refresh', ?array $callbackPayload = null): Payment
     {

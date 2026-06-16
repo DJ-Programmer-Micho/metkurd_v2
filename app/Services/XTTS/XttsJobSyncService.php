@@ -49,10 +49,10 @@ class XttsJobSyncService
 
         $mapped = match ($rawStatus) {
             'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 'queued',
-            'IN_PROGRESS', 'RUNNING'            => 'running',
-            'COMPLETED'                         => ($wavB64 !== '' ? 'saving' : 'running'),
+            'IN_PROGRESS', 'RUNNING' => 'running',
+            'COMPLETED' => ($wavB64 !== '' ? 'saving' : 'running'),
             'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
-            default                             => 'running',
+            default => 'running',
         };
 
         if (in_array($toolCode, ['clone_tts', 'clone_xomni'], true)) {
@@ -64,6 +64,7 @@ class XttsJobSyncService
                 (string) (data_get($st, 'error') ?: data_get($out, 'error') ?: ''),
                 $toolCode
             );
+
             return $this->failJob($job, $err);
         }
 
@@ -99,7 +100,7 @@ class XttsJobSyncService
         return DB::transaction(function () use ($job, $tool, $wavB64, $providerOutput) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
-            if (!$fresh) {
+            if (! $fresh) {
                 throw new \RuntimeException('Job not found during finalize.');
             }
 
@@ -108,7 +109,7 @@ class XttsJobSyncService
             }
 
             $providerMime = strtolower(trim((string) data_get($providerOutput, 'mime_type', 'audio/wav')));
-            if (!str_starts_with($providerMime, 'audio/')) {
+            if (! str_starts_with($providerMime, 'audio/')) {
                 $providerMime = 'audio/wav';
             }
 
@@ -138,6 +139,11 @@ class XttsJobSyncService
                 'tool' => (string) $tool->code,
                 'purpose' => 'render',
                 'mime' => $providerMime,
+                'retention_mode' => (string) data_get($fresh->input, 'api_storage_mode') === 'temporary' ? 'temporary' : 'permanent',
+                'expires_at' => data_get($fresh->input, 'api_expires_at'),
+                'source_type' => data_get($fresh->input, 'api_job_id') ? 'api_job' : 'ml_job',
+                'source_id' => (string) (data_get($fresh->input, 'api_job_id') ?: $fresh->id),
+                'counts_toward_quota' => (string) data_get($fresh->input, 'api_storage_mode') !== 'temporary',
             ]);
 
             $fresh->status = 'done';
@@ -201,7 +207,7 @@ class XttsJobSyncService
         DB::transaction(function () use ($job) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
-            if (!$fresh || (string) $fresh->status !== 'done') {
+            if (! $fresh || (string) $fresh->status !== 'done') {
                 throw new \RuntimeException('Render not found or already deleted.');
             }
 
@@ -213,7 +219,7 @@ class XttsJobSyncService
         try {
             $customerId = (int) $job->customer_id;
 
-            $outPath  = (string) data_get($job->output, 'path', '');
+            $outPath = (string) data_get($job->output, 'path', '');
             $outBytes = (int) data_get($job->output, 'bytes', 0);
 
             if ($outPath !== '') {
@@ -221,7 +227,7 @@ class XttsJobSyncService
             }
 
             if (in_array((string) $job->tool?->code, ['clone_tts', 'clone_xomni'], true)) {
-                $refPath  = (string) data_get($job->input, 'reference_audio_path', '');
+                $refPath = (string) data_get($job->input, 'reference_audio_path', '');
                 $refBytes = (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'reference_audio_bytes', 0));
 
                 if ($refPath !== '') {

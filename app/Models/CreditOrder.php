@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -114,5 +115,33 @@ class CreditOrder extends Model
         $currencyCode = strtoupper(trim((string) ($this->display_currency_code ?? '')));
 
         return $currencyCode !== '' && $currencyCode !== 'IQD' && $this->display_amount_rounded !== null;
+    }
+
+    public function isRevenueExcluded(): bool
+    {
+        if ((bool) data_get($this->meta, 'revenue_excluded', false)) {
+            return true;
+        }
+
+        if (data_get($this->meta, 'revenue_record') === false) {
+            return true;
+        }
+
+        return in_array((string) data_get($this->meta, 'billing_source', ''), [
+            'admin_manual_grant',
+            'internal_non_revenue',
+        ], true);
+    }
+
+    public function scopeRevenueIncluded(Builder $query): Builder
+    {
+        return $query->where(function (Builder $builder): void {
+            $builder
+                ->whereNull('meta->revenue_excluded')
+                ->orWhere('meta->revenue_excluded', false)
+                ->orWhere('meta->revenue_excluded', 0)
+                ->orWhere('meta->revenue_excluded', '0')
+                ->orWhere('meta->revenue_excluded', 'false');
+        });
     }
 }

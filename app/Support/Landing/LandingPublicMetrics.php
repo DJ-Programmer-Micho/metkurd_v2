@@ -117,7 +117,7 @@ class LandingPublicMetrics
 
         $display = rtrim(rtrim($display, '0'), '.');
 
-        return $display . $unit;
+        return $display.$unit;
     }
 
     /**

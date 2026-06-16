@@ -10,8 +10,8 @@ use App\Models\Tool;
 use App\Models\ToolAction;
 use App\Models\Voice;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class OmniToolSeeder extends Seeder
 {
@@ -136,7 +136,7 @@ class OmniToolSeeder extends Seeder
         $actions = [];
 
         foreach ($rows as $row) {
-            $fullCode = $row['tool_code'] . '.' . $row['action_code'];
+            $fullCode = $row['tool_code'].'.'.$row['action_code'];
 
             $actions[$fullCode] = ToolAction::updateOrCreate(
                 ['full_code' => $fullCode],
@@ -170,6 +170,7 @@ class OmniToolSeeder extends Seeder
                     [
                         'service_plan_id' => (int) $plan->id,
                         'tool_action_id' => (int) $action->id,
+                        'entitlement_channel' => 'all',
                     ],
                     [
                         'allowed' => true,
@@ -193,7 +194,7 @@ class OmniToolSeeder extends Seeder
         foreach ($pricing as $fullCode => $creditsPerUnit) {
             $action = $actions[$fullCode] ?? null;
 
-            if (!$action) {
+            if (! $action) {
                 continue;
             }
 
@@ -201,6 +202,7 @@ class OmniToolSeeder extends Seeder
                 [
                     'tool_action_id' => (int) $action->id,
                     'service_plan_id' => null,
+                    'pricing_channel' => 'all',
                     'priority' => 100,
                 ],
                 [
@@ -550,7 +552,7 @@ class OmniToolSeeder extends Seeder
 
         foreach ($this->omniVoiceGroupDefinitions() as $groupKey => $definition) {
             foreach ((array) data_get($definition, 'files', []) as $filename) {
-                $path = trim($groupKey . '/' . trim((string) $filename), '/');
+                $path = trim($groupKey.'/'.trim((string) $filename), '/');
 
                 if ($path !== '') {
                     $set[$path] = true;
@@ -701,8 +703,7 @@ class OmniToolSeeder extends Seeder
         array $definition,
         array $previewAudioRelativeSet,
         array $previewImageRelativeSet
-    ): array
-    {
+    ): array {
         $rows = [];
         $label = (string) ($definition['label'] ?? Str::headline(str_replace('_', ' ', $groupKey)));
         $gender = (string) ($definition['gender'] ?? 'custom');
@@ -718,10 +719,10 @@ class OmniToolSeeder extends Seeder
                 continue;
             }
 
-            $runpodRefAudio = $groupKey . '/' . $filename;
+            $runpodRefAudio = $groupKey.'/'.$filename;
             $hasPreview = (bool) ($previewAudioRelativeSet[$runpodRefAudio] ?? false);
             $previewAudioPath = $hasPreview
-                ? 'metkurd_audio_data/omni/' . $runpodRefAudio
+                ? 'metkurd_audio_data/omni/'.$runpodRefAudio
                 : null;
             $avatarPath = $this->resolveOmniAvatarPath($runpodRefAudio, $previewImageRelativeSet);
             $variant = $this->resolveOmniVariantFromFilename($filename);
@@ -734,12 +735,12 @@ class OmniToolSeeder extends Seeder
                 ->trim('_')
                 ->value();
 
-            $codeBase = 'xomni_' . $groupKey . '_' . ($stem !== '' ? $stem : (string) ($index + 1));
+            $codeBase = 'xomni_'.$groupKey.'_'.($stem !== '' ? $stem : (string) ($index + 1));
             $code = $codeBase;
             $codeSuffix = 2;
 
             while (isset($usedCodes[$code])) {
-                $code = $codeBase . '_' . $codeSuffix;
+                $code = $codeBase.'_'.$codeSuffix;
                 $codeSuffix++;
             }
 
@@ -793,13 +794,13 @@ class OmniToolSeeder extends Seeder
             return null;
         }
 
-        $candidates = [$directory . '/' . $stem . '.jpg'];
+        $candidates = [$directory.'/'.$stem.'.jpg'];
 
         if (preg_match('/^(.*)_\d+$/u', $stem, $matches) === 1) {
             $baseStem = trim((string) ($matches[1] ?? ''));
 
             if ($baseStem !== '') {
-                $candidates[] = $directory . '/' . $baseStem . '.jpg';
+                $candidates[] = $directory.'/'.$baseStem.'.jpg';
             }
         }
 
@@ -807,7 +808,7 @@ class OmniToolSeeder extends Seeder
             $normalized = trim(str_replace('\\', '/', (string) $candidate), '/');
 
             if ($normalized !== '' && isset($previewImageRelativeSet[$normalized])) {
-                return 'metkurd_audio_data/omni/' . $normalized;
+                return 'metkurd_audio_data/omni/'.$normalized;
             }
         }
 
@@ -860,6 +861,7 @@ class OmniToolSeeder extends Seeder
         }
 
         $variant = (int) ($matches[1] ?? 1);
+
         return $variant > 0 ? $variant : 1;
     }
 

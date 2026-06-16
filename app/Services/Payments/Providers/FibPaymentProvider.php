@@ -15,8 +15,7 @@ class FibPaymentProvider extends AbstractConfiguredPaymentProvider
     public function __construct(
         protected FibMapper $mapper,
         protected FibWebhookValidator $validator,
-    ) {
-    }
+    ) {}
 
     public function driver(): string
     {

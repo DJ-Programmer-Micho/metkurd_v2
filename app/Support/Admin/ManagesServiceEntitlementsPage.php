@@ -5,6 +5,7 @@ namespace App\Support\Admin;
 use App\Models\PlanEntitlement;
 use App\Models\ServicePlan;
 use App\Models\ToolAction;
+use App\Services\CustomerApi\CustomerApiAccessService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -25,15 +26,25 @@ trait ManagesServiceEntitlementsPage
     #[Url(as: 'entitlement', keep: true)]
     public string $entitlementFilter = 'all';
 
+    #[Url(as: 'channel', keep: true)]
+    public string $channelFilter = 'all';
+
     public int $perPage = 10;
 
     public ?int $editingEntitlementId = null;
+
     public ?int $entitlementServicePlanId = null;
+
     public ?int $entitlementToolActionId = null;
+
+    public string $entitlementChannel = PlanEntitlement::CHANNEL_APP;
+
     public string $entitlementAllowed = 'allowed';
+
     public string $entitlementLimitsJson = '';
 
     public ?int $entitlementIdPendingDelete = null;
+
     public string $deleteLabel = '';
 
     public function updatingSearch(): void
@@ -56,12 +67,18 @@ trait ManagesServiceEntitlementsPage
         $this->resetPage();
     }
 
+    public function updatedChannelFilter(): void
+    {
+        $this->resetPage();
+    }
+
     public function resetFilters(): void
     {
         $this->search = '';
         $this->planFilter = 'all';
         $this->actionFilter = 'all';
         $this->entitlementFilter = 'all';
+        $this->channelFilter = 'all';
         $this->resetPage();
     }
 
@@ -117,6 +134,10 @@ trait ManagesServiceEntitlementsPage
             $query->where('allowed', false);
         }
 
+        if ($this->channelFilter !== 'all') {
+            $query->where('entitlement_channel', $this->channelFilter);
+        }
+
         $search = trim($this->search);
 
         if ($search !== '') {
@@ -127,6 +148,7 @@ trait ManagesServiceEntitlementsPage
                             ->where('name', 'like', "%{$search}%")
                             ->orWhere('full_code', 'like', "%{$search}%");
                     })
+                    ->orWhere('entitlement_channel', 'like', "%{$search}%")
                     ->orWhereHas('servicePlan', function (Builder $planQuery) use ($search) {
                         $planQuery
                             ->where('name', 'like', "%{$search}%")
@@ -161,6 +183,7 @@ trait ManagesServiceEntitlementsPage
         $this->editingEntitlementId = $entitlement->id;
         $this->entitlementServicePlanId = (int) $entitlement->service_plan_id;
         $this->entitlementToolActionId = (int) $entitlement->tool_action_id;
+        $this->entitlementChannel = PlanEntitlement::normalizeChannel((string) ($entitlement->entitlement_channel ?? PlanEntitlement::CHANNEL_APP), PlanEntitlement::CHANNEL_APP, true);
         $this->entitlementAllowed = $entitlement->allowed ? 'allowed' : 'blocked';
         $this->entitlementLimitsJson = $entitlement->limits ? (string) json_encode($entitlement->limits, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
 
@@ -172,6 +195,7 @@ trait ManagesServiceEntitlementsPage
         $this->validate([
             'entitlementServicePlanId' => ['required', 'integer', Rule::exists('service_plans', 'id')],
             'entitlementToolActionId' => ['required', 'integer', Rule::exists('tool_actions', 'id')],
+            'entitlementChannel' => ['required', Rule::in(PlanEntitlement::channels())],
             'entitlementAllowed' => ['required', Rule::in(['allowed', 'blocked'])],
             'entitlementLimitsJson' => ['nullable', 'string'],
         ]);
@@ -179,6 +203,7 @@ trait ManagesServiceEntitlementsPage
         $duplicate = PlanEntitlement::query()
             ->where('service_plan_id', $this->entitlementServicePlanId)
             ->where('tool_action_id', $this->entitlementToolActionId)
+            ->where('entitlement_channel', $this->entitlementChannel)
             ->when($this->editingEntitlementId, fn ($query) => $query->whereKeyNot($this->editingEntitlementId))
             ->exists();
 
@@ -192,16 +217,18 @@ trait ManagesServiceEntitlementsPage
 
         $entitlement = $this->editingEntitlementId
             ? PlanEntitlement::query()->findOrFail($this->editingEntitlementId)
-            : new PlanEntitlement();
+            : new PlanEntitlement;
 
         $entitlement->fill([
             'service_plan_id' => $this->entitlementServicePlanId,
             'tool_action_id' => $this->entitlementToolActionId,
+            'entitlement_channel' => PlanEntitlement::normalizeChannel($this->entitlementChannel),
             'allowed' => $this->entitlementAllowed === 'allowed',
             'limits' => $limits ?: null,
         ]);
 
         $entitlement->save();
+        $this->syncApiScopeForEntitlement($entitlement, $entitlement->allowed);
 
         $this->dispatch('alert', type: 'success', message: $this->editingEntitlementId ? __('Plan entitlement updated successfully.') : __('Plan entitlement created successfully.'));
         $this->dispatch('services-entitlements:modal-hide', id: 'serviceEntitlementModal');
@@ -211,7 +238,8 @@ trait ManagesServiceEntitlementsPage
     public function toggleEntitlementAllowed(int $entitlementId): void
     {
         $entitlement = PlanEntitlement::query()->findOrFail($entitlementId);
-        $entitlement->update(['allowed' => !$entitlement->allowed]);
+        $entitlement->update(['allowed' => ! $entitlement->allowed]);
+        $this->syncApiScopeForEntitlement($entitlement->fresh(), (bool) $entitlement->fresh()?->allowed);
 
         $this->dispatch('alert', type: 'success', message: $entitlement->allowed ? __('Entitlement marked as allowed.') : __('Entitlement blocked.'));
     }
@@ -223,7 +251,7 @@ trait ManagesServiceEntitlementsPage
             ->findOrFail($entitlementId);
 
         $this->entitlementIdPendingDelete = $entitlement->id;
-        $this->deleteLabel = ($entitlement->servicePlan?->name ?? 'Plan') . ' / ' . ($entitlement->toolAction?->full_code ?? 'Action');
+        $this->deleteLabel = ($entitlement->servicePlan?->name ?? 'Plan').' / '.($entitlement->toolAction?->full_code ?? 'Action');
 
         $this->dispatch('services-entitlements:modal-show', id: 'serviceEntitlementDeleteModal');
     }
@@ -231,7 +259,9 @@ trait ManagesServiceEntitlementsPage
     public function performDelete(): void
     {
         if ($this->entitlementIdPendingDelete) {
-            PlanEntitlement::query()->findOrFail($this->entitlementIdPendingDelete)->delete();
+            $entitlement = PlanEntitlement::query()->findOrFail($this->entitlementIdPendingDelete);
+            $this->syncApiScopeForEntitlement($entitlement, false);
+            $entitlement->delete();
             $this->dispatch('alert', type: 'success', message: __('Plan entitlement deleted successfully.'));
         }
 
@@ -245,6 +275,7 @@ trait ManagesServiceEntitlementsPage
         $this->editingEntitlementId = null;
         $this->entitlementServicePlanId = null;
         $this->entitlementToolActionId = null;
+        $this->entitlementChannel = PlanEntitlement::CHANNEL_APP;
         $this->entitlementAllowed = 'allowed';
         $this->entitlementLimitsJson = '';
     }
@@ -260,6 +291,15 @@ trait ManagesServiceEntitlementsPage
         return $state ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning';
     }
 
+    public function channelBadgeClasses(string $channel): string
+    {
+        return match (PlanEntitlement::normalizeChannel($channel, PlanEntitlement::CHANNEL_APP, true)) {
+            PlanEntitlement::CHANNEL_API => 'bg-info-subtle text-info',
+            PlanEntitlement::CHANNEL_MOBILE => 'bg-primary-subtle text-primary',
+            default => 'bg-secondary-subtle text-secondary',
+        };
+    }
+
     protected function decodeJsonField(?string $value, string $field): array
     {
         $raw = trim((string) $value);
@@ -270,12 +310,50 @@ trait ManagesServiceEntitlementsPage
 
         $decoded = json_decode($raw, true);
 
-        if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
             throw ValidationException::withMessages([
                 $field => __('Please enter a valid JSON object.'),
             ]);
         }
 
         return $decoded;
+    }
+
+    protected function syncApiScopeForEntitlement(PlanEntitlement $entitlement, bool $allowed): void
+    {
+        $channel = PlanEntitlement::normalizeChannel((string) ($entitlement->entitlement_channel ?? PlanEntitlement::CHANNEL_APP), PlanEntitlement::CHANNEL_APP, true);
+
+        if ($channel !== PlanEntitlement::CHANNEL_API) {
+            return;
+        }
+
+        $entitlement->loadMissing(['servicePlan:id,api_allowed_tools', 'toolAction:id,full_code']);
+
+        $plan = $entitlement->servicePlan;
+        $actionCode = (string) ($entitlement->toolAction?->full_code ?? '');
+
+        if (! $plan instanceof ServicePlan || $actionCode === '') {
+            return;
+        }
+
+        $scope = app(CustomerApiAccessService::class)->scopeForActionCode($actionCode);
+
+        if ($scope === null) {
+            return;
+        }
+
+        $scopes = collect((array) ($plan->api_allowed_tools ?? []))
+            ->map(fn (mixed $value): string => strtolower(trim((string) $value)))
+            ->filter()
+            ->reject(fn (string $value): bool => $value === $scope)
+            ->values();
+
+        if ($allowed) {
+            $scopes->push($scope);
+        }
+
+        $plan->forceFill([
+            'api_allowed_tools' => $scopes->unique()->values()->all(),
+        ])->save();
     }
 }

@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
+use App\Domain\Payments\Models\Payment;
 use App\Enums\CouponDiscountType;
 use App\Enums\CouponDurationType;
 use App\Enums\CouponTargetType;
-use App\Domain\Payments\Models\Payment;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 

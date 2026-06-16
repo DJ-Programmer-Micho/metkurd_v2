@@ -1,8 +1,12 @@
 <?php
 
 use App\Http\Middleware\Authenticate;
-use App\Http\Middleware\EnsureCustomerVerificationIsComplete;
+use App\Http\Middleware\AuthenticateCustomerApiKey;
+use App\Http\Middleware\CheckCustomerApiConcurrency;
+use App\Http\Middleware\CheckCustomerApiRateLimit;
+use App\Http\Middleware\EnsureCustomerApiAccess;
 use App\Http\Middleware\EnsureCustomerCanAccessTool;
+use App\Http\Middleware\EnsureCustomerVerificationIsComplete;
 use App\Http\Middleware\EnsureUserAppIsActive;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Foundation\Application;
@@ -30,6 +34,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'auth' => Authenticate::class,
+            'customer.api' => AuthenticateCustomerApiKey::class,
+            'customer.api.access' => EnsureCustomerApiAccess::class,
+            'customer.api.rate_limit' => CheckCustomerApiRateLimit::class,
+            'customer.api.concurrency' => CheckCustomerApiConcurrency::class,
             'localization.main' => LocalizationMainMiddleware::class,
             'app.active' => EnsureUserAppIsActive::class,
             'app.verified' => EnsureCustomerVerificationIsComplete::class,
@@ -46,17 +54,19 @@ return Application::configure(basePath: dirname(__DIR__))
             if ($request->is('app/*') || $request->routeIs('app.*')) {
                 return route('app.signin');
             }
+
             return route('app.signin');
         });
 
         $middleware->redirectUsersTo(function ($request) {
             if (auth('admin')->check()) {
-                return route('admin.home',['locale' => app()->getLocale()]);
+                return route('admin.home', ['locale' => app()->getLocale()]);
             }
             if (auth('app')->check()) {
-                return route('app.home',['locale' => app()->getLocale()]);
+                return route('app.home', ['locale' => app()->getLocale()]);
             }
-            return route('app.home',['locale' => app()->getLocale()]);
+
+            return route('app.home', ['locale' => app()->getLocale()]);
         });
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -18,6 +18,5 @@ final class CouponContext
         public readonly ?string $billingCycle = null,
         public readonly bool $isRecurring = false,
         public readonly int $cycleIndex = 1,
-    ) {
-    }
+    ) {}
 }

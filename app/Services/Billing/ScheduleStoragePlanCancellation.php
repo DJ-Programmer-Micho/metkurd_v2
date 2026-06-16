@@ -2,8 +2,8 @@
 
 namespace App\Services\Billing;
 
-use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Domain\Payments\Fib\FibSubscriptionCancellationService;
+use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Enums\PaymentRecurringStrategy;
 use App\Models\Customer;
@@ -21,8 +21,7 @@ class ScheduleStoragePlanCancellation
         protected FibSubscriptionCancellationService $fibSubscriptionCancellation,
         protected PaymentEventRecorder $events,
         protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
-    ) {
-    }
+    ) {}
 
     public function handle(Customer $customer): CustomerStorageSubscription
     {
@@ -68,7 +67,7 @@ class ScheduleStoragePlanCancellation
                     $event = $this->events->record($payment, [
                         'event_type' => 'storage_subscription_cancel_request_failed',
                         'source' => 'website_cancel_request',
-                        'event_key' => 'storage-subscription-cancel-failed:' . $payment->id,
+                        'event_key' => 'storage-subscription-cancel-failed:'.$payment->id,
                         'before_status' => $payment->status->value,
                         'after_status' => $payment->status->value,
                         'meta' => [
@@ -135,7 +134,7 @@ class ScheduleStoragePlanCancellation
                 $event = $this->events->record($payment, [
                     'event_type' => 'storage_subscription_cancel_requested',
                     'source' => 'website_cancel_request',
-                    'event_key' => 'storage-subscription-cancel-request:' . $payment->id . ':' . $result . ':' . sha1((string) $periodEndsAt?->toIso8601String()),
+                    'event_key' => 'storage-subscription-cancel-request:'.$payment->id.':'.$result.':'.sha1((string) $periodEndsAt?->toIso8601String()),
                     'before_status' => $payment->status->value,
                     'after_status' => $payment->status->value,
                     'meta' => [

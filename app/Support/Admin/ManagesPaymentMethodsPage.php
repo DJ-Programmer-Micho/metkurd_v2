@@ -24,26 +24,45 @@ trait ManagesPaymentMethodsPage
     public int $perPage = 12;
 
     public ?int $editingMethodId = null;
+
     public string $code = '';
+
     public string $driver = 'fake';
+
     public string $name = '';
+
     public string $description = '';
+
     public string $icon = '';
+
     public int $sortOrder = 0;
+
     public string $supportedCurrenciesText = 'IQD';
+
     public array $supportedPurchaseTypes = [];
+
     public bool $supportsRecurring = false;
+
     public bool $supportsRefunds = false;
+
     public bool $supportsWebhooks = false;
+
     public bool $supportsRedirect = false;
+
     public bool $supportsQr = false;
+
     public bool $isActive = true;
+
     public bool $isVisible = true;
+
     public string $settingsJson = '';
+
     public string $feeConfigJson = '';
+
     public string $metaJson = '';
 
     public ?int $deleteMethodId = null;
+
     public string $deleteMethodLabel = '';
 
     public function updatingSearch(): void
@@ -118,15 +137,15 @@ trait ManagesPaymentMethodsPage
     protected function formRules(): array
     {
         return [
-            'code' => 'required|string|max:50|alpha_dash|unique:payment_methods,code,' . ($this->editingMethodId ?? 'NULL') . ',id',
-            'driver' => 'required|string|in:' . implode(',', array_keys($this->driverOptions)),
+            'code' => 'required|string|max:50|alpha_dash|unique:payment_methods,code,'.($this->editingMethodId ?? 'NULL').',id',
+            'driver' => 'required|string|in:'.implode(',', array_keys($this->driverOptions)),
             'name' => 'required|string|max:120',
             'description' => 'nullable|string|max:255',
             'icon' => 'nullable|string|max:120',
             'sortOrder' => 'nullable|integer|min:0|max:65535',
             'supportedCurrenciesText' => 'nullable|string|max:255',
             'supportedPurchaseTypes' => 'array',
-            'supportedPurchaseTypes.*' => 'string|in:' . implode(',', array_keys($this->purchaseTypeOptions)),
+            'supportedPurchaseTypes.*' => 'string|in:'.implode(',', array_keys($this->purchaseTypeOptions)),
             'settingsJson' => 'nullable|string',
             'feeConfigJson' => 'nullable|string',
             'metaJson' => 'nullable|string',
@@ -193,7 +212,7 @@ trait ManagesPaymentMethodsPage
 
         $method = $this->editingMethodId
             ? PaymentMethod::query()->findOrFail($this->editingMethodId)
-            : new PaymentMethod();
+            : new PaymentMethod;
 
         $method->fill([
             'code' => strtolower(trim((string) $validated['code'])),

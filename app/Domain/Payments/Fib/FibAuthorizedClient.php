@@ -12,8 +12,7 @@ abstract class FibAuthorizedClient
         protected FibTokenService $tokens,
         protected FibConfiguration $config,
         protected FibDiagnostics $diagnostics,
-    ) {
-    }
+    ) {}
 
     protected function authorized(): PendingRequest
     {
@@ -44,7 +43,7 @@ abstract class FibAuthorizedClient
         $path = $this->config->path($configKey);
 
         foreach ($replacements as $key => $value) {
-            $path = str_replace('{' . $key . '}', rawurlencode($value), $path);
+            $path = str_replace('{'.$key.'}', rawurlencode($value), $path);
         }
 
         return $path;
@@ -115,7 +114,7 @@ abstract class FibAuthorizedClient
         $detailMessage = $details !== [] ? implode(' | ', $details) : '';
 
         if ($traceId !== '') {
-            $detailMessage = trim($detailMessage . " [traceId: {$traceId}]");
+            $detailMessage = trim($detailMessage." [traceId: {$traceId}]");
         }
 
         return $detailMessage !== '' ? "{$fallback} {$detailMessage}" : $fallback;

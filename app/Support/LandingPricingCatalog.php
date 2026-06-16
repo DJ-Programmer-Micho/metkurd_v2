@@ -10,6 +10,13 @@ use Illuminate\Support\Facades\Cache;
 
 class LandingPricingCatalog
 {
+    public function flushServicePlanCache(): void
+    {
+        foreach ((array) config('app.locales', ['en']) as $locale) {
+            Cache::forget("landing.service-plans.catalog.v5.{$locale}");
+        }
+    }
+
     public function servicePlans(): array
     {
         $locale = app()->getLocale();
@@ -25,6 +32,7 @@ class LandingPricingCatalog
                     'code',
                     'name',
                     'monthly_credits',
+                    'app_monthly_credits',
                     'is_free',
                     'price_usd_monthly',
                     'price_usd_yearly',
@@ -96,7 +104,7 @@ class LandingPricingCatalog
             'name' => $plan->name,
             'title' => $ui['title'] ?? data_get($meta, 'title', $plan->name),
             'summary' => $ui['summary'] ?? data_get($meta, 'summary'),
-            'monthly_credits' => (int) $plan->monthly_credits,
+            'monthly_credits' => (int) $plan->appMonthlyCredits(),
             'is_free' => (bool) $plan->is_free,
             'price_iqd_monthly' => $plan->priceIqdForCycle('monthly'),
             'price_iqd_yearly' => $plan->priceIqdForCycle('yearly'),
@@ -174,10 +182,10 @@ class LandingPricingCatalog
             $gb = $quotaMb / 1024;
 
             return fmod($gb, 1.0) === 0.0
-                ? number_format($gb, 0) . ' GB'
-                : number_format($gb, 1) . ' GB';
+                ? number_format($gb, 0).' GB'
+                : number_format($gb, 1).' GB';
         }
 
-        return number_format($quotaMb) . ' MB';
+        return number_format($quotaMb).' MB';
     }
 }

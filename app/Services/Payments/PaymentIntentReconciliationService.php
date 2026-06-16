@@ -14,8 +14,7 @@ class PaymentIntentReconciliationService
     public function __construct(
         protected PaymentFeeCalculator $feeCalculator,
         protected PaymentFulfillmentService $fulfillmentService,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array<string, mixed>  $fees

@@ -3,10 +3,10 @@
 namespace App\Support\Admin;
 
 use App\Services\Billing\BillingCurrencyService;
-use Livewire\Attributes\Computed;
-use Livewire\Attributes\Url;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Url;
 
 trait InteractsWithPaymentAdmin
 {
@@ -23,7 +23,7 @@ trait InteractsWithPaymentAdmin
 
         $decoded = json_decode($trimmed, true);
 
-        if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
             throw ValidationException::withMessages([
                 $field => __('Enter valid JSON data.'),
             ]);
@@ -34,7 +34,7 @@ trait InteractsWithPaymentAdmin
 
     protected function encodeJsonTextarea($value): string
     {
-        if (!$value) {
+        if (! $value) {
             return '';
         }
 
@@ -136,7 +136,7 @@ trait InteractsWithPaymentAdmin
     {
         static $cache = [];
 
-        $key = $table . '.' . $column;
+        $key = $table.'.'.$column;
 
         if (! array_key_exists($key, $cache)) {
             $cache[$key] = Schema::hasColumn($table, $column);
@@ -147,7 +147,7 @@ trait InteractsWithPaymentAdmin
 
     protected function qualifiedColumn(string $table, string $column): string
     {
-        return $table . '.' . $column;
+        return $table.'.'.$column;
     }
 
     protected function canonicalAmountSql(string $table, string $baseAmountColumn = 'base_amount_iqd', string $legacyUsdColumn = 'amount_usd'): string
@@ -202,9 +202,9 @@ trait InteractsWithPaymentAdmin
         if ($quotaMb >= 1024) {
             $quotaGb = $quotaMb / 1024;
 
-            return number_format($quotaGb, $quotaGb >= 10 ? 0 : 1) . ' GB';
+            return number_format($quotaGb, $quotaGb >= 10 ? 0 : 1).' GB';
         }
 
-        return number_format($quotaMb) . ' MB';
+        return number_format($quotaMb).' MB';
     }
 }

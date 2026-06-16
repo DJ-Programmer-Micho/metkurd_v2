@@ -13,8 +13,7 @@ class PaymentFulfillmentService
 {
     public function __construct(
         protected AddonPurchaseService $addonPurchaseService,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{order:?CreditOrder,subscription:mixed}

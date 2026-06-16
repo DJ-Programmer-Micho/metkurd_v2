@@ -4,44 +4,39 @@ namespace App\Services\Billing;
 
 use App\Models\CreditLedger;
 use App\Models\CreditWallet;
+use App\Models\Customer;
+use App\Models\CustomerServiceSubscription;
+use App\Models\ServicePlan;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 
 class CreditService
 {
-    protected function syncCombinedBalance(CreditWallet $wallet): void
-    {
-        $wallet->balance_credits =
-            (int) ($wallet->subscription_balance_credits ?? 0)
-            + (int) ($wallet->addon_balance_credits ?? 0);
-    }
-
-    public function charge(int $customerId, int $credits, string $type, array $meta = []): void
-    {
+    public function charge(
+        int $customerId,
+        int $credits,
+        string $type,
+        array $meta = [],
+        string $walletType = CreditWallet::TYPE_APP,
+    ): void {
         if ($credits <= 0) {
             return;
         }
 
-        DB::transaction(function () use ($customerId, $credits, $type, $meta) {
-            /** @var CreditWallet $wallet */
-            $wallet = CreditWallet::query()
-                ->lockForUpdate()
-                ->where('customer_id', $customerId)
-                ->firstOrFail();
-
+        DB::transaction(function () use ($customerId, $credits, $type, $meta, $walletType) {
+            $wallet = $this->lockWallet($customerId, $walletType);
             $subscription = (int) ($wallet->subscription_balance_credits ?? 0);
             $addon = (int) ($wallet->addon_balance_credits ?? 0);
-
             $bucketCombined = $subscription + $addon;
             $storedCombined = (int) ($wallet->balance_credits ?? 0);
 
             if ($bucketCombined <= 0 && $storedCombined > 0) {
                 $addon = $storedCombined;
-
                 $wallet->subscription_balance_credits = $subscription;
                 $wallet->addon_balance_credits = $addon;
-                $this->syncCombinedBalance($wallet);
+                $wallet->syncCombinedBalance();
                 $wallet->save();
-
                 $bucketCombined = (int) $wallet->balance_credits;
             }
 
@@ -50,7 +45,6 @@ class CreditService
             }
 
             $remaining = $credits;
-
             $fromSubscription = min($subscription, $remaining);
             $subscription -= $fromSubscription;
             $remaining -= $fromSubscription;
@@ -63,79 +57,77 @@ class CreditService
                 throw new \RuntimeException('Not enough credits.');
             }
 
+            $balanceBefore = (int) ($wallet->balance_credits ?? 0);
             $wallet->subscription_balance_credits = $subscription;
             $wallet->addon_balance_credits = $addon;
-            $this->syncCombinedBalance($wallet);
-
-            $combined = (int) $wallet->balance_credits;
-
-            $wallet->lifetime_spent = (int) $wallet->lifetime_spent + $credits;
+            $wallet->syncCombinedBalance();
+            $wallet->lifetime_spent = (int) ($wallet->lifetime_spent ?? 0) + $credits;
             $wallet->last_charged_at = now();
             $wallet->save();
 
-            $referenceCode = $meta['reference_code'] ?? $this->makeReferenceCode($type);
+            $referenceCode = (string) ($meta['reference_code'] ?? $this->makeReferenceCode($type));
 
             if ($fromSubscription > 0) {
-                CreditLedger::create([
-                    'customer_id' => $customerId,
-                    'type' => $type,
-                    'bucket' => 'subscription',
-                    'credits_delta' => -$fromSubscription,
-                    'balance_after' => $combined,
-                    'subscription_balance_after' => $subscription,
-                    'addon_balance_after' => $addon,
-                    'related_type' => $meta['related_type'] ?? null,
-                    'related_id' => isset($meta['related_id']) ? (string) $meta['related_id'] : null,
-                    'reference_code' => $referenceCode,
-                    'meta' => array_merge($meta, [
+                $this->writeLedger(
+                    customerId: $customerId,
+                    walletType: $walletType,
+                    type: $type,
+                    direction: 'debit',
+                    sourceType: (string) ($meta['source_type'] ?? 'web_tool'),
+                    bucket: 'subscription',
+                    creditsDelta: -$fromSubscription,
+                    amount: $fromSubscription,
+                    balanceBefore: $balanceBefore,
+                    wallet: $wallet,
+                    referenceCode: $referenceCode,
+                    meta: array_merge($meta, [
                         'bucket_spent' => 'subscription',
                         'charged_total' => $credits,
                         'charged_part' => $fromSubscription,
                     ]),
-                ]);
+                );
             }
 
             if ($fromAddon > 0) {
-                CreditLedger::create([
-                    'customer_id' => $customerId,
-                    'type' => $type,
-                    'bucket' => 'addon',
-                    'credits_delta' => -$fromAddon,
-                    'balance_after' => $combined,
-                    'subscription_balance_after' => $subscription,
-                    'addon_balance_after' => $addon,
-                    'related_type' => $meta['related_type'] ?? null,
-                    'related_id' => isset($meta['related_id']) ? (string) $meta['related_id'] : null,
-                    'reference_code' => $referenceCode,
-                    'meta' => array_merge($meta, [
+                $this->writeLedger(
+                    customerId: $customerId,
+                    walletType: $walletType,
+                    type: $type,
+                    direction: 'debit',
+                    sourceType: (string) ($meta['source_type'] ?? 'web_tool'),
+                    bucket: 'addon',
+                    creditsDelta: -$fromAddon,
+                    amount: $fromAddon,
+                    balanceBefore: $balanceBefore,
+                    wallet: $wallet,
+                    referenceCode: $referenceCode,
+                    meta: array_merge($meta, [
                         'bucket_spent' => 'addon',
                         'charged_total' => $credits,
                         'charged_part' => $fromAddon,
                     ]),
-                ]);
+                );
             }
         }, 3);
     }
 
-    public function refund(int $customerId, int $credits, string $type, array $meta = []): void
-    {
+    public function refund(
+        int $customerId,
+        int $credits,
+        string $type,
+        array $meta = [],
+        string $walletType = CreditWallet::TYPE_APP,
+    ): void {
         if ($credits <= 0) {
             return;
         }
 
-        DB::transaction(function () use ($customerId, $credits, $type, $meta) {
-            /** @var CreditWallet $wallet */
-            $wallet = CreditWallet::query()
-                ->lockForUpdate()
-                ->where('customer_id', $customerId)
-                ->firstOrFail();
-
-            $refundBucket = $meta['refund_bucket']
-                ?? $meta['bucket']
-                ?? 'addon';
-
+        DB::transaction(function () use ($customerId, $credits, $type, $meta, $walletType) {
+            $wallet = $this->lockWallet($customerId, $walletType);
+            $refundBucket = $meta['refund_bucket'] ?? $meta['bucket'] ?? 'addon';
             $subscription = (int) ($wallet->subscription_balance_credits ?? 0);
             $addon = (int) ($wallet->addon_balance_credits ?? 0);
+            $balanceBefore = (int) ($wallet->balance_credits ?? 0);
 
             if ($refundBucket === 'subscription') {
                 $subscription += $credits;
@@ -146,114 +138,569 @@ class CreditService
 
             $wallet->subscription_balance_credits = $subscription;
             $wallet->addon_balance_credits = $addon;
-            $this->syncCombinedBalance($wallet);
-
-            $combined = (int) $wallet->balance_credits;
-
+            $wallet->syncCombinedBalance();
             $wallet->lifetime_refunded = (int) ($wallet->lifetime_refunded ?? 0) + $credits;
             $wallet->save();
 
-            CreditLedger::create([
-                'customer_id' => $customerId,
-                'type' => $type,
-                'bucket' => $refundBucket,
-                'credits_delta' => $credits,
-                'balance_after' => $combined,
-                'subscription_balance_after' => $subscription,
-                'addon_balance_after' => $addon,
-                'related_type' => $meta['related_type'] ?? null,
-                'related_id' => isset($meta['related_id']) ? (string) $meta['related_id'] : null,
-                'reference_code' => $meta['reference_code'] ?? $this->makeReferenceCode($type),
-                'meta' => $meta,
-            ]);
+            $this->writeLedger(
+                customerId: $customerId,
+                walletType: $walletType,
+                type: $type,
+                direction: 'refund',
+                sourceType: (string) ($meta['source_type'] ?? 'refund'),
+                bucket: $refundBucket,
+                creditsDelta: $credits,
+                amount: $credits,
+                balanceBefore: $balanceBefore,
+                wallet: $wallet,
+                referenceCode: (string) ($meta['reference_code'] ?? $this->makeReferenceCode($type)),
+                meta: $meta,
+            );
         }, 3);
     }
 
-    public function grantMonthlyCredits(int $customerId, int $credits, array $meta = []): void
-    {
+    public function grantMonthlyCredits(
+        int $customerId,
+        int $credits,
+        array $meta = [],
+        string $walletType = CreditWallet::TYPE_APP,
+    ): void {
         if ($credits <= 0) {
             return;
         }
 
-        DB::transaction(function () use ($customerId, $credits, $meta) {
-            /** @var CreditWallet $wallet */
-            $wallet = CreditWallet::query()
-                ->lockForUpdate()
-                ->where('customer_id', $customerId)
-                ->firstOrFail();
-
+        DB::transaction(function () use ($customerId, $credits, $meta, $walletType) {
+            $wallet = $this->lockWallet($customerId, $walletType);
+            $balanceBefore = (int) ($wallet->balance_credits ?? 0);
             $subscription = (int) ($wallet->subscription_balance_credits ?? 0) + $credits;
             $addon = (int) ($wallet->addon_balance_credits ?? 0);
 
             $wallet->subscription_balance_credits = $subscription;
             $wallet->addon_balance_credits = $addon;
-            $this->syncCombinedBalance($wallet);
-
-            $combined = (int) $wallet->balance_credits;
-
-            $wallet->lifetime_earned = (int) $wallet->lifetime_earned + $credits;
+            $wallet->syncCombinedBalance();
+            $wallet->lifetime_earned = (int) ($wallet->lifetime_earned ?? 0) + $credits;
             $wallet->last_granted_at = now();
             $wallet->save();
 
-            CreditLedger::create([
-                'customer_id' => $customerId,
-                'type' => 'monthly_grant',
-                'bucket' => 'subscription',
-                'credits_delta' => $credits,
-                'balance_after' => $combined,
-                'subscription_balance_after' => $subscription,
-                'addon_balance_after' => $addon,
-                'related_type' => $meta['related_type'] ?? null,
-                'related_id' => isset($meta['related_id']) ? (string) $meta['related_id'] : null,
-                'reference_code' => $meta['reference_code'] ?? $this->makeReferenceCode('monthly_grant'),
-                'meta' => $meta,
-            ]);
+            $this->writeLedger(
+                customerId: $customerId,
+                walletType: $walletType,
+                type: 'monthly_grant',
+                direction: 'credit',
+                sourceType: (string) ($meta['source_type'] ?? 'subscription_refill'),
+                bucket: 'subscription',
+                creditsDelta: $credits,
+                amount: $credits,
+                balanceBefore: $balanceBefore,
+                wallet: $wallet,
+                referenceCode: (string) ($meta['reference_code'] ?? $this->makeReferenceCode('monthly_grant')),
+                meta: $meta,
+            );
         }, 3);
     }
 
-    public function addAddonCredits(int $customerId, int $credits, array $meta = []): void
-    {
+    public function addAddonCredits(
+        int $customerId,
+        int $credits,
+        array $meta = [],
+        string $walletType = CreditWallet::TYPE_APP,
+    ): void {
         if ($credits <= 0) {
             return;
         }
 
-        DB::transaction(function () use ($customerId, $credits, $meta) {
-            /** @var CreditWallet $wallet */
-            $wallet = CreditWallet::query()
-                ->lockForUpdate()
-                ->where('customer_id', $customerId)
-                ->firstOrFail();
-
+        DB::transaction(function () use ($customerId, $credits, $meta, $walletType) {
+            $wallet = $this->lockWallet($customerId, $walletType);
+            $balanceBefore = (int) ($wallet->balance_credits ?? 0);
             $subscription = (int) ($wallet->subscription_balance_credits ?? 0);
             $addon = (int) ($wallet->addon_balance_credits ?? 0) + $credits;
 
             $wallet->subscription_balance_credits = $subscription;
             $wallet->addon_balance_credits = $addon;
-            $this->syncCombinedBalance($wallet);
-
-            $combined = (int) $wallet->balance_credits;
-
-            $wallet->lifetime_earned = (int) $wallet->lifetime_earned + $credits;
+            $wallet->syncCombinedBalance();
+            $wallet->lifetime_earned = (int) ($wallet->lifetime_earned ?? 0) + $credits;
             $wallet->save();
 
-            CreditLedger::create([
-                'customer_id' => $customerId,
-                'type' => 'addon_purchase',
-                'bucket' => 'addon',
-                'credits_delta' => $credits,
-                'balance_after' => $combined,
-                'subscription_balance_after' => $subscription,
-                'addon_balance_after' => $addon,
-                'related_type' => $meta['related_type'] ?? null,
-                'related_id' => isset($meta['related_id']) ? (string) $meta['related_id'] : null,
-                'reference_code' => $meta['reference_code'] ?? $this->makeReferenceCode('addon_purchase'),
-                'meta' => $meta,
-            ]);
+            $this->writeLedger(
+                customerId: $customerId,
+                walletType: $walletType,
+                type: 'addon_purchase',
+                direction: 'credit',
+                sourceType: (string) ($meta['source_type'] ?? 'addon'),
+                bucket: 'addon',
+                creditsDelta: $credits,
+                amount: $credits,
+                balanceBefore: $balanceBefore,
+                wallet: $wallet,
+                referenceCode: (string) ($meta['reference_code'] ?? $this->makeReferenceCode('addon_purchase')),
+                meta: $meta,
+            );
         }, 3);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function syncCustomerSubscriptionCreditsToPlan(Customer|int $customer, ServicePlan $plan, array $meta = []): array
+    {
+        $customerId = $customer instanceof Customer ? (int) $customer->id : (int) $customer;
+        $currentAllowances = [
+            CreditWallet::TYPE_APP => max(0, (int) data_get($meta, 'current_allowances.app', $plan->appMonthlyCredits())),
+            CreditWallet::TYPE_API => max(0, (int) data_get($meta, 'current_allowances.api', $plan->apiMonthlyCredits())),
+        ];
+        $cycleStartedOn = $this->normalizeDate(data_get($meta, 'cycle_started_on'));
+        $cycleEndsOn = $this->normalizeDate(data_get($meta, 'cycle_ends_on'));
+        $currentCycleKey = trim((string) data_get($meta, 'current_cycle_key', ''));
+        $type = (string) ($meta['type'] ?? 'admin_credit_sync');
+        $referenceCode = (string) ($meta['reference_code'] ?? $this->makeReferenceCode($type));
+
+        return DB::transaction(function () use (
+            $customerId,
+            $plan,
+            $meta,
+            $currentAllowances,
+            $cycleStartedOn,
+            $cycleEndsOn,
+            $currentCycleKey,
+            $type,
+            $referenceCode
+        ) {
+            $appResult = $this->syncWalletSubscriptionAllowance(
+                customerId: $customerId,
+                walletType: CreditWallet::TYPE_APP,
+                targetAllowance: $plan->appMonthlyCredits(),
+                currentAllowance: $currentAllowances[CreditWallet::TYPE_APP],
+                type: $type,
+                referenceCode: $referenceCode,
+                meta: $meta,
+                plan: $plan,
+                cycleStartedOn: $cycleStartedOn,
+                cycleEndsOn: $cycleEndsOn,
+                currentCycleKey: $currentCycleKey,
+            );
+
+            $apiResult = $this->syncWalletSubscriptionAllowance(
+                customerId: $customerId,
+                walletType: CreditWallet::TYPE_API,
+                targetAllowance: $plan->apiMonthlyCredits(),
+                currentAllowance: $currentAllowances[CreditWallet::TYPE_API],
+                type: $type,
+                referenceCode: $referenceCode,
+                meta: $meta,
+                plan: $plan,
+                cycleStartedOn: $cycleStartedOn,
+                cycleEndsOn: $cycleEndsOn,
+                currentCycleKey: $currentCycleKey,
+            );
+
+            return [
+                'customer_id' => $customerId,
+                'plan_id' => (int) $plan->id,
+                'plan_code' => (string) $plan->code,
+                'app' => $appResult,
+                'api' => $apiResult,
+                'app_added_credits' => (int) $appResult['added_credits'],
+                'api_added_credits' => (int) $apiResult['added_credits'],
+                'changed' => (bool) $appResult['changed'] || (bool) $apiResult['changed'],
+                'reference_code' => $referenceCode,
+            ];
+        }, 3);
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @return array{applied:bool,already_applied:bool,app_delta:int,api_delta:int,provider_cycle_key:string}
+     */
+    public function applyProviderRenewalCycle(CustomerServiceSubscription|int $subscription, array $meta = []): array
+    {
+        $subscriptionId = $subscription instanceof CustomerServiceSubscription ? (int) $subscription->id : (int) $subscription;
+        $providerCycleKey = trim((string) data_get($meta, 'provider_cycle_key', ''));
+
+        if ($subscriptionId <= 0 || $providerCycleKey === '') {
+            return [
+                'applied' => false,
+                'already_applied' => false,
+                'app_delta' => 0,
+                'api_delta' => 0,
+                'provider_cycle_key' => $providerCycleKey,
+            ];
+        }
+
+        $cycleStartedAt = $this->normalizeDate(data_get($meta, 'cycle_started_at')) ?? now();
+        $cycleEndsAt = $this->normalizeDate(data_get($meta, 'cycle_ends_at'));
+        $billingCycle = strtolower(trim((string) data_get($meta, 'billing_cycle', 'monthly')));
+        $walletCycleKey = $this->walletCycleKey($cycleStartedAt, $billingCycle);
+        $referenceCode = (string) ($meta['reference_code'] ?? 'provider_renewal:'.$subscriptionId.':'.sha1($providerCycleKey));
+
+        return DB::transaction(function () use (
+            $subscriptionId,
+            $providerCycleKey,
+            $cycleStartedAt,
+            $cycleEndsAt,
+            $billingCycle,
+            $walletCycleKey,
+            $meta,
+            $referenceCode
+        ) {
+            /** @var CustomerServiceSubscription|null $lockedSubscription */
+            $lockedSubscription = CustomerServiceSubscription::query()
+                ->with('servicePlan:id,code,name,monthly_credits,app_monthly_credits,api_monthly_credits,is_active')
+                ->lockForUpdate()
+                ->find($subscriptionId);
+
+            if (! $lockedSubscription instanceof CustomerServiceSubscription) {
+                return [
+                    'applied' => false,
+                    'already_applied' => false,
+                    'app_delta' => 0,
+                    'api_delta' => 0,
+                    'provider_cycle_key' => $providerCycleKey,
+                ];
+            }
+
+            $subscriptionMeta = (array) ($lockedSubscription->meta ?? []);
+
+            if ((string) data_get($subscriptionMeta, 'last_applied_renewal_cycle_key', '') === $providerCycleKey) {
+                return [
+                    'applied' => false,
+                    'already_applied' => true,
+                    'app_delta' => 0,
+                    'api_delta' => 0,
+                    'provider_cycle_key' => $providerCycleKey,
+                ];
+            }
+
+            $plan = $lockedSubscription->servicePlan;
+
+            if (! $plan instanceof ServicePlan || ! (bool) ($plan->is_active ?? false)) {
+                return [
+                    'applied' => false,
+                    'already_applied' => false,
+                    'app_delta' => 0,
+                    'api_delta' => 0,
+                    'provider_cycle_key' => $providerCycleKey,
+                ];
+            }
+
+            $wallet = $this->lockWallet((int) $lockedSubscription->customer_id, CreditWallet::TYPE_APP);
+            $apiWallet = $this->lockWallet((int) $lockedSubscription->customer_id, CreditWallet::TYPE_API);
+
+            $appDelta = $this->resetWalletToPlanCycle(
+                wallet: $wallet,
+                targetSubscriptionBalance: max(0, (int) $plan->appMonthlyCredits()),
+                cycleStartedAt: $cycleStartedAt,
+                cycleEndsAt: $cycleEndsAt,
+                walletCycleKey: $walletCycleKey,
+            );
+
+            $apiDelta = $this->resetWalletToPlanCycle(
+                wallet: $apiWallet,
+                targetSubscriptionBalance: max(0, (int) $plan->apiMonthlyCredits()),
+                cycleStartedAt: $cycleStartedAt,
+                cycleEndsAt: $cycleEndsAt,
+                walletCycleKey: $walletCycleKey,
+            );
+
+            $lockedSubscription->forceFill([
+                'cycle_started_on' => $cycleStartedAt->toDateString(),
+                'cycle_ends_on' => $cycleEndsAt?->toDateString(),
+                'next_renewal_on' => $cycleEndsAt?->toDateString(),
+                'meta' => array_merge($subscriptionMeta, [
+                    'billing_cycle' => $billingCycle,
+                    'provider_cycle_key' => $providerCycleKey,
+                    'provider_last_payment_at' => data_get($meta, 'provider_last_payment_at'),
+                    'last_applied_renewal_cycle_key' => $providerCycleKey,
+                    'last_applied_renewal_at' => now()->toIso8601String(),
+                    'last_applied_renewal_source' => data_get($meta, 'source'),
+                ]),
+            ])->save();
+
+            $ledgerMeta = array_merge($meta, [
+                'provider_cycle_key' => $providerCycleKey,
+                'subscription_id' => (int) $lockedSubscription->id,
+                'service_plan_id' => (int) $plan->id,
+                'service_plan_code' => (string) $plan->code,
+                'billing_cycle' => $billingCycle,
+                'cycle_started_at' => $cycleStartedAt->toIso8601String(),
+                'cycle_ends_at' => $cycleEndsAt?->toIso8601String(),
+                'reference_code' => $referenceCode,
+            ]);
+
+            if ($appDelta['credits_delta'] !== 0) {
+                $this->writeLedger(
+                    customerId: (int) $lockedSubscription->customer_id,
+                    walletType: CreditWallet::TYPE_APP,
+                    type: 'provider_subscription_renewal',
+                    direction: $appDelta['credits_delta'] < 0 ? 'debit' : 'credit',
+                    sourceType: (string) ($meta['source_type'] ?? 'subscription_refill'),
+                    bucket: 'combined',
+                    creditsDelta: $appDelta['credits_delta'],
+                    amount: abs($appDelta['credits_delta']),
+                    balanceBefore: $appDelta['balance_before'],
+                    wallet: $wallet,
+                    referenceCode: $referenceCode,
+                    meta: array_merge($ledgerMeta, [
+                        'wallet_type' => CreditWallet::TYPE_APP,
+                        'previous_subscription_balance' => $appDelta['subscription_before'],
+                    ]),
+                );
+            }
+
+            if ($apiDelta['credits_delta'] !== 0) {
+                $this->writeLedger(
+                    customerId: (int) $lockedSubscription->customer_id,
+                    walletType: CreditWallet::TYPE_API,
+                    type: 'provider_subscription_renewal',
+                    direction: $apiDelta['credits_delta'] < 0 ? 'debit' : 'credit',
+                    sourceType: (string) ($meta['source_type'] ?? 'subscription_refill'),
+                    bucket: 'combined',
+                    creditsDelta: $apiDelta['credits_delta'],
+                    amount: abs($apiDelta['credits_delta']),
+                    balanceBefore: $apiDelta['balance_before'],
+                    wallet: $apiWallet,
+                    referenceCode: 'api:'.$referenceCode,
+                    meta: array_merge($ledgerMeta, [
+                        'wallet_type' => CreditWallet::TYPE_API,
+                        'previous_subscription_balance' => $apiDelta['subscription_before'],
+                    ]),
+                );
+            }
+
+            return [
+                'applied' => true,
+                'already_applied' => false,
+                'app_delta' => $appDelta['credits_delta'],
+                'api_delta' => $apiDelta['credits_delta'],
+                'provider_cycle_key' => $providerCycleKey,
+            ];
+        }, 3);
+    }
+
+    protected function lockWallet(int $customerId, string $walletType): CreditWallet
+    {
+        $wallet = CreditWallet::query()
+            ->where('customer_id', $customerId)
+            ->where('wallet_type', $walletType)
+            ->lockForUpdate()
+            ->first();
+
+        if ($wallet instanceof CreditWallet) {
+            return $wallet;
+        }
+
+        CreditWallet::query()->create(CreditWallet::defaultAttributes($customerId, $walletType));
+
+        return CreditWallet::query()
+            ->where('customer_id', $customerId)
+            ->where('wallet_type', $walletType)
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
+    protected function writeLedger(
+        int $customerId,
+        string $walletType,
+        string $type,
+        string $direction,
+        string $sourceType,
+        string $bucket,
+        int $creditsDelta,
+        int $amount,
+        int $balanceBefore,
+        CreditWallet $wallet,
+        string $referenceCode,
+        array $meta,
+    ): void {
+        $toolAction = (string) ($meta['tool_action'] ?? '');
+        $toolCode = (string) ($meta['tool_code'] ?? ($toolAction !== '' ? explode('.', $toolAction)[0] : ''));
+
+        CreditLedger::create([
+            'customer_id' => $customerId,
+            'wallet_type' => $walletType,
+            'type' => $type,
+            'source_type' => $sourceType,
+            'source_id' => isset($meta['source_id']) ? (string) $meta['source_id'] : null,
+            'direction' => $direction,
+            'amount' => $amount,
+            'bucket' => $bucket,
+            'credits_delta' => $creditsDelta,
+            'balance_before' => $balanceBefore,
+            'balance_after' => (int) ($wallet->balance_credits ?? 0),
+            'subscription_balance_after' => (int) ($wallet->subscription_balance_credits ?? 0),
+            'addon_balance_after' => (int) ($wallet->addon_balance_credits ?? 0),
+            'related_type' => $meta['related_type'] ?? null,
+            'related_id' => isset($meta['related_id']) ? (string) $meta['related_id'] : null,
+            'reference_code' => $referenceCode,
+            'tool_code' => $toolCode !== '' ? $toolCode : null,
+            'tool_action' => $toolAction !== '' ? $toolAction : null,
+            'metric_code' => isset($meta['metric_code']) ? (string) $meta['metric_code'] : null,
+            'metric_quantity' => isset($meta['metric_quantity']) ? (float) $meta['metric_quantity'] : null,
+            'api_key_id' => isset($meta['api_key_id']) ? (int) $meta['api_key_id'] : null,
+            'api_job_id' => isset($meta['api_job_id']) ? (string) $meta['api_job_id'] : null,
+            'ml_job_id' => isset($meta['ml_job_id']) ? (string) $meta['ml_job_id'] : null,
+            'meta' => $meta,
+        ]);
     }
 
     protected function makeReferenceCode(string $prefix): string
     {
-        return strtoupper($prefix) . '-' . now()->format('YmdHis') . '-' . random_int(1000, 9999);
+        return strtoupper($prefix).'-'.now()->format('YmdHis').'-'.random_int(1000, 9999);
+    }
+
+    /**
+     * @return array{credits_delta:int,balance_before:int,subscription_before:int}
+     */
+    protected function resetWalletToPlanCycle(
+        CreditWallet $wallet,
+        int $targetSubscriptionBalance,
+        CarbonInterface $cycleStartedAt,
+        ?CarbonInterface $cycleEndsAt,
+        string $walletCycleKey,
+    ): array {
+        $balanceBefore = (int) ($wallet->balance_credits ?? 0);
+        $subscriptionBefore = (int) ($wallet->subscription_balance_credits ?? 0);
+        $addonBalance = (int) ($wallet->addon_balance_credits ?? 0);
+        $newCombined = $targetSubscriptionBalance + $addonBalance;
+        $creditsDelta = $newCombined - $balanceBefore;
+
+        $wallet->subscription_balance_credits = $targetSubscriptionBalance;
+        $wallet->addon_balance_credits = $addonBalance;
+        $wallet->balance_credits = $newCombined;
+        $wallet->lifetime_earned = (int) ($wallet->lifetime_earned ?? 0) + max(0, $targetSubscriptionBalance);
+        $wallet->cycle_started_on = $cycleStartedAt->toDateString();
+        $wallet->cycle_ends_on = $cycleEndsAt?->toDateString();
+        $wallet->current_cycle_key = $walletCycleKey;
+        $wallet->last_granted_at = now();
+        $wallet->save();
+
+        return [
+            'credits_delta' => $creditsDelta,
+            'balance_before' => $balanceBefore,
+            'subscription_before' => $subscriptionBefore,
+        ];
+    }
+
+    protected function walletCycleKey(CarbonInterface $cycleStartedAt, string $billingCycle): string
+    {
+        return match ($billingCycle) {
+            'hourly' => $cycleStartedAt->format('Y-m-d-H'),
+            'yearly' => $cycleStartedAt->format('Y'),
+            default => $cycleStartedAt->format('Y-m'),
+        };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function syncWalletSubscriptionAllowance(
+        int $customerId,
+        string $walletType,
+        int $targetAllowance,
+        int $currentAllowance,
+        string $type,
+        string $referenceCode,
+        array $meta,
+        ServicePlan $plan,
+        ?CarbonInterface $cycleStartedOn = null,
+        ?CarbonInterface $cycleEndsOn = null,
+        string $currentCycleKey = '',
+    ): array {
+        $wallet = $this->lockWallet($customerId, $walletType);
+        $balanceBefore = (int) ($wallet->balance_credits ?? 0);
+        $subscriptionBefore = (int) ($wallet->subscription_balance_credits ?? 0);
+        $addonBefore = (int) ($wallet->addon_balance_credits ?? 0);
+        $isUpgrade = $targetAllowance > $currentAllowance;
+        $subscriptionAfter = $isUpgrade
+            ? $subscriptionBefore + $targetAllowance
+            : max($subscriptionBefore, $targetAllowance);
+        $addedCredits = max(0, $subscriptionAfter - $subscriptionBefore);
+
+        $wallet->subscription_balance_credits = $subscriptionAfter;
+        $wallet->addon_balance_credits = $addonBefore;
+        $wallet->syncCombinedBalance();
+
+        if ($addedCredits > 0) {
+            $wallet->lifetime_earned = (int) ($wallet->lifetime_earned ?? 0) + $addedCredits;
+            $wallet->last_granted_at = now();
+        }
+
+        if ($cycleStartedOn) {
+            $wallet->cycle_started_on = $cycleStartedOn->toDateString();
+        }
+
+        if ($cycleEndsOn) {
+            $wallet->cycle_ends_on = $cycleEndsOn->toDateString();
+        }
+
+        if ($currentCycleKey !== '') {
+            $wallet->current_cycle_key = $currentCycleKey;
+        } elseif ($cycleStartedOn) {
+            $wallet->current_cycle_key = $cycleStartedOn->format('Y-m');
+        }
+
+        $wallet->save();
+
+        if ($addedCredits > 0) {
+            $sourceType = (string) ($meta['source_type'] ?? 'admin_credit_sync');
+            $context = array_merge($meta, [
+                'plan_id' => (int) $plan->id,
+                'plan_code' => (string) $plan->code,
+                'wallet_type' => $walletType,
+                'current_allowance' => $currentAllowance,
+                'target_allowance' => $targetAllowance,
+                'sync_mode' => $isUpgrade ? 'upgrade' : 'top_up',
+                'description' => (string) ($meta['description'] ?? ''),
+            ]);
+
+            $this->writeLedger(
+                customerId: $customerId,
+                walletType: $walletType,
+                type: $type,
+                direction: 'credit',
+                sourceType: $sourceType,
+                bucket: 'subscription',
+                creditsDelta: $addedCredits,
+                amount: $addedCredits,
+                balanceBefore: $balanceBefore,
+                wallet: $wallet,
+                referenceCode: $referenceCode,
+                meta: $context,
+            );
+        }
+
+        return [
+            'wallet_type' => $walletType,
+            'current_allowance' => $currentAllowance,
+            'target_allowance' => $targetAllowance,
+            'subscription_before' => $subscriptionBefore,
+            'subscription_after' => $subscriptionAfter,
+            'addon_after' => $addonBefore,
+            'balance_before' => $balanceBefore,
+            'balance_after' => (int) ($wallet->balance_credits ?? 0),
+            'added_credits' => $addedCredits,
+            'changed' => $addedCredits > 0,
+            'sync_mode' => $isUpgrade ? 'upgrade' : ($addedCredits > 0 ? 'top_up' : 'no_op'),
+        ];
+    }
+
+    protected function normalizeDate(mixed $value): ?CarbonInterface
+    {
+        if ($value instanceof CarbonInterface) {
+            return $value;
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return now()->createFromInterface($value);
+        }
+
+        if (! is_scalar($value) || trim((string) $value) === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse((string) $value);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

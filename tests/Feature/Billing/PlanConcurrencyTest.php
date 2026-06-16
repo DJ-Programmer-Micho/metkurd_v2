@@ -109,6 +109,57 @@ it('updates plan concurrency limits from the admin page and refreshes cached run
         ->and($service->allowedConcurrentJobsForPlan('student'))->toBe(11);
 });
 
+it('updates app and api plan controls independently from the admin page', function () {
+    $admin = planConcurrencyAdmin();
+    $plan = ServicePlan::query()->where('code', 'free')->firstOrFail();
+
+    $this->actingAs($admin, 'admin');
+
+    Livewire::test('admin::pages.payments.adm-payments-plans')
+        ->call('openEditPlanModal', (int) $plan->id)
+        ->set('appMonthlyCredits', 12345)
+        ->set('apiMonthlyCredits', 67890)
+        ->set('concurrentJobsLimit', 4)
+        ->set('apiEnabled', true)
+        ->set('apiRequestsPerMinute', 55)
+        ->set('apiConcurrentJobs', 6)
+        ->set('apiAllowedToolsText', "tts:apollo-1-0v\nusage:read")
+        ->call('savePlan')
+        ->assertHasNoErrors();
+
+    $plan->refresh();
+
+    expect((int) $plan->monthly_credits)->toBe(12345)
+        ->and((int) $plan->app_monthly_credits)->toBe(12345)
+        ->and((int) $plan->api_monthly_credits)->toBe(67890)
+        ->and((int) $plan->concurrent_jobs_limit)->toBe(4)
+        ->and((bool) $plan->api_enabled)->toBeTrue()
+        ->and((int) $plan->api_requests_per_minute)->toBe(55)
+        ->and((int) $plan->api_concurrent_jobs)->toBe(6)
+        ->and((array) $plan->api_allowed_tools)->toBe(['tts:apollo-1-0v', 'usage:read']);
+});
+
+it('hydrates the payment plans edit modal from effective app credits when legacy monthly credits lag behind', function () {
+    $admin = planConcurrencyAdmin();
+    $plan = ServicePlan::query()->where('code', 'student')->firstOrFail();
+
+    \Illuminate\Support\Facades\DB::table('service_plans')
+        ->where('id', (int) $plan->id)
+        ->update([
+            'monthly_credits' => 50000,
+            'app_monthly_credits' => 123456,
+            'api_monthly_credits' => 654321,
+        ]);
+
+    $this->actingAs($admin, 'admin');
+
+    Livewire::test('admin::pages.payments.adm-payments-plans')
+        ->call('openEditPlanModal', (int) $plan->id)
+        ->assertSet('monthlyCredits', 123456)
+        ->assertSet('appMonthlyCredits', 123456)
+        ->assertSet('apiMonthlyCredits', 654321);
+});
+
 it('uses the configured concurrent job limit inside app pages instead of a hardcoded match block', function () {
     $customer = planConcurrencyCustomer('student-runtime-page@example.com', 'student_runtime_page_user');
     $plan = assignServicePlan($customer, 'student');

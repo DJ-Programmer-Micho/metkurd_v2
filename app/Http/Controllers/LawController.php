@@ -2,9 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use PhpOffice\PhpWord\IOFactory;
-
 class LawController extends Controller
 {
     public function termsCondition()
@@ -13,7 +10,7 @@ class LawController extends Controller
         $htmlContent = file_get_contents($filePath); // Read HTML content
 
         return view('law.terms-conditions-one', [
-            'terms' => $htmlContent
+            'terms' => $htmlContent,
         ]);
     }
 
@@ -23,7 +20,7 @@ class LawController extends Controller
         $htmlContent = file_get_contents($filePath); // Read HTML content
 
         return view('law.privacy-policy-one', [
-            'terms' => $htmlContent
+            'terms' => $htmlContent,
         ]);
     }
 }

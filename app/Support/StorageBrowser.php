@@ -24,7 +24,7 @@ class StorageBrowser
 
     protected function basePrefix(Customer $customer): string
     {
-        return 'renders/' . $this->customerFolder($customer);
+        return 'renders/'.$this->customerFolder($customer);
     }
 
     protected function absolutePath(Customer $customer, string $relativePath = ''): string
@@ -33,14 +33,18 @@ class StorageBrowser
 
         return $relativePath === ''
             ? $this->basePrefix($customer)
-            : $this->basePrefix($customer) . '/' . $relativePath;
+            : $this->basePrefix($customer).'/'.$relativePath;
     }
 
     protected function baseQuery(Customer $customer)
     {
         return CustomerFile::query()
             ->where('customer_id', (int) $customer->id)
-            ->where('status', 'active');
+            ->where('status', 'active')
+            ->where(function ($query) {
+                $query->whereNull('retention_mode')
+                    ->orWhere('retention_mode', '!=', 'temporary');
+            });
     }
 
     protected function extractRelativePath(string $absolutePath): string
@@ -92,7 +96,7 @@ class StorageBrowser
         return $this->baseQuery($customer)
             ->where(function ($query) use ($absolute) {
                 $query->where('path', $absolute)
-                    ->orWhere('path', 'like', $absolute . '/%');
+                    ->orWhere('path', 'like', $absolute.'/%');
             })
             ->exists();
     }
@@ -151,19 +155,19 @@ class StorageBrowser
             $folderCount = collect($paths)
                 ->map(function ($path) use ($tool) {
                     $relativePath = $this->extractRelativePath((string) $path);
-                    $prefix = $tool . '/';
+                    $prefix = $tool.'/';
 
-                    if (!Str::startsWith($relativePath, $prefix)) {
+                    if (! Str::startsWith($relativePath, $prefix)) {
                         return null;
                     }
 
                     $rest = substr($relativePath, strlen($prefix));
 
-                    if ($rest === false || $rest === '' || !str_contains($rest, '/')) {
+                    if ($rest === false || $rest === '' || ! str_contains($rest, '/')) {
                         return null;
                     }
 
-                    return $tool . '/' . explode('/', $rest)[0];
+                    return $tool.'/'.explode('/', $rest)[0];
                 })
                 ->filter()
                 ->unique()
@@ -213,7 +217,7 @@ class StorageBrowser
 
         $absolutePrefix = $this->absolutePath($customer, $path);
         $rows = $this->baseQuery($customer)
-            ->where('path', 'like', $absolutePrefix . '/%')
+            ->where('path', 'like', $absolutePrefix.'/%')
             ->select(['path', 'size_bytes'])
             ->cursor();
 
@@ -221,27 +225,27 @@ class StorageBrowser
 
         foreach ($rows as $row) {
             $relative = $this->extractRelativePath((string) $row->path);
-            $prefix = $path . '/';
+            $prefix = $path.'/';
 
-            if (!Str::startsWith($relative, $prefix)) {
+            if (! Str::startsWith($relative, $prefix)) {
                 continue;
             }
 
             $rest = substr($relative, strlen($prefix));
 
-            if ($rest === false || $rest === '' || !str_contains($rest, '/')) {
+            if ($rest === false || $rest === '' || ! str_contains($rest, '/')) {
                 continue;
             }
 
             $next = explode('/', $rest)[0];
 
-            if ($search !== '' && !Str::contains(Str::lower($next), $search)) {
+            if ($search !== '' && ! Str::contains(Str::lower($next), $search)) {
                 continue;
             }
 
-            $folderPath = trim($path . '/' . $next, '/');
+            $folderPath = trim($path.'/'.$next, '/');
 
-            if (!isset($folders[$folderPath])) {
+            if (! isset($folders[$folderPath])) {
                 $folders[$folderPath] = [
                     'name' => $next,
                     'label' => $next,
@@ -276,7 +280,7 @@ class StorageBrowser
         $search = Str::lower(trim($search));
 
         $rows = $this->baseQuery($customer)
-            ->where('path', 'like', $absolutePrefix . '/%')
+            ->where('path', 'like', $absolutePrefix.'/%')
             ->orderByDesc('updated_at')
             ->get([
                 'id',
@@ -295,10 +299,10 @@ class StorageBrowser
         return $rows
             ->map(fn (CustomerFile $file) => $this->mapFile($file))
             ->filter(function (array $file) use ($path, $search) {
-                $prefix = $path . '/';
+                $prefix = $path.'/';
                 $relative = $file['relative_path'];
 
-                if (!Str::startsWith($relative, $prefix)) {
+                if (! Str::startsWith($relative, $prefix)) {
                     return false;
                 }
 
@@ -308,7 +312,7 @@ class StorageBrowser
                     return false;
                 }
 
-                if ($search !== '' && !Str::contains(Str::lower($file['basename']), $search)) {
+                if ($search !== '' && ! Str::contains(Str::lower($file['basename']), $search)) {
                     return false;
                 }
 
@@ -343,7 +347,7 @@ class StorageBrowser
         return $this->baseQuery($customer)
             ->where(function ($query) use ($absolutePrefix) {
                 $query->where('path', $absolutePrefix)
-                    ->orWhere('path', 'like', $absolutePrefix . '/%');
+                    ->orWhere('path', 'like', $absolutePrefix.'/%');
             })
             ->get(['id', 'disk', 'path', 'size_bytes'])
             ->map(fn (CustomerFile $file) => [

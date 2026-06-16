@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\LawController;
 use App\Http\Controllers\Landing\LandingToolVoiceAssetController;
+use App\Http\Controllers\LawController;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Support\Facades\Route;
 

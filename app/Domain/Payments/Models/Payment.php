@@ -12,6 +12,7 @@ use App\Models\Coupon;
 use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -231,6 +232,34 @@ class Payment extends Model
             : ($this->provider_payment_status ?: $this->provider_status);
     }
 
+    public function providerPaymentStatusLabel(): ?string
+    {
+        $candidates = [
+            $this->provider_payment_status,
+            data_get($this->status_response, 'paymentStatus'),
+            data_get($this->status_response, 'payment.status'),
+            data_get($this->status_response, 'latestPayment.status'),
+            data_get($this->status_response, 'latestPayment.paymentStatus'),
+            data_get($this->callback_payload, 'paymentStatus'),
+            data_get($this->callback_payload, 'payment.status'),
+            data_get($this->callback_payload, 'latestPayment.status'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (! is_scalar($candidate)) {
+                continue;
+            }
+
+            $normalized = strtoupper(trim((string) $candidate));
+
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+
+        return null;
+    }
+
     public function applicationStatusLabel(): string
     {
         return match ($this->internal_status ?? PaymentInternalStatus::fromPaymentStatus($this->status ?? PaymentStatus::PENDING, $this->isApplied(), $this->requiresReview())) {
@@ -248,8 +277,124 @@ class Payment extends Model
         return $reason !== '' ? $reason : null;
     }
 
+    public function hasProviderPaidSubscriptionEvidence(): bool
+    {
+        if (! $this->isProviderSubscriptionObject()) {
+            return false;
+        }
+
+        $providerStatus = strtoupper(trim((string) ($this->providerStatusLabel() ?? '')));
+
+        if (! in_array($providerStatus, ['ACTIVE', 'SUBSCRIBED', 'PAID'], true)) {
+            return false;
+        }
+
+        if ($this->last_payment_at !== null) {
+            return true;
+        }
+
+        $paymentStatus = $this->providerPaymentStatusLabel();
+
+        if (in_array($paymentStatus, ['PAID', 'APPROVED', 'CONFIRMED', 'CAPTURED', 'SETTLED', 'SUCCESS'], true)) {
+            return true;
+        }
+
+        foreach ([
+            data_get($this->status_response, 'isPaid'),
+            data_get($this->status_response, 'paid'),
+            data_get($this->status_response, 'paymentCompleted'),
+            data_get($this->status_response, 'isPaymentCompleted'),
+            data_get($this->callback_payload, 'isPaid'),
+            data_get($this->callback_payload, 'paid'),
+            data_get($this->callback_payload, 'paymentCompleted'),
+            data_get($this->callback_payload, 'isPaymentCompleted'),
+        ] as $flag) {
+            if (is_bool($flag) && $flag) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function isProviderPaidButLocallyUnappliedSubscription(): bool
+    {
+        if (! $this->isProviderSubscriptionObject() || $this->fulfilled_at !== null || $this->isApplied()) {
+            return false;
+        }
+
+        return $this->hasProviderPaidSubscriptionEvidence()
+            && in_array($this->status, [
+                PaymentStatus::PENDING,
+                PaymentStatus::AWAITING_CUSTOMER_ACTION,
+                PaymentStatus::PAID,
+            ], true);
+    }
+
+    public function providerRecurringCycleKey(): ?string
+    {
+        if (! $this->isProviderSubscriptionObject()
+            || ! $this->last_payment_at instanceof \DateTimeInterface
+            || trim((string) $this->fib_subscription_id) === '') {
+            return null;
+        }
+
+        $timestamp = \Illuminate\Support\Carbon::instance($this->last_payment_at)->copy()->utc();
+
+        return sprintf(
+            'fib:%s:%s',
+            trim((string) $this->fib_subscription_id),
+            $timestamp->format('Y-m-d\TH:i:s\Z'),
+        );
+    }
+
     public function resolvedPaymentMode(PaymentMode $fallback = PaymentMode::ONE_TIME): PaymentMode
     {
         return PaymentMode::fromValue($this->payment_mode, $fallback);
+    }
+
+    public function isRevenueExcluded(): bool
+    {
+        if ((bool) data_get($this->meta, 'revenue_excluded', false)) {
+            return true;
+        }
+
+        if (data_get($this->meta, 'revenue_record') === false) {
+            return true;
+        }
+
+        return in_array((string) data_get($this->meta, 'billing_source', ''), [
+            'admin_manual_grant',
+            'internal_non_revenue',
+        ], true);
+    }
+
+    public function reviewResolution(): array
+    {
+        $resolution = data_get($this->meta, 'review_resolution', []);
+
+        return is_array($resolution) ? $resolution : [];
+    }
+
+    public function reviewIsClosed(): bool
+    {
+        return trim((string) data_get($this->reviewResolution(), 'closed_at', '')) !== '';
+    }
+
+    public function requiresOpenReview(): bool
+    {
+        return $this->requiresReview() && ! $this->reviewIsClosed();
+    }
+
+    public function scopeRevenueIncluded(Builder $query): Builder
+    {
+        return $query->where(function (Builder $builder): void {
+            $builder
+                ->whereNull('meta->revenue_excluded')
+                ->orWhere('meta->revenue_excluded', false)
+                ->orWhere('meta->revenue_excluded', 0)
+                ->orWhere('meta->revenue_excluded', '0')
+                ->orWhere('meta->revenue_excluded', 'false');
+        });
     }
 }

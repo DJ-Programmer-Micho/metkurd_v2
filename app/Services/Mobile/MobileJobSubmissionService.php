@@ -41,8 +41,7 @@ class MobileJobSubmissionService
         protected PlanConcurrencyService $planConcurrency,
         protected StemJobSyncService $stemSync,
         protected OcrJobSyncService $ocrSync,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{message: string, job: MlJob}
@@ -118,7 +117,7 @@ class MobileJobSubmissionService
 
         $data = $this->normalizedPayload($request, $defaults, ['split']);
         $validated = Validator::make($data, [
-            'text' => ['required', 'string', 'min:1', 'max:' . $this->maxCharsPerSubmit($customer, $fullActionCode, 400), function (string $attribute, mixed $value, \Closure $fail) {
+            'text' => ['required', 'string', 'min:1', 'max:'.$this->maxCharsPerSubmit($customer, $fullActionCode, 400), function (string $attribute, mixed $value, \Closure $fail) {
                 if (trim((string) $value) === '') {
                     $fail(__('Please enter some text.'));
                 }
@@ -270,7 +269,7 @@ class MobileJobSubmissionService
 
         $data = $this->normalizedPayload($request, $defaults, ['use_ema', 'remove_silence']);
         $validated = Validator::make($data, [
-            'text' => ['required', 'string', 'min:1', 'max:' . $this->maxCharsPerSubmit($customer, $fullActionCode, 400), function (string $attribute, mixed $value, \Closure $fail) {
+            'text' => ['required', 'string', 'min:1', 'max:'.$this->maxCharsPerSubmit($customer, $fullActionCode, 400), function (string $attribute, mixed $value, \Closure $fail) {
                 if (trim((string) $value) === '') {
                     $fail(__('Please enter some text.'));
                 }
@@ -410,7 +409,7 @@ class MobileJobSubmissionService
         $data['referenceAudio'] = $request->file('referenceAudio');
 
         $validated = Validator::make($data, [
-            'text' => ['required', 'string', 'min:1', 'max:' . $this->maxCharsPerSubmit($customer, $fullActionCode, 400), function (string $attribute, mixed $value, \Closure $fail) {
+            'text' => ['required', 'string', 'min:1', 'max:'.$this->maxCharsPerSubmit($customer, $fullActionCode, 400), function (string $attribute, mixed $value, \Closure $fail) {
                 if (trim((string) $value) === '') {
                     $fail(__('Please enter some text.'));
                 }
@@ -1013,7 +1012,7 @@ class MobileJobSubmissionService
         ])->validate();
 
         $actionCode = (int) $validated['stems'] === 2 ? 'sep2' : 'sep4';
-        $fullActionCode = 'stem.' . $actionCode;
+        $fullActionCode = 'stem.'.$actionCode;
 
         $this->assertConcurrencyAvailable(
             $customer,
@@ -1454,13 +1453,13 @@ class MobileJobSubmissionService
 
         $data = $this->normalizedPayload($request, $defaults);
         $validated = Validator::make($data, [
-            'text' => ['required', 'string', 'min:1', 'max:' . $this->maxCharsPerSubmit($customer, $fullActionCode, 2400), function (string $attribute, mixed $value, \Closure $fail) {
+            'text' => ['required', 'string', 'min:1', 'max:'.$this->maxCharsPerSubmit($customer, $fullActionCode, 2400), function (string $attribute, mixed $value, \Closure $fail) {
                 if (trim((string) $value) === '') {
                     $fail(__('Please enter text to translate.'));
                 }
             }],
-            'sourceLang' => ['required', 'string', 'in:' . implode(',', array_keys($this->translationLanguageCatalog()))],
-            'targetLang' => ['required', 'string', 'in:' . implode(',', array_keys($this->translationLanguageCatalog())), 'different:sourceLang'],
+            'sourceLang' => ['required', 'string', 'in:'.implode(',', array_keys($this->translationLanguageCatalog()))],
+            'targetLang' => ['required', 'string', 'in:'.implode(',', array_keys($this->translationLanguageCatalog())), 'different:sourceLang'],
             'maxNewTokens' => ['required', 'integer', 'min:64', 'max:2048'],
             'chunkChars' => ['required', 'integer', 'min:200', 'max:5000'],
         ])->validate();
@@ -1618,7 +1617,7 @@ class MobileJobSubmissionService
 
     protected function assertToolAllowed(Customer $customer, string $fullActionCode, string $message): void
     {
-        if (method_exists($customer, 'isAllowed') && ! $customer->isAllowed($fullActionCode)) {
+        if (method_exists($customer, 'isAllowed') && ! $customer->isAllowed($fullActionCode, \App\Models\PlanEntitlement::CHANNEL_MOBILE)) {
             throw new MobileJobSubmissionException($message, 403);
         }
     }
@@ -1640,6 +1639,7 @@ class MobileJobSubmissionService
     protected function meteredCost(Customer $customer, string $fullActionCode, array $context, int $fallback = 0): int
     {
         if (method_exists($customer, 'priceCreditsFor')) {
+            $context['channel'] = \App\Models\PricingRule::CHANNEL_MOBILE;
             $calculated = (int) $customer->priceCreditsFor($fullActionCode, $context);
 
             if ($calculated > 0) {
@@ -1769,7 +1769,7 @@ class MobileJobSubmissionService
 
         if (! $tool || ! $action) {
             throw new MobileJobSubmissionException(
-                __('Tool or ToolAction is missing for :tool.', ['tool' => implode(' / ', $toolCodes) . ' / ' . $fullActionCode]),
+                __('Tool or ToolAction is missing for :tool.', ['tool' => implode(' / ', $toolCodes).' / '.$fullActionCode]),
                 500
             );
         }
@@ -1792,7 +1792,7 @@ class MobileJobSubmissionService
 
         return $realPath && is_file($realPath)
             ? hash_file('sha256', $realPath)
-            : sha1((string) $file->getClientOriginalName() . '|' . (int) ($file->getSize() ?? 0));
+            : sha1((string) $file->getClientOriginalName().'|'.(int) ($file->getSize() ?? 0));
     }
 
     protected function estimatedOcrPages(int $clientPdfPageCount, string $pageRange): int
@@ -1890,8 +1890,8 @@ class MobileJobSubmissionService
         $tokenId = (string) ($request->user()?->currentAccessToken()?->id ?? '');
 
         return $tokenId !== ''
-            ? 'token:' . $tokenId
-            : 'token-fallback:' . hash('sha256', implode('|', [
+            ? 'token:'.$tokenId
+            : 'token-fallback:'.hash('sha256', implode('|', [
                 (string) ($request->user()?->getAuthIdentifier() ?? ''),
                 (string) $request->userAgent(),
                 (string) $request->ip(),

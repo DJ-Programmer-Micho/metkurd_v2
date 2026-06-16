@@ -13,8 +13,7 @@ final class FibCreatePaymentRequestData
         public readonly ?string $expiresIn,
         public readonly ?string $category,
         public readonly ?string $refundableFor,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array<string, mixed>

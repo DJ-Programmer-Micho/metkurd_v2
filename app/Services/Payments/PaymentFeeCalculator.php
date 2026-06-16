@@ -10,8 +10,7 @@ class PaymentFeeCalculator
 {
     public function __construct(
         protected PaymentMethodCatalog $methods,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -103,7 +102,7 @@ class PaymentFeeCalculator
         return match ($provider) {
             'fib' => config('payments.providers.fib.fees', []),
             'areeba' => config("payments.providers.areeba.fees.{$cardOrigin}")
-                ?? config('payments.providers.areeba.fees.' . PaymentCardOrigin::UNKNOWN->value, []),
+                ?? config('payments.providers.areeba.fees.'.PaymentCardOrigin::UNKNOWN->value, []),
             default => [
                 'percent' => 0,
                 'fixed_iqd' => 0,

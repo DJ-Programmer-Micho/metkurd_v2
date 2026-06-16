@@ -9,8 +9,7 @@ class PaymentIntentStatusSyncService
 {
     public function __construct(
         protected PaymentIntentService $intents,
-    ) {
-    }
+    ) {}
 
     public function sync(PaymentIntent|int $intent, array $options = []): PaymentIntent
     {

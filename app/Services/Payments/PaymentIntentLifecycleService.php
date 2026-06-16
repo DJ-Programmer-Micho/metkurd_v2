@@ -12,8 +12,7 @@ class PaymentIntentLifecycleService
         protected PaymentMethodCatalog $paymentMethods,
         protected PaymentProviderManager $providers,
         protected PaymentIntentReconciliationService $reconciler,
-    ) {
-    }
+    ) {}
 
     public function cancel(PaymentIntent|int $intent, array $options = []): PaymentIntent
     {

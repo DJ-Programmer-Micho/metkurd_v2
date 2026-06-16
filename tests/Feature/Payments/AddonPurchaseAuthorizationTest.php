@@ -59,7 +59,7 @@ function configureAddonFib(): void
 
 function addonStageUrl(string $path): string
 {
-    return 'https://fib-stage.fib.iq' . $path;
+    return 'https://fib-stage.fib.iq'.$path;
 }
 
 function addonCreateResponse(string $paymentId): array
@@ -68,9 +68,9 @@ function addonCreateResponse(string $paymentId): array
         'paymentId' => $paymentId,
         'readableCode' => 'ADDON-CODE-123',
         'qrCode' => 'data:image/png;base64,addon-qr',
-        'personalAppLink' => 'https://fib.iq/personal/' . $paymentId,
-        'businessAppLink' => 'https://fib.iq/business/' . $paymentId,
-        'corporateAppLink' => 'https://fib.iq/corporate/' . $paymentId,
+        'personalAppLink' => 'https://fib.iq/personal/'.$paymentId,
+        'businessAppLink' => 'https://fib.iq/business/'.$paymentId,
+        'corporateAppLink' => 'https://fib.iq/corporate/'.$paymentId,
         'validUntil' => '2026-05-01T10:15:00Z',
     ];
 }

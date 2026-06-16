@@ -2,14 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 class MlJob extends Model
 {
     public $incrementing = false;
+
     protected $keyType = 'string';
 
     protected $fillable = [
@@ -41,14 +42,14 @@ class MlJob extends Model
     ];
 
     protected $casts = [
-        'input'             => 'array',
-        'output'            => 'array',
-        'error'             => 'array',
+        'input' => 'array',
+        'output' => 'array',
+        'error' => 'array',
         'provider_cost_usd' => 'decimal:6',
-        'started_at'        => 'datetime',
-        'finished_at'       => 'datetime',
-        'expires_at'        => 'datetime',
-        'lock_expires_at'   => 'datetime',
+        'started_at' => 'datetime',
+        'finished_at' => 'datetime',
+        'expires_at' => 'datetime',
+        'lock_expires_at' => 'datetime',
     ];
 
     public function customer(): BelongsTo

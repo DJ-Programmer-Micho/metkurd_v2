@@ -37,7 +37,7 @@ class CustomerEmailNotifier
                 'productName' => (string) ($payload['product_name'] ?? 'Add-on Credits'),
                 'creditsAmount' => number_format((int) ($payload['credits_amount'] ?? 0)),
                 'orderAmount' => (string) ($payload['amount_label']
-                    ?? ('$' . number_format((float) ($payload['amount_usd'] ?? 0), 2))),
+                    ?? ('$'.number_format((float) ($payload['amount_usd'] ?? 0), 2))),
                 'addedOn' => (string) ($payload['added_on'] ?? now()->format('F d, Y')),
                 'statusLabel' => (string) ($payload['status_label'] ?? 'Completed'),
             ]),
@@ -55,7 +55,7 @@ class CustomerEmailNotifier
                 'planName' => (string) ($payload['plan_name'] ?? 'Storage Plan'),
                 'storageQuota' => static::formatStorageQuota((int) ($payload['quota_mb'] ?? 0)),
                 'amountLabel' => (string) ($payload['amount_label']
-                    ?? ('$' . number_format((float) ($payload['amount_usd'] ?? 0), 2))),
+                    ?? ('$'.number_format((float) ($payload['amount_usd'] ?? 0), 2))),
                 'activatedOn' => (string) ($payload['activated_on'] ?? now()->format('F d, Y')),
             ]),
             $logContext
@@ -71,7 +71,7 @@ class CustomerEmailNotifier
             array_merge(static::baseData($customer), [
                 'itemName' => (string) ($payload['item_name'] ?? 'Payment'),
                 'amountLabel' => (string) ($payload['amount_label']
-                    ?? ('$' . number_format((float) ($payload['amount_usd'] ?? 0), 2))),
+                    ?? ('$'.number_format((float) ($payload['amount_usd'] ?? 0), 2))),
                 'attemptedOn' => (string) ($payload['attempted_on'] ?? now()->format('F d, Y')),
                 'retryUrl' => (string) ($payload['retry_url'] ?? static::appRoute('app.billing')),
             ]),
@@ -110,10 +110,10 @@ class CustomerEmailNotifier
 
     public static function sendVerificationSupport(Customer $customer, array $payload = [], string $logContext = 'Customer verification support action'): void
     {
-        $emailPending = (bool) ($payload['email_pending'] ?? !(bool) $customer->email_verify);
-        $phonePending = (bool) ($payload['phone_pending'] ?? !(bool) $customer->phone_verify);
+        $emailPending = (bool) ($payload['email_pending'] ?? ! (bool) $customer->email_verify);
+        $phonePending = (bool) ($payload['phone_pending'] ?? ! (bool) $customer->phone_verify);
 
-        if (!$emailPending && !$phonePending) {
+        if (! $emailPending && ! $phonePending) {
             return;
         }
 
@@ -148,7 +148,7 @@ class CustomerEmailNotifier
         try {
             Mail::to($email)->send(new CustomerActionMail($subject, $view, $viewData));
         } catch (\Throwable $e) {
-            Log::warning($logContext . ' email notification failed.', [
+            Log::warning($logContext.' email notification failed.', [
                 'error' => $e->getMessage(),
                 'customer_id' => $customer->id,
                 'email' => $email,
@@ -196,9 +196,9 @@ class CustomerEmailNotifier
                 ? number_format($quotaGb, 0)
                 : number_format($quotaGb, 2);
 
-            return $formatted . ' GB';
+            return $formatted.' GB';
         }
 
-        return number_format($quotaMb) . ' MB';
+        return number_format($quotaMb).' MB';
     }
 }

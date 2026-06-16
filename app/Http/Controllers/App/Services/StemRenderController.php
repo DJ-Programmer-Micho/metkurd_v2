@@ -15,6 +15,7 @@ use ZipArchive;
 class StemRenderController extends Controller
 {
     protected int $zipCacheTtlSeconds = 900;
+
     protected int $zipPruneAfterSeconds = 3600;
 
     protected function jobOrFail(string $jobId): MlJob
@@ -153,15 +154,15 @@ class StemRenderController extends Controller
             return;
         }
 
-        $files = glob($directory . DIRECTORY_SEPARATOR . 'stem-*.zip');
-        if (!is_array($files)) {
+        $files = glob($directory.DIRECTORY_SEPARATOR.'stem-*.zip');
+        if (! is_array($files)) {
             return;
         }
 
         $expireBefore = time() - max(60, $this->zipPruneAfterSeconds);
 
         foreach ($files as $path) {
-            if (!is_file($path)) {
+            if (! is_file($path)) {
                 continue;
             }
 
@@ -177,13 +178,13 @@ class StemRenderController extends Controller
      */
     protected function buildZipArchive(string $zipPath, array $entries, string $jobId): int
     {
-        $tmpPath = $zipPath . '.tmp';
+        $tmpPath = $zipPath.'.tmp';
 
         if (is_file($tmpPath)) {
             @unlink($tmpPath);
         }
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         if ($zip->open($tmpPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             return 0;
         }
@@ -192,7 +193,7 @@ class StemRenderController extends Controller
 
         foreach ($entries as $entry) {
             try {
-                if (!Storage::disk($entry['disk'])->exists($entry['path'])) {
+                if (! Storage::disk($entry['disk'])->exists($entry['path'])) {
                     continue;
                 }
             } catch (\Throwable $e) {
@@ -202,6 +203,7 @@ class StemRenderController extends Controller
                     'path' => $entry['path'],
                     'message' => $e->getMessage(),
                 ]);
+
                 continue;
             }
 
@@ -218,7 +220,7 @@ class StemRenderController extends Controller
                 ]);
             }
 
-            if (!$stream) {
+            if (! $stream) {
                 continue;
             }
 
@@ -243,6 +245,7 @@ class StemRenderController extends Controller
 
         if ($added === 0) {
             @unlink($tmpPath);
+
             return 0;
         }
 
@@ -250,8 +253,9 @@ class StemRenderController extends Controller
             @unlink($zipPath);
         }
 
-        if (!@rename($tmpPath, $zipPath)) {
+        if (! @rename($tmpPath, $zipPath)) {
             @unlink($tmpPath);
+
             return 0;
         }
 
@@ -271,10 +275,10 @@ class StemRenderController extends Controller
         try {
             abort_unless(Storage::disk($disk)->exists($path), 404, 'Audio track not found.');
 
-            if (!$request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
+            if (! $request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($path, now()->addMinutes(20), [
                     'ResponseContentType' => $mime,
-                    'ResponseContentDisposition' => 'inline; filename="' . $filename . '"',
+                    'ResponseContentDisposition' => 'inline; filename="'.$filename.'"',
                 ]);
 
                 return redirect()->away($url);
@@ -293,7 +297,7 @@ class StemRenderController extends Controller
                 }
             }, 200, [
                 'Content-Type' => $mime,
-                'Content-Disposition' => 'inline; filename="' . $filename . '"',
+                'Content-Disposition' => 'inline; filename="'.$filename.'"',
                 'Cache-Control' => 'private, max-age=600, stale-while-revalidate=60',
                 'Accept-Ranges' => 'bytes',
             ]);
@@ -340,11 +344,11 @@ class StemRenderController extends Controller
             $zipPath = (string) ($cachedMeta['path'] ?? '');
         }
 
-        if ($zipPath === '' || !is_file($zipPath)) {
+        if ($zipPath === '' || ! is_file($zipPath)) {
             $directory = $this->zipDirectory();
-            $zipPath = $directory . DIRECTORY_SEPARATOR . "stem-{$job->id}-{$signature}.zip";
+            $zipPath = $directory.DIRECTORY_SEPARATOR."stem-{$job->id}-{$signature}.zip";
 
-            if (!is_file($zipPath)) {
+            if (! is_file($zipPath)) {
                 $filesAdded = $this->buildZipArchive($zipPath, $entries, (string) $job->id);
                 abort_if($filesAdded === 0, 404, 'No downloadable files are available for this render yet.');
             }

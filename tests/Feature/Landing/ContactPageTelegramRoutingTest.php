@@ -12,8 +12,8 @@ beforeEach(function () {
     Notification::fake();
     app()->setLocale('en');
 
-    RateLimiter::clear('landing-contact:' . sha1('127.0.0.1'));
-    RateLimiter::clear('landing-contact:' . sha1('::1'));
+    RateLimiter::clear('landing-contact:'.sha1('127.0.0.1'));
+    RateLimiter::clear('landing-contact:'.sha1('::1'));
 
     $verifier = \Mockery::mock(TurnstileVerifier::class);
     $verifier->shouldReceive('verify')->andReturn(['success' => true]);

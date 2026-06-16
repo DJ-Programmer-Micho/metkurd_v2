@@ -25,7 +25,7 @@ class CaptionRenderController extends Controller
             ])
             ->where('id', $jobId)
             ->where('customer_id', auth('app')->id())
-            ->when(!empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
+            ->when(! empty($toolIds), fn ($q) => $q->whereIn('tool_id', $toolIds))
             ->where('status', 'done')
             ->firstOrFail();
 
@@ -106,7 +106,7 @@ class CaptionRenderController extends Controller
 
         $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        if (!is_string($json) || $json === '') {
+        if (! is_string($json) || $json === '') {
             throw new \RuntimeException('Failed to encode Caption JSON payload.');
         }
 
@@ -123,10 +123,10 @@ class CaptionRenderController extends Controller
         abort_if($key === '', 404, 'Input audio missing.');
 
         try {
-            if (!$request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
+            if (! $request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($key, now()->addMinutes(20), [
                     'ResponseContentType' => $mime,
-                    'ResponseContentDisposition' => 'inline; filename="' . (basename($key) ?: 'audio.wav') . '"',
+                    'ResponseContentDisposition' => 'inline; filename="'.(basename($key) ?: 'audio.wav').'"',
                 ]);
 
                 return redirect()->away($url);
@@ -159,4 +159,3 @@ class CaptionRenderController extends Controller
         }
     }
 }
-

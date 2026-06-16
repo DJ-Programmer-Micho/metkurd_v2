@@ -34,6 +34,6 @@ class AvatarFallbackUrl
 </svg>
 SVG;
 
-        return 'data:image/svg+xml;utf8,' . rawurlencode($svg);
+        return 'data:image/svg+xml;utf8,'.rawurlencode($svg);
     }
 }

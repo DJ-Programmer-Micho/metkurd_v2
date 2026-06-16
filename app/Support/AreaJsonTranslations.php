@@ -41,11 +41,13 @@ class AreaJsonTranslations
     {
         if ($area === null && $locale === null) {
             static::$cache = [];
+
             return;
         }
 
         if ($area !== null && $locale !== null) {
             unset(static::$cache["{$area}:{$locale}"]);
+
             return;
         }
 
@@ -74,7 +76,7 @@ class AreaJsonTranslations
 
         $translations = static::translations($area, $locale);
         $group = [];
-        $needle = $prefix . '.';
+        $needle = $prefix.'.';
 
         foreach ($translations as $key => $value) {
             if (! is_string($key) || ! str_starts_with($key, $needle)) {

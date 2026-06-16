@@ -10,8 +10,7 @@ class MobileAccountUsageSummaryService
     public function __construct(
         protected CustomerUsageSummaryService $usage,
         protected MobilePricingMetadataService $pricing,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{

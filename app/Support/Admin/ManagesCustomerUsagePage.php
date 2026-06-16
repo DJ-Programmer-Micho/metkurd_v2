@@ -178,10 +178,10 @@ trait ManagesCustomerUsagePage
         }
 
         return $query
-            ->selectRaw($toolExpr . ' as tool_name')
-            ->selectRaw($toolCodeExpr . ' as tool_code')
-            ->selectRaw($actionExpr . ' as action_name')
-            ->selectRaw($actionCodeExpr . ' as action_code')
+            ->selectRaw($toolExpr.' as tool_name')
+            ->selectRaw($toolCodeExpr.' as tool_code')
+            ->selectRaw($actionExpr.' as action_name')
+            ->selectRaw($actionCodeExpr.' as action_code')
             ->selectRaw('COUNT(*) as jobs')
             ->selectRaw("SUM(CASE WHEN ml_jobs.status = 'done' THEN 1 ELSE 0 END) as done_jobs")
             ->selectRaw("SUM(CASE WHEN ml_jobs.status = 'failed' THEN 1 ELSE 0 END) as failed_jobs")

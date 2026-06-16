@@ -46,6 +46,26 @@ class SyncFibCheckoutStatus
         $payment = $payment->fresh() ?? $payment;
         $source = $this->reconciliationPolicy->normalizeScheduledSource($payment, $source);
 
+        if ($dispatchFulfillment
+            && $payment->status === PaymentStatus::PAID
+            && $payment->fulfilled_at === null
+            && $payment->internal_status !== PaymentInternalStatus::REQUIRES_REVIEW
+            && $payment->internal_status !== PaymentInternalStatus::APPLIED) {
+            Log::info('fib.confirm.replaying_paid_application', array_merge(
+                $this->auditContext($payment),
+                [
+                    'source' => $source,
+                    'purchase_type' => $payment->purchase_type?->value,
+                    'application_status' => $payment->applicationStatusLabel(),
+                    'provider_status' => $payment->providerStatusLabel(),
+                ],
+            ));
+
+            event(new PaymentConfirmed((int) $payment->id));
+
+            return $payment->fresh();
+        }
+
         if ($this->reconciliationPolicy->isScheduledCheckoutSource($source)
             && ! $this->reconciliationPolicy->canScheduledCheckoutPoll($payment)) {
             return $payment;
@@ -61,22 +81,25 @@ class SyncFibCheckoutStatus
 
         if ($objectType->isSubscription()) {
             $status = $this->subscriptions->getStatus($payment);
-            $nextStatus = $this->subscriptionMapper->toLocalStatus($status);
             $audit = [];
 
-            $payment = DB::transaction(function () use ($payment, $status, $nextStatus, $source, $callbackPayload, &$shouldDispatch, &$audit) {
+            $payment = DB::transaction(function () use ($payment, $status, $source, $callbackPayload, &$shouldDispatch, &$audit) {
                 /** @var Payment $locked */
                 $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
                 $currentStatus = $locked->status ?? PaymentStatus::PENDING;
-                $baseUpdate = $this->subscriptionBaseUpdate($locked, $status, $callbackPayload);
-                $correctiveReversion = $this->shouldRevertUnfulfilledPrematurePaid($locked, $nextStatus, $status);
+                $storedCallbackPayload = is_array($locked->callback_payload) ? $locked->callback_payload : null;
+                $nextStatus = $this->resolveSubscriptionStatus($status, $callbackPayload, $storedCallbackPayload);
+                $baseUpdate = $this->subscriptionBaseUpdate($locked, $status, $callbackPayload, $storedCallbackPayload);
+                $correctiveReversion = $this->shouldRevertUnfulfilledPrematurePaid($locked, $nextStatus, $status, $callbackPayload, $storedCallbackPayload);
                 $requestedTransitionBlocked = $currentStatus !== $nextStatus
                     && ! PaymentTransitions::canTransition($currentStatus, $nextStatus)
                     && ! $correctiveReversion;
+                $providerPaymentStatus = $this->subscriptionMapper->explicitPaidStatusFromPayloads($status, $callbackPayload, $storedCallbackPayload);
 
                 $audit = [
                     'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
                     'provider_status_raw' => $status->status,
+                    'provider_payment_status' => $providerPaymentStatus,
                     'provider_reason' => $this->statusReasonParser->reasonFromRaw($status->raw),
                     'provider_error_codes' => $this->statusReasonParser->errorCodesFromRaw($status->raw),
                     'local_previous_status' => $currentStatus->value,
@@ -110,7 +133,8 @@ class SyncFibCheckoutStatus
                                 'provider_status_raw' => $status->status,
                                 'requested_status' => $nextStatus->value,
                                 'fulfilled_at' => optional($locked->fulfilled_at)?->toIso8601String(),
-                                'has_provider_charge_evidence' => $this->hasProviderChargeEvidence($status),
+                                'provider_payment_status' => $providerPaymentStatus,
+                                'has_provider_charge_evidence' => $this->hasProviderChargeEvidence($status, $callbackPayload, $storedCallbackPayload),
                             ],
                         ));
                     }
@@ -122,7 +146,7 @@ class SyncFibCheckoutStatus
                     'status' => $nextStatus,
                     'internal_status' => $this->resolveInternalStatus($locked, $nextStatus),
                     'paid_at' => $nextStatus === PaymentStatus::PAID
-                        ? ($locked->paid_at ?? $status->lastPaymentAt ?? now())
+                        ? ($locked->paid_at ?? $status->lastPaymentAt ?? $this->callbackPaymentTimestamp($callbackPayload, $storedCallbackPayload) ?? now())
                         : ($correctiveReversion ? null : $locked->paid_at),
                     'canceled_at' => $nextStatus === PaymentStatus::CANCELED ? ($locked->canceled_at ?? now()) : $locked->canceled_at,
                     'expired_at' => $nextStatus === PaymentStatus::EXPIRED ? ($locked->expired_at ?? now()) : $locked->expired_at,
@@ -338,11 +362,17 @@ class SyncFibCheckoutStatus
     /**
      * @return array<string, mixed>
      */
-    protected function subscriptionBaseUpdate(Payment $payment, FibSubscriptionStatusData $status, ?array $callbackPayload): array
-    {
+    protected function subscriptionBaseUpdate(
+        Payment $payment,
+        FibSubscriptionStatusData $status,
+        ?array $callbackPayload,
+        ?array $storedCallbackPayload = null,
+    ): array {
         $update = [
             'provider_status' => $status->status,
             'provider_subscription_status' => $this->subscriptionMapper->normalizeStatus($status->status),
+            'provider_payment_status' => $this->subscriptionMapper->explicitPaidStatusFromPayloads($status, $callbackPayload, $storedCallbackPayload)
+                ?: $payment->provider_payment_status,
             'status_reason' => $this->statusReasonParser->reasonFromRaw($status->raw) ?: $status->status,
             'status_response' => $status->raw,
             'readable_code' => $status->readableCode ?? $payment->readable_code,
@@ -367,6 +397,8 @@ class SyncFibCheckoutStatus
         Payment $payment,
         PaymentStatus $nextStatus,
         FibSubscriptionStatusData $status,
+        ?array $callbackPayload = null,
+        ?array $storedCallbackPayload = null,
     ): bool {
         if ($payment->status !== PaymentStatus::PAID || $payment->fulfilled_at !== null) {
             return false;
@@ -376,12 +408,68 @@ class SyncFibCheckoutStatus
             return false;
         }
 
-        return ! $this->hasProviderChargeEvidence($status);
+        return ! $this->hasProviderChargeEvidence($status, $callbackPayload, $storedCallbackPayload);
     }
 
-    protected function hasProviderChargeEvidence(FibSubscriptionStatusData $status): bool
+    protected function hasProviderChargeEvidence(
+        FibSubscriptionStatusData $status,
+        ?array $callbackPayload = null,
+        ?array $storedCallbackPayload = null,
+    ): bool {
+        if ($status->lastPaymentAt !== null) {
+            return true;
+        }
+
+        return $this->subscriptionMapper->hasConfirmedPaymentEvidence($status, $callbackPayload, $storedCallbackPayload);
+    }
+
+    protected function resolveSubscriptionStatus(
+        FibSubscriptionStatusData $status,
+        ?array $callbackPayload = null,
+        ?array $storedCallbackPayload = null,
+    ): PaymentStatus {
+        $nextStatus = $this->subscriptionMapper->toLocalStatus($status);
+
+        if ($nextStatus !== PaymentStatus::PAID
+            && $this->subscriptionMapper->isPaidLifecycleStatusValue($status->status)
+            && $this->subscriptionMapper->hasConfirmedPaymentEvidence($status, $callbackPayload, $storedCallbackPayload)) {
+            return PaymentStatus::PAID;
+        }
+
+        return $nextStatus;
+    }
+
+    protected function callbackPaymentTimestamp(?array ...$payloads): ?\DateTimeInterface
     {
-        return $status->lastPaymentAt !== null;
+        foreach ($payloads as $payload) {
+            if (! is_array($payload) || $payload === []) {
+                continue;
+            }
+
+            foreach ([
+                data_get($payload, 'lastPaymentAt'),
+                data_get($payload, 'lastPaidAt'),
+                data_get($payload, 'paidAt'),
+                data_get($payload, 'payment.lastPaymentAt'),
+                data_get($payload, 'payment.lastPaidAt'),
+                data_get($payload, 'payment.paidAt'),
+                data_get($payload, 'latestPayment.lastPaymentAt'),
+                data_get($payload, 'latestPayment.lastPaidAt'),
+                data_get($payload, 'latestPayment.paidAt'),
+            ] as $candidate) {
+                if (! is_scalar($candidate) || trim((string) $candidate) === '') {
+                    continue;
+                }
+
+                try {
+                    return \Illuminate\Support\Carbon::parse((string) $candidate);
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+        }
+
+        return null;
     }
 
     protected function isFailedLikeStatus(PaymentStatus $status): bool

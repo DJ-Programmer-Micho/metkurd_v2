@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\MlJob;
-use Illuminate\Console\Command;
 use Carbon\CarbonInterface;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 class MarkStaleMlJobsFailed extends Command
@@ -38,7 +38,7 @@ class MarkStaleMlJobsFailed extends Command
         $statuses = $this->resolveStatuses($this->option('status'));
 
         if ($statuses === []) {
-            $this->error('No valid statuses were selected. Allowed: ' . implode(', ', $this->allowedStatuses));
+            $this->error('No valid statuses were selected. Allowed: '.implode(', ', $this->allowedStatuses));
 
             return self::FAILURE;
         }
@@ -113,17 +113,17 @@ class MarkStaleMlJobsFailed extends Command
                         return false;
                     }
 
-                    ++$processed;
+                    $processed++;
 
                     if (! $this->isJobStale($job, $timeouts)) {
                         continue;
                     }
 
                     if ($dryRun) {
-                        ++$updated;
+                        $updated++;
 
                         if ($previewPrinted < 20) {
-                            ++$previewPrinted;
+                            $previewPrinted++;
                             $this->line(sprintf(
                                 '[dry-run] job_id=%s customer_id=%d status=%s updated_at=%s started_at=%s',
                                 (string) $job->id,
@@ -138,7 +138,7 @@ class MarkStaleMlJobsFailed extends Command
                     }
 
                     if ($this->markFailed($job, $timeouts)) {
-                        ++$updated;
+                        $updated++;
                     }
                 }
 
@@ -148,15 +148,14 @@ class MarkStaleMlJobsFailed extends Command
         $this->info($dryRun
             ? 'Stale ML job cleanup dry-run completed.'
             : 'Stale ML job cleanup completed.');
-        $this->line('Candidates: ' . number_format($candidateCount));
-        $this->line('Processed: ' . number_format($processed));
-        $this->line($dryRun ? 'Would Update: ' . number_format($updated) : 'Updated: ' . number_format($updated));
+        $this->line('Candidates: '.number_format($candidateCount));
+        $this->line('Processed: '.number_format($processed));
+        $this->line($dryRun ? 'Would Update: '.number_format($updated) : 'Updated: '.number_format($updated));
 
         return self::SUCCESS;
     }
 
     /**
-     * @param  mixed  $rawStatuses
      * @return array<int, string>
      */
     protected function resolveStatuses(mixed $rawStatuses): array

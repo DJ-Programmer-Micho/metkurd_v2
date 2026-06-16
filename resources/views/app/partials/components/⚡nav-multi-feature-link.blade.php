@@ -6,15 +6,25 @@ use Livewire\Component;
 new class extends Component
 {
     public ?string $id = null;
+
     public string $icon = '';
+
     public string $label = '';
+
     public ?string $description = null;
+
     public array|string|null $features = null;
+
     public array|string|null $toolCodes = null;
+
     public array|string|null $entitlements = null;
+
     public array|string|null $activeRoutes = null;
+
     public string $mode = 'any'; // any|all
+
     public ?string $badge = null;
+
     public string $tooltip = 'Subscribe to unlock this feature';
 };
 ?>
@@ -55,8 +65,8 @@ new class extends Component
         $enabled = true;
     } else {
         $checks = [
-            ...array_map(fn ($code) => (bool) ($customer?->canAccessTool($code) ?? false), $toolChecks),
-            ...array_map(fn ($code) => (bool) ($customer?->isAllowed($code) ?? false), $entitlementChecks),
+            ...array_map(fn ($code) => (bool) ($customer?->canAccessTool($code, channel: \App\Models\PlanEntitlement::CHANNEL_APP) ?? false), $toolChecks),
+            ...array_map(fn ($code) => (bool) ($customer?->isAllowed($code, \App\Models\PlanEntitlement::CHANNEL_APP) ?? false), $entitlementChecks),
         ];
 
         $enabled = ($mode === 'all')

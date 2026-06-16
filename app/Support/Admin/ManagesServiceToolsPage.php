@@ -2,8 +2,8 @@
 
 namespace App\Support\Admin;
 
-use App\Models\PricingRule;
 use App\Models\MlJob;
+use App\Models\PricingRule;
 use App\Models\Tool;
 use App\Models\ToolAction;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,26 +41,43 @@ trait ManagesServiceToolsPage
     public array $expandedTools = [];
 
     public ?int $editingToolId = null;
+
     public string $toolCode = '';
+
     public string $toolName = '';
+
     public string $toolCategory = '';
+
     public string $toolNotes = '';
+
     public int $toolSortOrder = 0;
+
     public string $toolStatus = 'active';
+
     public string $toolMetaJson = '';
 
     public ?int $editingActionId = null;
+
     public ?int $actionToolId = null;
+
     public string $actionCode = '';
+
     public string $actionName = '';
+
     public string $actionMetricCode = '';
+
     public string $actionNotes = '';
+
     public string $actionStatus = 'active';
+
     public string $actionMetaJson = '';
 
     public ?int $toolIdPendingDelete = null;
+
     public ?int $actionIdPendingDelete = null;
+
     public string $deleteTarget = '';
+
     public string $deleteLabel = '';
 
     public array $metricOptions = [
@@ -74,11 +91,11 @@ trait ManagesServiceToolsPage
 
     public function mount(): void
     {
-        if (!in_array($this->sortColumn, ['sort_order', 'name', 'usage', 'credits'], true)) {
+        if (! in_array($this->sortColumn, ['sort_order', 'name', 'usage', 'credits'], true)) {
             $this->sortColumn = 'sort_order';
         }
 
-        if (!in_array($this->sortDirection, ['asc', 'desc'], true)) {
+        if (! in_array($this->sortDirection, ['asc', 'desc'], true)) {
             $this->sortDirection = 'asc';
         }
     }
@@ -110,7 +127,7 @@ trait ManagesServiceToolsPage
 
     public function sortByColumn(string $column): void
     {
-        if (!in_array($column, ['sort_order', 'name', 'usage', 'credits'], true)) {
+        if (! in_array($column, ['sort_order', 'name', 'usage', 'credits'], true)) {
             return;
         }
 
@@ -349,7 +366,7 @@ trait ManagesServiceToolsPage
     {
         $tool = $this->editingToolId
             ? Tool::query()->findOrFail($this->editingToolId)
-            : new Tool();
+            : new Tool;
 
         $rules = [
             'toolName' => ['required', 'string', 'min:2', 'max:120'],
@@ -360,7 +377,7 @@ trait ManagesServiceToolsPage
             'toolMetaJson' => ['nullable', 'string'],
         ];
 
-        if (!$this->editingToolId) {
+        if (! $this->editingToolId) {
             $rules['toolCode'] = ['required', 'string', 'max:60', 'regex:/^[a-z0-9_]+$/', Rule::unique('tools', 'code')];
         }
 
@@ -391,7 +408,7 @@ trait ManagesServiceToolsPage
     public function toggleToolStatus(int $toolId): void
     {
         $tool = Tool::query()->findOrFail($toolId);
-        $tool->update(['is_active' => !$tool->is_active]);
+        $tool->update(['is_active' => ! $tool->is_active]);
 
         $this->dispatch(
             'alert',
@@ -453,7 +470,7 @@ trait ManagesServiceToolsPage
             'actionMetaJson' => ['nullable', 'string'],
         ];
 
-        if (!$this->editingActionId) {
+        if (! $this->editingActionId) {
             $rules['actionCode'] = ['required', 'string', 'max:60', 'regex:/^[a-z0-9_]+$/'];
         }
 
@@ -464,7 +481,7 @@ trait ManagesServiceToolsPage
         $tool = Tool::query()->findOrFail((int) $this->actionToolId);
         $action = $this->editingActionId
             ? ToolAction::query()->findOrFail($this->editingActionId)
-            : new ToolAction();
+            : new ToolAction;
 
         $actionCode = $this->editingActionId ? $action->action_code : trim($this->actionCode);
         $fullCode = "{$tool->code}.{$actionCode}";
@@ -504,7 +521,7 @@ trait ManagesServiceToolsPage
     public function toggleActionStatus(int $actionId): void
     {
         $action = ToolAction::query()->findOrFail($actionId);
-        $action->update(['is_active' => !$action->is_active]);
+        $action->update(['is_active' => ! $action->is_active]);
 
         $this->dispatch(
             'alert',
@@ -525,6 +542,7 @@ trait ManagesServiceToolsPage
 
         if ($tool->actions_count > 0) {
             $this->dispatch('alert', type: 'warning', message: __('Remove or reassign all actions before deleting this tool.'));
+
             return;
         }
 
@@ -541,6 +559,7 @@ trait ManagesServiceToolsPage
 
         if ($action->usage_events_count > 0) {
             $this->dispatch('alert', type: 'warning', message: __('This action has usage history and cannot be deleted.'));
+
             return;
         }
 
@@ -594,7 +613,7 @@ trait ManagesServiceToolsPage
 
     public function metricLabel(?string $metricCode): string
     {
-        if (!$metricCode) {
+        if (! $metricCode) {
             return __('Not set');
         }
 
@@ -645,7 +664,7 @@ trait ManagesServiceToolsPage
 
         $decoded = json_decode($raw, true);
 
-        if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
             throw ValidationException::withMessages([
                 $field => __('Please enter a valid JSON object.'),
             ]);

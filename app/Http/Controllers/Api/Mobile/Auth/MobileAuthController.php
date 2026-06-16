@@ -17,8 +17,7 @@ class MobileAuthController extends MobileApiController
     public function __construct(
         protected MobileApiTokenService $tokens,
         protected MobileAppCatalog $catalog,
-    ) {
-    }
+    ) {}
 
     public function login(Request $request): JsonResponse
     {

@@ -13,6 +13,7 @@ use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Exceptions\FibApiException;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Models\PaymentEvent;
+use App\Models\CreditLedger;
 use App\Models\CreditOrder;
 use App\Models\CreditProduct;
 use App\Models\Customer;
@@ -565,6 +566,91 @@ it('updates subscription state from a manual status refresh and redirects back t
         ->assertSee('Congrats! Your subscription was confirmed successfully.');
 });
 
+it('retries local fulfillment for paid but unapplied plan checkouts during livewire polling', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-local-retry-livewire-123'),
+            201
+        ),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'monthly');
+    $payment->forceFill([
+        'status' => PaymentStatus::PAID,
+        'internal_status' => PaymentInternalStatus::PAID_PENDING_APPLICATION,
+        'paid_at' => now(),
+        'provider_status' => 'ACTIVE',
+        'provider_subscription_status' => 'ACTIVE',
+        'last_status_checked_at' => now()->subMinutes(10),
+    ])->save();
+
+    $this->actingAs($customer, 'app');
+
+    Livewire::test('app::pages.payments.fib-payment', ['payment' => $payment])
+        ->call('pollStatus')
+        ->assertSee('Redirecting you to your app home');
+
+    $payment = $payment->fresh();
+    $customer = $customer->fresh();
+
+    expect($payment->status)->toBe(PaymentStatus::PAID)
+        ->and($payment->internal_status)->toBe(PaymentInternalStatus::APPLIED)
+        ->and($payment->fulfilled_at)->not->toBeNull()
+        ->and($customer->currentServicePlanId())->toBe($plan->id)
+        ->and((int) $customer->wallet()->firstOrFail()->subscription_balance_credits)->toBe((int) $plan->appMonthlyCredits())
+        ->and((int) $customer->apiWallet()->firstOrFail()->subscription_balance_credits)->toBe((int) $plan->apiMonthlyCredits());
+
+    Notification::assertSentOnDemandTimes(TelegramPayment::class, 1);
+});
+
+it('retries local fulfillment for paid but unapplied plan checkouts from the shared status endpoint', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-local-retry-status-123'),
+            201
+        ),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'monthly');
+    $payment->forceFill([
+        'status' => PaymentStatus::PAID,
+        'internal_status' => PaymentInternalStatus::PAID_PENDING_APPLICATION,
+        'paid_at' => now(),
+        'provider_status' => 'ACTIVE',
+        'provider_subscription_status' => 'ACTIVE',
+        'last_status_checked_at' => now()->subMinutes(10),
+    ])->save();
+
+    $this->actingAs($customer, 'app')
+        ->getJson(route('payments.fib.status', ['locale' => 'en', 'payment' => $payment]))
+        ->assertOk()
+        ->assertJsonPath('status', PaymentStatus::PAID->value)
+        ->assertJsonPath('internal_status', 'applied')
+        ->assertJsonPath('is_success', true)
+        ->assertJsonPath('redirect_url', route('app.home', ['locale' => 'en']));
+
+    expect($payment->fresh()->fulfilled_at)->not->toBeNull()
+        ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id);
+});
+
 it('renders automatic polling on pending fib checkout pages and keeps manual refresh as a fallback', function () {
     Http::preventStrayRequests();
 
@@ -733,6 +819,55 @@ it('auto-updates plan subscription checkout status quickly via status polling ev
     expect($payment->status)->toBe(PaymentStatus::PAID)
         ->and($payment->fulfilled_at)->not->toBeNull()
         ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id);
+});
+
+it('treats ACTIVE plus callback paymentStatus PAID as a paid subscription and fulfills it once', function () {
+    Http::preventStrayRequests();
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-plan-callback-paid-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-plan-callback-paid-123') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-plan-callback-paid-123', 'ACTIVE', [
+                'lastPaymentAt' => null,
+                'activeUntil' => '2026-06-01T10:15:00Z',
+            ]),
+            200
+        ),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'monthly');
+    $payload = [
+        'id' => $payment->fib_subscription_id,
+        'status' => 'ACTIVE',
+        'paymentStatus' => 'PAID',
+    ];
+
+    $this->postJson(route('payments.fib.subscription.callback'), $payload, ['x-callback-secret' => 'fib-callback-secret'])
+        ->assertStatus(202);
+    $this->postJson(route('payments.fib.subscription.callback'), $payload, ['x-callback-secret' => 'fib-callback-secret'])
+        ->assertStatus(202);
+
+    $payment = $payment->fresh();
+    $customer = $customer->fresh(['wallet', 'apiWallet']);
+
+    expect($payment->status)->toBe(PaymentStatus::PAID)
+        ->and($payment->provider_payment_status)->toBe('PAID')
+        ->and($payment->fulfilled_at)->not->toBeNull()
+        ->and($customer->currentServicePlanId())->toBe($plan->id)
+        ->and((int) ($customer->wallet?->subscription_balance_credits ?? 0))->toBe((int) $plan->appMonthlyCredits())
+        ->and((int) ($customer->apiWallet?->subscription_balance_credits ?? 0))->toBe((int) $plan->apiMonthlyCredits())
+        ->and(CreditOrder::query()->where('payment_id', $payment->id)->count())->toBe(1)
+        ->and(PaymentEvent::query()->where('payment_id', $payment->id)->where('event_type', 'payment_fulfilled')->count())->toBe(1);
 });
 
 it('ignores duplicate callbacks without double-fulfilling addon credits', function () {
@@ -1183,6 +1318,98 @@ it('detects recurring renewal through the dedicated renewal reconciliation and r
         }))->toBeTrue();
 });
 
+it('applies one provider renewal refill per newer fib subscription cycle key', function () {
+    Http::preventStrayRequests();
+    fibFlowEnableHourlyTesting();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::response(
+            fibFlowSubscriptionCreateResponse('fib-hourly-renew-credit-123'),
+            201
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-hourly-renew-credit-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-renew-credit-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T11:00:00Z',
+                'lastPaymentAt' => '2026-05-01T10:00:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-renew-credit-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T12:00:00Z',
+                'lastPaymentAt' => '2026-05-01T11:00:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-hourly-renew-credit-123', 'ACTIVE', [
+                'interval' => 'PT1H',
+                'activeUntil' => '2026-05-01T12:00:00Z',
+                'lastPaymentAt' => '2026-05-01T11:00:00Z',
+            ]), 200),
+    ]);
+
+    $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
+    $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_initial_credit_cycle')->fresh();
+
+    $customer->wallet()->firstOrFail()->update([
+        'subscription_balance_credits' => 123,
+        'addon_balance_credits' => 7,
+        'balance_credits' => 130,
+    ]);
+    $customer->apiWallet()->firstOrFail()->update([
+        'subscription_balance_credits' => 45,
+        'addon_balance_credits' => 9,
+        'balance_credits' => 54,
+    ]);
+
+    Carbon::setTestNow('2026-05-01 11:05:00');
+
+    $this->artisan('payments:reconcile-fib-subscription-renewals', [
+        '--customer-id' => $customer->id,
+        '--chunk' => 25,
+        '--stale-minutes' => 0,
+    ])->assertSuccessful();
+
+    $customer = $customer->fresh(['wallet', 'apiWallet', 'activeServiceSubscription']);
+    $payment = $payment->fresh();
+    $subscription = CustomerServiceSubscription::query()
+        ->where('payment_id', $payment->id)
+        ->latest('id')
+        ->firstOrFail();
+    $cycleKey = (string) $payment->providerRecurringCycleKey();
+
+    expect((int) ($customer->wallet?->subscription_balance_credits ?? 0))->toBe((int) $plan->appMonthlyCredits())
+        ->and((int) ($customer->wallet?->addon_balance_credits ?? 0))->toBe(7)
+        ->and((int) ($customer->apiWallet?->subscription_balance_credits ?? 0))->toBe((int) $plan->apiMonthlyCredits())
+        ->and((int) ($customer->apiWallet?->addon_balance_credits ?? 0))->toBe(9)
+        ->and((string) data_get($subscription->meta, 'last_applied_renewal_cycle_key'))->toBe($cycleKey)
+        ->and(CreditLedger::query()
+            ->where('customer_id', $customer->id)
+            ->where('type', 'provider_subscription_renewal')
+            ->count())->toBe(2);
+
+    $this->artisan('payments:reconcile-fib-subscription-renewals', [
+        '--customer-id' => $customer->id,
+        '--chunk' => 25,
+        '--stale-minutes' => 0,
+    ])->assertSuccessful();
+
+    expect(CreditLedger::query()
+        ->where('customer_id', $customer->id)
+        ->where('type', 'provider_subscription_renewal')
+        ->count())->toBe(2)
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $payment->id)
+            ->where('event_type', 'service_subscription_renewed')
+            ->where('meta->provider_cycle_key', $cycleKey)
+            ->count())->toBe(1);
+});
+
 it('marks repeated permanent subscription lookup failures for review and stops further provider polling', function () {
     Http::preventStrayRequests();
 
@@ -1421,7 +1648,7 @@ it('keeps renewal reconciliation events and notifications idempotent across repe
         ->where('event_type', 'service_subscription_renewed')
         ->get();
 
-    expect($renewalEvents->count())->toBe(2)
+    expect($renewalEvents->count())->toBe(1)
         ->and($renewalEvents->filter(function (PaymentEvent $event): bool {
             return str_contains((string) data_get($event->meta, 'period_ends_at', ''), '2026-05-01T12:00:00');
         })->count())->toBe(1);
@@ -1437,6 +1664,202 @@ it('keeps renewal reconciliation events and notifications idempotent across repe
     );
 
     expect($renewalAlerts->count())->toBeGreaterThanOrEqual(1);
+});
+
+it('supersedes an older fib student subscription when a newer premium subscription is fulfilled', function () {
+    Http::preventStrayRequests();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $studentPlan = ServicePlan::query()->where('code', 'student')->firstOrFail();
+    $proPlan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::sequence()
+            ->push(fibFlowSubscriptionCreateResponse('fib-student-supersede-123'), 201)
+            ->push(fibFlowSubscriptionCreateResponse('fib-pro-supersede-456'), 201),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-student-supersede-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-student-supersede-123', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T10:15:00Z',
+                'lastPaymentAt' => '2026-05-01T10:05:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-student-supersede-123', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T10:15:00Z',
+                'lastPaymentAt' => '2026-05-01T10:05:00Z',
+            ]), 200),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-pro-supersede-456') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-pro-supersede-456', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T12:15:00Z',
+                'lastPaymentAt' => '2026-05-01T12:05:00Z',
+            ]),
+            200
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-student-supersede-123/cancel') => Http::response(null, 204),
+    ]);
+
+    $studentPayment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $studentPlan->id, 'monthly');
+    $studentPayment = app(ConfirmFibPayment::class)->handle($studentPayment, 'student_initial_fulfillment')->fresh();
+    $customer = $customer->fresh();
+
+    Carbon::setTestNow('2026-05-01 12:00:00');
+
+    $premiumPayment = app(CreatePlanSubscriptionPayment::class)->handle($customer->fresh(), $proPlan->id, 'monthly');
+    $premiumPayment = app(ConfirmFibPayment::class)->handle($premiumPayment, 'premium_upgrade_fulfillment')->fresh();
+    $studentPayment = $studentPayment->fresh();
+    $customer = $customer->fresh();
+
+    expect($premiumPayment->fulfilled_at)->not->toBeNull()
+        ->and($customer->currentServicePlanId())->toBe($proPlan->id)
+        ->and(data_get($studentPayment->meta, 'supersession.superseded_by_payment_id'))->toBe((int) $premiumPayment->id)
+        ->and(data_get($studentPayment->meta, 'supersession.provider_cancel_result'))->toBe('cancel_requested')
+        ->and(CustomerServiceSubscription::query()
+            ->where('customer_id', $customer->id)
+            ->where('status', 'active')
+            ->where('service_plan_id', $proPlan->id)
+            ->count())->toBe(1)
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $studentPayment->id)
+            ->where('event_type', 'payment_superseded')
+            ->exists())->toBeTrue();
+
+    Http::assertSent(fn ($request) => $request->url() === fibFlowStageUrl('/protected/v1/subscriptions/fib-student-supersede-123/cancel'));
+});
+
+it('supersedes an older fib pro subscription when a newer student subscription is fulfilled safely', function () {
+    Http::preventStrayRequests();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $studentPlan = ServicePlan::query()->where('code', 'student')->firstOrFail();
+    $proPlan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::sequence()
+            ->push(fibFlowSubscriptionCreateResponse('fib-pro-supersede-321'), 201)
+            ->push(fibFlowSubscriptionCreateResponse('fib-student-supersede-654'), 201),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-pro-supersede-321') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-pro-supersede-321', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T10:15:00Z',
+                'lastPaymentAt' => '2026-05-01T10:05:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-pro-supersede-321', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T10:15:00Z',
+                'lastPaymentAt' => '2026-05-01T10:05:00Z',
+            ]), 200),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-student-supersede-654') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-student-supersede-654', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T12:15:00Z',
+                'lastPaymentAt' => '2026-05-01T12:05:00Z',
+            ]),
+            200
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-pro-supersede-321/cancel') => Http::response(null, 204),
+    ]);
+
+    $proPayment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $proPlan->id, 'monthly');
+    $proPayment = app(ConfirmFibPayment::class)->handle($proPayment, 'pro_initial_fulfillment')->fresh();
+    $customer = $customer->fresh();
+
+    Carbon::setTestNow('2026-05-01 12:00:00');
+
+    $studentPayment = app(CreatePlanSubscriptionPayment::class)->handle($customer->fresh(), $studentPlan->id, 'monthly');
+    $studentPayment = app(ConfirmFibPayment::class)->handle($studentPayment, 'student_downgrade_fulfillment')->fresh();
+    $proPayment = $proPayment->fresh();
+    $customer = $customer->fresh();
+
+    expect($studentPayment->fulfilled_at)->not->toBeNull()
+        ->and($customer->currentServicePlanId())->toBe($studentPlan->id)
+        ->and(data_get($proPayment->meta, 'supersession.superseded_by_payment_id'))->toBe((int) $studentPayment->id)
+        ->and(data_get($proPayment->meta, 'supersession.provider_cancel_result'))->toBe('cancel_requested')
+        ->and(CustomerServiceSubscription::query()
+            ->where('customer_id', $customer->id)
+            ->where('status', 'active')
+            ->where('service_plan_id', $studentPlan->id)
+            ->count())->toBe(1)
+        ->and(CustomerServiceSubscription::query()
+            ->where('customer_id', $customer->id)
+            ->where('status', 'active')
+            ->count())->toBe(1);
+
+    Http::assertSent(fn ($request) => $request->url() === fibFlowStageUrl('/protected/v1/subscriptions/fib-pro-supersede-321/cancel'));
+});
+
+it('keeps the newer premium fulfillment even if superseded fib cancellation fails and alerts operators', function () {
+    Http::preventStrayRequests();
+    Carbon::setTestNow('2026-05-01 10:00:00');
+
+    $customer = fibFlowCustomer();
+    $studentPlan = ServicePlan::query()->where('code', 'student')->firstOrFail();
+    $proPlan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
+
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response([
+            'access_token' => 'fib-access-token',
+            'expires_in' => 60,
+        ], 200),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::sequence()
+            ->push(fibFlowSubscriptionCreateResponse('fib-student-cancel-fail-123'), 201)
+            ->push(fibFlowSubscriptionCreateResponse('fib-pro-cancel-fail-456'), 201),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-student-cancel-fail-123') => Http::sequence()
+            ->push(fibFlowSubscriptionStatusResponse('fib-student-cancel-fail-123', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T10:15:00Z',
+                'lastPaymentAt' => '2026-05-01T10:05:00Z',
+            ]), 200)
+            ->push(fibFlowSubscriptionStatusResponse('fib-student-cancel-fail-123', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T10:15:00Z',
+                'lastPaymentAt' => '2026-05-01T10:05:00Z',
+            ]), 200),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-pro-cancel-fail-456') => Http::response(
+            fibFlowSubscriptionStatusResponse('fib-pro-cancel-fail-456', 'ACTIVE', [
+                'activeUntil' => '2026-06-01T12:15:00Z',
+                'lastPaymentAt' => '2026-05-01T12:05:00Z',
+            ]),
+            200
+        ),
+        fibFlowStageUrl('/protected/v1/subscriptions/fib-student-cancel-fail-123/cancel') => Http::response([
+            'traceId' => 'supersede-cancel-trace-123',
+            'errors' => [[
+                'code' => 'PROVIDER_CANCEL_FAILED',
+                'title' => 'Cancel failed',
+                'detail' => 'Provider cancel failed.',
+            ]],
+        ], 500),
+    ]);
+
+    $studentPayment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $studentPlan->id, 'monthly');
+    $studentPayment = app(ConfirmFibPayment::class)->handle($studentPayment, 'student_initial_cancel_failure')->fresh();
+    $customer = $customer->fresh();
+
+    Carbon::setTestNow('2026-05-01 12:00:00');
+
+    $premiumPayment = app(CreatePlanSubscriptionPayment::class)->handle($customer->fresh(), $proPlan->id, 'monthly');
+    $premiumPayment = app(ConfirmFibPayment::class)->handle($premiumPayment, 'premium_upgrade_cancel_failure')->fresh();
+    $studentPayment = $studentPayment->fresh();
+
+    expect($premiumPayment->fulfilled_at)->not->toBeNull()
+        ->and($customer->fresh()->currentServicePlanId())->toBe($proPlan->id)
+        ->and(data_get($studentPayment->meta, 'supersession.provider_cancel_result'))->toBe('provider_error')
+        ->and(PaymentEvent::query()
+            ->where('payment_id', $studentPayment->id)
+            ->where('event_type', 'provider_cancel_failed')
+            ->exists())->toBeTrue();
+
+    Notification::assertSentOnDemand(
+        TelegramSubscriptionLifecycleAlert::class,
+        function (TelegramSubscriptionLifecycleAlert $notification, array $channels, $notifiable): bool {
+            $title = strtolower((string) data_get($notification->toArray(new AnonymousNotifiable), 'title', ''));
+
+            return str_contains($title, 'failed to cancel superseded fib service subscription');
+        }
+    );
 });
 
 it('syncs provider-side cancellation changes into local recurring entitlement state', function () {

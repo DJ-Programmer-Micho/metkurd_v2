@@ -10,8 +10,8 @@ use RuntimeException;
 class LandingTranslationManager
 {
     /**
-        * @var string[]
-        */
+     * @var string[]
+     */
     protected array $locales = ['en', 'ar', 'ku'];
 
     /**
@@ -83,16 +83,19 @@ class LandingTranslationManager
 
                 if ($explicit !== '') {
                     $next[$key] = $explicit;
+
                     continue;
                 }
 
                 if ($locale === 'en') {
                     $next[$key] = $enDefaults[$key];
+
                     continue;
                 }
 
                 if (isset($existing[$key]) && is_string($existing[$key]) && trim($existing[$key]) !== '') {
                     $next[$key] = trim($existing[$key]);
+
                     continue;
                 }
 
@@ -217,7 +220,7 @@ class LandingTranslationManager
             File::makeDirectory($backupDir, 0755, true, true);
         }
 
-        $backupPath = $backupDir . DIRECTORY_SEPARATOR . $locale . '-' . now()->format('Ymd-His') . '.json';
+        $backupPath = $backupDir.DIRECTORY_SEPARATOR.$locale.'-'.now()->format('Ymd-His').'.json';
         @file_put_contents($backupPath, $content, LOCK_EX);
     }
 

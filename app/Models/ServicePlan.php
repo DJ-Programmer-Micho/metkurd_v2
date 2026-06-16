@@ -4,10 +4,12 @@ namespace App\Models;
 
 use App\Domain\Payments\Enums\PaymentMode;
 use App\Services\Plans\PlanConcurrencyService;
-use Illuminate\Support\Arr;
+use App\Support\LandingPricingCatalog;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
 
 class ServicePlan extends Model
 {
@@ -22,7 +24,13 @@ class ServicePlan extends Model
         'billing_intervals',
         'payment_mode',
         'monthly_credits',
+        'app_monthly_credits',
+        'api_monthly_credits',
         'concurrent_jobs_limit',
+        'api_enabled',
+        'api_requests_per_minute',
+        'api_concurrent_jobs',
+        'api_allowed_tools',
         'is_free',
         'is_active',
         'sort_order',
@@ -36,7 +44,13 @@ class ServicePlan extends Model
 
     protected $casts = [
         'monthly_credits' => 'integer',
+        'app_monthly_credits' => 'integer',
+        'api_monthly_credits' => 'integer',
         'concurrent_jobs_limit' => 'integer',
+        'api_enabled' => 'boolean',
+        'api_requests_per_minute' => 'integer',
+        'api_concurrent_jobs' => 'integer',
+        'api_allowed_tools' => 'array',
         'is_free' => 'boolean',
         'is_active' => 'boolean',
         'sort_order' => 'integer',
@@ -51,12 +65,31 @@ class ServicePlan extends Model
 
     protected static function booted(): void
     {
-        $flushConcurrencyCache = static function (): void {
+        static::saving(function (ServicePlan $plan): void {
+            $appMonthlyCredits = $plan->getAttribute('app_monthly_credits');
+            $legacyMonthlyCredits = $plan->getAttribute('monthly_credits');
+
+            if ($plan->isDirty('monthly_credits') && ! $plan->isDirty('app_monthly_credits')) {
+                $resolvedAppMonthlyCredits = $legacyMonthlyCredits ?? 0;
+            } elseif ($plan->isDirty('app_monthly_credits')) {
+                $resolvedAppMonthlyCredits = $appMonthlyCredits ?? 0;
+            } else {
+                $resolvedAppMonthlyCredits = $appMonthlyCredits ?? $legacyMonthlyCredits ?? 0;
+            }
+
+            $plan->setAttribute('app_monthly_credits', max(0, (int) $resolvedAppMonthlyCredits));
+            $plan->setAttribute('monthly_credits', max(0, (int) $resolvedAppMonthlyCredits));
+            $plan->setAttribute('api_monthly_credits', max(0, (int) ($plan->getAttribute('api_monthly_credits') ?? 0)));
+        });
+
+        $refreshPlanCaches = static function (): void {
             app(PlanConcurrencyService::class)->flushCache();
+            app(LandingPricingCatalog::class)->flushServicePlanCache();
+            static::bumpCacheVersion();
         };
 
-        static::saved($flushConcurrencyCache);
-        static::deleted($flushConcurrencyCache);
+        static::saved($refreshPlanCaches);
+        static::deleted($refreshPlanCaches);
     }
 
     public function subscriptions(): HasMany
@@ -121,6 +154,16 @@ class ServicePlan extends Model
     public function checkoutPaymentMode(): PaymentMode
     {
         return PaymentMode::fromValue($this->payment_mode, PaymentMode::RECURRING);
+    }
+
+    public function appMonthlyCredits(): int
+    {
+        return max(0, (int) ($this->app_monthly_credits ?? $this->monthly_credits ?? 0));
+    }
+
+    public function apiMonthlyCredits(): int
+    {
+        return max(0, (int) ($this->api_monthly_credits ?? 0));
     }
 
     public function checkoutPaymentModeValue(): string
@@ -247,5 +290,12 @@ class ServicePlan extends Model
         $locale = str_replace('_', '-', strtolower(trim((string) $locale)));
 
         return preg_match('/^[a-z]{2}(?:-[a-z]{2})?$/', $locale) === 1 ? substr($locale, 0, 2) : null;
+    }
+
+    protected static function bumpCacheVersion(): void
+    {
+        $currentVersion = max(1, (int) Cache::get('service-plans:cache-version', 1));
+
+        Cache::forever('service-plans:cache-version', $currentVersion + 1);
     }
 }

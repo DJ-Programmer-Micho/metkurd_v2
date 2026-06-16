@@ -14,8 +14,7 @@ class CouponRedemptionService
 {
     public function __construct(
         protected CouponService $coupons,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array<string, mixed>  $pricing

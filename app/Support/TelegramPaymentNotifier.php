@@ -53,15 +53,23 @@ class TelegramPaymentNotifier
                     $teleId
                 )
             );
+
+            Log::info('fib.telegram.sent', [
+                'customer_id' => $customer->id,
+                'payment_type' => $paymentType,
+                'selected_plan' => $selectedPlan,
+                'channel' => 'payment',
+            ]);
         } catch (\Throwable $e) {
-            Log::warning($logContext . ' telegram notification failed.', [
+            Log::warning('fib.telegram.failed', [
+                'log_context' => $logContext,
                 'error' => $e->getMessage(),
                 'customer_id' => $customer->id,
                 'username' => $customer->username,
                 'email' => $customer->email,
                 'payment_type' => $paymentType,
                 'selected_plan' => $selectedPlan,
-                'ip' => $guestIdentifier,
+                'channel' => 'payment',
             ]);
         }
     }
@@ -77,7 +85,7 @@ class TelegramPaymentNotifier
 
             return $location === false ? null : $location;
         } catch (\Throwable $e) {
-            Log::warning($logContext . ' location lookup failed.', [
+            Log::warning($logContext.' location lookup failed.', [
                 'ip' => $ip,
                 'error' => $e->getMessage(),
             ]);

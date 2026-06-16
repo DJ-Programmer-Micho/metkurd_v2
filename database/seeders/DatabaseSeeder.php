@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use Database\Seeders\DevDefaultSeeder;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
@@ -12,11 +11,17 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->call(BillingMasterDataSeeder::class);
+
+        if (app()->environment(['local', 'testing'])) {
+            $this->call(DevDefaultSeeder::class);
+
+            return;
+        }
+
         $this->call([
-            BillingCurrencyBootstrapSeeder::class,
-            PaymentMethodSeeder::class,
-            DevDefaultSeeder::class,
             OmniToolSeeder::class,
+            CaptionToolSeeder::class,
         ]);
     }
 }

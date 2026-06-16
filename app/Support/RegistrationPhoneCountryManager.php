@@ -109,6 +109,6 @@ class RegistrationPhoneCountryManager
 
         return $normalizedPhone !== ''
             && $normalizedDialCode !== ''
-            && str_starts_with($normalizedPhone, '+' . $normalizedDialCode);
+            && str_starts_with($normalizedPhone, '+'.$normalizedDialCode);
     }
 }

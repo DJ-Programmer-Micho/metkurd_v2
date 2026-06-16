@@ -4,7 +4,8 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         Schema::create('customer_entitlements', function (Blueprint $table) {
@@ -27,7 +28,7 @@ return new class extends Migration {
             $table->foreign('customer_id')->references('id')->on('customers')->cascadeOnDelete();
             $table->foreign('tool_action_id')->references('id')->on('tool_actions')->cascadeOnDelete();
 
-            $table->unique(['customer_id','tool_action_id']);
+            $table->unique(['customer_id', 'tool_action_id']);
         });
     }
 

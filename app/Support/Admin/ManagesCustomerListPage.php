@@ -69,7 +69,7 @@ trait ManagesCustomerListPage
     {
         $allowed = ['created_at', 'username', 'jobs_count', 'consumed_credits', 'paid_order_amount'];
 
-        if (!in_array($column, $allowed, true)) {
+        if (! in_array($column, $allowed, true)) {
             return;
         }
 
@@ -134,7 +134,7 @@ trait ManagesCustomerListPage
     #[Computed]
     public function viewingCustomer()
     {
-        if (!$this->viewingCustomerId) {
+        if (! $this->viewingCustomerId) {
             return null;
         }
 
@@ -199,10 +199,10 @@ trait ManagesCustomerListPage
     {
         $customer = Customer::query()->with('profile')->findOrFail($customerId);
 
-        $emailPending = !(bool) $customer->email_verify;
-        $phonePending = !(bool) $customer->phone_verify;
+        $emailPending = ! (bool) $customer->email_verify;
+        $phonePending = ! (bool) $customer->phone_verify;
 
-        if (!$emailPending && !$phonePending) {
+        if (! $emailPending && ! $phonePending) {
             $this->dispatch(
                 'alert',
                 type: 'info',

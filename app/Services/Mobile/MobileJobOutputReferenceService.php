@@ -17,8 +17,7 @@ class MobileJobOutputReferenceService
 
     public function __construct(
         protected MobileAppCatalog $catalog,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{outputs: array<int, array<string, mixed>>, primary_output: array<string, mixed>|null}

@@ -323,7 +323,7 @@ class LandingToolDemoGroupsSeeder extends Seeder
         if ($type === 'ctts' && $engine === '') {
             $title = Str::lower(trim((string) data_get($item, 'title', '')));
             $notes = Str::lower(trim((string) data_get($item, 'notes', '')));
-            $haystack = $title . ' ' . $notes;
+            $haystack = $title.' '.$notes;
 
             if (str_contains($haystack, '1.5') || str_contains($haystack, 'xomni') || str_contains($haystack, 'omni')) {
                 $engine = 'clone_xomni';

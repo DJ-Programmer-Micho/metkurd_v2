@@ -24,7 +24,7 @@ class extends Component
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
                     <h4 class="mb-sm-0">{{ __('Service Plan Payments') }}</h4>
-                    <p class="text-muted mb-0">{{ __('Manage subscription packs, credit allowances, concurrent job limits, pricing, and activation state.') }}</p>
+                    <p class="text-muted mb-0">{{ __('Manage App/API credits, concurrency, pricing, scopes, and activation state from one plan catalog.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <select class="form-select" wire:model.live="displayCurrencyCode" style="min-width: 180px;">
@@ -147,8 +147,9 @@ class extends Component
                     <thead class="table-light text-muted">
                         <tr class="text-uppercase">
                             <th>{{ __('Plan') }}</th>
-                            <th>{{ __('Credits') }}</th>
-                            <th>{{ __('Concurrent Jobs') }}</th>
+                            <th>{{ __('App Credits') }}</th>
+                            <th>{{ __('API Access') }}</th>
+                            <th>{{ __('Runtime Limits') }}</th>
                             <th>{{ __('Pricing') }}</th>
                             <th>{{ __('Adoption') }}</th>
                             <th>{{ __('Revenue') }}</th>
@@ -181,14 +182,28 @@ class extends Component
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $this->formatCredits($plan->monthly_credits) }}</span>
-                                        <span class="text-muted small">{{ __('monthly credits') }}</span>
+                                        <span class="fw-semibold">{{ $this->formatCredits((int) ($plan->app_monthly_credits_effective ?? $plan->app_monthly_credits ?? $plan->monthly_credits ?? 0)) }}</span>
+                                        <span class="text-muted small">{{ __('App Monthly Credits') }}</span>
+                                        <span class="text-muted small">{{ __('Legacy monthly credits stay synchronized.') }}</span>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ number_format((int) ($plan->concurrent_jobs_limit ?? 2)) }}</span>
-                                        <span class="text-muted small">{{ __('Maximum simultaneous active jobs this plan can run') }}</span>
+                                        <span class="fw-semibold">{{ $this->formatCredits((int) ($plan->api_monthly_credits_effective ?? $plan->api_monthly_credits ?? 0)) }}</span>
+                                        <span class="text-muted small">{{ __('API Monthly Credits') }}</span>
+                                        <span class="badge {{ (bool) ($plan->api_enabled ?? false) ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning' }}">
+                                            {{ (bool) ($plan->api_enabled ?? false) ? __('API Enabled') : __('API Disabled') }}
+                                        </span>
+                                        <span class="text-muted small">
+                                            {{ collect((array) ($plan->api_allowed_tools ?? []))->take(3)->join(', ') ?: __('No API scopes') }}
+                                        </span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column">
+                                        <span class="fw-semibold">{{ __('App Jobs: :value', ['value' => number_format((int) ($plan->concurrent_jobs_limit ?? 2))]) }}</span>
+                                        <span class="text-muted small">{{ __('API RPM: :value', ['value' => number_format((int) ($plan->api_requests_per_minute ?? 0))]) }}</span>
+                                        <span class="text-muted small">{{ __('API Jobs: :value', ['value' => number_format((int) ($plan->api_concurrent_jobs ?? 0))]) }}</span>
                                     </div>
                                 </td>
                                 <td>
@@ -240,7 +255,7 @@ class extends Component
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="text-center py-5 text-muted">{{ __('No service plans matched the current filters.') }}</td>
+                                <td colspan="9" class="text-center py-5 text-muted">{{ __('No service plans matched the current filters.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -306,15 +321,44 @@ class extends Component
                                 @error('paymentMode') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Monthly Credits') }}</label>
-                                <input type="number" min="0" class="form-control @error('monthlyCredits') is-invalid @enderror" wire:model.defer="monthlyCredits">
-                                @error('monthlyCredits') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                <label class="form-label">{{ __('App Monthly Credits') }}</label>
+                                <input type="number" min="0" class="form-control @error('appMonthlyCredits') is-invalid @enderror" wire:model.defer="appMonthlyCredits">
+                                <div class="form-text">{{ __('Keeps the legacy `monthly_credits` column synchronized for existing runtime paths.') }}</div>
+                                @error('appMonthlyCredits') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Concurrent Jobs Limit') }}</label>
+                                <label class="form-label">{{ __('API Monthly Credits') }}</label>
+                                <input type="number" min="0" class="form-control @error('apiMonthlyCredits') is-invalid @enderror" wire:model.defer="apiMonthlyCredits">
+                                @error('apiMonthlyCredits') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">{{ __('App Concurrent Jobs') }}</label>
                                 <input type="number" min="1" class="form-control @error('concurrentJobsLimit') is-invalid @enderror" wire:model.defer="concurrentJobsLimit">
-                                <div class="form-text">{{ __('Maximum simultaneous active jobs this plan can run') }}</div>
+                                <div class="form-text">{{ __('Dashboard + `/api/mobile` concurrency limit.') }}</div>
                                 @error('concurrentJobsLimit') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-4 d-flex align-items-center">
+                                <div class="form-check mt-4">
+                                    <input class="form-check-input" type="checkbox" id="planApiEnabled" wire:model.defer="apiEnabled">
+                                    <label class="form-check-label" for="planApiEnabled">{{ __('API Enabled') }}</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">{{ __('API Requests / Minute') }}</label>
+                                <input type="number" min="0" class="form-control @error('apiRequestsPerMinute') is-invalid @enderror" wire:model.defer="apiRequestsPerMinute">
+                                @error('apiRequestsPerMinute') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">{{ __('API Concurrent Jobs') }}</label>
+                                <input type="number" min="0" class="form-control @error('apiConcurrentJobs') is-invalid @enderror" wire:model.defer="apiConcurrentJobs">
+                                <div class="form-text">{{ __('Public `/api/v1` concurrency limit.') }}</div>
+                                @error('apiConcurrentJobs') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">{{ __('API Allowed Tools / Scopes') }}</label>
+                                <textarea class="form-control font-monospace @error('apiAllowedToolsText') is-invalid @enderror" rows="4" wire:model.defer="apiAllowedToolsText" placeholder="tts:apollo-1-0v&#10;tts:apollo-1-5v&#10;translation:generate&#10;usage:read"></textarea>
+                                <div class="form-text">{{ __('Enter one scope per line or use commas. Example: `tts:apollo-1-0v`, `tts:apollo-1-5v`, `translation:generate`, `usage:read`. Legacy scope aliases are accepted and saved as the new canonical scope names.') }}</div>
+                                @error('apiAllowedToolsText') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">{{ __('Monthly Price (IQD)') }}</label>

@@ -3,17 +3,15 @@
 namespace App\Services\Billing;
 
 use App\Enums\PaymentRecurringStrategy;
-use App\Models\{
-    Customer,
-    ServicePlan,
-    StoragePlan,
-    CustomerServiceSubscription,
-    CustomerStorageSubscription,
-    CreditWallet,
-    CreditLedger,
-    CreditMonthlyGrant,
-    CreditOrder
-};
+use App\Models\CreditLedger;
+use App\Models\CreditMonthlyGrant;
+use App\Models\CreditOrder;
+use App\Models\CreditWallet;
+use App\Models\Customer;
+use App\Models\CustomerServiceSubscription;
+use App\Models\CustomerStorageSubscription;
+use App\Models\ServicePlan;
+use App\Models\StoragePlan;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -32,7 +30,7 @@ class PlanSwitcher
             $couponCode = $meta['coupon_code'] ?? null;
             $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd($amountIqd, $customer, $meta);
             $provider = (string) ($meta['provider'] ?? 'fake');
-            $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999)));
+            $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-'.now()->format('YmdHis').'-'.random_int(1000, 9999)));
             $paymentMethod = (string) ($meta['payment_method'] ?? $provider);
             $paymentIntentId = $meta['payment_intent_id'] ?? null;
             $paymentId = $meta['payment_id'] ?? null;
@@ -59,7 +57,7 @@ class PlanSwitcher
                 'credit_product_id' => null,
                 'status' => 'paid',
                 'status_reason' => null,
-                'credits_amount' => (int) $plan->monthly_credits,
+                'credits_amount' => (int) $plan->appMonthlyCredits(),
                 'amount_usd' => $currencySnapshot['usd_reference_amount'],
                 'currency' => 'IQD',
                 'base_currency_code' => 'IQD',
@@ -101,10 +99,18 @@ class PlanSwitcher
             $previousPlanId = $currentSub?->service_plan_id;
 
             if ($currentSub) {
+                $currentMeta = (array) ($currentSub->meta ?? []);
+                $currentMeta['superseded_at'] = now()->toIso8601String();
+                $currentMeta['superseded_by_service_plan_id'] = $plan->id;
+                $currentMeta['superseded_by_service_plan_code'] = $plan->code;
+                $currentMeta['superseded_by_payment_id'] = $paymentId;
+                $currentMeta['superseded_by_provider_ref'] = $providerRef;
+
                 $currentSub->update([
                     'status' => 'ended',
                     'ends_at' => now(),
                     'canceled_at' => now(),
+                    'meta' => $currentMeta,
                 ]);
             }
 
@@ -150,78 +156,143 @@ class PlanSwitcher
                     'provider_transaction_id' => $providerTransactionId,
                     'provider_active_until' => $periodEndsAt->toIso8601String(),
                     'period_ends_at' => $periodEndsAt->toIso8601String(),
+                    'provider_last_payment_at' => data_get($meta, 'provider_last_payment_at'),
+                    'provider_cycle_key' => data_get($meta, 'provider_cycle_key'),
                 ],
             ]);
 
             /** @var CreditWallet $wallet */
-            $wallet = $customer->wallet()->firstOrCreate([], [
-                'balance_credits' => 0,
-                'subscription_balance_credits' => 0,
-                'addon_balance_credits' => 0,
-                'lifetime_earned' => 0,
-                'lifetime_spent' => 0,
-                'lifetime_refunded' => 0,
-                'cycle_started_on' => now()->toDateString(),
-                'cycle_ends_on' => now()->addMonth()->toDateString(),
-                'current_cycle_key' => now()->format('Y-m'),
-            ]);
-
-            $oldCombined = (int) $wallet->balance_credits;
-            $oldAddon = (int) ($wallet->addon_balance_credits ?? 0);
-
-            $newSubscriptionBalance = (int) $plan->monthly_credits;
-            $newCombined = $newSubscriptionBalance + $oldAddon;
-
-            $wallet->update([
-                'subscription_balance_credits' => $newSubscriptionBalance,
-                'addon_balance_credits' => $oldAddon,
-                'balance_credits' => $newCombined,
-                'cycle_started_on' => now()->toDateString(),
-                'cycle_ends_on' => now()->addMonth()->toDateString(),
-                'current_cycle_key' => now()->format('Y-m'),
-                'last_granted_at' => now(),
-            ]);
-
-            $grant = CreditMonthlyGrant::updateOrCreate(
+            $wallet = CreditWallet::query()->firstOrCreate(
                 [
-                    'customer_id' => $customer->id,
-                    'year_month' => now()->format('Y-m'),
+                    'customer_id' => (int) $customer->id,
+                    'wallet_type' => CreditWallet::TYPE_APP,
                 ],
-                [
-                    'service_plan_id' => $plan->id,
-                    'subscription_id' => $newSub->id,
-                    'granted_credits' => $newSubscriptionBalance,
-                    'granted_at' => now(),
-                    'meta' => [
-                        'order_id' => $order->id,
-                        'plan_code' => $plan->code,
-                        'billing_cycle' => $billingCycle,
-                    ],
-                ]
+                CreditWallet::defaultAttributes((int) $customer->id, CreditWallet::TYPE_APP)
             );
 
-            $delta = $newCombined - $oldCombined;
-
-            CreditLedger::create([
-                'customer_id' => $customer->id,
-                'type' => 'plan_reset',
-                'bucket' => 'combined',
-                'credits_delta' => $delta,
-                'balance_after' => $newCombined,
-                'subscription_balance_after' => $newSubscriptionBalance,
-                'addon_balance_after' => $oldAddon,
-                'related_type' => CreditOrder::class,
-                'related_id' => (string) $order->id,
-                'reference_code' => 'PLAN-' . now()->format('YmdHis') . '-' . random_int(1000, 9999),
-                'meta' => [
-                    'plan_code' => $plan->code,
-                    'plan_id' => $plan->id,
-                    'previous_plan_id' => $previousPlanId,
-                    'grant_id' => $grant->id,
-                    'order_id' => $order->id,
-                    'billing_cycle' => $billingCycle,
+            /** @var CreditWallet $apiWallet */
+            $apiWallet = CreditWallet::query()->firstOrCreate(
+                [
+                    'customer_id' => (int) $customer->id,
+                    'wallet_type' => CreditWallet::TYPE_API,
                 ],
-            ]);
+                CreditWallet::defaultAttributes((int) $customer->id, CreditWallet::TYPE_API)
+            );
+
+            if ((bool) ($meta['reset_wallet_balances'] ?? true)) {
+                $oldCombined = (int) $wallet->balance_credits;
+                $oldAddon = (int) ($wallet->addon_balance_credits ?? 0);
+                $oldApiCombined = (int) ($apiWallet->balance_credits ?? 0);
+                $oldApiAddon = (int) ($apiWallet->addon_balance_credits ?? 0);
+
+                $newSubscriptionBalance = (int) $plan->appMonthlyCredits();
+                $newCombined = $newSubscriptionBalance + $oldAddon;
+                $newApiSubscriptionBalance = (int) $plan->apiMonthlyCredits();
+                $newApiCombined = $newApiSubscriptionBalance + $oldApiAddon;
+
+                $wallet->update([
+                    'subscription_balance_credits' => $newSubscriptionBalance,
+                    'addon_balance_credits' => $oldAddon,
+                    'balance_credits' => $newCombined,
+                    'cycle_started_on' => now()->toDateString(),
+                    'cycle_ends_on' => now()->addMonth()->toDateString(),
+                    'current_cycle_key' => now()->format('Y-m'),
+                    'last_granted_at' => now(),
+                ]);
+
+                $apiWallet->update([
+                    'subscription_balance_credits' => $newApiSubscriptionBalance,
+                    'addon_balance_credits' => $oldApiAddon,
+                    'balance_credits' => $newApiCombined,
+                    'cycle_started_on' => now()->toDateString(),
+                    'cycle_ends_on' => now()->addMonth()->toDateString(),
+                    'current_cycle_key' => now()->format('Y-m'),
+                    'last_granted_at' => now(),
+                ]);
+
+                $grant = CreditMonthlyGrant::updateOrCreate(
+                    [
+                        'customer_id' => $customer->id,
+                        'year_month' => now()->format('Y-m'),
+                    ],
+                    [
+                        'service_plan_id' => $plan->id,
+                        'subscription_id' => $newSub->id,
+                        'granted_credits' => $newSubscriptionBalance,
+                        'granted_at' => now(),
+                        'meta' => [
+                            'order_id' => $order->id,
+                            'plan_code' => $plan->code,
+                            'billing_cycle' => $billingCycle,
+                            'app_granted_credits' => $newSubscriptionBalance,
+                            'api_granted_credits' => $newApiSubscriptionBalance,
+                        ],
+                    ]
+                );
+
+                $delta = $newCombined - $oldCombined;
+                $apiDelta = $newApiCombined - $oldApiCombined;
+
+                CreditLedger::create([
+                    'customer_id' => $customer->id,
+                    'wallet_type' => CreditWallet::TYPE_APP,
+                    'type' => 'plan_reset',
+                    'source_type' => 'subscription_refill',
+                    'source_id' => (string) $order->id,
+                    'direction' => $delta < 0 ? 'debit' : 'credit',
+                    'amount' => abs($delta),
+                    'bucket' => 'combined',
+                    'credits_delta' => $delta,
+                    'balance_before' => $oldCombined,
+                    'balance_after' => $newCombined,
+                    'subscription_balance_after' => $newSubscriptionBalance,
+                    'addon_balance_after' => $oldAddon,
+                    'related_type' => CreditOrder::class,
+                    'related_id' => (string) $order->id,
+                    'reference_code' => 'PLAN-'.now()->format('YmdHis').'-'.random_int(1000, 9999),
+                    'meta' => [
+                        'plan_code' => $plan->code,
+                        'plan_id' => $plan->id,
+                        'previous_plan_id' => $previousPlanId,
+                        'grant_id' => $grant->id,
+                        'order_id' => $order->id,
+                        'billing_cycle' => $billingCycle,
+                        'app_granted_credits' => $newSubscriptionBalance,
+                        'api_granted_credits' => $newApiSubscriptionBalance,
+                    ],
+                ]);
+
+                CreditLedger::create([
+                    'customer_id' => $customer->id,
+                    'wallet_type' => CreditWallet::TYPE_API,
+                    'type' => 'plan_reset',
+                    'source_type' => 'subscription_refill',
+                    'source_id' => (string) $order->id,
+                    'direction' => $apiDelta < 0 ? 'debit' : 'credit',
+                    'amount' => abs($apiDelta),
+                    'bucket' => 'combined',
+                    'credits_delta' => $apiDelta,
+                    'balance_before' => $oldApiCombined,
+                    'balance_after' => $newApiCombined,
+                    'subscription_balance_after' => $newApiSubscriptionBalance,
+                    'addon_balance_after' => $oldApiAddon,
+                    'related_type' => CreditOrder::class,
+                    'related_id' => (string) $order->id,
+                    'reference_code' => 'PLAN-API-'.now()->format('YmdHis').'-'.random_int(1000, 9999),
+                    'meta' => [
+                        'plan_code' => $plan->code,
+                        'plan_id' => $plan->id,
+                        'previous_plan_id' => $previousPlanId,
+                        'grant_id' => $grant->id,
+                        'order_id' => $order->id,
+                        'billing_cycle' => $billingCycle,
+                        'app_granted_credits' => $newSubscriptionBalance,
+                        'api_granted_credits' => $newApiSubscriptionBalance,
+                    ],
+                ]);
+            }
+
+            $customer->syncResolvedServicePlan($newSub);
 
             return $newSub;
         }, 3);
@@ -240,7 +311,7 @@ class PlanSwitcher
             $couponCode = $meta['coupon_code'] ?? null;
             $currencySnapshot = app(BillingCurrencyService::class)->snapshotForBaseAmountIqd($amountIqd, $customer, $meta);
             $provider = (string) ($meta['provider'] ?? 'fake');
-            $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-STORAGE-' . now()->format('YmdHis') . '-' . random_int(1000, 9999)));
+            $providerRef = (string) ($meta['provider_ref'] ?? ('FAKE-STORAGE-'.now()->format('YmdHis').'-'.random_int(1000, 9999)));
             $paymentMethod = (string) ($meta['payment_method'] ?? $provider);
             $paymentIntentId = $meta['payment_intent_id'] ?? null;
             $paymentId = $meta['payment_id'] ?? null;
@@ -318,7 +389,7 @@ class PlanSwitcher
             $quotaBytes = (int) $plan->quota_mb * 1024 * 1024;
             $overQuota = $usedBytes > $quotaBytes;
 
-            return CustomerStorageSubscription::create([
+            $subscription = CustomerStorageSubscription::create([
                 'customer_id' => $customer->id,
                 'payment_id' => $paymentId,
                 'coupon_id' => $couponId,
@@ -363,6 +434,10 @@ class PlanSwitcher
                     'period_ends_at' => $periodEndsAt->toIso8601String(),
                 ],
             ]);
+
+            $customer->syncResolvedStoragePlan($subscription);
+
+            return $subscription;
         }, 3);
     }
 

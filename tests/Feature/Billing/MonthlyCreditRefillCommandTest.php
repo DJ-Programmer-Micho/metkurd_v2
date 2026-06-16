@@ -17,8 +17,8 @@ afterEach(function () {
 function refillCustomer(): Customer
 {
     return Customer::create([
-        'username' => 'credit_refill_' . Str::lower(Str::random(8)),
-        'email' => 'credit-refill-' . Str::lower(Str::random(8)) . '@example.com',
+        'username' => 'credit_refill_'.Str::lower(Str::random(8)),
+        'email' => 'credit-refill-'.Str::lower(Str::random(8)).'@example.com',
         'password' => 'Secret123!',
         'status' => 1,
         'email_verify' => true,
@@ -53,13 +53,16 @@ it('refills monthly credits once per due cycle and remains idempotent for the sa
     ])->assertSuccessful();
 
     $freePlanCredits = (int) ServicePlan::query()->where('code', 'free')->value('monthly_credits');
+    $freePlanApiCredits = (int) ServicePlan::query()->where('code', 'free')->value('api_monthly_credits');
     $wallet = $customer->fresh()->wallet()->firstOrFail();
+    $apiWallet = $customer->fresh()->apiWallet()->firstOrFail();
 
     expect(CreditMonthlyGrant::query()
         ->where('customer_id', $customer->id)
         ->where('year_month', '2026-05')
         ->count())->toBe(1)
         ->and((int) ($wallet->subscription_balance_credits ?? 0))->toBe($freePlanCredits)
+        ->and((int) ($apiWallet->subscription_balance_credits ?? 0))->toBe($freePlanApiCredits)
         ->and((string) optional($wallet->cycle_started_on)->toDateString())->toBe('2026-05-30');
 
     $this->artisan('credits:refill-monthly', [
@@ -96,4 +99,3 @@ it('uses last valid month day when the anniversary day does not exist', function
         ->where('year_month', '2026-02')
         ->exists())->toBeTrue();
 });
-

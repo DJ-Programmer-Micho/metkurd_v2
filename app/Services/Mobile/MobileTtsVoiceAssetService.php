@@ -57,7 +57,7 @@ class MobileTtsVoiceAssetService
         $stream = Storage::disk($this->disk)->readStream($path);
         abort_unless($stream, 500, 'Unable to open storage stream.');
 
-        $filename = basename($path) ?: ((string) $voice->code . '.png');
+        $filename = basename($path) ?: ((string) $voice->code.'.png');
 
         return response()->stream(function () use ($stream) {
             try {
@@ -69,7 +69,7 @@ class MobileTtsVoiceAssetService
             }
         }, 200, [
             'Content-Type' => $this->mimeForPath($path),
-            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
             'Cache-Control' => 'private, max-age=600, stale-while-revalidate=60',
         ]);
     }
@@ -83,7 +83,7 @@ class MobileTtsVoiceAssetService
         $stream = Storage::disk($this->disk)->readStream($path);
         abort_unless($stream, 500, 'Unable to open storage stream.');
 
-        $filename = basename($path) ?: ((string) $voice->code . '.wav');
+        $filename = basename($path) ?: ((string) $voice->code.'.wav');
 
         return response()->stream(function () use ($stream) {
             try {
@@ -95,7 +95,7 @@ class MobileTtsVoiceAssetService
             }
         }, 200, [
             'Content-Type' => $this->audioMimeForPath($path),
-            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
             'Cache-Control' => 'private, max-age=600, stale-while-revalidate=60',
             'Accept-Ranges' => 'bytes',
         ]);
@@ -122,7 +122,7 @@ class MobileTtsVoiceAssetService
             return $normalized;
         }
 
-        return 'metkurd_audio_data/' . $normalized;
+        return 'metkurd_audio_data/'.$normalized;
     }
 
     public function previewPath(Voice $voice): ?string
@@ -196,7 +196,7 @@ class MobileTtsVoiceAssetService
         }
 
         return array_map(
-            static fn (string $extension): string => $normalized . '.' . $extension,
+            static fn (string $extension): string => $normalized.'.'.$extension,
             ['mp3', 'm4a', 'wav']
         );
     }
@@ -233,17 +233,17 @@ class MobileTtsVoiceAssetService
             return $path;
         }
 
-        if (Str::startsWith($path, $folder . '/')) {
-            return 'metkurd_audio_data/' . $path;
+        if (Str::startsWith($path, $folder.'/')) {
+            return 'metkurd_audio_data/'.$path;
         }
 
-        return 'metkurd_audio_data/' . $folder . '/' . $path;
+        return 'metkurd_audio_data/'.$folder.'/'.$path;
     }
 
     protected function pathExists(string $path): bool
     {
         return Cache::remember(
-            'mobile-tts-voice-asset:' . sha1($path),
+            'mobile-tts-voice-asset:'.sha1($path),
             now()->addMinutes(10),
             fn (): bool => Storage::disk($this->disk)->exists($path)
         );

@@ -146,7 +146,9 @@
         }
 
         #app-navbar-menu{
-            --app-sidebar-footer-space: calc(70px + 125px);
+            --app-sidebar-footer-space: 0px;
+            display: flex;
+            flex-direction: column;
             padding-bottom: var(--app-sidebar-footer-space);
         }
         @media (max-width: 767.98px) {
@@ -155,15 +157,24 @@
             }
         }
         #app-navbar-menu #scrollbar{
+            flex: 1 1 auto;
+            min-height: 0;
             padding-bottom: 0;
         }
 
         #app-navbar-menu #scrollbar .container-fluid{
-            padding-bottom: var(--app-sidebar-footer-space);
+            padding-bottom: 1rem;
         }
 
         #app-navbar-menu .app-sidebar-account-chip-wrap{
-            min-width: 220px;
+            min-width: 0;
+            width: 100%;
+        }
+
+        #app-navbar-menu .app-sidebar-account-section{
+            flex-shrink: 0;
+            margin-top: auto;
+            background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.08) 18%, rgba(0,0,0,.16) 100%);
         }
 
         .ar-shift{

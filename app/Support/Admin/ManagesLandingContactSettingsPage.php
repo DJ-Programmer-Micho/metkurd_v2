@@ -11,7 +11,9 @@ use Livewire\Attributes\Url;
 trait ManagesLandingContactSettingsPage
 {
     public string $supportEmail = '';
+
     public string $supportLinesText = '';
+
     public string $companyLinesText = '';
 
     #[Url(as: 'q', keep: true)]
@@ -21,13 +23,19 @@ trait ManagesLandingContactSettingsPage
     public string $socialStatusFilter = 'all';
 
     public ?int $editingSocialLinkId = null;
+
     public string $socialPlatform = '';
+
     public string $socialUrl = '';
+
     public string $socialIconClass = '';
+
     public int $socialSortOrder = 0;
+
     public string $socialStatus = 'active';
 
     public ?int $socialLinkIdPendingDelete = null;
+
     public string $socialLinkDeleteLabel = '';
 
     public function mount(): void
@@ -137,7 +145,7 @@ trait ManagesLandingContactSettingsPage
 
         $social = $this->editingSocialLinkId
             ? LandingSocialLink::query()->findOrFail($this->editingSocialLinkId)
-            : new LandingSocialLink();
+            : new LandingSocialLink;
 
         $social->fill([
             'platform' => trim($this->socialPlatform),
@@ -238,6 +246,7 @@ trait ManagesLandingContactSettingsPage
     protected function emptyToNull(?string $value): ?string
     {
         $trimmed = trim((string) $value);
+
         return $trimmed === '' ? null : $trimmed;
     }
 
@@ -246,4 +255,3 @@ trait ManagesLandingContactSettingsPage
         return app(LandingSettingsRepository::class);
     }
 }
-

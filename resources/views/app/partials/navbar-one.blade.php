@@ -154,7 +154,7 @@
     ];
 @endphp
 
-<div class="app-menu navbar-menu" id="app-navbar-menu">
+<div class="app-menu navbar-menu d-flex flex-column" id="app-navbar-menu">
     <div class="navbar-brand-box">
         <a href="/" class="logo logo-dark mt-2">
             <span class="logo-sm mt-0">
@@ -189,7 +189,7 @@
         </button>
     </div>
 
-    <div id="scrollbar" class="nav-height">
+    <div id="scrollbar" class="nav-height flex-grow-1">
         <div class="container-fluid">
             <div id="two-column-menu"></div>
 
@@ -275,8 +275,8 @@
         </div>
     </div>
 
-    <div class="navbar-brand-box">
-        <div class="position-absolute bottom-0 pb-3 app-sidebar-account-chip-wrap">
+    <div class="app-sidebar-account-section px-3 pb-3 pt-2">
+        <div class="app-sidebar-account-chip-wrap">
             <livewire:partials.components.header-account-chip />
         </div>
     </div>

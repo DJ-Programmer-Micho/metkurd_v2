@@ -16,8 +16,7 @@ class StemJobSyncService
         protected RunPodProvider $runpod,
         protected CustomerOutputStorage $storage,
         protected JobExecutionLockService $locks,
-    ) {
-    }
+    ) {}
 
     public function buildRunpodInput(
         MlJob $job,
@@ -129,11 +128,11 @@ class StemJobSyncService
     {
         return DB::transaction(function () use ($job, $response) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
-            if (!$fresh) {
+            if (! $fresh) {
                 throw new \RuntimeException('Stem job not found during finalize.');
             }
 
-            if ((string) $fresh->status === 'done' && !empty(data_get($fresh->output, 'stems'))) {
+            if ((string) $fresh->status === 'done' && ! empty(data_get($fresh->output, 'stems'))) {
                 return $this->payloadFromJob($fresh);
             }
 
@@ -178,7 +177,7 @@ class StemJobSyncService
 
             $requiredStemCount = $stemsMode === 2 ? 2 : 4;
             if (count($output['stems']) < $requiredStemCount) {
-                return $this->failJob($fresh, "Stem outputs incomplete. Expected {$requiredStemCount}, found " . count($output['stems']) . '.');
+                return $this->failJob($fresh, "Stem outputs incomplete. Expected {$requiredStemCount}, found ".count($output['stems']).'.');
             }
 
             $storageOut = $this->storage->registerStemArtifacts($fresh, $output, 'stem');

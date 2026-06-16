@@ -17,8 +17,7 @@ class PaymentMethodCatalog
 
     public function __construct(
         protected PaymentProviderManager $providers,
-    ) {
-    }
+    ) {}
 
     public function flushCache(): void
     {

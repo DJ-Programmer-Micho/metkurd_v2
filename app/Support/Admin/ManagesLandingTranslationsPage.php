@@ -177,7 +177,7 @@ trait ManagesLandingTranslationsPage
 
     protected function rowId(string $key): string
     {
-        return 'k_' . substr(sha1($key), 0, 20);
+        return 'k_'.substr(sha1($key), 0, 20);
     }
 
     protected function translationManager(): LandingTranslationManager

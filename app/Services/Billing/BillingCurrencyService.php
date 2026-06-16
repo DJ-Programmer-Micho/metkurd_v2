@@ -12,7 +12,9 @@ use Stevebauman\Location\Facades\Location;
 class BillingCurrencyService
 {
     public const BASE_CURRENCY = 'IQD';
+
     public const SECONDARY_CURRENCY = 'USD';
+
     public const ADMIN_PREVIEW_CURRENCIES = ['IQD', 'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'CHF'];
 
     public function baseCurrencyCode(): string
@@ -63,7 +65,7 @@ class BillingCurrencyService
                 'country_code' => $countryCode,
                 'source' => $currencyCode === $mappedCurrency
                     ? $countryContext['source']
-                    : $countryContext['source'] . '_rate_fallback',
+                    : $countryContext['source'].'_rate_fallback',
             ];
         }
 
@@ -103,7 +105,7 @@ class BillingCurrencyService
             'display_label' => $this->formatAmount((float) $converted['rounded_amount'], (string) $converted['currency_code']),
             'estimated_label' => (string) $converted['currency_code'] === self::BASE_CURRENCY
                 ? $this->formatAmount($baseAmountIqd, self::BASE_CURRENCY)
-                : '~' . $this->formatAmount((float) $converted['rounded_amount'], (string) $converted['currency_code']),
+                : '~'.$this->formatAmount((float) $converted['rounded_amount'], (string) $converted['currency_code']),
             'has_localized_estimate' => (string) $converted['currency_code'] !== self::BASE_CURRENCY,
             'usd_reference_amount' => $usdReference['rounded_amount'],
             'usd_reference_label' => $this->formatAmount($usdReference['rounded_amount'], 'USD'),
@@ -255,8 +257,8 @@ class BillingCurrencyService
         $formattedNumber = number_format($numericAmount, $decimals);
 
         return in_array($currencyCode, ['USD', 'EUR', 'GBP', 'TRY'], true) || str_contains($symbol, '$') || $symbol === '£' || $symbol === '€'
-            ? $symbol . $formattedNumber
-            : $symbol . ' ' . $formattedNumber;
+            ? $symbol.$formattedNumber
+            : $symbol.' '.$formattedNumber;
     }
 
     public function formatBaseWithOptionalDisplay(int|float|string|null $amountIqd, ?string $displayCurrencyCode = null): string
@@ -271,7 +273,7 @@ class BillingCurrencyService
         $converted = $this->convertBaseAmount($amountIqd, $displayCurrencyCode);
         $displayLabel = $this->formatAmount($converted['rounded_amount'], $converted['currency_code']);
 
-        return $baseLabel . ' (' . $displayLabel . ')';
+        return $baseLabel.' ('.$displayLabel.')';
     }
 
     public function supportedCurrencyOptions(): array

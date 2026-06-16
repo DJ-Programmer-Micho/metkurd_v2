@@ -77,7 +77,7 @@ class FibConfiguration
         $path = (string) config("fib.paths.{$configKey}", '');
 
         foreach ($replacements as $key => $value) {
-            $path = str_replace('{' . $key . '}', rawurlencode((string) $value), $path);
+            $path = str_replace('{'.$key.'}', rawurlencode((string) $value), $path);
         }
 
         if ($configKey === 'token') {
@@ -89,7 +89,7 @@ class FibConfiguration
 
     public function url(string $profile, string $configKey, array $replacements = []): string
     {
-        return rtrim($this->baseUrl($profile), '/') . '/' . ltrim($this->path($configKey, $replacements), '/');
+        return rtrim($this->baseUrl($profile), '/').'/'.ltrim($this->path($configKey, $replacements), '/');
     }
 
     /**

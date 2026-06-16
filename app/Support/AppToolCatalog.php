@@ -37,7 +37,7 @@ class AppToolCatalog
         }
 
         return self::$toolIds[$code] = Cache::remember(
-            'tool-id:' . $code,
+            'tool-id:'.$code,
             now()->addMinutes(15),
             fn () => Tool::query()->where('code', $code)->value('id')
         );
@@ -79,7 +79,7 @@ class AppToolCatalog
             return [];
         }
 
-        $cacheKey = 'tool-action-options:' . implode(',', $toolCodes);
+        $cacheKey = 'tool-action-options:'.implode(',', $toolCodes);
 
         if (array_key_exists($cacheKey, self::$actionMaps)) {
             return self::$actionMaps[$cacheKey];
@@ -134,7 +134,7 @@ class AppToolCatalog
         }
 
         $normalizedEngine = strtolower(trim((string) $engine));
-        $cacheKey = $planId . '|' . ($normalizedEngine !== '' ? $normalizedEngine : '*');
+        $cacheKey = $planId.'|'.($normalizedEngine !== '' ? $normalizedEngine : '*');
 
         if (array_key_exists($cacheKey, self::$voiceOptions)) {
             return self::$voiceOptions[$cacheKey];
@@ -142,7 +142,7 @@ class AppToolCatalog
 
         /** @var array<string, string> $voices */
         $voices = Cache::remember(
-            'plan-voice-options:' . $cacheKey,
+            'plan-voice-options:'.$cacheKey,
             now()->addMinutes(15),
             function () use ($normalizedEngine, $planId): array {
                 $query = Voice::query()

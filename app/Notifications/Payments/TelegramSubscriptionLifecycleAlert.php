@@ -19,8 +19,7 @@ class TelegramSubscriptionLifecycleAlert extends Notification
         protected string $title,
         protected array $details = [],
         protected ?string $teleId = null,
-    ) {
-    }
+    ) {}
 
     public function via($notifiable): array
     {
@@ -30,7 +29,7 @@ class TelegramSubscriptionLifecycleAlert extends Notification
     public function toTelegram($notifiable): TelegramMessage
     {
         $lines = [
-            '<b>' . $this->escapeTelegram($this->title) . '</b>',
+            '<b>'.$this->escapeTelegram($this->title).'</b>',
         ];
 
         foreach ($this->details as $label => $value) {
@@ -40,10 +39,10 @@ class TelegramSubscriptionLifecycleAlert extends Notification
                 continue;
             }
 
-            $lines[] = '<b>' . $this->escapeTelegram((string) $label) . ':</b> ' . $this->escapeTelegram($value);
+            $lines[] = '<b>'.$this->escapeTelegram((string) $label).':</b> '.$this->escapeTelegram($value);
         }
 
-        $lines[] = '<b>Timestamp:</b> ' . $this->escapeTelegram(
+        $lines[] = '<b>Timestamp:</b> '.$this->escapeTelegram(
             now()->timezone(config('app.timezone'))->format('Y-m-d H:i:s T')
         );
 
@@ -89,4 +88,3 @@ class TelegramSubscriptionLifecycleAlert extends Notification
         return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 }
-

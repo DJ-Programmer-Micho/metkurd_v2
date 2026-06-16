@@ -49,7 +49,7 @@ class RefillMonthlyCredits extends Command
 
         $query = CustomerServiceSubscription::query()
             ->with([
-                'servicePlan:id,code,name,monthly_credits,is_active',
+                'servicePlan:id,code,name,monthly_credits,app_monthly_credits,api_monthly_credits,is_active',
                 'customer:id,created_at',
             ])
             ->whereIn('id', $activeLatestIds);
@@ -100,7 +100,7 @@ class RefillMonthlyCredits extends Command
                         return false;
                     }
 
-                    ++$scanned;
+                    $scanned++;
 
                     $plan = $subscription->servicePlan;
 
@@ -118,18 +118,19 @@ class RefillMonthlyCredits extends Command
                         continue;
                     }
 
-                    ++$dueCount;
+                    $dueCount++;
 
                     if ($dryRun) {
-                        ++$updated;
+                        $updated++;
 
                         if ($previewPrinted < 20) {
-                            ++$previewPrinted;
+                            $previewPrinted++;
                             $this->line(sprintf(
-                                '[dry-run] customer_id=%d plan=%s plan_credits=%d due_at=%s year_month=%s',
+                                '[dry-run] customer_id=%d plan=%s app_credits=%d api_credits=%d due_at=%s year_month=%s',
                                 (int) $subscription->customer_id,
                                 (string) $plan->code,
-                                max(0, (int) $plan->monthly_credits),
+                                max(0, (int) $plan->appMonthlyCredits()),
+                                max(0, (int) $plan->apiMonthlyCredits()),
                                 (string) $dueAt->toDateString(),
                                 $yearMonth
                             ));
@@ -139,7 +140,7 @@ class RefillMonthlyCredits extends Command
                     }
 
                     if ($this->refillCustomer($subscription->id, $yearMonth, $dueAt)) {
-                        ++$updated;
+                        $updated++;
                         $existingGrants->put((int) $subscription->customer_id, 1);
                     }
                 }
@@ -150,10 +151,10 @@ class RefillMonthlyCredits extends Command
         $this->info($dryRun
             ? 'Monthly credit refill dry-run completed.'
             : 'Monthly credit refill completed.');
-        $this->line('Candidates: ' . number_format($candidateCount));
-        $this->line('Scanned: ' . number_format($scanned));
-        $this->line('Due: ' . number_format($dueCount));
-        $this->line($dryRun ? 'Would Refill: ' . number_format($updated) : 'Refilled: ' . number_format($updated));
+        $this->line('Candidates: '.number_format($candidateCount));
+        $this->line('Scanned: '.number_format($scanned));
+        $this->line('Due: '.number_format($dueCount));
+        $this->line($dryRun ? 'Would Refill: '.number_format($updated) : 'Refilled: '.number_format($updated));
 
         return self::SUCCESS;
     }
@@ -186,7 +187,7 @@ class RefillMonthlyCredits extends Command
         return (bool) DB::transaction(function () use ($subscriptionId, $yearMonth, $dueAt) {
             /** @var CustomerServiceSubscription|null $subscription */
             $subscription = CustomerServiceSubscription::query()
-                ->with(['servicePlan:id,code,name,monthly_credits,is_active'])
+                ->with(['servicePlan:id,code,name,monthly_credits,app_monthly_credits,api_monthly_credits,is_active'])
                 ->lockForUpdate()
                 ->find($subscriptionId);
 
@@ -227,22 +228,14 @@ class RefillMonthlyCredits extends Command
             /** @var CreditWallet $wallet */
             $wallet = CreditWallet::query()
                 ->where('customer_id', (int) $subscription->customer_id)
+                ->where('wallet_type', CreditWallet::TYPE_APP)
                 ->lockForUpdate()
                 ->first();
 
             if (! $wallet instanceof CreditWallet) {
-                $wallet = CreditWallet::create([
-                    'customer_id' => (int) $subscription->customer_id,
-                    'balance_credits' => 0,
-                    'subscription_balance_credits' => 0,
-                    'addon_balance_credits' => 0,
-                    'lifetime_earned' => 0,
-                    'lifetime_spent' => 0,
-                    'lifetime_refunded' => 0,
-                    'cycle_started_on' => $dueAt->toDateString(),
-                    'cycle_ends_on' => $dueAt->copy()->addMonthNoOverflow()->subDay()->toDateString(),
-                    'current_cycle_key' => $yearMonth,
-                ]);
+                $wallet = CreditWallet::query()->create(
+                    CreditWallet::defaultAttributes((int) $subscription->customer_id, CreditWallet::TYPE_APP, $dueAt)
+                );
 
                 $wallet = CreditWallet::query()
                     ->whereKey($wallet->id)
@@ -250,13 +243,38 @@ class RefillMonthlyCredits extends Command
                     ->firstOrFail();
             }
 
-            $planCredits = max(0, (int) ($plan->monthly_credits ?? 0));
+            /** @var CreditWallet $apiWallet */
+            $apiWallet = CreditWallet::query()
+                ->where('customer_id', (int) $subscription->customer_id)
+                ->where('wallet_type', CreditWallet::TYPE_API)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $apiWallet instanceof CreditWallet) {
+                $apiWallet = CreditWallet::query()->create(
+                    CreditWallet::defaultAttributes((int) $subscription->customer_id, CreditWallet::TYPE_API, $dueAt)
+                );
+
+                $apiWallet = CreditWallet::query()
+                    ->whereKey($apiWallet->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+            }
+
+            $planCredits = max(0, (int) $plan->appMonthlyCredits());
+            $apiPlanCredits = max(0, (int) $plan->apiMonthlyCredits());
             $previousCombined = (int) ($wallet->balance_credits ?? 0);
             $previousSubscriptionBalance = (int) ($wallet->subscription_balance_credits ?? 0);
             $addonBalance = (int) ($wallet->addon_balance_credits ?? 0);
             $newSubscriptionBalance = $planCredits;
             $newCombined = $newSubscriptionBalance + $addonBalance;
             $delta = $newCombined - $previousCombined;
+            $previousApiCombined = (int) ($apiWallet->balance_credits ?? 0);
+            $previousApiSubscriptionBalance = (int) ($apiWallet->subscription_balance_credits ?? 0);
+            $apiAddonBalance = (int) ($apiWallet->addon_balance_credits ?? 0);
+            $newApiSubscriptionBalance = $apiPlanCredits;
+            $newApiCombined = $newApiSubscriptionBalance + $apiAddonBalance;
+            $apiDelta = $newApiCombined - $previousApiCombined;
             $nextCycleStart = $dueAt->copy()->addMonthNoOverflow();
 
             $wallet->forceFill([
@@ -268,6 +286,17 @@ class RefillMonthlyCredits extends Command
                 'cycle_ends_on' => $nextCycleStart->copy()->subDay()->toDateString(),
                 'current_cycle_key' => $yearMonth,
                 'last_granted_at' => $now,
+            ])->save();
+
+            $apiWallet->forceFill([
+                'subscription_balance_credits' => $newApiSubscriptionBalance,
+                'addon_balance_credits' => $apiAddonBalance,
+                'balance_credits' => $newApiCombined,
+                'lifetime_earned' => (int) ($apiWallet->lifetime_earned ?? 0) + max(0, $apiPlanCredits),
+                'cycle_started_on' => $dueAt->toDateString(),
+                'cycle_ends_on' => $nextCycleStart->copy()->subDay()->toDateString(),
+                'current_cycle_key' => $yearMonth,
+                'last_granted_at' => $apiPlanCredits > 0 ? $now : $apiWallet->last_granted_at,
             ])->save();
 
             try {
@@ -282,6 +311,8 @@ class RefillMonthlyCredits extends Command
                         'plan_code' => (string) $plan->code,
                         'source' => 'credits:refill-monthly',
                         'due_at' => $dueAt->toDateString(),
+                        'app_granted_credits' => $planCredits,
+                        'api_granted_credits' => $apiPlanCredits,
                     ],
                 ]);
             } catch (QueryException $exception) {
@@ -294,9 +325,15 @@ class RefillMonthlyCredits extends Command
 
             CreditLedger::create([
                 'customer_id' => (int) $subscription->customer_id,
+                'wallet_type' => CreditWallet::TYPE_APP,
                 'type' => 'monthly_refill',
+                'source_type' => 'subscription_refill',
+                'source_id' => (string) $grant->id,
+                'direction' => $delta < 0 ? 'debit' : 'credit',
+                'amount' => abs($delta),
                 'bucket' => 'combined',
                 'credits_delta' => $delta,
+                'balance_before' => $previousCombined,
                 'balance_after' => $newCombined,
                 'subscription_balance_after' => $newSubscriptionBalance,
                 'addon_balance_after' => $addonBalance,
@@ -309,6 +346,37 @@ class RefillMonthlyCredits extends Command
                     'subscription_id' => (int) $subscription->id,
                     'previous_balance' => $previousCombined,
                     'previous_subscription_balance' => $previousSubscriptionBalance,
+                    'app_granted_credits' => $planCredits,
+                    'api_granted_credits' => $apiPlanCredits,
+                    'source' => 'credits:refill-monthly',
+                ],
+            ]);
+
+            CreditLedger::create([
+                'customer_id' => (int) $subscription->customer_id,
+                'wallet_type' => CreditWallet::TYPE_API,
+                'type' => 'monthly_refill',
+                'source_type' => 'subscription_refill',
+                'source_id' => (string) $grant->id,
+                'direction' => $apiDelta < 0 ? 'debit' : 'credit',
+                'amount' => abs($apiDelta),
+                'bucket' => 'combined',
+                'credits_delta' => $apiDelta,
+                'balance_before' => $previousApiCombined,
+                'balance_after' => $newApiCombined,
+                'subscription_balance_after' => $newApiSubscriptionBalance,
+                'addon_balance_after' => $apiAddonBalance,
+                'related_type' => CreditMonthlyGrant::class,
+                'related_id' => (string) $grant->id,
+                'reference_code' => sprintf('monthly_refill:api:%d:%s', (int) $subscription->customer_id, $yearMonth),
+                'meta' => [
+                    'plan_code' => (string) $plan->code,
+                    'year_month' => $yearMonth,
+                    'subscription_id' => (int) $subscription->id,
+                    'previous_balance' => $previousApiCombined,
+                    'previous_subscription_balance' => $previousApiSubscriptionBalance,
+                    'app_granted_credits' => $planCredits,
+                    'api_granted_credits' => $apiPlanCredits,
                     'source' => 'credits:refill-monthly',
                 ],
             ]);

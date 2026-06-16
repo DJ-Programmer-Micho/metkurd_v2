@@ -4,7 +4,8 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         Schema::create('plan_voice_access', function (Blueprint $table) {
@@ -22,7 +23,7 @@ return new class extends Migration {
             $table->foreign('service_plan_id')->references('id')->on('service_plans')->cascadeOnDelete();
             $table->foreign('voice_id')->references('id')->on('voices')->cascadeOnDelete();
 
-            $table->unique(['service_plan_id','voice_id']);
+            $table->unique(['service_plan_id', 'voice_id']);
         });
     }
 

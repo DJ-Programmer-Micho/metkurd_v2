@@ -178,7 +178,7 @@ class FibPaymentController extends Controller
 
     protected function shouldPollProvider(Payment $payment): bool
     {
-        if ($payment->isTerminal()) {
+        if ($payment->isTerminal() && ! ($payment->isPaid() && ! $payment->isApplied() && ! $payment->requiresReview())) {
             return false;
         }
 

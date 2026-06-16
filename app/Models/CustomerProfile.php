@@ -10,6 +10,7 @@ use Illuminate\Support\Str;
 class CustomerProfile extends Model
 {
     protected $table = 'customer_profiles';
+
     protected $fillable = [
         'customer_id',
         'first_name',
@@ -48,7 +49,7 @@ class CustomerProfile extends Model
         }
 
         if (Str::startsWith($avatar, ['/storage/', 'storage/'])) {
-            return url('/' . ltrim($avatar, '/'));
+            return url('/'.ltrim($avatar, '/'));
         }
 
         $normalized = ltrim($avatar, '/');
@@ -71,13 +72,13 @@ class CustomerProfile extends Model
         $configuredUrl = trim((string) config('filesystems.disks.s3.url'));
 
         if ($configuredUrl !== '') {
-            return rtrim($configuredUrl, '/') . '/' . $path;
+            return rtrim($configuredUrl, '/').'/'.$path;
         }
 
         try {
             return Storage::disk('s3')->url($path);
         } catch (\Throwable) {
-            return rtrim((string) app('cloudfront'), '/') . '/' . $path;
+            return rtrim((string) app('cloudfront'), '/').'/'.$path;
         }
     }
 }

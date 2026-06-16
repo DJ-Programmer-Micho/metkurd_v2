@@ -22,7 +22,7 @@ class MobileCurrentUserResource extends JsonResource
         ]);
 
         $profile = $this->resource->profile;
-        $displayName = trim((string) (($profile?->first_name ?? '') . ' ' . ($profile?->last_name ?? '')));
+        $displayName = trim((string) (($profile?->first_name ?? '').' '.($profile?->last_name ?? '')));
         $servicePlan = $this->resource->currentServicePlan();
         $usageSummary = app(CustomerUsageSummaryService::class)->forCustomer($this->resource);
 
