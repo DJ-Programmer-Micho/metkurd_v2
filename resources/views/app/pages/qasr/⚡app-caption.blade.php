@@ -23,6 +23,7 @@ use App\Services\Storage\CustomerOutputStorage;
 use App\Services\ASR\QasrJobSyncService;
 use App\Services\Security\JobExecutionLockService;
 use App\Services\Media\AudioProbeService;
+use App\Services\MetKurd\Jobs\MlJobRefundService;
 
 new
 #[Layout('app::layouts.app')]
@@ -552,7 +553,8 @@ class extends Component
         RunPodProvider $runpod,
         CreditService $credits,
         CustomerOutputStorage $storage,
-        JobExecutionLockService $locks
+        JobExecutionLockService $locks,
+        MlJobRefundService $refunds,
     ): void {
         $this->showJobStatus = true;
         $this->hydrateCurrentJobFromDb();
@@ -590,23 +592,9 @@ class extends Component
             return;
         }
 
-        try {
-            $credits->charge((int) $customer->id, $cost, 'asr_charge', [
-                'related_type' => 'ml_job',
-                'related_id'   => null,
-                'tool_action'  => $action->full_code,
-                'minutes'      => $this->audioBillableMin,
-                'seconds'      => $this->audioDurationSec,
-                'model_variant' => $this->modelVariant,
-            ]);
-        } catch (\Throwable $e) {
-            $this->syncWallet();
-            $this->dispatch('alert', type: 'error', message: __('Not enough credits.'));
-            return;
-        }
-
         $jobId = (string) Str::uuid();
         $savedAudio = null;
+        $charged = false;
 
         try {
             $customerFresh = auth('app')->user()->loadMissing('profile');
@@ -625,6 +613,7 @@ class extends Component
                     'status'           => 'queued',
                     'provider'         => 'runpod',
                     'provider_job_id'  => null,
+                    'charge_reference' => "ml-job:{$jobId}:charge",
                     'input_hash'       => $this->audioHash,
                     'credits_charged'  => (int) $cost,
                     'input'            => [
@@ -652,6 +641,17 @@ class extends Component
                     'storage_out_bytes'=> 0,
                 ]);
             }, 3);
+
+            $charged = $credits->charge((int) $customer->id, $cost, 'asr_charge', [
+                'reference_code' => "ml-job:{$jobId}:charge",
+                'related_type' => 'ml_job',
+                'related_id' => $jobId,
+                'ml_job_id' => $jobId,
+                'tool_action' => $action->full_code,
+                'minutes' => $this->audioBillableMin,
+                'seconds' => $this->audioDurationSec,
+                'model_variant' => $this->modelVariant,
+            ]);
 
             $savedAudio = $storage->saveUploadedFileToS3(
                 (int) $customer->id,
@@ -775,6 +775,10 @@ class extends Component
             ]);
 
             $locks->releaseLock($jobId);
+
+            if ($charged) {
+                $refunds->refundFailedJob($jobId, 'provider_start_failed');
+            }
 
             $this->dispatch('alert', type: 'error', message: $e->getMessage());
             $this->syncWallet();

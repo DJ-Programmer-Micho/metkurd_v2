@@ -19,13 +19,26 @@ class CreditService
         string $type,
         array $meta = [],
         string $walletType = CreditWallet::TYPE_APP,
-    ): void {
+    ): bool {
         if ($credits <= 0) {
-            return;
+            return false;
         }
 
-        DB::transaction(function () use ($customerId, $credits, $type, $meta, $walletType) {
+        return DB::transaction(function () use ($customerId, $credits, $type, $meta, $walletType) {
             $wallet = $this->lockWallet($customerId, $walletType);
+            $referenceCode = trim((string) ($meta['reference_code'] ?? ''));
+
+            // The wallet row serializes same-customer requests. This check is
+            // deliberately inside that lock because a logical charge may have
+            // two ledger rows when subscription and add-on credits are split.
+            if ($referenceCode !== '' && CreditLedger::query()
+                ->where('customer_id', $customerId)
+                ->where('wallet_type', $walletType)
+                ->where('direction', 'debit')
+                ->where('reference_code', $referenceCode)
+                ->exists()) {
+                return false;
+            }
             $subscription = (int) ($wallet->subscription_balance_credits ?? 0);
             $addon = (int) ($wallet->addon_balance_credits ?? 0);
             $bucketCombined = $subscription + $addon;
@@ -65,7 +78,7 @@ class CreditService
             $wallet->last_charged_at = now();
             $wallet->save();
 
-            $referenceCode = (string) ($meta['reference_code'] ?? $this->makeReferenceCode($type));
+            $referenceCode = $referenceCode !== '' ? $referenceCode : $this->makeReferenceCode($type);
 
             if ($fromSubscription > 0) {
                 $this->writeLedger(
@@ -108,6 +121,8 @@ class CreditService
                     ]),
                 );
             }
+
+            return true;
         }, 3);
     }
 
@@ -117,13 +132,23 @@ class CreditService
         string $type,
         array $meta = [],
         string $walletType = CreditWallet::TYPE_APP,
-    ): void {
+    ): bool {
         if ($credits <= 0) {
-            return;
+            return false;
         }
 
-        DB::transaction(function () use ($customerId, $credits, $type, $meta, $walletType) {
+        return DB::transaction(function () use ($customerId, $credits, $type, $meta, $walletType) {
             $wallet = $this->lockWallet($customerId, $walletType);
+            $referenceCode = trim((string) ($meta['reference_code'] ?? ''));
+
+            if ($referenceCode !== '' && CreditLedger::query()
+                ->where('customer_id', $customerId)
+                ->where('wallet_type', $walletType)
+                ->where('direction', 'refund')
+                ->where('reference_code', $referenceCode)
+                ->exists()) {
+                return false;
+            }
             $refundBucket = $meta['refund_bucket'] ?? $meta['bucket'] ?? 'addon';
             $subscription = (int) ($wallet->subscription_balance_credits ?? 0);
             $addon = (int) ($wallet->addon_balance_credits ?? 0);
@@ -153,9 +178,11 @@ class CreditService
                 amount: $credits,
                 balanceBefore: $balanceBefore,
                 wallet: $wallet,
-                referenceCode: (string) ($meta['reference_code'] ?? $this->makeReferenceCode($type)),
+                referenceCode: $referenceCode !== '' ? $referenceCode : $this->makeReferenceCode($type),
                 meta: $meta,
             );
+
+            return true;
         }, 3);
     }
 

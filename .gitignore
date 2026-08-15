@@ -25,3 +25,7 @@ metkurd-ai-seo-aeo-geo-codex-prompt.md
 metkurd-landing-translations-admin-fixes-codex-prompt.md
 omniaudiofile.txt
 docs
+!docs/
+docs/*
+!docs/architecture/
+!docs/architecture/metkurd-v2-shared-submission-plan.md

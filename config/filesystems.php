@@ -17,6 +17,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Customer output safety
+    |--------------------------------------------------------------------------
+    |
+    | Customer output records can outlive, or be copied separately from, their
+    | object store. Remote deletion is therefore opt-in and fails closed. Set
+    | STORAGE_ALLOW_DESTRUCTIVE_OPERATIONS=true only where the database and
+    | configured output disk are intentionally managed together.
+    |
+    */
+    'customer_outputs' => [
+        'allow_destructive_operations' => (bool) env('STORAGE_ALLOW_DESTRUCTIVE_OPERATIONS', false),
+        'bulk_download_max_files' => max(1, (int) env('STORAGE_BULK_DOWNLOAD_MAX_FILES', 25)),
+        'bulk_download_max_bytes' => max(1, (int) env('STORAGE_BULK_DOWNLOAD_MAX_BYTES', 104857600)),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
     |

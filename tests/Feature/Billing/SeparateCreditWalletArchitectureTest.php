@@ -321,6 +321,28 @@ it('shows api credits in the header only for api enabled plans', function () {
         ->assertDontSee('API Credits');
 });
 
+it('renders the V2 resource meter from the canonical shell data without clipping over-limit balances', function () {
+    $customer = separateWalletCustomer('wallet-v2-meter@example.com', 'wallet_v2_meter_user');
+    assignSeparateWalletPlan($customer, 'pro');
+    seedSeparateWallet($customer, CreditWallet::TYPE_APP, 300001, 0);
+    seedSeparateWallet($customer, CreditWallet::TYPE_API, 2222, 0);
+    \App\Models\CustomerUsage::query()->updateOrCreate(
+        ['customer_id' => $customer->id],
+        ['storage_used_bytes' => 243 * 1024 * 1024],
+    );
+
+    Livewire::actingAs($customer->fresh(), 'app')
+        ->test('app::v2.components.account-resources')
+        ->assertSee('Credits & Resources')
+        ->assertSee('<details', false)
+        ->assertSee('App Credits')
+        ->assertSee('300,001')
+        ->assertSee('API Credits')
+        ->assertSee('2,222')
+        ->assertSee('243 MB / 512 MB')
+        ->assertSee('width: 100%', false);
+});
+
 it('refills both app and api wallets from the service plan allowances', function () {
     Carbon::setTestNow('2026-04-10 10:00:00');
 

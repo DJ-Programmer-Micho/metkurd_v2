@@ -13,6 +13,7 @@ class CustomerFacingToolName
         return match ($toolCode) {
             'xtts', 'tts' => 'tts',
             'xomni', 'omni', 'omnivoice' => 'xomni',
+            'xomni-v2' => 'xomni-v2',
             'f5tts', 'ftts' => 'ftts',
             'clone_tts', 'clone-tts', 'clone_xtts', 'clone-xtts', 'ctts' => 'clone_tts',
             'clone_xomni', 'clone-xomni' => 'clone_xomni',
@@ -32,6 +33,7 @@ class CustomerFacingToolName
         return match (self::canonical($toolCode)) {
             'tts' => 'Apollo 1.0v',
             'xomni' => 'Apollo 1.5v',
+            'xomni-v2' => 'Apollo 2.0v',
             'ftts' => 'Delta',
             'clone_tts' => 'Vector 1.0v',
             'clone_xomni' => 'Vector 1.5v',
@@ -61,6 +63,7 @@ class CustomerFacingToolName
         return match (self::canonical($toolCode)) {
             'tts' => ['tts', 'xtts'],
             'xomni' => ['xomni', 'omni', 'omnivoice'],
+            'xomni-v2' => ['xomni-v2'],
             'ftts' => ['ftts', 'f5tts'],
             'clone_tts' => ['clone_tts', 'clone-tts', 'clone_xtts', 'clone-xtts', 'ctts'],
             'clone_xomni' => ['clone_xomni', 'clone-xomni'],

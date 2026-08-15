@@ -25,6 +25,7 @@ use App\Services\Storage\CustomerOutputStorage;
 
 use App\Services\XTTS\XttsJobSyncService;
 use App\Services\Security\JobExecutionLockService;
+use App\Services\MetKurd\Jobs\MlJobRefundService;
 new
 #[Layout('app::layouts.app')]
 class extends Component
@@ -515,7 +516,8 @@ class extends Component
     public function postCloneXomni(
         RunPodProvider $runpod,
         CreditService $credits,
-        CustomerOutputStorage $storage
+        CustomerOutputStorage $storage,
+        MlJobRefundService $refunds,
     ): void
     {
         $this->showJobStatus = true;
@@ -551,19 +553,6 @@ class extends Component
             return;
         }
 
-        try {
-            $credits->charge((int) $c->id, $cost, 'clone_xomni_charge', [
-                'related_type' => 'ml_job',
-                'related_id'   => null,
-                'tool_action'  => $actionCode,
-                'chars'        => $chars,
-            ]);
-        } catch (\Throwable $e) {
-            $this->syncWallet();
-            $this->dispatch('alert', type: 'error', message: __('Not enough credits.'));
-            return;
-        }
-
         [$tool, $action] = $this->findToolAndAction();
         $jobId = (string) Str::uuid();
         $this->dismissedJobStatusFor = null;
@@ -580,6 +569,7 @@ class extends Component
             'job_kind'       => 'clone_xomni',
             'status'         => 'queued',
             'provider'       => 'runpod',
+            'charge_reference' => "ml-job:{$jobId}:charge",
             'input' => [
                 'mode' => 'audio_url',
                 'text' => $text,
@@ -597,6 +587,27 @@ class extends Component
             'started_at' => now(),
         ]);
 
+        try {
+            $credits->charge((int) $c->id, $cost, 'clone_xomni_charge', [
+                'reference_code' => "ml-job:{$jobId}:charge",
+                'related_type' => 'ml_job',
+                'related_id' => $jobId,
+                'ml_job_id' => $jobId,
+                'tool_action' => $actionCode,
+                'chars' => $chars,
+            ]);
+        } catch (\Throwable $e) {
+            MlJob::where('id', $jobId)->update([
+                'status' => 'failed',
+                'failure_stage' => 'credit_charge',
+                'error' => ['message' => $e->getMessage()],
+                'finished_at' => now(),
+            ]);
+            $this->syncWallet();
+            $this->dispatch('alert', type: 'error', message: __('Not enough credits.'));
+            return;
+        }
+
         $lock = app(JobExecutionLockService::class)->acquireCloneLock(
             customerId: (int) $c->id,
             jobId: $jobId,
@@ -607,13 +618,13 @@ class extends Component
         );
 
         if (!($lock['ok'] ?? false)) {
-            MlJob::where('id', $jobId)->delete();
-            $credits->refund((int) $c->id, $cost, 'clone_xomni_refund', [
-                'related_type' => 'ml_job',
-                'related_id' => $jobId,
-                'tool_action' => $actionCode,
-                'reason' => 'clone_lock_conflict',
+            MlJob::where('id', $jobId)->update([
+                'status' => 'failed',
+                'failure_stage' => 'execution_lock',
+                'error' => ['message' => (string) ($lock['message'] ?? __('Could not acquire clone lock.'))],
+                'finished_at' => now(),
             ]);
+            $refunds->refundFailedJob($jobId, 'clone_lock_conflict');
 
             $this->dispatch('alert', type: 'warning', message: $lock['message'] ?? __('Vector 1.5v is busy on another device.'));
             return;
@@ -722,18 +733,13 @@ class extends Component
         } catch (\Throwable $e) {
             $this->dispatch('header:refresh');
 
-            $credits->refund((int) $c->id, $cost, 'clone_xomni_refund', [
-                'related_type' => 'ml_job',
-                'related_id'   => $jobId,
-                'tool_action'  => $actionCode,
-                'reason'       => 'provider_start_failed',
-            ]);
-
             MlJob::where('id', $jobId)->update([
                 'status' => 'failed',
+                'failure_stage' => 'provider_submission',
                 'error' => ['message' => $e->getMessage()],
                 'finished_at' => now(),
             ]);
+            $refunds->refundFailedJob($jobId, 'provider_start_failed');
 
             $failedJob = MlJob::find($jobId);
             $refPath = (string) data_get($failedJob?->input, 'reference_audio_path', '');

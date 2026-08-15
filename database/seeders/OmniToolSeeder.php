@@ -52,9 +52,24 @@ class OmniToolSeeder extends Seeder
                 ],
             ],
             [
+                'code' => 'xomni-v2',
+                'name' => 'Apollo 2.0v',
+                'sort_order' => 12,
+                'meta' => [
+                    'category' => 'speech',
+                    'storage_folder' => 'xomni-v2',
+                    'runpod_endpoint_ref' => 'runpod.endpoints.omni',
+                    // The external worker contract remains OMNI; this is an internal identity.
+                    'worker_type' => 'xomni',
+                    'default_language' => 'ckb',
+                    'languages' => ['ckb', 'en', 'ar'],
+                    'output_formats' => ['wav'],
+                ],
+            ],
+            [
                 'code' => 'clone_xomni',
                 'name' => 'Vector 1.5v',
-                'sort_order' => 12,
+                'sort_order' => 13,
                 'meta' => [
                     'category' => 'speech',
                     'storage_folder' => 'clone_xomni',
@@ -107,6 +122,23 @@ class OmniToolSeeder extends Seeder
                         'output_format' => 'wav',
                         'return_base64' => true,
                         'ref_text' => '',
+                    ],
+                ],
+            ],
+            [
+                'tool_code' => 'xomni-v2',
+                'action_code' => 'generate',
+                'name' => 'Apollo 2.0v Generate',
+                'default_metric_code' => 'character',
+                'meta' => [
+                    'storage_folder' => 'xomni-v2',
+                    'worker_type' => 'xomni',
+                    'endpoint_ref' => 'runpod.endpoints.omni',
+                    'default_language' => 'ckb',
+                    'languages' => ['ckb', 'en', 'ar'],
+                    'output_formats' => ['wav'],
+                    'payload_defaults' => [
+                        'mode' => 'builtin_ref', 'output_format' => 'wav', 'return_base64' => true, 'ref_text' => '',
                     ],
                 ],
             ],
@@ -188,6 +220,7 @@ class OmniToolSeeder extends Seeder
     {
         $pricing = [
             'xomni.generate' => 1.0,
+            'xomni-v2.generate' => 1.0,
             'clone_xomni.generate' => 1.2,
         ];
 

@@ -70,6 +70,7 @@ class extends Component
             'all'       => __('All Tools'),
             'tts'       => CustomerFacingToolName::translated('tts'),
             'xomni'     => CustomerFacingToolName::translated('xomni'),
+            'xomni-v2'  => CustomerFacingToolName::translated('xomni-v2'),
             'ftts'      => CustomerFacingToolName::translated('ftts'),
             'clone_tts' => CustomerFacingToolName::translated('clone_tts'),
             'clone_xomni' => CustomerFacingToolName::translated('clone_xomni'),

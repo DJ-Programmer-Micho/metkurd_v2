@@ -8,6 +8,7 @@ use App\Http\Middleware\EnsureCustomerApiAccess;
 use App\Http\Middleware\EnsureCustomerCanAccessTool;
 use App\Http\Middleware\EnsureCustomerVerificationIsComplete;
 use App\Http\Middleware\EnsureUserAppIsActive;
+use App\Http\Middleware\EnsureV2DashboardEnabled;
 use App\Http\Middleware\LocalizationMainMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -42,6 +43,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'app.active' => EnsureUserAppIsActive::class,
             'app.verified' => EnsureCustomerVerificationIsComplete::class,
             'app.tool.access' => EnsureCustomerCanAccessTool::class,
+            'app.v2.enabled' => EnsureV2DashboardEnabled::class,
         ]);
 
         // $middleware->redirectGuestsTo(function ($request) {

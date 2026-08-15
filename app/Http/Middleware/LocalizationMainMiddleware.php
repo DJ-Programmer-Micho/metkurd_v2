@@ -74,8 +74,9 @@ class LocalizationMainMiddleware
             return 'admin';
         }
 
-        // App area (your signed-in group lives under /app/...)
-        if (preg_match('#^/(en|ar|ku)/app(?:/|$)#', $request->getPathInfo())) {
+        // App areas share the same customer-facing translation catalogue. V2 keeps
+        // its own routes, but it must not fall through to the landing catalogue.
+        if (preg_match('#^/(en|ar|ku)/app(?:-v2)?(?:/|$)#', $request->getPathInfo())) {
             return 'app';
         }
 

@@ -105,6 +105,7 @@ class extends Component
         $this->toolRoots = [
             'tts'       => ['label' => CustomerFacingToolName::translated('tts'), 'icon' => 'ri-volume-up-line', 'color' => 'primary'],
             'xomni'     => ['label' => CustomerFacingToolName::translated('xomni'), 'icon' => 'ri-volume-up-line', 'color' => 'primary'],
+            'xomni-v2'  => ['label' => CustomerFacingToolName::translated('xomni-v2'), 'icon' => 'ri-volume-up-line', 'color' => 'primary'],
             'ftts'      => ['label' => CustomerFacingToolName::translated('ftts'), 'icon' => 'ri-volume-up-line', 'color' => 'secondary'],
             'clone-tts' => ['label' => CustomerFacingToolName::translated('clone_tts'), 'icon' => 'ri-mic-line', 'color' => 'success'],
             'clone_xomni' => ['label' => CustomerFacingToolName::translated('clone_xomni'), 'icon' => 'ri-mic-line', 'color' => 'success'],

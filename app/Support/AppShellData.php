@@ -220,7 +220,7 @@ class AppShellData
      */
     protected function buildAccessMap(Customer $customer): array
     {
-        $toolCodes = ['tts', 'xomni', 'ftts', 'clone_tts', 'clone_xomni', 'asr', 'qasr', 'caption', 'tran', 'stem', 'ocr', 'youtube_audio', 'youtube_video'];
+        $toolCodes = ['tts', 'xomni', 'xomni-v2', 'ftts', 'clone_tts', 'clone_xomni', 'asr', 'qasr', 'caption', 'tran', 'stem', 'ocr', 'youtube_audio', 'youtube_video'];
         $map = array_fill_keys($toolCodes, false);
 
         $actions = ToolAction::query()

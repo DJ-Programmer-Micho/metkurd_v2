@@ -24,7 +24,8 @@ class XttsJobSyncService
 
         $toolCode = strtolower(trim((string) $tool->code));
         $endpointId = (string) (
-            data_get($tool->meta, 'runpod_endpoint_id')
+            ($job->endpoint_key ? config("runpod.endpoints.{$job->endpoint_key}") : null)
+            ?: data_get($tool->meta, 'runpod_endpoint_id')
             ?: $this->fallbackEndpointForTool($toolCode)
         );
 
@@ -70,7 +71,7 @@ class XttsJobSyncService
 
         if (
             $rawStatus === 'COMPLETED'
-            && in_array($toolCode, ['ftts', 'xomni', 'clone_xomni'], true)
+            && in_array($toolCode, ['ftts', 'xomni', 'xomni-v2', 'clone_xomni'], true)
             && $wavB64 === ''
         ) {
             return $this->failJob($job, $this->normalizeProviderFailureMessage(
@@ -123,7 +124,7 @@ class XttsJobSyncService
             }
 
             $outputFilename = $providerOutputFilename;
-            if (in_array((string) $tool->code, ['xomni', 'clone_xomni'], true)) {
+            if (in_array((string) $tool->code, ['xomni', 'xomni-v2', 'clone_xomni'], true)) {
                 $outputFilename = $this->normalizeOmniOutputFilename(
                     toolCode: (string) $tool->code,
                     workerFilename: $providerOutputFilename,
@@ -277,7 +278,7 @@ class XttsJobSyncService
     {
         return match ($toolCode) {
             'ftts' => (string) (config('runpod.endpoints.ftts') ?: env('RUNPOD_ENDPOINT_ID_FTTS')),
-            'xomni', 'clone_xomni' => (string) (config('runpod.endpoints.omni') ?: env('RUNPOD_ENDPOINT_ID_OMNI')),
+            'xomni', 'xomni-v2', 'clone_xomni' => (string) (config('runpod.endpoints.omni') ?: env('RUNPOD_ENDPOINT_ID_OMNI')),
             default => (string) (config('runpod.endpoints.xtts') ?: env('RUNPOD_ENDPOINT_ID_XTTS')),
         };
     }
@@ -287,6 +288,7 @@ class XttsJobSyncService
         return match (strtolower(trim($toolCode))) {
             'clone_tts' => 'clone-tts',
             'xomni' => 'xomni',
+            'xomni-v2' => 'xomni-v2',
             'clone_xomni' => 'clone_xomni',
             'ftts' => 'ftts',
             default => 'tts',
@@ -297,6 +299,7 @@ class XttsJobSyncService
     {
         $prefix = match (strtolower(trim($toolCode))) {
             'xomni' => 'xomni',
+            'xomni-v2' => 'xomni-v2',
             'clone_xomni' => 'clone_xomni',
             default => 'audio',
         };
@@ -388,13 +391,13 @@ class XttsJobSyncService
 
     protected function genericProviderFailureMessage(string $toolCode = ''): string
     {
-        if (in_array($toolCode, ['xomni', 'clone_xomni'], true)) {
-            return 'The Vector 1.5v generation failed. Please try again.';
-        }
-
-        return $toolCode === 'ftts'
-            ? 'The F5TTS generation failed. Please try again.'
-            : 'The audio generation failed. Please try again.';
+        return match ($toolCode) {
+            'xomni' => 'The Apollo 1.5v generation failed. Please try again.',
+            'xomni-v2' => 'The Apollo 2.0v generation failed. Please try again.',
+            'clone_xomni' => 'The Vector 1.5v generation failed. Please try again.',
+            'ftts' => 'The F5TTS generation failed. Please try again.',
+            default => 'The audio generation failed. Please try again.',
+        };
     }
 
     protected function extractAudioBase64(array $out, array $statusPayload = []): string

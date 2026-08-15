@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Cache;
 
 class PlanVoiceAccess extends Model
 {
@@ -24,5 +25,17 @@ class PlanVoiceAccess extends Model
     public function voice(): BelongsTo
     {
         return $this->belongsTo(Voice::class, 'voice_id');
+    }
+
+    protected static function booted(): void
+    {
+        static::saved(fn () => static::bumpCatalogCacheVersion());
+        static::deleted(fn () => static::bumpCatalogCacheVersion());
+    }
+
+    protected static function bumpCatalogCacheVersion(): void
+    {
+        Cache::add('omni-speaker-catalog:version', 1);
+        Cache::increment('omni-speaker-catalog:version');
     }
 }

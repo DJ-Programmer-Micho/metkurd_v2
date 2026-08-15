@@ -242,6 +242,37 @@ class CustomerOutputStorage
         return Storage::disk($disk)->url($path);
     }
 
+    public function temporaryUrlForCustomerFile(CustomerFile $file, string $disposition = 'inline'): ?string
+    {
+        $disk = (string) ($file->disk ?: 's3');
+        $path = trim((string) $file->path);
+
+        if ($path === '' || (string) $file->status !== 'active') {
+            return null;
+        }
+
+        try {
+            if (! Storage::disk($disk)->exists($path)) {
+                return null;
+            }
+
+            return $this->temporaryUrlForDisk($disk, $path, now()->addMinutes(20), [
+                'ResponseContentDisposition' => $disposition.'; filename="'.basename($path).'"',
+            ]);
+        } catch (\Throwable $exception) {
+            Log::warning('CUSTOMER_STORAGE_TEMPORARY_URL_FAILED', [
+                'customer_id' => (int) $file->customer_id,
+                'customer_file_id' => (int) $file->id,
+                'disk' => $disk,
+                'operation' => 'temporary_url',
+                'error_class' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
     public function deleteFromS3AndUncount(int $customerId, string $path, int $bytes = 0): void
     {
         $this->deleteFromDiskAndUncount($customerId, 's3', $path, $bytes);
@@ -252,6 +283,8 @@ class CustomerOutputStorage
         if ($path === '') {
             return;
         }
+
+        app(StorageFileDeletionService::class)->assertDestructiveOperationsAllowed();
 
         DB::transaction(function () use ($customerId, $disk, $path, $bytes) {
             $file = CustomerFile::query()
@@ -265,8 +298,8 @@ class CustomerOutputStorage
                 ? $bytes
                 : (int) ($file?->size_bytes ?? 0);
 
-            if (Storage::disk($disk)->exists($path)) {
-                Storage::disk($disk)->delete($path);
+            if (Storage::disk($disk)->exists($path) && Storage::disk($disk)->delete($path) === false) {
+                throw new \RuntimeException('The remote object could not be deleted.');
             }
 
             if ($file && (string) $file->status !== 'deleted') {

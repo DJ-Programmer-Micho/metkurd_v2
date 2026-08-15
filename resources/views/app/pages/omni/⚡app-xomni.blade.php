@@ -20,6 +20,7 @@ use App\Services\Billing\CreditService;
 
 use App\Services\XTTS\XttsJobSyncService;
 use App\Services\Security\JobExecutionLockService;
+use App\Services\MetKurd\Jobs\MlJobRefundService;
 new
 #[Layout('app::layouts.app')]
 class extends Component
@@ -840,7 +841,7 @@ class extends Component
         return in_array($language, $this->supportedLanguages, true) ? $language : 'ckb';
     }
 
-    public function postXomni(RunPodProvider $runpod, CreditService $credits): void
+    public function postXomni(RunPodProvider $runpod, CreditService $credits, MlJobRefundService $refunds): void
     {
         $this->showJobStatus = true;
         $c = auth('app')->user();
@@ -882,19 +883,6 @@ class extends Component
             return;
         }
 
-        try {
-            $credits->charge((int) $c->id, $cost, 'xomni_charge', [
-                'related_type' => 'ml_job',
-                'related_id'   => null,
-                'tool_action'  => $actionCode,
-                'chars'        => $chars,
-            ]);
-        } catch (\Throwable $e) {
-            $this->syncWallet();
-            $this->dispatch('alert', type: 'error', message: __('Not enough credits.'));
-            return;
-        }
-
         [$tool, $action] = $this->findToolAndAction();
         $jobId = (string) Str::uuid();
         $this->dismissedJobStatusFor = null;
@@ -907,6 +895,7 @@ class extends Component
             'job_kind'       => 'xomni',
             'status'         => 'queued',
             'provider'       => 'runpod',
+            'charge_reference' => "ml-job:{$jobId}:charge",
             'input' => [
                 'mode' => 'builtin_ref',
                 'text' => $text,
@@ -920,6 +909,27 @@ class extends Component
             'credits_charged' => $cost,
             'started_at' => now(),
         ]);
+
+        try {
+            $credits->charge((int) $c->id, $cost, 'xomni_charge', [
+                'reference_code' => "ml-job:{$jobId}:charge",
+                'related_type' => 'ml_job',
+                'related_id' => $jobId,
+                'ml_job_id' => $jobId,
+                'tool_action' => $actionCode,
+                'chars' => $chars,
+            ]);
+        } catch (\Throwable $e) {
+            MlJob::where('id', $jobId)->update([
+                'status' => 'failed',
+                'failure_stage' => 'credit_charge',
+                'error' => ['message' => $e->getMessage()],
+                'finished_at' => now(),
+            ]);
+            $this->syncWallet();
+            $this->dispatch('alert', type: 'error', message: __('Not enough credits.'));
+            return;
+        }
 
         $this->currentJobId = $jobId;
         $this->providerJobId = null;
@@ -979,18 +989,13 @@ class extends Component
         } catch (\Throwable $e) {
             $this->dispatch('header:refresh');
 
-            $credits->refund((int) $c->id, $cost, 'xomni_refund', [
-                'related_type' => 'ml_job',
-                'related_id'   => $jobId,
-                'tool_action'  => $actionCode,
-                'reason'       => 'provider_start_failed',
-            ]);
-
             MlJob::where('id', $jobId)->update([
                 'status' => 'failed',
+                'failure_stage' => 'provider_submission',
                 'error' => ['message' => $e->getMessage()],
                 'finished_at' => now(),
             ]);
+            $refunds->refundFailedJob($jobId, 'provider_start_failed');
             $this->currentStatus = 'failed';
             $this->jobFinished = true;
             $this->currentProgress = 100;

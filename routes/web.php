@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
+use App\Http\Controllers\App\V2StorageFileController;
 use App\Http\Controllers\App\Services\CaptionRenderController;
 use App\Http\Controllers\App\Services\CloneXomniRenderController;
 use App\Http\Controllers\App\Services\CloneXttsRenderController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\App\Services\StemRenderController;
 use App\Http\Controllers\App\Services\TranRenderController;
 use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XomniRenderController;
+use App\Http\Controllers\App\Services\XomniV2RenderController;
 use App\Http\Controllers\App\Services\XomniSpeakerAssetController;
 use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Controllers\App\Services\XttsSpeakerAssetController;
@@ -235,6 +237,14 @@ Route::prefix('{locale}')
             ->middleware('app.tool.access:xomni')
             ->name('app.renders.xomni.download');
 
+        Route::get('/app/renders/xomni-v2/{jobId}/stream', [XomniV2RenderController::class, 'stream'])
+            ->middleware('app.tool.access:xomni-v2')
+            ->name('app.renders.xomni-v2.stream');
+
+        Route::get('/app/renders/xomni-v2/{jobId}/download', [XomniV2RenderController::class, 'download'])
+            ->middleware('app.tool.access:xomni-v2')
+            ->name('app.renders.xomni-v2.download');
+
         Route::get('/app/renders/f5tts/{jobId}/stream', [F5ttsRenderController::class, 'stream'])
             ->middleware('app.tool.access:ftts')
             ->name('app.renders.f5tts.stream');
@@ -376,6 +386,27 @@ Route::prefix('{locale}')
             ->name('app.renders.youtube.download');
         // Route::get('/app/renders/wasr/{jobId}/json/view', [WasrRenderController::class, 'viewJson'])
         //     ->name('app.renders.wasr.json.view');
+    });
+
+/*
+|--------------------------------------------------------------------------
+| App V2 preview (isolated from the stable V1 route tree)
+|--------------------------------------------------------------------------
+*/
+Route::prefix('{locale}')
+    ->middleware(['auth:app', 'app.active', 'app.verified', 'app.v2.enabled', LocalizationMainMiddleware::class])
+    ->group(function () {
+        Route::livewire('/app-v2', 'app::v2.pages.home.app-home')->name('app.v2.home');
+        Route::livewire('/app-v2/storage', 'app::v2.pages.storage.app-storage')->name('app.v2.storage');
+        Route::get('/app-v2/storage/files/download', [V2StorageFileController::class, 'bulkDownload'])->name('app.v2.storage.bulk-download');
+        Route::get('/app-v2/storage/files/{file}/download', [V2StorageFileController::class, 'download'])->name('app.v2.storage.download');
+        Route::livewire('/app-v2/{service}', 'app::v2.pages.services.app-service')
+            ->whereIn('service', ['text-to-speech', 'clone-text-to-speech', 'speech-to-text', 'ocr', 'stem'])
+            ->name('app.v2.service');
+        Route::livewire('/app-v2/{service}/{tool}', 'app::v2.pages.tools.app-tool')
+            ->whereIn('service', ['text-to-speech', 'clone-text-to-speech', 'speech-to-text', 'ocr', 'stem'])
+            ->where('tool', '[a-z0-9-]+')
+            ->name('app.v2.tool');
     });
 /*
 |--------------------------------------------------------------------------

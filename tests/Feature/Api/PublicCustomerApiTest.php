@@ -878,6 +878,7 @@ it('invalidates api downloads when a my storage file is deleted', function () {
         'result_kind' => 'primary',
     ]);
 
+    config()->set('filesystems.customer_outputs.allow_destructive_operations', true);
     app(StorageFileDeletionService::class)->delete($file, 'customer_deleted');
 
     $this->withToken($key)
@@ -888,6 +889,7 @@ it('invalidates api downloads when a my storage file is deleted', function () {
 
 it('cleans up expired temporary api files and skips already deleted records', function () {
     Storage::fake('s3');
+    config()->set('filesystems.customer_outputs.allow_destructive_operations', true);
 
     $customer = publicApiCustomer('public-cleanup@example.com', 'public_cleanup_user');
     assignPublicPlan($customer, 'pro');
