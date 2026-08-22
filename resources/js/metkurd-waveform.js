@@ -66,6 +66,23 @@ const setPlayingState = (player, isPlaying) => {
     icon.className = isPlaying ? 'ri-pause-fill' : 'ri-play-fill';
 };
 
+const setLoadState = (player, state, message = '') => {
+    player.root.classList.remove('is-loading', 'is-ready', 'is-error');
+    player.root.classList.add(`is-${state}`);
+    const label = player.root.querySelector('[data-metkurd-waveform-state]');
+    if (label && message) label.textContent = message;
+};
+
+const paletteFor = (root) => {
+    const accent = String(root.dataset.accent || 'primary').trim();
+    const styles = window.getComputedStyle(root);
+    const serviceRgb = styles.getPropertyValue('--v2-accent-rgb').trim();
+    const rgb = (accent === 'success' ? serviceRgb : '') || styles.getPropertyValue(`--vz-${accent}-rgb`).trim()
+        || ({ danger: '239, 68, 68', success: '34, 197, 94', info: '56, 189, 248' }[accent] || '37, 99, 235');
+
+    return { wave: `rgba(${rgb}, .42)`, progress: `rgb(${rgb})`, cursor: `rgba(${rgb}, .68)` };
+};
+
 const mount = (scope = document) => {
     if (!window.WaveSurfer) return;
 
@@ -82,26 +99,30 @@ const mount = (scope = document) => {
         if (existing?.root === root && existing.canvas === canvas && existing.url === url) return;
         if (existing) destroy(jobId);
 
+        const colors = paletteFor(root);
         const waveSurfer = window.WaveSurfer.create({
             container: canvas,
             height: 42,
             normalize: true,
             responsive: true,
             backend: 'MediaElement',
-            waveColor: '#60a5fa',
-            progressColor: '#2563eb',
-            cursorColor: '#bfdbfe',
+            waveColor: colors.wave,
+            progressColor: colors.progress,
+            cursorColor: colors.cursor,
         });
         const player = { root, canvas, url, waveSurfer };
         players.set(jobId, player);
+        setLoadState(player, 'loading');
 
         waveSurfer.on('ready', () => {
             time.textContent = `00:00 / ${formatTime(waveSurfer.getDuration())}`;
+            setLoadState(player, 'ready');
         });
         waveSurfer.on('timeupdate', () => {
             time.textContent = `${formatTime(waveSurfer.getCurrentTime())} / ${formatTime(waveSurfer.getDuration())}`;
         });
         waveSurfer.on('play', () => {
+            window.MetKurdSpeakerPreview?.stop();
             players.forEach((other, otherJobId) => {
                 if (otherJobId !== jobId) other.waveSurfer.pause();
             });
@@ -115,6 +136,7 @@ const mount = (scope = document) => {
         waveSurfer.on('error', () => {
             time.textContent = '--:-- / --:--';
             setPlayingState(player, false);
+            setLoadState(player, 'error', 'Audio preview could not be loaded.');
         });
 
         toggle.addEventListener('click', () => waveSurfer.playPause());
@@ -127,13 +149,23 @@ const refresh = () => {
     mount();
 };
 
+const destroyCttsReferencePlayers = () => {
+    Array.from(players.keys())
+        .filter((jobId) => jobId.startsWith('ctts-reference-'))
+        .forEach(destroy);
+};
+
 window.MetKurdWaveform = {
     mount: refresh,
     destroyAll: () => Array.from(players.keys()).forEach(destroy),
+    destroy,
+    stopAll: () => players.forEach((player) => player.waveSurfer.pause()),
+    destroyCttsReferences: destroyCttsReferencePlayers,
 };
 
 window.MetKurdSpeakerPreview = {
     toggle(code, url) {
+        window.MetKurdWaveform?.stopAll();
         if (speakerPreviewCode === code && speakerPreview && !speakerPreview.paused) {
             speakerPreview.pause();
             speakerPreviewCode = null;
@@ -163,7 +195,7 @@ window.MetKurdSpeakerPreview = {
     },
 };
 
-document.addEventListener('metkurd:wavesurfer-ready', refresh);
+window.addEventListener('metkurd:wavesurfer-ready', refresh);
 document.addEventListener('livewire:navigated', refresh);
 document.addEventListener('livewire:navigating', () => {
     window.MetKurdWaveform.destroyAll();
@@ -179,6 +211,14 @@ document.addEventListener('livewire:init', () => {
 
     window.Livewire.hook('commit', ({ succeed }) => {
         succeed(() => requestAnimationFrame(refresh));
+    });
+
+    window.Livewire.on('ctts-reference-selected', () => {
+        destroyCttsReferencePlayers();
+        requestAnimationFrame(refresh);
+    });
+    window.Livewire.on('ctts-reference-audio-cleared', () => {
+        destroyCttsReferencePlayers();
     });
 });
 

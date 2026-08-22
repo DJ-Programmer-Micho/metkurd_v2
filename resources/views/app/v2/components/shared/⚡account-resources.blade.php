@@ -88,7 +88,7 @@ new class extends Component
 
     public function render()
     {
-        return view('app::v2.components.account-resources');
+        return view('app::v2.components.shared.account-resources');
     }
 };
 ?>

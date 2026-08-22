@@ -6,6 +6,8 @@ use App\Models\ApiResultFile;
 use App\Models\Customer;
 use App\Models\CustomerFile;
 use App\Models\CustomerUsage;
+use App\Services\MetKurd\V2\CttsWorkspaceCache;
+use App\Services\MetKurd\V2\LeoWorkspaceCache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -38,7 +40,7 @@ class StorageFileDeletionService
     {
         $this->assertDestructiveOperationsAllowed();
 
-        return DB::transaction(function () use ($file, $reason): array {
+        $result = DB::transaction(function () use ($file, $reason): array {
             /** @var CustomerFile $fresh */
             $fresh = CustomerFile::query()->lockForUpdate()->findOrFail($file->id);
             $deletedAt = now();
@@ -114,6 +116,11 @@ class StorageFileDeletionService
 
             return ['file' => $fresh, 'remote_missing' => ! $exists];
         }, 3);
+
+        $this->forgetCttsWorkspaceCache($result['file']);
+        $this->forgetLeoWorkspaceCache($result['file']);
+
+        return $result;
     }
 
     /**
@@ -157,5 +164,29 @@ class StorageFileDeletionService
         }
 
         return $outcome;
+    }
+
+    private function forgetCttsWorkspaceCache(CustomerFile $file): void
+    {
+        if (! in_array((string) $file->tool_code, ['clone_tts', 'clone_xomni', 'vector-v2'], true)) {
+            return;
+        }
+
+        $cache = app(CttsWorkspaceCache::class);
+        if ((string) $file->purpose === 'reference') {
+            $cache->forgetReferences((int) $file->customer_id);
+            return;
+        }
+
+        if ((string) $file->purpose === 'render') {
+            $cache->forgetRenders((int) $file->customer_id, (string) $file->tool_code);
+        }
+    }
+
+    private function forgetLeoWorkspaceCache(CustomerFile $file): void
+    {
+        if ((string) $file->tool_code === 'leo') {
+            app(LeoWorkspaceCache::class)->forgetTranscriptions((int) $file->customer_id);
+        }
     }
 }

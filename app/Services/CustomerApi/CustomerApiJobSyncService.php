@@ -151,7 +151,7 @@ class CustomerApiJobSyncService
         $toolCode = strtolower(trim((string) ($tool?->code ?? $mlJob->job_kind ?? '')));
 
         match ($toolCode) {
-            'tts', 'xomni', 'xomni-v2', 'ftts', 'clone_tts', 'clone_xomni' => $tool instanceof Tool ? $this->xtts->sync($mlJob, $tool) : null,
+            'tts', 'xomni', 'xomni-v2', 'ftts', 'clone_tts', 'clone_xomni', 'vector-v2' => $tool instanceof Tool ? $this->xtts->sync($mlJob, $tool) : null,
             'asr', 'wasr' => $tool instanceof Tool ? $this->asr->sync($mlJob, $tool) : null,
             'qasr', 'caption' => $tool instanceof Tool ? $this->qasr->sync($mlJob, $tool) : null,
             'ocr' => $this->ocr->sync($mlJob),

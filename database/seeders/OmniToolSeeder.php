@@ -28,6 +28,8 @@ class OmniToolSeeder extends Seeder
             // Keep references "used" for static analysis and future extension.
             $tools['xomni']->refresh();
             $tools['clone_xomni']->refresh();
+            $tools['vector-v2']->refresh();
+            $tools['leo']->refresh();
         });
     }
 
@@ -80,6 +82,27 @@ class OmniToolSeeder extends Seeder
                     'output_formats' => ['wav'],
                 ],
             ],
+            [
+                'code' => 'vector-v2',
+                'name' => 'Vector 2.0v',
+                'sort_order' => 14,
+                'meta' => [
+                    'category' => 'speech', 'storage_folder' => 'vector-v2',
+                    'runpod_endpoint_ref' => 'runpod.endpoints.omni',
+                    // The worker still receives the existing clone_xomni contract.
+                    'worker_type' => 'clone_xomni', 'default_language' => 'ckb',
+                    'languages' => ['ckb', 'en', 'ar'], 'output_formats' => ['wav'],
+                ],
+            ],
+            [
+                'code' => 'leo',
+                'name' => 'Leo',
+                'sort_order' => 15,
+                'meta' => [
+                    'category' => 'speech', 'storage_folder' => 'leo', 'runpod_endpoint_ref' => 'runpod.endpoints.qasr_v2',
+                    'worker_type' => 'asr', 'default_language' => 'ckb', 'languages' => ['ckb', 'en', 'ar'], 'output_formats' => ['txt'],
+                ],
+            ],
         ];
 
         $tools = [];
@@ -105,6 +128,10 @@ class OmniToolSeeder extends Seeder
     protected function seedActions(): array
     {
         $rows = [
+            [
+                'tool_code' => 'leo', 'action_code' => 'transcribe', 'name' => 'Leo Transcribe', 'default_metric_code' => 'minute',
+                'meta' => ['storage_folder' => 'leo', 'worker_type' => 'asr', 'endpoint_ref' => 'runpod.endpoints.qasr_v2', 'default_language' => 'ckb', 'payload_defaults' => ['type' => 'asr', 'model_variant' => 'fine_tuned', 'intelligent' => 0]],
+            ],
             [
                 'tool_code' => 'xomni',
                 'action_code' => 'generate',
@@ -161,6 +188,16 @@ class OmniToolSeeder extends Seeder
                         'ref_text' => '',
                         'ref_max_sec' => 20,
                     ],
+                ],
+            ],
+            [
+                'tool_code' => 'vector-v2', 'action_code' => 'generate',
+                'name' => 'Vector 2.0v Generate', 'default_metric_code' => 'character',
+                'meta' => [
+                    'storage_folder' => 'vector-v2', 'worker_type' => 'clone_xomni',
+                    'endpoint_ref' => 'runpod.endpoints.omni', 'default_language' => 'ckb',
+                    'languages' => ['ckb', 'en', 'ar'], 'output_formats' => ['wav'],
+                    'payload_defaults' => ['mode' => 'audio_url', 'output_format' => 'wav', 'return_base64' => true, 'ref_text' => '', 'ref_max_sec' => 20],
                 ],
             ],
         ];
@@ -222,6 +259,7 @@ class OmniToolSeeder extends Seeder
             'xomni.generate' => 1.0,
             'xomni-v2.generate' => 1.0,
             'clone_xomni.generate' => 1.2,
+            'vector-v2.generate' => 1.2,
         ];
 
         foreach ($pricing as $fullCode => $creditsPerUnit) {

@@ -22,11 +22,14 @@ class CustomerStorageLibrary
             'clone_xomni' => $model === 'model_2'
                 ? $this->definition('vector-2', 'clone-text-to-speech', 'Clone Text-to-Speech', 'Vector 2.0v', 'CTTS.png', 'rose')
                 : $this->definition('vector-1', 'clone-text-to-speech', 'Clone Text-to-Speech', 'Vector 1.5v', 'CTTS.png', 'rose'),
+            // Historical Vector 2 records used clone_xomni + model_2; new records are explicit.
+            'vector-v2' => $this->definition('vector-2', 'clone-text-to-speech', 'Clone Text-to-Speech', 'Vector 2.0v', 'CTTS.png', 'rose'),
             'tts' => $this->definition('apollo-legacy', 'text-to-speech', 'Text-to-Speech', 'Apollo 1.0v', 'TTS.png', 'blue'),
             'ftts' => $this->definition('delta', 'text-to-speech', 'Text-to-Speech', 'Delta', 'TTS.png', 'violet'),
             'clone_tts', 'clone-tts' => $this->definition('vector-legacy', 'clone-text-to-speech', 'Clone Text-to-Speech', 'Vector 1.0v', 'CTTS.png', 'rose'),
             'wasr', 'asr' => $this->definition('wasr', 'speech-to-text', 'Speech-to-Text', 'WASR NEO', 'ASR.png', 'emerald'),
             'qasr' => $this->definition('qasr', 'speech-to-text', 'Speech-to-Text', 'QASR LEO', 'ASR.png', 'emerald'),
+            'leo' => $this->definition('leo', 'speech-to-text', 'Speech-to-Text', 'Leo', 'ASR.png', 'emerald'),
             'caption' => $this->definition('caption', 'speech-to-text', 'Speech-to-Text', 'Caption', 'ASR.png', 'emerald'),
             'tran' => $this->definition('translation', 'speech-to-text', 'Speech-to-Text', 'MET Translation', 'ASR.png', 'emerald'),
             'ocr' => $this->definition('ocr', 'ocr', 'OCR', 'OCR Scanner', 'OCR.png', 'amber'),

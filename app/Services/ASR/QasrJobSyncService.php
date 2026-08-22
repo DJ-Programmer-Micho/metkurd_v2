@@ -7,7 +7,11 @@ use App\Models\Tool;
 use App\Services\Providers\RunPodProvider;
 use App\Services\Security\JobExecutionLockService;
 use App\Services\Storage\CustomerOutputStorage;
+use App\Services\MetKurd\V2\LeoWorkspaceCache;
+use App\Services\MetKurd\V2\CaptionWorkspaceCache;
+use App\Services\MetKurd\Jobs\MlJobRefundService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class QasrJobSyncService
 {
@@ -22,8 +26,12 @@ class QasrJobSyncService
             return $this->payload($job);
         }
 
+        $endpointRef = (string) data_get($tool->meta, 'runpod_endpoint_ref', '');
+        $jobEndpointKey = trim((string) $job->endpoint_key);
         $endpointId = (string) (
-            data_get($tool->meta, 'runpod_endpoint_id')
+            ($jobEndpointKey !== '' ? config("runpod.endpoints.{$jobEndpointKey}") : null)
+            ?: data_get($tool->meta, 'runpod_endpoint_id')
+            ?: ($endpointRef !== '' ? config($endpointRef) : null)
             ?: config('runpod.endpoints.qasr')
             ?: env('RUNPOD_ENDPOINT_ID_QASR')
         );
@@ -73,6 +81,11 @@ class QasrJobSyncService
                     ? 'RunPod completed but returned no transcription text.'
                     : 'RunPod ASR failed.'
             );
+
+            if ((string) $job->job_kind === 'leo') {
+                Log::warning('LEO_RUNPOD_TRANSCRIPTION_FAILED', ['job_id' => (string) $job->id, 'provider_message' => $message]);
+                $message = 'Transcription could not be completed. Please try again.';
+            }
 
             return $this->failJob($job, $message);
         }
@@ -191,6 +204,12 @@ class QasrJobSyncService
             $fresh->save();
 
             $this->locks->releaseLock((string) $fresh->id);
+            if ((string) $tool->code === 'leo') {
+                app(LeoWorkspaceCache::class)->forgetTranscriptions((int) $fresh->customer_id);
+            }
+            if ((string) $tool->code === 'caption') {
+                app(CaptionWorkspaceCache::class)->forgetCaptions((int) $fresh->customer_id);
+            }
 
             return $this->payload($fresh, 100);
         }, 3);
@@ -206,6 +225,14 @@ class QasrJobSyncService
         ]);
 
         $this->locks->releaseLock((string) $job->id);
+        if ((string) $job->job_kind === 'leo') {
+            app(LeoWorkspaceCache::class)->forgetTranscriptions((int) $job->customer_id);
+            app(MlJobRefundService::class)->refundFailedJob($job, 'provider_sync_failed');
+        }
+        if ((string) $job->job_kind === 'caption') {
+            app(CaptionWorkspaceCache::class)->forgetCaptions((int) $job->customer_id);
+            app(MlJobRefundService::class)->refundFailedJob($job, 'provider_sync_failed');
+        }
 
         $job->refresh();
 
@@ -294,7 +321,7 @@ class QasrJobSyncService
             return 'caption';
         }
 
-        return 'qasr';
+        return $toolCode === 'leo' ? 'leo' : 'qasr';
     }
 
     protected function extractOutputType(MlJob $job, Tool $tool, array $statusPayload): string

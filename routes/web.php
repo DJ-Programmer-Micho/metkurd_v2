@@ -5,6 +5,7 @@ use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
 use App\Http\Controllers\App\V2StorageFileController;
 use App\Http\Controllers\App\Services\CaptionRenderController;
+use App\Http\Controllers\App\Services\CttsReferenceStreamController;
 use App\Http\Controllers\App\Services\CloneXomniRenderController;
 use App\Http\Controllers\App\Services\CloneXttsRenderController;
 use App\Http\Controllers\App\Services\F5ttsRenderController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\App\Services\TranRenderController;
 use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XomniRenderController;
 use App\Http\Controllers\App\Services\XomniV2RenderController;
+use App\Http\Controllers\App\Services\VectorV2RenderController;
 use App\Http\Controllers\App\Services\XomniSpeakerAssetController;
 use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Controllers\App\Services\XttsSpeakerAssetController;
@@ -293,6 +295,18 @@ Route::prefix('{locale}')
             ->middleware('app.tool.access:clone_xomni')
             ->name('app.renders.clone_xomni.download');
 
+        Route::get('/app/renders/vector-v2/{jobId}/stream', [VectorV2RenderController::class, 'stream'])
+            ->middleware('app.tool.access:vector-v2')
+            ->name('app.renders.vector-v2.stream');
+
+        Route::get('/app/renders/vector-v2/{jobId}/download', [VectorV2RenderController::class, 'download'])
+            ->middleware('app.tool.access:vector-v2')
+            ->name('app.renders.vector-v2.download');
+
+        Route::get('/app/ctts/references/{file}/stream', CttsReferenceStreamController::class)
+            ->middleware('app.tool.access:any,clone_tts,clone_xomni,vector-v2')
+            ->name('app.ctts-references.stream');
+
         Route::get('/app/renders/wasr/{jobId}/txt', [WasrRenderController::class, 'downloadTxt'])
             ->middleware('app.tool.access:asr')
             ->name('app.renders.wasr.txt');
@@ -400,6 +414,13 @@ Route::prefix('{locale}')
         Route::livewire('/app-v2/storage', 'app::v2.pages.storage.app-storage')->name('app.v2.storage');
         Route::get('/app-v2/storage/files/download', [V2StorageFileController::class, 'bulkDownload'])->name('app.v2.storage.bulk-download');
         Route::get('/app-v2/storage/files/{file}/download', [V2StorageFileController::class, 'download'])->name('app.v2.storage.download');
+        Route::get('/app-v2/leo/renders/{jobId}/txt', [\App\Http\Controllers\App\Services\LeoRenderController::class, 'downloadTxt'])->middleware('app.tool.access:leo.transcribe')->name('app.v2.leo.txt');
+        Route::get('/app-v2/leo/renders/{jobId}/audio', [\App\Http\Controllers\App\Services\LeoRenderController::class, 'inputAudio'])->middleware('app.tool.access:leo.transcribe')->name('app.v2.leo.audio');
+        Route::livewire('/app-v2/speech-to-text/leo', 'app::v2.pages.tools.app-leo')->middleware('app.tool.access:leo.transcribe')->name('app.v2.leo');
+        Route::get('/app-v2/caption/renders/{jobId}/txt', [\App\Http\Controllers\App\Services\CaptionV2RenderController::class, 'downloadTxt'])->middleware('app.tool.access:caption.standard')->name('app.v2.caption.txt');
+        Route::get('/app-v2/caption/renders/{jobId}/srt', [\App\Http\Controllers\App\Services\CaptionV2RenderController::class, 'downloadSrt'])->middleware('app.tool.access:caption.standard')->name('app.v2.caption.srt');
+        Route::get('/app-v2/caption/renders/{jobId}/audio', [\App\Http\Controllers\App\Services\CaptionV2RenderController::class, 'inputAudio'])->middleware('app.tool.access:caption.standard')->name('app.v2.caption.audio');
+        Route::livewire('/app-v2/speech-to-text/caption', 'app::v2.pages.tools.app-caption')->middleware('app.tool.access:caption.standard')->name('app.v2.caption');
         Route::livewire('/app-v2/{service}', 'app::v2.pages.services.app-service')
             ->whereIn('service', ['text-to-speech', 'clone-text-to-speech', 'speech-to-text', 'ocr', 'stem'])
             ->name('app.v2.service');

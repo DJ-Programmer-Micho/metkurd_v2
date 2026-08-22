@@ -23,7 +23,11 @@ class JobExecutionLockService
             $now = now();
             $expiresAt = $now->copy()->addMinutes(30);
             $jobKind = strtolower(trim($jobKind)) ?: 'clone_tts';
-            $scopeLabel = $jobKind === 'clone_xomni' ? 'Vector 1.5v' : 'Clone XTTS';
+            $scopeLabel = match ($jobKind) {
+                'clone_xomni' => 'Vector 1.5v',
+                'vector-v2' => 'Vector 2.0v',
+                default => 'Clone XTTS',
+            };
 
             $sessionId = $this->resolveLockOwnerId($session, $customerId, $jobKind);
             $fingerprint = $this->makeFingerprint($customerId, $agent, $ip, $jobKind);

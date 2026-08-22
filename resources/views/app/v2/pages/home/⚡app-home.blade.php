@@ -24,7 +24,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     <div class="row g-4 v2-service-grid">
         @foreach ($services as $slug => $service)
             <div class="col-md-6 {{ $loop->iteration <= 2 ? 'col-xl-6' : 'col-xl-4' }}">
-                @include('app.v2.components.service-card', ['service' => $service, 'slug' => $slug])
+                @include('app.v2.components.shared.service-card', ['service' => $service, 'slug' => $slug])
             </div>
         @endforeach
     </div>

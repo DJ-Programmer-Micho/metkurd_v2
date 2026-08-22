@@ -16,6 +16,10 @@ return [
     'cache' => [
         // Voice artwork/reference metadata is shared per plan and locale; jobs remain canonical.
         'speaker_catalog_ttl_seconds' => (int) env('METKURD_V2_SPEAKER_CATALOG_TTL', 600),
+        'ctts_reference_ttl_seconds' => (int) env('METKURD_V2_CTTS_REFERENCE_TTL', 600),
+        'ctts_completed_render_ttl_seconds' => (int) env('METKURD_V2_CTTS_RENDER_TTL', 20),
+        'leo_completed_render_ttl_seconds' => (int) env('METKURD_V2_LEO_RENDER_TTL', 20),
+        'caption_completed_render_ttl_seconds' => (int) env('METKURD_V2_CAPTION_RENDER_TTL', 20),
     ],
 
     // Presentation only: MlJob remains the source of truth for these states.
@@ -95,14 +99,14 @@ return [
                 ],
                 'vector-2' => [
                     'name' => 'Vector 2.0v',
-                    'legacy_tool' => 'clone_xomni',
-                    'legacy_action' => 'clone_xomni.generate',
-                    'access' => 'clone_xomni.generate',
+                    'legacy_tool' => 'vector-v2',
+                    'legacy_action' => 'vector-v2.generate',
+                    'access' => 'vector-v2.generate',
                     'endpoint' => 'omni_v2',
                     'provider_model' => 'model_2',
                     'kind' => 'omni_clone',
                     'legacy_route' => 'app.clone-xomni',
-                    'legacy_workspace_name' => 'Vector 1.5v',
+                    'legacy_workspace_name' => 'Vector 2.0v',
                 ],
             ],
         ],
@@ -113,14 +117,14 @@ return [
             'color' => 'success',
             'tools' => [
                 'leo' => [
-                    'name' => 'Speech-to-Text',
-                    'legacy_tool' => 'qasr',
-                    'legacy_action' => 'qasr.standard',
-                    'access' => 'qasr.standard',
+                    'name' => 'Leo',
+                    'legacy_tool' => 'leo',
+                    'legacy_action' => 'leo.transcribe',
+                    'access' => 'leo.transcribe',
                     'endpoint' => 'qasr_v2',
                     'kind' => 'qasr',
                     'legacy_route' => 'app.qasr',
-                    'legacy_workspace_name' => 'LEO',
+                    'legacy_workspace_name' => 'Leo',
                 ],
                 'caption' => [
                     'name' => 'Caption',

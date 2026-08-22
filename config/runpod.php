@@ -1,5 +1,25 @@
 <?php
 
+$configuredInputHosts = explode(',', (string) env('RUNPOD_V2_INPUT_HOSTS', ''));
+$configuredStorageOrigins = [env('AWS_URL'), env('AWS_ENDPOINT')];
+
+foreach ($configuredStorageOrigins as $origin) {
+    $host = strtolower((string) data_get(parse_url((string) $origin), 'host', ''));
+    if ($host !== '') {
+        $configuredInputHosts[] = $host;
+    }
+}
+
+// Standard AWS S3 does not require AWS_URL or AWS_ENDPOINT. In that case the
+// signed URL host is deterministic from the application's own bucket/region.
+$bucket = trim((string) env('AWS_BUCKET', ''));
+$region = trim((string) env('AWS_DEFAULT_REGION', 'us-east-1')) ?: 'us-east-1';
+if ($bucket !== '' && ! env('AWS_ENDPOINT')) {
+    $s3Host = $region === 'us-east-1' ? 's3.amazonaws.com' : "s3.{$region}.amazonaws.com";
+    $configuredInputHosts[] = $s3Host;
+    $configuredInputHosts[] = "{$bucket}.{$s3Host}";
+}
+
 return [
     'base_url' => env('RUNPOD_BASE_URL', 'https://api.runpod.ai'),
     'api_key' => env('RUNPOD_API_KEY'),
@@ -24,8 +44,10 @@ return [
 
     'timeout' => (int) env('RUNPOD_TIMEOUT', 60),
     'v2_timeout' => (int) env('RUNPOD_V2_TIMEOUT', env('RUNPOD_TIMEOUT', 60)),
-    'v2_input_hosts' => array_values(array_filter(array_map(
+    // CTTS references are signed private S3 URLs. Explicit hosts remain
+    // supported, while the configured application S3 origin is trusted too.
+    'v2_input_hosts' => array_values(array_unique(array_filter(array_map(
         static fn (string $host): string => strtolower(trim($host)),
-        explode(',', (string) env('RUNPOD_V2_INPUT_HOSTS', ''))
-    ))),
+        $configuredInputHosts
+    )))),
 ];

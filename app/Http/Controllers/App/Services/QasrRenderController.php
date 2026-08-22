@@ -14,7 +14,7 @@ class QasrRenderController extends Controller
     protected function jobOrFail(string $jobId): MlJob
     {
         $toolIds = Tool::query()
-            ->whereIn('code', ['qasr'])
+            ->whereIn('code', $this->toolCodes())
             ->pluck('id')
             ->all();
 
@@ -32,6 +32,12 @@ class QasrRenderController extends Controller
         $this->abortUnlessCustomerCanAccessJob($job);
 
         return $job;
+    }
+
+    /** @return array<int,string> */
+    protected function toolCodes(): array
+    {
+        return ['qasr'];
     }
 
     public function downloadTxt(string $locale, string $jobId)

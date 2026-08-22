@@ -1,10 +1,10 @@
-@props(['renders' => [], 'locale' => 'en'])
+@props(['renders' => [], 'locale' => 'en', 'subtitle' => null, 'accent' => 'primary', 'keyPrefix' => 'v2-render'])
 
-<aside class="v2-workspace-panel v2-renders-panel">
-    <div class="v2-panel-heading"><span>{{ __('Recent Renders') }}</span><small>{{ __('Your Apollo history') }}</small></div>
+<aside class="v2-workspace-panel v2-renders-panel v2-renders-panel--{{ $accent }}">
+    <div class="v2-panel-heading"><span>{{ __('Recent Renders') }}</span><small>{{ $subtitle ?? __('Your audio history') }}</small></div>
     <div class="v2-render-list">
         @forelse($renders as $render)
-            <article class="v2-render-item is-{{ $render['status_semantic'] }}" wire:key="v2-render-{{ $render['id'] }}">
+            <article class="v2-render-item is-{{ $render['status_semantic'] }}" wire:key="{{ $keyPrefix }}-{{ $render['id'] }}">
                 <div class="d-flex justify-content-between gap-2"><strong>{{ $render['label'] }}</strong><span class="v2-render-status is-{{ $render['status_semantic'] }}">{{ $render['status_label'] }}</span></div>
                 <p>{{ $render['text'] }}</p>
                 <small class="v2-muted">{{ $render['speaker'] }} · {{ $render['when'] }}</small>
@@ -17,7 +17,7 @@
                     <small class="v2-render-outcome">{{ __('This file is no longer available in storage.') }}</small>
                 @endif
                 @if($render['stream_url'])
-                    <div class="v2-render-player" wire:ignore data-metkurd-waveform data-job="{{ $render['id'] }}" data-url="{{ $render['stream_url'] }}">
+                    <div class="v2-render-player" wire:ignore data-metkurd-waveform data-accent="{{ $accent }}" data-job="{{ $render['id'] }}" data-url="{{ $render['stream_url'] }}">
                         <div class="v2-render-player-controls">
                             <button type="button" class="v2-waveform-toggle" data-metkurd-waveform-toggle aria-label="{{ __('Play or pause audio') }}">
                                 <i class="ri-play-fill" data-metkurd-waveform-icon></i>

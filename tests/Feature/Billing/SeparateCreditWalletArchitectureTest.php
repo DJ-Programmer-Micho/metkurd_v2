@@ -332,7 +332,7 @@ it('renders the V2 resource meter from the canonical shell data without clipping
     );
 
     Livewire::actingAs($customer->fresh(), 'app')
-        ->test('app::v2.components.account-resources')
+        ->test('app::v2.components.shared.account-resources')
         ->assertSee('Credits & Resources')
         ->assertSee('<details', false)
         ->assertSee('App Credits')

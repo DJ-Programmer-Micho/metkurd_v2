@@ -23,6 +23,21 @@ class RunPodV2Adapter
     {
         $definition = $this->toolForKind($service, $tool, ['omni_tts', 'omni_clone']);
 
+        if (($definition['kind'] ?? null) === 'omni_clone') {
+            return $this->run($definition, [
+                'mode' => 'audio_url',
+                'text' => $this->requiredString($options, 'text'),
+                'audio_url' => $this->requiredTrustedUrl($options, 'audio_url'),
+                'ref_text' => $this->stringOption($options, 'ref_text'),
+                'language' => $this->stringOption($options, 'language', 'ckb'),
+                'text_language' => $this->stringOption($options, 'text_language', 'ckb'),
+                'output_format' => $this->stringOption($options, 'output_format', 'wav'),
+                'return_base64' => true,
+                'ref_max_sec' => max(1, min(20, (int) ($options['ref_max_sec'] ?? 20))),
+                'model' => (string) $definition['provider_model'],
+            ]);
+        }
+
         return $this->run($definition, [
             'mode' => $this->stringOption($options, 'mode', 'builtin_ref'),
             'text' => $this->requiredString($options, 'text'),
@@ -41,13 +56,28 @@ class RunPodV2Adapter
     {
         $definition = $this->toolForKind($service, $tool, ['qasr', 'caption']);
 
-        return $this->run($definition, [
+        $input = [
             'audio_url' => $this->requiredTrustedUrl($options, 'audio_url'),
             'model_variant' => $this->stringOption($options, 'model_variant', 'fine_tuned'),
             'language' => $this->stringOption($options, 'language', 'ckb'),
             'type' => $definition['kind'] === 'caption' ? 'caption' : 'asr',
             'intelligent' => $this->booleanOption($options, 'intelligent') ? 1 : 0,
-        ]);
+        ];
+
+        // Caption deliberately retains the established V1 worker contract.
+        // Its MetKurd tool identity is separate from the worker's `type`.
+        if (($definition['kind'] ?? null) === 'caption') {
+            $input = array_merge($input, [
+                'output_format' => $this->stringOption($options, 'output_format', 'srt'),
+                'return_srt' => $this->booleanOption($options, 'return_srt', true),
+                'return_segments' => $this->booleanOption($options, 'return_segments', true),
+                'max_words_per_caption' => max(1, min(20, (int) ($options['max_words_per_caption'] ?? 8))),
+                'max_caption_seconds' => max(1, min(20, (int) ($options['max_caption_seconds'] ?? 6))),
+                'min_caption_seconds' => max(1, min(10, (int) ($options['min_caption_seconds'] ?? 1))),
+            ]);
+        }
+
+        return $this->run($definition, $input);
     }
 
     /** @param array<string, mixed> $options */
@@ -144,9 +174,9 @@ class RunPodV2Adapter
     }
 
     /** @param array<string, mixed> $options */
-    private function booleanOption(array $options, string $key): bool
+    private function booleanOption(array $options, string $key, bool $default = false): bool
     {
-        return filter_var($options[$key] ?? false, FILTER_VALIDATE_BOOLEAN);
+        return filter_var($options[$key] ?? $default, FILTER_VALIDATE_BOOLEAN);
     }
 
     /** @param array<string, mixed> $options */

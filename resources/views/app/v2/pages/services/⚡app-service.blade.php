@@ -22,7 +22,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     <div class="text-center mb-5"><img class="v2-service-icon mb-3" src="{{ asset($serviceDefinition['icon_asset']) }}" alt=""><h1 class="display-6 fw-semibold mb-2">{{ __($serviceDefinition['name']) }}</h1><p class="v2-muted mb-0">{{ __('Select a workspace to continue.') }}</p></div>
     <div class="v2-tool-list d-grid gap-3">
         @foreach ($serviceDefinition['tools'] as $toolSlug => $tool)
-            @include('app.v2.components.tool-card', ['service' => $serviceDefinition, 'serviceSlug' => $serviceSlug, 'tool' => $tool, 'toolSlug' => $toolSlug, 'loopIndex' => $loop->iteration])
+            @include('app.v2.components.shared.tool-card', ['service' => $serviceDefinition, 'serviceSlug' => $serviceSlug, 'tool' => $tool, 'toolSlug' => $toolSlug, 'loopIndex' => $loop->iteration])
         @endforeach
     </div>
 </section>

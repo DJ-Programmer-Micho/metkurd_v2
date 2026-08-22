@@ -7,6 +7,7 @@ use App\Models\Tool;
 use App\Services\Providers\RunPodProvider;
 use App\Services\Security\JobExecutionLockService;
 use App\Services\Storage\CustomerOutputStorage;
+use App\Services\MetKurd\V2\CttsWorkspaceCache;
 use Illuminate\Support\Facades\DB;
 
 class XttsJobSyncService
@@ -14,6 +15,7 @@ class XttsJobSyncService
     public function __construct(
         protected CustomerOutputStorage $storage,
         protected JobExecutionLockService $locks,
+        protected CttsWorkspaceCache $workspaceCache,
     ) {}
 
     public function sync(MlJob $job, Tool $tool): array
@@ -30,12 +32,12 @@ class XttsJobSyncService
         );
 
         if ($endpointId === '') {
-            return $this->failJob($job, 'Missing RunPod endpoint id.');
+            return $this->failJob($job, 'Missing RunPod endpoint id.', $toolCode);
         }
 
         $providerJobId = (string) $job->provider_job_id;
         if ($providerJobId === '') {
-            return $this->failJob($job, 'Missing provider job id.');
+            return $this->failJob($job, 'Missing provider job id.', $toolCode);
         }
 
         /** @var RunPodProvider $runpod */
@@ -56,7 +58,7 @@ class XttsJobSyncService
             default => 'running',
         };
 
-        if (in_array($toolCode, ['clone_tts', 'clone_xomni'], true)) {
+        if (in_array($toolCode, ['clone_tts', 'clone_xomni', 'vector-v2'], true)) {
             $this->locks->refreshLock((string) $job->id);
         }
 
@@ -66,12 +68,12 @@ class XttsJobSyncService
                 $toolCode
             );
 
-            return $this->failJob($job, $err);
+            return $this->failJob($job, $err, $toolCode);
         }
 
         if (
             $rawStatus === 'COMPLETED'
-            && in_array($toolCode, ['ftts', 'xomni', 'xomni-v2', 'clone_xomni'], true)
+            && in_array($toolCode, ['ftts', 'xomni', 'xomni-v2', 'clone_xomni', 'vector-v2'], true)
             && $wavB64 === ''
         ) {
             return $this->failJob($job, $this->normalizeProviderFailureMessage(
@@ -79,7 +81,7 @@ class XttsJobSyncService
                     ? 'F5TTS completed without output.wav_b64.'
                     : 'Omni generation completed without output.audio_base64.',
                 $toolCode
-            ));
+            ), $toolCode);
         }
 
         if ($wavB64 !== '') {
@@ -124,7 +126,7 @@ class XttsJobSyncService
             }
 
             $outputFilename = $providerOutputFilename;
-            if (in_array((string) $tool->code, ['xomni', 'xomni-v2', 'clone_xomni'], true)) {
+            if (in_array((string) $tool->code, ['xomni', 'xomni-v2', 'clone_xomni', 'vector-v2'], true)) {
                 $outputFilename = $this->normalizeOmniOutputFilename(
                     toolCode: (string) $tool->code,
                     workerFilename: $providerOutputFilename,
@@ -175,7 +177,9 @@ class XttsJobSyncService
             $fresh->error = null;
             $fresh->save();
 
-            if (in_array((string) $tool->code, ['clone_tts', 'clone_xomni'], true)) {
+            $this->forgetCttsRenderCache($fresh, (string) $tool->code);
+
+            if (in_array((string) $tool->code, ['clone_tts', 'clone_xomni', 'vector-v2'], true)) {
                 $this->locks->releaseLock((string) $fresh->id);
             }
 
@@ -183,7 +187,7 @@ class XttsJobSyncService
         }, 3);
     }
 
-    protected function failJob(MlJob $job, string $message): array
+    protected function failJob(MlJob $job, string $message, string $toolCode = ''): array
     {
         MlJob::query()->where('id', $job->id)->update([
             'status' => 'failed',
@@ -192,13 +196,15 @@ class XttsJobSyncService
         ]);
 
         if (
-            in_array((string) data_get($job, 'tool.code'), ['clone_tts', 'clone_xomni'], true)
-            || in_array((string) $job->job_kind, ['clone_tts', 'clone_xomni'], true)
+            in_array((string) data_get($job, 'tool.code'), ['clone_tts', 'clone_xomni', 'vector-v2'], true)
+            || in_array((string) $job->job_kind, ['clone_tts', 'clone_xomni', 'vector-v2'], true)
         ) {
             $this->locks->releaseLock((string) $job->id);
         }
 
         $job->refresh();
+
+        $this->forgetCttsRenderCache($job, $toolCode ?: (string) data_get($job, 'tool.code'));
 
         return $this->payload($job, 100);
     }
@@ -227,7 +233,7 @@ class XttsJobSyncService
                 $this->storage->deleteFromS3AndUncount($customerId, $outPath, $outBytes);
             }
 
-            if (in_array((string) $job->tool?->code, ['clone_tts', 'clone_xomni'], true)) {
+            if (in_array((string) $job->tool?->code, ['clone_tts', 'clone_xomni', 'vector-v2'], true) && ! data_get($job->input, 'reference_is_reusable')) {
                 $refPath = (string) data_get($job->input, 'reference_audio_path', '');
                 $refBytes = (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'reference_audio_bytes', 0));
 
@@ -243,6 +249,7 @@ class XttsJobSyncService
             ]);
 
             $this->locks->releaseLock((string) $job->id);
+            $this->forgetCttsRenderCache($job, (string) $job->tool?->code);
         } catch (\Throwable $e) {
             MlJob::query()->where('id', $job->id)->update([
                 'status' => 'delete_failed',
@@ -274,11 +281,18 @@ class XttsJobSyncService
         ];
     }
 
+    private function forgetCttsRenderCache(MlJob $job, string $toolCode): void
+    {
+        if (in_array($toolCode, ['clone_tts', 'clone_xomni', 'vector-v2'], true)) {
+            $this->workspaceCache->forgetRenders((int) $job->customer_id, $toolCode);
+        }
+    }
+
     protected function fallbackEndpointForTool(string $toolCode): string
     {
         return match ($toolCode) {
             'ftts' => (string) (config('runpod.endpoints.ftts') ?: env('RUNPOD_ENDPOINT_ID_FTTS')),
-            'xomni', 'xomni-v2', 'clone_xomni' => (string) (config('runpod.endpoints.omni') ?: env('RUNPOD_ENDPOINT_ID_OMNI')),
+            'xomni', 'xomni-v2', 'clone_xomni', 'vector-v2' => (string) (config('runpod.endpoints.omni') ?: env('RUNPOD_ENDPOINT_ID_OMNI')),
             default => (string) (config('runpod.endpoints.xtts') ?: env('RUNPOD_ENDPOINT_ID_XTTS')),
         };
     }
@@ -290,6 +304,7 @@ class XttsJobSyncService
             'xomni' => 'xomni',
             'xomni-v2' => 'xomni-v2',
             'clone_xomni' => 'clone_xomni',
+            'vector-v2' => 'vector-v2',
             'ftts' => 'ftts',
             default => 'tts',
         };
@@ -301,6 +316,7 @@ class XttsJobSyncService
             'xomni' => 'xomni',
             'xomni-v2' => 'xomni-v2',
             'clone_xomni' => 'clone_xomni',
+            'vector-v2' => 'vector-v2',
             default => 'audio',
         };
 
@@ -395,6 +411,7 @@ class XttsJobSyncService
             'xomni' => 'The Apollo 1.5v generation failed. Please try again.',
             'xomni-v2' => 'The Apollo 2.0v generation failed. Please try again.',
             'clone_xomni' => 'The Vector 1.5v generation failed. Please try again.',
+            'vector-v2' => 'The Vector 2.0v generation failed. Please try again.',
             'ftts' => 'The F5TTS generation failed. Please try again.',
             default => 'The audio generation failed. Please try again.',
         };
