@@ -102,6 +102,18 @@ class OcrRenderController extends Controller
         ]);
     }
 
+    public function downloadArtifact(string $locale, string $jobId, string $format)
+    {
+        abort_unless(in_array($format, ['docx', 'markdown', 'html', 'zip'], true), 404);
+        $job = $this->jobOrFail($jobId);
+        $disk = (string) data_get($job->output, 'disk', 's3');
+        $path = (string) data_get($job->output, "artifacts.{$format}.path", '');
+        abort_if($path === '' || ! Storage::disk($disk)->exists($path), 404, 'OCR output not found.');
+        $mime = (string) data_get($job->output, "artifacts.{$format}.mime", 'application/octet-stream');
+
+        return Storage::disk($disk)->download($path, basename($path) ?: "ocr.{$format}", ['Content-Type' => $mime]);
+    }
+
     public function viewJson(Request $request, string $locale, string $jobId)
     {
         $job = $this->jobOrFail($jobId);

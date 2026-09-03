@@ -30,6 +30,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     public array $serviceDefinition = [];
     public array $toolDefinition = [];
     public string $processingMode = 'standard';
+    public bool $runLlmCorrector = false;
     public string $text = '';
     public string $speakerId = '';
     public string $language = 'ckb';
@@ -58,6 +59,13 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         $this->serviceDefinition = $catalog->service($service);
         $this->toolDefinition = $definition;
         $this->submissionKey = (string) Str::uuid();
+
+        // OCR's correction stage is a product-facing choice. Keep it
+        // separate from the legacy processing-mode placeholder so a future
+        // OCR submission service can pass the worker option directly.
+        if (($definition['kind'] ?? null) === 'kocr') {
+            $this->runLlmCorrector = true;
+        }
 
         if (in_array($definition['kind'] ?? null, ['omni_tts', 'omni_clone'], true)) {
             $customer = auth('app')->user();
@@ -445,7 +453,14 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             @include('app.v2.components.shared.recent-renders', ['renders' => $this->recentRenders, 'locale' => app()->getLocale(), 'subtitle' => __('Your CTTS history'), 'accent' => 'danger', 'keyPrefix' => 'v2-ctts-render'])
         </div>
     @else
-        @if (in_array($toolDefinition['kind'] ?? '', ['qasr', 'caption', 'kocr'], true))<div class="glass-load glass-load--info p-4 mb-4"><h2 class="h5">{{ __('Processing mode') }}</h2><div class="btn-group"><button wire:click="$set('processingMode', 'standard')" class="btn {{ $processingMode === 'standard' ? 'btn-primary' : 'btn-outline-secondary' }}">{{ __('Standard') }}</button><button wire:click="$set('processingMode', 'intelligent')" class="btn {{ $processingMode === 'intelligent' ? 'btn-primary' : 'btn-outline-secondary' }}">{{ __('Intelligent') }}</button></div></div>@endif
+        @if (($toolDefinition['kind'] ?? '') === 'kocr')
+            <label class="v2-asr-intelligent v2-ocr-intelligent mb-4">
+                <span><strong>{{ __('Intelligent Correction') }} <em>{{ __('Beta') }}</em></strong><small>{{ __('Improves extracted text with AI post-processing.') }}</small></span>
+                <span class="v2-asr-switch"><input type="checkbox" wire:model="runLlmCorrector" role="switch" aria-label="{{ __('Enable Intelligent Correction') }}"><i aria-hidden="true"></i></span>
+            </label>
+        @elseif (in_array($toolDefinition['kind'] ?? '', ['qasr', 'caption'], true))
+            <div class="glass-load glass-load--info p-4 mb-4"><h2 class="h5">{{ __('Processing mode') }}</h2><div class="btn-group"><button wire:click="$set('processingMode', 'standard')" class="btn {{ $processingMode === 'standard' ? 'btn-primary' : 'btn-outline-secondary' }}">{{ __('Standard') }}</button><button wire:click="$set('processingMode', 'intelligent')" class="btn {{ $processingMode === 'intelligent' ? 'btn-primary' : 'btn-outline-secondary' }}">{{ __('Intelligent') }}</button></div></div>
+        @endif
         @include('app.v2.components.shared.legacy-workspace', ['tool' => $toolDefinition])
     @endif
 </section>
@@ -453,6 +468,26 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 @if (in_array(($toolDefinition['kind'] ?? null), ['omni_tts', 'omni_clone'], true))
     @push('scripts')
         <script data-navigate-once src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js" onload="window.dispatchEvent(new CustomEvent('metkurd:wavesurfer-ready'))"></script>
+    @endpush
+@endif
+
+@if (($toolDefinition['kind'] ?? null) === 'kocr')
+    @push('styles')
+        <style>
+            .metkurd-v2 .v2-asr-intelligent { display:flex; justify-content:space-between; gap:1rem; align-items:center; padding:.75rem; border:1px solid rgba(var(--v2-accent-rgb),.18); border-radius:.75rem; cursor:pointer; }
+            .metkurd-v2 .v2-asr-intelligent>span:first-child { display:grid; gap:.14rem; }
+            .metkurd-v2 .v2-asr-intelligent small { color:rgba(226,232,240,.55); font-size:.7rem; }
+            .metkurd-v2 .v2-asr-intelligent em { padding:.12rem .34rem; border-radius:999px; background:rgba(245,158,11,.16); color:#fde68a; font-size:.6rem; font-style:normal; text-transform:uppercase; }
+            .metkurd-v2 .v2-ocr-intelligent { min-height:4.35rem; border-color:rgba(var(--v2-accent-rgb),.32); background:linear-gradient(135deg,rgba(var(--v2-accent-rgb),.1),rgba(2,6,23,.36)); transition:border-color .16s ease,box-shadow .16s ease; }
+            .metkurd-v2 .v2-ocr-intelligent:has(input:checked) { border-color:rgba(var(--v2-accent-rgb),.82); box-shadow:0 0 0 1px rgba(var(--v2-accent-rgb),.14),0 8px 18px rgba(var(--v2-accent-rgb),.08); }
+            .metkurd-v2 .v2-asr-switch { position:relative; display:block; flex:0 0 2.65rem; width:2.65rem; height:1.45rem; }
+            .metkurd-v2 .v2-asr-switch input { position:absolute; inset:0; z-index:1; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; }
+            .metkurd-v2 .v2-asr-switch i { position:absolute; inset:0; border:1px solid rgba(148,163,184,.45); border-radius:999px; background:rgba(15,23,42,.9); transition:border-color .16s ease,background .16s ease; }
+            .metkurd-v2 .v2-asr-switch i::after { position:absolute; top:3px; left:3px; width:calc(1.45rem - 8px); height:calc(1.45rem - 8px); border-radius:50%; background:#94a3b8; box-shadow:0 1px 5px rgba(0,0,0,.4); content:""; transition:transform .16s ease,background .16s ease; }
+            .metkurd-v2 .v2-asr-switch input:checked + i { border-color:rgba(var(--v2-accent-rgb),.9); background:rgba(var(--v2-accent-rgb),.7); }
+            .metkurd-v2 .v2-asr-switch input:checked + i::after { transform:translateX(1.18rem); background:#f0fdf4; }
+            .metkurd-v2 .v2-asr-switch input:focus-visible + i { outline:2px solid var(--v2-accent-text); outline-offset:3px; }
+        </style>
     @endpush
 @endif
 

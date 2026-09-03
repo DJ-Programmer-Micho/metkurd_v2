@@ -421,6 +421,19 @@ Route::prefix('{locale}')
         Route::get('/app-v2/caption/renders/{jobId}/srt', [\App\Http\Controllers\App\Services\CaptionV2RenderController::class, 'downloadSrt'])->middleware('app.tool.access:caption.standard')->name('app.v2.caption.srt');
         Route::get('/app-v2/caption/renders/{jobId}/audio', [\App\Http\Controllers\App\Services\CaptionV2RenderController::class, 'inputAudio'])->middleware('app.tool.access:caption.standard')->name('app.v2.caption.audio');
         Route::livewire('/app-v2/speech-to-text/caption', 'app::v2.pages.tools.app-caption')->middleware('app.tool.access:caption.standard')->name('app.v2.caption');
+        Route::livewire('/app-v2/ocr/scanner', 'app::v2.pages.tools.app-ocr')->middleware('app.tool.access:ocr.standard')->name('app.v2.ocr');
+        Route::get('/app-v2/ocr/renders/{jobId}/{format}', [OcrRenderController::class, 'downloadArtifact'])
+            ->whereIn('format', ['docx', 'markdown', 'html', 'zip'])
+            ->middleware('app.tool.access:ocr.standard')->name('app.v2.ocr.artifact');
+        Route::get('/app-v2/stem/renders/{jobId}/stream/{track}', [StemRenderController::class, 'stream'])
+            ->middleware('app.tool.access:stem')->name('app.v2.stem.stream');
+        Route::get('/app-v2/stem/renders/{jobId}/download/{track}', [StemRenderController::class, 'download'])
+            ->middleware('app.tool.access:stem')->name('app.v2.stem.download');
+        Route::get('/app-v2/stem/renders/{jobId}/zip', [StemRenderController::class, 'zip'])
+            ->middleware('app.tool.access:stem')->name('app.v2.stem.zip');
+        Route::livewire('/app-v2/stem/{mode}-stem', 'app::v2.pages.tools.app-stem')
+            ->whereIn('mode', ['2', '4'])
+            ->middleware('app.tool.access:stem')->name('app.v2.stem');
         Route::livewire('/app-v2/{service}', 'app::v2.pages.services.app-service')
             ->whereIn('service', ['text-to-speech', 'clone-text-to-speech', 'speech-to-text', 'ocr', 'stem'])
             ->name('app.v2.service');

@@ -19,6 +19,23 @@ class RunPodProvider
             ->json();
     }
 
+    /** Submit a RunPod job that requires root-level serverless policy values. */
+    public function runWithPolicy(string $endpointId, array $input, array $policy, ?int $timeout = null): array
+    {
+        $base = rtrim(config('runpod.base_url'), '/');
+        $key = config('runpod.api_key');
+        $timeout = $timeout ?? (int) config('runpod.timeout', 60);
+
+        return Http::withToken($key)
+            ->timeout($timeout)
+            ->post("{$base}/v2/{$endpointId}/run", [
+                'input' => $input,
+                'policy' => $policy,
+            ])
+            ->throw()
+            ->json();
+    }
+
     public function status(string $endpointId, string $jobId, ?int $timeout = null): array
     {
         $base = rtrim(config('runpod.base_url'), '/');

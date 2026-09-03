@@ -8,6 +8,7 @@ use App\Services\Security\JobExecutionLockService;
 use App\Services\Storage\CustomerOutputStorage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class OcrJobSyncService
 {
@@ -15,6 +16,7 @@ class OcrJobSyncService
         protected RunPodProvider $runpod,
         protected CustomerOutputStorage $storage,
         protected JobExecutionLockService $locks,
+        protected OcrV2ArtifactService $v2Artifacts,
     ) {}
 
     public function buildRunpodInput(
@@ -74,7 +76,8 @@ class OcrJobSyncService
             return $this->payloadFromJob($job);
         }
 
-        $endpointId = (string) (config('runpod.endpoints.kocr') ?: env('RUNPOD_ENDPOINT_ID_KOCR'));
+        $endpointKey = data_get($job->input, 'v2') ? 'kocr_v2' : 'kocr';
+        $endpointId = trim((string) config("runpod.endpoints.{$endpointKey}"));
         if ($endpointId === '') {
             return $this->failJob($job, 'Missing RunPod OCR endpoint id.');
         }
@@ -148,8 +151,30 @@ class OcrJobSyncService
             $disk = $this->storage->ocrDisk();
             $paths = $this->storage->ocrPaths($fresh);
 
+            $isV2 = (bool) data_get($fresh->input, 'v2');
             $textPath = (string) (data_get($response, 'output.uploaded_keys.text') ?: $paths['text']);
             $jsonPath = (string) (data_get($response, 'output.uploaded_keys.json') ?: $paths['json']);
+            $workerOutput = (array) data_get($response, 'output.output', []);
+            $layoutJson = $isV2 ? $this->v2LayoutJson($workerOutput['json'] ?? null) : null;
+
+            // Both supported V2 worker revisions return final text inline. The
+            // upgraded layout worker returns it as page Markdown inside JSON.
+            $inlineText = $isV2 ? (string) (data_get($response, 'output.text_corrected')
+                ?: data_get($response, 'output.corrected_text')
+                ?: data_get($response, 'output.text')
+                ?: data_get($response, 'output.result.text')
+                ?: data_get($response, 'output.text_raw')
+                ?: $this->v2LayoutText($layoutJson)
+                ?: $this->v2HtmlText($workerOutput['html'] ?? null)
+                ?: '') : '';
+            if ($isV2 && ! Storage::disk($disk)->exists($textPath)) {
+                if ($inlineText !== '') {
+                    Storage::disk($disk)->put($textPath, $inlineText, ['ContentType' => 'text/plain; charset=UTF-8']);
+                }
+            }
+            if ($isV2 && $layoutJson !== null && ! Storage::disk($disk)->exists($jsonPath)) {
+                Storage::disk($disk)->put($jsonPath, $layoutJson, ['ContentType' => 'application/json']);
+            }
 
             $textObject = $this->storage->registerExistingObject((int) $fresh->customer_id, $disk, $textPath, array_merge(
                 $this->storage->apiOutputMeta($fresh, 'ocr', 'render', 'text'),
@@ -165,19 +190,54 @@ class OcrJobSyncService
                 ['mime' => 'application/json']
             ));
 
+            $artifacts = $isV2
+                ? $this->v2Artifacts->persistWorkerArtifacts($fresh, $disk, $workerOutput)
+                : [];
+            $basePath = trim(str_replace('\\', '/', dirname((string) data_get($fresh->input, 'file_path', ''))), '/');
+            foreach (['docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'markdown' => 'text/markdown; charset=UTF-8', 'html' => 'text/html; charset=UTF-8', 'zip' => 'application/zip'] as $format => $mime) {
+                if (! data_get($fresh->input, "exports.export_{$format}")) {
+                    continue;
+                }
+                $path = (string) (data_get($response, "output.uploaded_keys.{$format}") ?: data_get($response, "output.files.{$format}.path") ?: data_get($response, "output.{$format}_path"));
+                $path = ltrim(str_replace('\\', '/', $path), '/');
+                if ($path === '' || ($basePath !== '' && ! str_starts_with($path, $basePath.'/')) || ! Storage::disk($disk)->exists($path)) {
+                    continue;
+                }
+                $saved = $this->storage->registerExistingObject((int) $fresh->customer_id, $disk, $path, array_merge($this->storage->apiOutputMeta($fresh, 'ocr', 'render', $format), ['mime' => $mime]));
+                if ($saved) $artifacts[$format] = ['path' => (string) $saved['path'], 'bytes' => (int) $saved['bytes'], 'mime' => (string) $saved['mime']];
+            }
+
+            // The V2 worker intentionally responds in summary-and-text mode.
+            // When it has not uploaded requested binaries, create safe export
+            // files from the completed corrected text for the customer.
+            if ($isV2) {
+                $artifacts = $this->v2Artifacts->persistSelectedArtifacts($fresh, $disk, $inlineText, $artifacts);
+                foreach ($artifacts as $format => $artifact) {
+                    $saved = $this->storage->registerExistingObject((int) $fresh->customer_id, $disk, (string) $artifact['path'], array_merge(
+                        $this->storage->apiOutputMeta($fresh, 'ocr', 'render', $format),
+                        ['mime' => (string) $artifact['mime']]
+                    ));
+                    if ($saved) {
+                        $artifacts[$format] = ['path' => (string) $saved['path'], 'bytes' => (int) $saved['bytes'], 'mime' => (string) $saved['mime']];
+                    }
+                }
+            }
+
             $output = [
                 'disk' => $disk,
                 'text' => [
                     'path' => (string) $textObject['path'],
                     'bytes' => (int) $textObject['bytes'],
                     'mime' => (string) $textObject['mime'],
+                    'inline' => $inlineText,
                 ],
                 'json' => $jsonObject ? [
                     'path' => (string) $jsonObject['path'],
                     'bytes' => (int) $jsonObject['bytes'],
                     'mime' => (string) $jsonObject['mime'],
                 ] : null,
-                'runpod' => (array) data_get($response, 'output', []),
+                'artifacts' => $artifacts,
+                'runpod' => $this->storedRunpodOutput((array) data_get($response, 'output', []), $isV2),
             ];
 
             $storageOut = $this->storage->registerOcrArtifacts($fresh, $output, 'ocr');
@@ -195,6 +255,72 @@ class OcrJobSyncService
 
             return $this->payloadFromJob($fresh, 'OCR completed.');
         }, 3);
+    }
+
+    private function v2LayoutJson(mixed $value): ?string
+    {
+        if (is_string($value) && trim($value) !== '') {
+            return $value;
+        }
+
+        if (is_array($value)) {
+            $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            return $json === false ? null : $json;
+        }
+
+        return null;
+    }
+
+    private function v2LayoutText(?string $layoutJson): string
+    {
+        if ($layoutJson === null) {
+            return '';
+        }
+
+        $layout = json_decode($layoutJson, true);
+        if (! is_array($layout)) {
+            return '';
+        }
+
+        $pages = data_get($layout, 'pages', []);
+        if (! is_array($pages)) {
+            return '';
+        }
+
+        return collect($pages)
+            ->map(fn ($page) => is_array($page) ? trim((string) data_get($page, 'markdown', '')) : '')
+            ->filter()
+            ->implode("\n\n");
+    }
+
+    private function v2HtmlText(mixed $html): string
+    {
+        if (! is_string($html) || trim($html) === '') {
+            return '';
+        }
+
+        $withBreaks = preg_replace('/<\/?(?:p|div|section|article|h[1-6]|tr|li|br)\b[^>]*>/iu', "\n", $html) ?? $html;
+        $text = html_entity_decode(strip_tags($withBreaks), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace("/\n{3,}/u", "\n\n", $text) ?? $text;
+
+        return trim($text);
+    }
+
+    /** @param array<string, mixed> $output @return array<string, mixed> */
+    private function storedRunpodOutput(array $output, bool $isV2): array
+    {
+        if (! $isV2) {
+            return $output;
+        }
+
+        $returned = array_keys((array) data_get($output, 'output', []));
+        data_forget($output, 'output.docx_base64');
+        data_forget($output, 'output.html');
+        data_forget($output, 'output.json');
+        $output['returned_formats'] = $returned;
+
+        return $output;
     }
 
     protected function failJob(MlJob $job, string $message, array $response = []): array

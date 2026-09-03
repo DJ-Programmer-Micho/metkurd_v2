@@ -3,6 +3,7 @@
 use App\Models\Customer;
 use App\Models\CustomerFile;
 use App\Models\CustomerUsage;
+use App\Models\MlJob;
 use App\Services\Storage\CustomerStorageBulkDownloadService;
 use App\Services\Storage\StorageDestructiveOperationBlocked;
 use App\Services\Storage\StorageFileDeletionService;
@@ -223,4 +224,34 @@ it('reports mixed bulk deletion accurately and keeps failed records for retry', 
     expect($result)->toMatchArray(['deleted' => 2, 'missing' => 1, 'failed' => 0, 'skipped' => 1])
         ->and((int) CustomerUsage::query()->where('customer_id', $customer->id)->value('storage_used_bytes'))->toBe(0)
         ->and(CustomerFile::query()->whereIn('id', [$present->id, $missing->id])->where('status', 'deleted')->count())->toBe(2);
+});
+
+it('removes a completed STEM render from workspace history when its final stored artifact is deleted', function () {
+    $customer = v2StorageCustomer('stem-history');
+    $job = MlJob::create([
+        'id' => (string) \Illuminate\Support\Str::uuid(),
+        'customer_id' => $customer->id,
+        'job_kind' => 'stem',
+        'status' => 'done',
+        'storage_out_bytes' => 256,
+        'input' => ['workspace' => 'stem_v2', 'separation_mode' => 4],
+        'output' => ['stems' => ['vocals' => ['path' => 'vocals.mp3'], 'drums' => ['path' => 'drums.mp3']]],
+    ]);
+    $vocals = v2StorageFile($customer, 'stem-vocals', 128, [
+        'tool_code' => 'stem', 'source_type' => 'ml_job', 'source_id' => $job->id,
+        'meta' => ['job_id' => $job->id],
+    ]);
+    $drums = v2StorageFile($customer, 'stem-drums', 128, [
+        'tool_code' => 'stem', 'source_type' => 'ml_job', 'source_id' => $job->id,
+        'meta' => ['job_id' => $job->id],
+    ]);
+    config()->set('filesystems.customer_outputs.allow_destructive_operations', true);
+
+    app(StorageFileDeletionService::class)->delete($vocals);
+    expect((string) $job->fresh()->status)->toBe('done');
+
+    app(StorageFileDeletionService::class)->delete($drums);
+    expect((string) $job->fresh()->status)->toBe('deleted')
+        ->and($job->fresh()->output)->toBeNull()
+        ->and((int) $job->fresh()->storage_out_bytes)->toBe(0);
 });

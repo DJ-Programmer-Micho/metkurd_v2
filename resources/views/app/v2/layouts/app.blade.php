@@ -1,8 +1,10 @@
 <!DOCTYPE html>
 @php
-    $v2ServiceSlug = (string) (request()->route('service') ?: (request()->routeIs('app.v2.leo') || request()->routeIs('app.v2.caption') ? 'speech-to-text' : ''));
+    $v2ServiceSlug = (string) (request()->route('service') ?: (request()->routeIs('app.v2.leo') || request()->routeIs('app.v2.caption') ? 'speech-to-text' : (request()->routeIs('app.v2.ocr') ? 'ocr' : (request()->routeIs('app.v2.stem') ? 'stem' : ''))));
     $v2ServiceTheme = (string) (config("metkurd_v2.services.{$v2ServiceSlug}.color") ?: 'primary');
-    if (! in_array($v2ServiceTheme, ['primary', 'danger', 'success', 'info', 'warning'], true)) $v2ServiceTheme = 'primary';
+    // STEM uses the warm orange/red palette of public/app/services_icons/STEM.png.
+    if ($v2ServiceSlug === 'stem') $v2ServiceTheme = 'stem';
+    if (! in_array($v2ServiceTheme, ['primary', 'danger', 'success', 'info', 'warning', 'stem'], true)) $v2ServiceTheme = 'primary';
 @endphp
 <html lang="{{ app()->getLocale() }}" dir="{{ in_array(app()->getLocale(), ['ar', 'ku'], true) ? 'rtl' : 'ltr' }}" data-bs-theme="dark">
 <head>
@@ -36,6 +38,7 @@
         .metkurd-v2--success{ --v2-accent-rgb:74,222,128; --v2-glow-rgb:31,136,72; --v2-page-bg:#111811; --v2-page-text:#e5ebe5; --v2-scroll-track-rgb:15,42,22; --v2-accent-text:#86efac; }
         .metkurd-v2--info{ --v2-accent-rgb:56,189,248; --v2-glow-rgb:20,108,158; --v2-page-bg:#10171b; --v2-page-text:#e5eaeb; --v2-scroll-track-rgb:13,33,42; --v2-accent-text:#7dd3fc; }
         .metkurd-v2--warning{ --v2-accent-rgb:251,191,36; --v2-glow-rgb:148,101,16; --v2-page-bg:#19160f; --v2-page-text:#ebe8df; --v2-scroll-track-rgb:42,33,15; --v2-accent-text:#fcd34d; }
+        .metkurd-v2--stem{ --v2-accent-rgb:249,115,22; --v2-glow-rgb:232,73,15; --v2-page-bg:#1b100d; --v2-page-text:#f3e9e4; --v2-scroll-track-rgb:48,20,13; --v2-accent-text:#fdba74; }
         .metkurd-v2 *, .metkurd-v2 *::before, .metkurd-v2 *::after{ scrollbar-width:thin; scrollbar-color:rgba(var(--v2-accent-rgb),.48) rgba(var(--v2-scroll-track-rgb),.72); }
         .metkurd-v2::-webkit-scrollbar, .metkurd-v2 *::-webkit-scrollbar{ width:8px; height:8px; }
         .metkurd-v2::-webkit-scrollbar-track, .metkurd-v2 *::-webkit-scrollbar-track{ background:rgba(var(--v2-scroll-track-rgb),.72); border-radius:999px; }

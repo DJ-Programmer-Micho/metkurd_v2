@@ -1,10 +1,16 @@
 <?php
 
 use App\Services\MetKurd\V2\RunPodV2Adapter;
+use App\Services\OCR\OcrJobSyncService;
 use App\Services\Providers\RunPodProvider;
 use App\Support\MetKurdV2JobStatusPresentation;
 use App\Support\MetKurdV2ToolCatalog;
+use App\Models\Customer;
+use App\Models\MlJob;
+use App\Models\Tool;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -51,6 +57,7 @@ it('registers isolated V2 routes without changing V1 route names', function () {
     expect(Route::has('app.v2.home'))->toBeTrue()
         ->and(Route::has('app.v2.service'))->toBeTrue()
         ->and(Route::has('app.v2.tool'))->toBeTrue()
+        ->and(Route::has('app.v2.ocr'))->toBeTrue()
         ->and(Route::has('app.home'))->toBeTrue()
         ->and(Route::has('app.renders.xomni-v2.stream'))->toBeTrue()
         ->and(Route::has('app.renders.xomni-v2.download'))->toBeTrue()
@@ -58,7 +65,22 @@ it('registers isolated V2 routes without changing V1 route names', function () {
         ->toContain('/en/app-v2/text-to-speech/apollo-2');
 });
 
-it('renders V2 root and maps intelligent mode only in the V2 leaf state', function () {
+it('renders the native V2 OCR workspace', function () {
+    Livewire::test('app::v2.pages.tools.app-ocr')
+        ->assertSee('OCR Scanner 2.0')
+        ->assertSee('v2-ocr-workspace', false)
+        ->assertSee('Document Upload')
+        ->assertSee('Output Formats')
+        ->assertSet('runLlmCorrector', true)
+        ->assertSet('exportDocx', true)
+        ->assertSet('exportTxt', true)
+        ->assertSet('exportMarkdown', false)
+        ->assertSet('exportHtml', false)
+        ->assertSet('exportZip', false)
+        ->assertDontSee('JSON export');
+});
+
+it('renders V2 root and maps the OCR correction switch in the V2 leaf state', function () {
     Livewire::test('app::v2.pages.home.app-home')
         ->assertSee('Text-to-Speech')
         ->assertSee('Clone Text-to-Speech')
@@ -73,11 +95,13 @@ it('renders V2 root and maps intelligent mode only in the V2 leaf state', functi
 
     Livewire::test('app::v2.pages.tools.app-tool', ['service' => 'ocr', 'tool' => 'scanner'])
         ->assertSee('OCR Scanner 2.0')
-        ->assertSee('Standard')
+        ->assertSet('runLlmCorrector', true)
+        ->assertSee('Intelligent Correction')
+        ->assertSee('Beta')
         ->assertSee('Open V1 workspace')
         ->assertSee(route('app.ocr', ['locale' => 'en']))
-        ->set('processingMode', 'intelligent')
-        ->assertSee('Intelligent');
+        ->set('runLlmCorrector', false)
+        ->assertSet('runLlmCorrector', false);
 });
 
 it('maps each available V2 leaf to an existing V1 workspace instead of a second executor', function () {
@@ -116,7 +140,7 @@ it('builds OMNI V2 provider input from the central model mapping', function () {
     expect($result)->toBe(['id' => 'runpod-job']);
 });
 
-it('maps intelligent ASR and OCR selections without accepting arbitrary input hosts or paths', function () {
+it('maps intelligent ASR and explicit OCR correction selections without accepting arbitrary input hosts or paths', function () {
     config()->set('runpod.endpoints.qasr_v2', 'qasr-v2-test');
     config()->set('runpod.endpoints.kocr_v2', 'kocr-v2-test');
     config()->set('runpod.v2_input_hosts', ['storage.example.test']);
@@ -126,13 +150,25 @@ it('maps intelligent ASR and OCR selections without accepting arbitrary input ho
         ->once()
         ->with('qasr-v2-test', Mockery::on(fn (array $input): bool => $input['intelligent'] === 1 && $input['type'] === 'asr'), Mockery::type('int'))
         ->andReturn(['id' => 'qasr-job']);
-    $provider->shouldReceive('run')
+    $provider->shouldReceive('runWithPolicy')
         ->once()
         ->with('kocr-v2-test', Mockery::on(function (array $input): bool {
-            return $input['options']['run_llm_corrector'] === true
-                && $input['options']['return_mode'] === 'summary_and_base64_zip'
-                && $input['options']['llm_corrector_model'] === 'Qwen3-4B-Instruct-2507.Q4_K_M.gguf';
-        }), Mockery::type('int'))
+            return $input['file_url'] === 'https://storage.example.test/inputs/input.png'
+                && $input['job_id'] === 'ocr-job'
+                && $input['file_name'] === 'input.png'
+                && $input['options'] === [
+                    'task' => 'layout_text',
+                    'pages' => 'all',
+                    'dpi' => 160,
+                    'max_pixels' => 1_000_000,
+                    'max_tokens' => 4_000,
+                    'intelligent' => 0,
+                    'correct_tables' => true,
+                    'export_formats' => ['html', 'docx'],
+                    'return_mode' => 'all',
+                    'return_files' => ['html', 'docx'],
+                ];
+        }), ['executionTimeout' => 900_000, 'ttl' => 1_200_000], Mockery::type('int'))
         ->andReturn(['id' => 'kocr-job']);
     app()->instance(RunPodProvider::class, $provider);
 
@@ -143,9 +179,9 @@ it('maps intelligent ASR and OCR selections without accepting arbitrary input ho
     ]))->toBe(['id' => 'qasr-job'])
         ->and($adapter->kocr('ocr', 'scanner', [
             'job_id' => 'ocr-job',
-            'input_path' => 'renders/customer/ocr/ocr-job/input.png',
+            'file_url' => 'https://storage.example.test/inputs/input.png',
             'file_name' => 'input.png',
-            'intelligent' => true,
+            'run_llm_corrector' => false,
         ]))->toBe(['id' => 'kocr-job']);
 
     expect(fn () => $adapter->qasr('speech-to-text', 'leo', [
@@ -156,4 +192,66 @@ it('maps intelligent ASR and OCR selections without accepting arbitrary input ho
             'input_path' => '../.env',
             'file_name' => 'input.png',
         ]))->toThrow(InvalidArgumentException::class);
+});
+
+it('normalizes upgraded layout OCR results into stored text and selected exports', function () {
+    Storage::fake('s3');
+    $this->seed();
+    config()->set('runpod.endpoints.kocr_v2', 'kocr-v2-test');
+
+    $customer = Customer::create([
+        'username' => 'layout-ocr-'.Str::lower(Str::random(8)),
+        'email' => 'layout-ocr-'.Str::lower(Str::random(8)).'@example.test',
+        'password' => 'Secret123!',
+        'status' => 1,
+        'email_verify' => true,
+        'phone_verify' => true,
+    ]);
+    $jobId = (string) Str::uuid();
+    $job = MlJob::create([
+        'id' => $jobId,
+        'customer_id' => $customer->id,
+        'tool_id' => Tool::query()->where('code', 'ocr')->value('id'),
+        'job_kind' => 'ocr',
+        'status' => 'running',
+        'provider' => 'runpod',
+        'provider_job_id' => 'layout-worker-job',
+        'input' => [
+            'v2' => true,
+            'file_name' => 'layout.pdf',
+            'file_path' => "renders/test/ocr/{$jobId}/input.pdf",
+            'exports' => [
+                'export_docx' => true,
+                'export_txt' => true,
+                'export_markdown' => true,
+                'export_html' => true,
+                'export_zip' => true,
+            ],
+        ],
+    ]);
+
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('status')->once()->with('kocr-v2-test', 'layout-worker-job')->andReturn([
+        'status' => 'COMPLETED',
+        'output' => [
+            'ok' => true,
+            'output' => [
+                'docx_base64' => base64_encode('worker-docx'),
+                'html' => '<html><body><section><p>First layout page</p><p>Second layout page</p></section></body></html>',
+            ],
+        ],
+    ]);
+    app()->instance(RunPodProvider::class, $provider);
+
+    app(OcrJobSyncService::class)->sync($job->fresh());
+    $fresh = $job->fresh();
+
+    expect($fresh->status)->toBe('done')
+        ->and(data_get($fresh->output, 'text.inline'))->toBe("First layout page\n\nSecond layout page")
+        ->and(data_get($fresh->output, 'json'))->toBeNull()
+        ->and(Storage::disk('s3')->exists((string) data_get($fresh->output, 'artifacts.docx.path')))->toBeTrue()
+        ->and(Storage::disk('s3')->exists((string) data_get($fresh->output, 'artifacts.html.path')))->toBeTrue()
+        ->and(Storage::disk('s3')->exists((string) data_get($fresh->output, 'artifacts.markdown.path')))->toBeTrue()
+        ->and(Storage::disk('s3')->exists((string) data_get($fresh->output, 'artifacts.zip.path')))->toBeTrue()
+        ->and(data_get($fresh->output, 'runpod.output.docx_base64'))->toBeNull();
 });

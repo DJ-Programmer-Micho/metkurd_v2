@@ -404,7 +404,62 @@ class CustomerOutputStorage
 
     public function stemBaseDir(MlJob $job): string
     {
+        $configuredRoot = trim((string) data_get($job->input, 'storage_root', ''));
+
+        if ($configuredRoot !== '') {
+            return trim($configuredRoot, '/');
+        }
+
         return $this->renderBaseDir($job, 'stem');
+    }
+
+    /**
+     * V2 STEM keeps its own separation-mode namespace while following the
+     * shared per-customer render layout used by the rest of the application.
+     */
+    public function stemV2BaseDir(Customer $customer, int $stemsMode, string $jobId): string
+    {
+        $customer->loadMissing('profile');
+        $mode = $stemsMode === 2 ? 2 : 4;
+        $jobId = trim($jobId);
+
+        if ($jobId === '') {
+            throw new \InvalidArgumentException('Job ID is required for V2 STEM storage.');
+        }
+
+        return "renders/{$this->customerFolderFromCustomer($customer)}/stem-s{$mode}/{$jobId}";
+    }
+
+    public function storeStemV2InputFile(
+        Customer $customer,
+        UploadedFile $file,
+        int $stemsMode,
+        string $jobId,
+        array $meta = [],
+        ?string $extension = null
+    ): array {
+        $resolvedExtension = $this->normalizeExtension(
+            $extension ?? (string) ($file->getClientOriginalExtension() ?: ''),
+            'bin'
+        );
+        $path = $this->stemV2BaseDir($customer, $stemsMode, $jobId)."/input.{$resolvedExtension}";
+
+        return $this->saveUploadedFileToS3(
+            customerId: (int) $customer->id,
+            file: $file,
+            path: $path,
+            meta: array_merge([
+                'tool' => 'stem',
+                'purpose' => 'input_audio',
+                'role' => 'source_audio',
+                'job_id' => $jobId,
+                'source_type' => 'ml_job',
+                'source_id' => $jobId,
+                'workspace' => 'stem_v2',
+                'separation_mode' => $stemsMode === 2 ? 2 : 4,
+                'original_name' => $file->getClientOriginalName(),
+            ], $meta)
+        );
     }
 
     public function stemPaths(MlJob $job, string $codec = 'mp3', int $stemsMode = 4): array
@@ -673,12 +728,22 @@ class CustomerOutputStorage
         $artifacts = array_filter([
             'text' => data_get($output, 'text.path'),
             'json' => data_get($output, 'json.path'),
+            ...collect(['docx', 'markdown', 'html', 'zip'])->mapWithKeys(
+                fn (string $format) => [$format => data_get($output, "artifacts.{$format}.path")]
+            )->all(),
         ]);
 
         foreach ($artifacts as $role => $path) {
             $saved = $this->registerExistingObject($customerId, $disk, (string) $path, array_merge($this->apiOutputMeta($job, $toolCode, 'render', $role), [
                 'job_id' => (string) $job->id,
-                'mime' => $role === 'json' ? 'application/json' : 'text/plain; charset=UTF-8',
+                'mime' => match ($role) {
+                    'json' => 'application/json',
+                    'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'markdown' => 'text/markdown; charset=UTF-8',
+                    'html' => 'text/html; charset=UTF-8',
+                    'zip' => 'application/zip',
+                    default => 'text/plain; charset=UTF-8',
+                },
             ], $metaOverrides));
 
             $total += (int) ($saved['bytes'] ?? 0);
@@ -732,6 +797,11 @@ class CustomerOutputStorage
         $paths = array_filter([
             ['disk' => $outputDisk, 'path' => (string) data_get($output, 'text.path', ''), 'bytes' => (int) data_get($output, 'text.bytes', 0)],
             ['disk' => $outputDisk, 'path' => (string) data_get($output, 'json.path', ''), 'bytes' => (int) data_get($output, 'json.bytes', 0)],
+            ...collect(['docx', 'markdown', 'html', 'zip'])->map(fn (string $format) => [
+                'disk' => $outputDisk,
+                'path' => (string) data_get($output, "artifacts.{$format}.path", ''),
+                'bytes' => (int) data_get($output, "artifacts.{$format}.bytes", 0),
+            ])->all(),
             ['disk' => $inputDisk, 'path' => (string) data_get($job->input, 'file_path', ''), 'bytes' => (int) ((int) $job->storage_in_bytes ?: data_get($job->input, 'file_bytes', 0))],
         ], fn ($item) => ! empty($item['path']));
 

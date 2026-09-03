@@ -178,6 +178,10 @@ class StemRenderController extends Controller
      */
     protected function buildZipArchive(string $zipPath, array $entries, string $jobId): int
     {
+        // A first ZIP can require several remote S3 reads. Do not let PHP kill
+        // the request midway through a valid, slow archive build.
+        @set_time_limit(0);
+
         $tmpPath = $zipPath.'.tmp';
 
         if (is_file($tmpPath)) {
@@ -192,6 +196,8 @@ class StemRenderController extends Controller
         $added = 0;
 
         foreach ($entries as $entry) {
+            @set_time_limit(0);
+
             try {
                 if (! Storage::disk($entry['disk'])->exists($entry['path'])) {
                     continue;
@@ -264,6 +270,10 @@ class StemRenderController extends Controller
 
     public function stream(Request $request, string $locale, string $jobId, string $track)
     {
+        // Audio previews may legitimately take longer than PHP's default when
+        // a customer opens a large source track over the same-origin proxy.
+        @set_time_limit(0);
+
         $job = $this->jobOrFail($jobId);
         $disk = $this->resolveTrackDisk($job, $track);
         $path = (string) $this->resolveTrackPath($job, $track);
@@ -274,6 +284,7 @@ class StemRenderController extends Controller
 
         try {
             abort_unless(Storage::disk($disk)->exists($path), 404, 'Audio track not found.');
+            $bytes = max(0, (int) Storage::disk($disk)->size($path));
 
             if (! $request->boolean('proxy') && method_exists(Storage::disk($disk), 'temporaryUrl')) {
                 $url = Storage::disk($disk)->temporaryUrl($path, now()->addMinutes(20), [
@@ -281,7 +292,10 @@ class StemRenderController extends Controller
                     'ResponseContentDisposition' => 'inline; filename="'.$filename.'"',
                 ]);
 
-                return redirect()->away($url);
+                // Cache the stable, authenticated route's redirect while the
+                // signed object URL remains valid. This lets a reopened player
+                // reuse the browser's cached audio without cache-busting URLs.
+                return redirect()->away($url)->header('Cache-Control', 'private, max-age=1200');
             }
 
             $stream = Storage::disk($disk)->readStream($path);
@@ -298,8 +312,12 @@ class StemRenderController extends Controller
             }, 200, [
                 'Content-Type' => $mime,
                 'Content-Disposition' => 'inline; filename="'.$filename.'"',
-                'Cache-Control' => 'private, max-age=600, stale-while-revalidate=60',
+                // Finished STEM artifacts are immutable. Keeping their stable
+                // same-origin URLs cacheable lets a re-opened V2 job reuse the
+                // browser copy instead of fetching the same audio again.
+                'Cache-Control' => 'private, max-age=31536000, immutable',
                 'Accept-Ranges' => 'bytes',
+                'Content-Length' => (string) $bytes,
             ]);
         } catch (\Throwable $e) {
             Log::error('STEM_STREAM_FAIL', [

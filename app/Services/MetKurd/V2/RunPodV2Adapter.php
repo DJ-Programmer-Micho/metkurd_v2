@@ -84,44 +84,41 @@ class RunPodV2Adapter
     public function kocr(string $service, string $tool, array $options): array
     {
         $definition = $this->toolForKind($service, $tool, ['kocr']);
-        $intelligent = $this->booleanOption($options, 'intelligent');
+        $runLlmCorrector = array_key_exists('run_llm_corrector', $options)
+            ? $this->booleanOption($options, 'run_llm_corrector')
+            : $this->booleanOption($options, 'intelligent', true);
 
-        $providerOptions = [
-            'source_mode' => 'image_file',
-            'ocr_model' => 'metocr',
-            'run_llm_corrector' => $intelligent,
-            'pages' => $this->stringOption($options, 'pages', 'all'),
-            'max_pages' => max(1, min(100, (int) ($options['max_pages'] ?? 1))),
-            'digit_normalization' => 'preserve',
-            'export_docx' => true,
-            'export_json' => true,
-            'export_txt' => true,
-            'export_markdown' => true,
-            'export_html' => true,
-            'export_zip' => true,
-            'return_mode' => $intelligent ? 'summary_and_base64_zip' : 'summary_only',
-            'max_return_zip_mb' => max(1, min(20, (int) ($options['max_return_zip_mb'] ?? 20))),
-        ];
-
-        if ($intelligent) {
-            $providerOptions['llm_corrector_model'] = 'Qwen3-4B-Instruct-2507.Q4_K_M.gguf';
+        // The worker's layout JSON includes every raw OCR cell and can exceed
+        // RunPod's job-result limit on normal multi-page documents. Request
+        // compact HTML as the internal text source instead; it is not exposed
+        // unless the customer selected HTML.
+        $exportFormats = ['html'];
+        if ($this->booleanOption($options, 'export_docx', true)) {
+            $exportFormats[] = 'docx';
+        }
+        if ($this->booleanOption($options, 'export_html')) {
+            $exportFormats[] = 'html';
         }
 
-        return $this->run($definition, [
+        return $this->runWithPolicy($definition, [
             'job_id' => $this->requiredString($options, 'job_id'),
-            'input_path' => $this->requiredSafeStoragePath($options, 'input_path'),
+            'file_url' => $this->requiredTrustedUrl($options, 'file_url'),
             'file_name' => basename($this->requiredString($options, 'file_name')),
-            'options' => $providerOptions,
-            'ocr' => [
-                'lang' => 'metocr',
-                'dpi' => max(72, min(600, (int) ($options['dpi'] ?? 300))),
-                'psm' => max(0, min(13, (int) ($options['psm'] ?? 3))),
-                'oem' => max(0, min(3, (int) ($options['oem'] ?? 1))),
-                'grayscale' => true,
-                'autocontrast' => true,
-                'sharpen' => true,
-                'binarize' => false,
+            'options' => [
+            'task' => 'layout_text',
+            'pages' => $this->stringOption($options, 'pages', 'all'),
+                'dpi' => 160,
+                'max_pixels' => 1_000_000,
+                'max_tokens' => 4_000,
+                'intelligent' => $runLlmCorrector ? 1 : 0,
+                'correct_tables' => true,
+                'export_formats' => $exportFormats,
+                'return_mode' => 'all',
+                'return_files' => $exportFormats,
             ],
+        ], [
+            'executionTimeout' => 900_000,
+            'ttl' => 1_200_000,
         ]);
     }
 
@@ -142,6 +139,25 @@ class RunPodV2Adapter
         ]);
 
         return $this->runpod->run($endpointId, $input, (int) config('runpod.v2_timeout', 60));
+    }
+
+    /** @param array<string, mixed> $definition @param array<string, mixed> $input @param array<string, int> $policy */
+    private function runWithPolicy(array $definition, array $input, array $policy): array
+    {
+        $endpointKey = (string) ($definition['endpoint'] ?? '');
+        $endpointId = trim((string) config("runpod.endpoints.{$endpointKey}"));
+
+        if ($endpointId === '') {
+            throw new \RuntimeException("RunPod endpoint [{$endpointKey}] is not configured.");
+        }
+
+        Log::info('METKURD_V2_RUNPOD_SUBMIT', [
+            'endpoint_key' => $endpointKey,
+            'kind' => $definition['kind'] ?? null,
+            'model' => $definition['provider_model'] ?? null,
+        ]);
+
+        return $this->runpod->runWithPolicy($endpointId, $input, $policy, (int) config('runpod.v2_timeout', 60));
     }
 
     /** @return array<string, mixed> */
