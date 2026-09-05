@@ -36,18 +36,19 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     #[Computed] public function presentation():array{return app(MetKurdV2JobStatusPresentation::class)->for((string)($this->currentJob?->status??'idle'));}
     #[Computed] public function jobStage():string{return match((string)($this->currentJob?->status??'')){'queued'=>__('Queued — waiting for an OCR worker.'),'running'=>__('Scanning pages and extracting text.'),'saving'=>__('Saving your OCR result and downloads.'),'done'=>__('OCR scan completed.'),'failed'=>__('OCR scan failed.'),default=>__('Preparing OCR job.')};}
     #[Computed] public function currentText():string{return (string)data_get($this->currentJob?->output,'text.inline',data_get($this->currentJob?->output,'runpod.text',''));}
-    #[Computed] public function recentJobs(){return MlJob::query()->where('customer_id',auth('app')->id())->where('job_kind','ocr')->where('input->v2',true)->when(trim($this->search)!=='',fn($q)=>$q->where('input->file_name','like','%'.trim($this->search).'%'))->latest('updated_at')->paginate(5,pageName:'ocrV2Page');}
+    #[Computed] public function recentJobs(){return MlJob::query()->where('customer_id',auth('app')->id())->where('job_kind','ocr')->where('input->v2',true)->whereNotIn('status',['deleted','deleting'])->when(trim($this->search)!=='',fn($q)=>$q->where('input->file_name','like','%'.trim($this->search).'%'))->latest('updated_at')->paginate(5,pageName:'ocrV2Page');}
     public function availableDownloads(?MlJob $job):array{if(!$job||$job->status!=='done')return [];$labels=['txt'=>'TXT','docx'=>'DOCX','markdown'=>'Markdown','html'=>'HTML','zip'=>'ZIP'];$downloads=[];foreach($labels as $format=>$label){$selected=(bool)data_get($job->input,"exports.export_{$format}",false);$path=$format==='txt'?data_get($job->output,'text.path'):data_get($job->output,"artifacts.{$format}.path");if($selected&&$path)$downloads[$format]=$label;}return $downloads;}
     public function downloadUrl(MlJob $job,string $format):string{return $format==='txt'?route('app.renders.ocr.text',['locale'=>app()->getLocale(),'jobId'=>$job->id]):route('app.v2.ocr.artifact',['locale'=>app()->getLocale(),'jobId'=>$job->id,'format'=>$format]);}
     public function submitOcr(OcrV2SubmissionService $submission):void{$this->submissionError='';$this->validate();if($this->currentJob?->isActive()){$this->submissionError=__('An OCR job is already in progress.');return;}try{$this->selectedPages();$job=$submission->submit(auth('app')->user(),$this->documentFile,['pages'=>$this->pageMode==='all'?'all':trim($this->pageRange),'estimated_pages'=>$this->estimatedPages(),'run_llm_corrector'=>$this->runLlmCorrector,'export_docx'=>$this->exportDocx,'export_txt'=>$this->exportTxt,'export_markdown'=>$this->exportMarkdown,'export_html'=>$this->exportHtml,'export_zip'=>$this->exportZip,'input_hash'=>(string)$this->documentHash,'file_name'=>(string)$this->documentFileName,'file_mime'=>(string)$this->documentFileMime,'file_ext'=>(string)$this->documentFileExt,'file_bytes'=>(int)$this->documentFileBytes]);$this->currentJobId=(string)$job->id;$this->showJobStatus=true;$this->dispatch('header:refresh');}catch(\Throwable $e){Log::warning('OCR_V2_WORKSPACE_SUBMIT_FAIL',['message'=>$e->getMessage()]);$this->submissionError=$e->getMessage();}}
     public function pollOcr(OcrJobSyncService $sync):void{if($job=$this->currentJob){$result=$sync->sync($job);$this->showJobStatus=in_array((string)data_get($result,'status'),['queued','running','saving'],true);$this->dispatch('header:refresh');}}
     public function copyText():void{$this->dispatch('v2-ocr-copy-text',text:$this->currentText);}
+    public function deleteOcrJob(CustomerOutputStorage $storage,string $jobId):void{$job=MlJob::query()->whereKey($jobId)->where('customer_id',auth('app')->id())->where('job_kind','ocr')->where('input->v2',true)->first();if(!$job)return;if($job->isActive()){$this->submissionError=__('An active OCR job cannot be deleted. Cancel it first.');return;}try{$storage->deleteOcrOutputs($job);if($this->currentJobId===(string)$job->id){$this->currentJobId=null;$this->showJobStatus=false;}$this->resetPage('ocrV2Page');$this->dispatch('header:refresh');}catch(\Throwable $e){Log::warning('OCR_V2_DELETE_FAIL',['job_id'=>$jobId,'message'=>$e->getMessage()]);$this->submissionError=__('OCR files could not be deleted. Please try again.');}}
     public function cancelOcr(JobExecutionLockService $locks,CustomerOutputStorage $storage):void{$job=$this->currentJob;if(!$job||!$job->isActive())return;$job->update(['status'=>'failed','error'=>['message'=>__('Cancelled by customer.')],'finished_at'=>now()]);$this->showJobStatus=false;try{$storage->deleteFromDiskAndUncount((int)$job->customer_id,(string)data_get($job->input,'file_disk','s3'),(string)data_get($job->input,'file_path',''),(int)$job->storage_in_bytes);}catch(\Throwable){}$locks->releaseLock((string)$job->id);$this->dispatch('header:refresh');}
     private function hydrateCurrentJob():void{$job=MlJob::query()->where('customer_id',auth('app')->id())->where('job_kind','ocr')->where('input->v2',true)->whereIn('status',['queued','running','saving','failed','done'])->latest('updated_at')->first();$this->currentJobId=$job?(string)$job->id:null;$this->showJobStatus=(bool)$job?->isActive();}
 }; ?>
 
 <section class="v2-tool-page v2-ocr-page"><nav class="v2-breadcrumb"><a wire:navigate href="{{ route('app.v2.home',['locale'=>app()->getLocale()]) }}">{{ __('MetKurd AI') }}</a><span>/</span><a wire:navigate href="{{ route('app.v2.service',['locale'=>app()->getLocale(),'service'=>'ocr']) }}">{{ __('OCR') }}</a><span>/</span><span>{{ __('OCR Scanner 2.0') }}</span></nav><header class="v2-tool-context"><div class="v2-tool-identity d-flex align-items-center gap-3"><img class="v2-service-icon" src="{{ asset('app/services_icons/OCR.png') }}" alt=""><div><span>{{ __('OCR') }}</span><h1>{{ __('OCR Scanner 2.0') }}</h1></div></div>@livewire('app::v2.components.shared.account-resources')</header><div class="v2-workspace v2-ocr-workspace">
-<main class="v2-workspace-panel v2-create-panel v2-ocr-upload-panel">
+<main id="v2-ocr-upload-panel" class="v2-workspace-panel v2-create-panel v2-ocr-upload-panel">
     <div class="v2-panel-heading"><span>{{ __('Document Upload') }}</span><small>{{ __('PDF and image OCR with visual preview') }}</small></div>
     <div class="v2-ocr-upload-copy"><i class="ri-file-search-line"></i><span>{{ __('Upload a PDF or image up to 200 MB. Preview pages before scanning.') }}</span></div>
     <div class="v2-ocr-dropzone" id="v2-ocr-dropzone" wire:ignore>
@@ -56,8 +57,8 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     </div>
     @if($documentFileName)<div class="v2-ocr-file"><i class="ri-file-text-line"></i><span><strong>{{ $documentFileName }}</strong><small>{{ number_format(($documentFileBytes??0)/1048576,1) }} MB · {{ $this->isPdf()?__('PDF document'):__('Image') }}</small></span><button wire:click="removeDocument" class="btn btn-sm btn-outline-info">{{ __('Remove') }}</button></div>@endif
     @error('documentFile')<small class="text-danger d-block mt-2">{{ $message }}</small>@enderror
-    <div id="v2-ocr-preview" class="v2-ocr-preview" wire:ignore data-thumbnails-label="{{ __('PDF thumbnails') }}" data-invalid-range-label="{{ __('Enter a valid page range.') }}" data-choose-pages-label="{{ __('Choose pages to preview.') }}" data-upload-preview-label="{{ __('Upload a document to preview.') }}" data-image-preview-label="{{ __('Image preview') }}">
-        <div class="v2-ocr-preview-toolbar"><button id="v2-ocr-prev" type="button" class="btn btn-sm btn-outline-info">{{ __('Prev') }}</button><button id="v2-ocr-next" type="button" class="btn btn-sm btn-outline-info">{{ __('Next') }}</button><span id="v2-ocr-page-info">{{ __('Upload a document to preview.') }}</span><button id="v2-ocr-expand" type="button" class="btn btn-sm btn-outline-info" title="{{ __('Open fullscreen preview') }}"><i class="ri-fullscreen-line"></i></button><label>{{ __('Zoom') }} <input id="v2-ocr-zoom" type="range" min="60" max="180" value="100"></label></div>
+    <div id="v2-ocr-preview" class="v2-ocr-preview" wire:ignore data-thumbnails-label="{{ __('PDF thumbnails') }}" data-invalid-range-label="{{ __('Enter a valid page range.') }}" data-choose-pages-label="{{ __('Choose pages to preview.') }}" data-upload-preview-label="{{ __('Upload a document to preview.') }}" data-image-preview-label="{{ __('Image preview') }}" data-pages-selected-label="{{ __('pages selected') }}" data-all-pages-label="{{ __('All pages') }}">
+        <div class="v2-ocr-preview-toolbar"><button id="v2-ocr-prev" type="button" class="btn btn-sm btn-outline-info">{{ __('Prev') }}</button><button id="v2-ocr-next" type="button" class="btn btn-sm btn-outline-info">{{ __('Next') }}</button><span id="v2-ocr-page-info">{{ __('Upload a document to preview.') }}</span><span id="v2-ocr-preview-selection" class="v2-ocr-preview-selection"></span><button id="v2-ocr-expand" type="button" class="btn btn-sm btn-outline-info" title="{{ __('Open fullscreen preview') }}"><i class="ri-fullscreen-line"></i></button><label>{{ __('Zoom') }} <input id="v2-ocr-zoom" type="range" min="60" max="180" value="100"></label></div>
         <div class="v2-ocr-preview-grid"><aside id="v2-ocr-thumbs"><small>{{ __('PDF thumbnails') }}</small></aside><button id="v2-ocr-stage" type="button" title="{{ __('Open fullscreen preview') }}"><div class="v2-empty-state">{{ __('Your PDF or image preview will appear here.') }}</div><canvas id="v2-ocr-canvas"></canvas><img id="v2-ocr-image" alt=""></button></div>
     </div>
     <div id="v2-ocr-modal" class="v2-ocr-modal" aria-hidden="true" wire:ignore><div class="v2-ocr-modal-content"><button id="v2-ocr-modal-close" type="button" class="btn btn-sm btn-outline-light v2-ocr-modal-close" title="{{ __('Close preview') }}"><i class="ri-close-line"></i></button><div id="v2-ocr-modal-stage"><canvas id="v2-ocr-modal-canvas"></canvas><img id="v2-ocr-modal-image" alt=""></div></div></div>
@@ -66,9 +67,9 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 <aside class="v2-workspace-panel v2-ocr-result-panel">
     <div class="v2-panel-heading"><span>{{ __('Extracted Text') }}</span><small>{{ __('Latest OCR result') }}</small></div>
     @if($showJobStatus && $currentJobId)
-        <div class="v2-ocr-job-status" wire:poll.1500ms="pollOcr">
+        <div class="v2-ocr-job-status is-{{ $presentation['semantic'] }}" wire:poll.1500ms="pollOcr">
             <span class="spinner-border spinner-border-sm"></span>
-            <span><strong>{{ $presentation['label'] }}</strong><small>{{ $this->jobStage }}</small></span>
+            <span><strong>{{ $presentation['label'] }}</strong><small>{{ $this->jobStage }}</small><small class="v2-ocr-job-id"><i class="ri-hashtag"></i>{{ $currentJobId }}</small></span>
         </div>
     @endif
     @if($this->currentJob&&$presentation['is_active'])
@@ -89,8 +90,8 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     <div class="v2-ocr-history">
         <div class="v2-panel-heading"><span>{{ __('Recent OCR Jobs') }}</span><small>{{ __('OCR Scanner 2.0') }}</small></div>
         @forelse($this->recentJobs as $job)
-            <article class="v2-render-item is-{{ $job->status }}">
-                <div class="d-flex justify-content-between gap-2"><strong>{{ data_get($job->input,'file_name',__('Document')) }}</strong><span class="v2-render-status">{{ __(ucfirst($job->status)) }}</span></div>
+            <article class="v2-render-item is-{{ $job->status }}" wire:key="ocr-v2-job-{{ $job->id }}">
+                <div class="d-flex justify-content-between gap-2"><strong>{{ data_get($job->input,'file_name',__('Document')) }}</strong><span class="v2-render-status is-{{ $job->status === 'done' ? 'success' : ($job->status === 'failed' ? 'danger' : 'info') }}">{{ __(ucfirst($job->status)) }}</span></div>
                 <p>{{ data_get($job->input,'page_range')==='all'?__('All pages'):data_get($job->input,'page_range') }}</p>
                 <small class="v2-muted">{{ optional($job->updated_at)->diffForHumans() }}</small>
                 @if($downloads=$this->availableDownloads($job))
@@ -98,6 +99,11 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                         @foreach($downloads as $format=>$label)
                             <a href="{{ $this->downloadUrl($job,$format) }}" class="btn btn-sm btn-outline-info">{{ $label }}</a>
                         @endforeach
+                    </div>
+                @endif
+                @if(in_array($job->status,['done','failed'],true))
+                    <div class="v2-ocr-job-actions">
+                        <button type="button" wire:click="deleteOcrJob('{{ $job->id }}')" wire:confirm="{{ __('Delete this OCR job and all stored files? The job record will remain in your history.') }}" class="btn btn-sm btn-outline-danger"><i class="ri-delete-bin-6-line"></i> {{ __('Delete files') }}</button>
                     </div>
                 @endif
             </article>
@@ -110,10 +116,14 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 @push('styles')
 <style>
 .metkurd-v2 .v2-ocr-dropzone.is-dragging{border-color:rgb(var(--v2-accent-rgb));box-shadow:0 0 0 .22rem rgba(var(--v2-accent-rgb),.14);background:rgba(var(--v2-accent-rgb),.18)}
+.metkurd-v2 .v2-ocr-upload-panel{transition:border-color .16s ease,background .16s ease,box-shadow .16s ease}.metkurd-v2 .v2-ocr-upload-panel.is-dragging{border-color:rgb(var(--v2-accent-rgb));background:linear-gradient(135deg,rgba(var(--v2-accent-rgb),.19),rgba(3,18,13,.38));box-shadow:0 0 0 .24rem rgba(var(--v2-accent-rgb),.12)}.metkurd-v2 .v2-ocr-upload-panel.is-dragging .v2-ocr-dropzone{border-color:rgb(var(--v2-accent-rgb));background:rgba(var(--v2-accent-rgb),.2)}
 .metkurd-v2 #v2-ocr-stage{min-width:0;border:0;background:transparent;color:inherit;cursor:zoom-in}
-.metkurd-v2 .v2-ocr-job-status{display:flex;align-items:center;gap:.65rem;margin-top:1rem;padding:.8rem;border:1px solid rgba(var(--v2-accent-rgb),.35);border-radius:.8rem;background:rgba(var(--v2-accent-rgb),.08);color:var(--v2-accent-text)}
-.metkurd-v2 .v2-ocr-job-status span:last-child{display:grid;gap:.12rem}.metkurd-v2 .v2-ocr-job-status small{color:rgba(226,232,240,.65)}
+.metkurd-v2 .v2-ocr-preview-selection{padding:.18rem .45rem;border:1px solid rgba(var(--v2-accent-rgb),.3);border-radius:999px;background:rgba(var(--v2-accent-rgb),.1);color:var(--v2-accent-text);font-size:.62rem;white-space:nowrap}.metkurd-v2 .v2-ocr-preview-selection:empty{display:none}
+.metkurd-v2 .v2-ocr-job-status{display:flex;align-items:center;gap:.65rem;margin-top:1rem;padding:.8rem;border:1px solid rgba(var(--v2-accent-rgb),.35);border-radius:.8rem;background:rgba(var(--v2-accent-rgb),.08);color:var(--v2-accent-text);box-shadow:inset .22rem 0 0 rgba(var(--v2-accent-rgb),.75)}
+.metkurd-v2 .v2-ocr-job-status span:last-child{display:grid;gap:.12rem}.metkurd-v2 .v2-ocr-job-status small{color:rgba(226,232,240,.65)}.metkurd-v2 .v2-ocr-job-status .v2-ocr-job-id{max-width:18rem;overflow:hidden;color:currentColor;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.62rem;opacity:.8;text-overflow:ellipsis;white-space:nowrap}
+.metkurd-v2 .v2-ocr-job-status.is-success{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.1);color:#86efac;box-shadow:inset .22rem 0 0 #22c55e}.metkurd-v2 .v2-ocr-job-status.is-danger{border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.1);color:#fecaca;box-shadow:inset .22rem 0 0 #ef4444}.metkurd-v2 .v2-ocr-job-status.is-warning{border-color:rgba(245,158,11,.42);background:rgba(245,158,11,.1);color:#fde68a;box-shadow:inset .22rem 0 0 #f59e0b}
 .metkurd-v2 .v2-ocr-job-downloads{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.65rem}
+.metkurd-v2 .v2-ocr-history .v2-render-item{border-inline-start:3px solid rgba(148,163,184,.5);transition:transform .16s ease,border-color .16s ease,background .16s ease}.metkurd-v2 .v2-ocr-history .v2-render-item:hover{transform:translateY(-1px)}.metkurd-v2 .v2-ocr-history .v2-render-item.is-done{border-color:rgba(34,197,94,.42);border-inline-start-color:#22c55e;background:linear-gradient(90deg,rgba(34,197,94,.1),rgba(15,23,42,.2))}.metkurd-v2 .v2-ocr-history .v2-render-item.is-failed{border-color:rgba(239,68,68,.4);border-inline-start-color:#ef4444;background:linear-gradient(90deg,rgba(239,68,68,.1),rgba(15,23,42,.2))}.metkurd-v2 .v2-ocr-history .v2-render-status.is-success{color:#86efac;background:rgba(34,197,94,.14)}.metkurd-v2 .v2-ocr-history .v2-render-status.is-danger{color:#fecaca;background:rgba(239,68,68,.14)}.metkurd-v2 .v2-ocr-job-actions{display:flex;justify-content:flex-end;margin-top:.65rem}.metkurd-v2 .v2-ocr-job-actions .btn{font-size:.68rem}
 .metkurd-v2 .v2-ocr-modal{position:fixed;z-index:1080;inset:0;display:none;align-items:center;justify-content:center;padding:1.25rem;background:rgba(2,6,23,.88);backdrop-filter:blur(5px)}
 .metkurd-v2 .v2-ocr-modal.is-open{display:flex}.metkurd-v2 .v2-ocr-modal-content{position:relative;display:grid;place-items:center;width:min(100%,1200px);height:min(100%,900px);padding:2.75rem 1rem 1rem;border:1px solid rgba(var(--v2-accent-rgb),.45);border-radius:1rem;background:#07111d;box-shadow:0 1.5rem 5rem rgba(0,0,0,.45)}
 .metkurd-v2 .v2-ocr-modal-close{position:absolute;top:.8rem;right:.8rem;z-index:1}.metkurd-v2 #v2-ocr-modal-stage{width:100%;height:100%;display:grid;place-items:center;overflow:auto}.metkurd-v2 #v2-ocr-modal-canvas,.metkurd-v2 #v2-ocr-modal-image{display:none;max-width:100%;max-height:100%;object-fit:contain}
@@ -135,6 +145,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
         choosePages: preview?.dataset.choosePagesLabel || 'Choose pages to preview.',
         uploadPreview: preview?.dataset.uploadPreviewLabel || 'Upload a document to preview.',
         imagePreview: preview?.dataset.imagePreviewLabel || 'Image preview',
+        pagesSelected: preview?.dataset.pagesSelectedLabel || 'pages selected',
+        allPages: preview?.dataset.allPagesLabel || 'All pages',
     };
     const root = () => document.querySelector('.v2-ocr-page')?.closest('[wire\\:id]');
     const livewire = () => root() ? window.Livewire?.find(root().getAttribute('wire:id')) : null;
@@ -162,6 +174,18 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
         return pageRange(livewire()?.get('pageRange'), pdf.numPages).slice(0, 48);
     };
 
+    const updateSelectionLabel = () => {
+        const selection = $('v2-ocr-preview-selection');
+        if (!selection) return;
+        if (!pdf) {
+            selection.textContent = '';
+            return;
+        }
+        const custom = livewire()?.get('pageMode') === 'custom';
+        const selected = custom ? pageRange(livewire()?.get('pageRange'), pdf.numPages) : [];
+        selection.textContent = custom ? (selected.length ? `${selected.length} ${labels.pagesSelected}` : labels.invalidRange) : `${pdf.numPages} ${labels.allPages}`;
+    };
+
     const render = async (pageNumber, canvas, renderScale) => {
         const sourcePage = await pdf.getPage(pageNumber);
         const viewport = sourcePage.getViewport({ scale: renderScale });
@@ -184,6 +208,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
         const holder = $('v2-ocr-thumbs');
         holder.innerHTML = `<small>${labels.thumbnails}</small>`;
         visiblePages = selectedPreviewPages();
+        updateSelectionLabel();
         if (!visiblePages.length) {
             holder.insertAdjacentHTML('beforeend', `<small class="text-warning d-block mt-2">${labels.invalidRange}</small>`);
             $('v2-ocr-page-info').textContent = labels.choosePages;
@@ -233,6 +258,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
         $('v2-ocr-canvas').style.display = 'none';
         $('v2-ocr-image').style.display = 'none';
         $('v2-ocr-page-info').textContent = labels.uploadPreview;
+        updateSelectionLabel();
         closePreview();
     };
 
@@ -249,16 +275,23 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
             $('v2-ocr-image').src = url;
             $('v2-ocr-image').style.display = 'block';
             $('v2-ocr-page-info').textContent = labels.imagePreview;
+            $('v2-ocr-preview-selection').textContent = '';
         }
         livewire()?.upload('documentFile', file);
     };
 
     const fileInput = $('v2-ocr-file');
     fileInput?.addEventListener('change', event => load(event.target.files?.[0]));
-    const dropzone = $('v2-ocr-dropzone');
-    ['dragenter', 'dragover'].forEach(name => dropzone?.addEventListener(name, event => { event.preventDefault(); dropzone.classList.add('is-dragging'); }));
-    ['dragleave', 'drop'].forEach(name => dropzone?.addEventListener(name, event => { event.preventDefault(); dropzone.classList.remove('is-dragging'); }));
-    dropzone?.addEventListener('drop', event => load(event.dataTransfer?.files?.[0]));
+    const uploadPanel = $('v2-ocr-upload-panel');
+    let dragDepth = 0;
+    const setDragState = active => {
+        uploadPanel?.classList.toggle('is-dragging', active);
+        $('v2-ocr-dropzone')?.classList.toggle('is-dragging', active);
+    };
+    uploadPanel?.addEventListener('dragenter', event => { event.preventDefault(); dragDepth++; setDragState(true); });
+    uploadPanel?.addEventListener('dragover', event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDragState(true); });
+    uploadPanel?.addEventListener('dragleave', event => { event.preventDefault(); dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) setDragState(false); });
+    uploadPanel?.addEventListener('drop', event => { event.preventDefault(); dragDepth = 0; setDragState(false); load(event.dataTransfer?.files?.[0]); });
     $('v2-ocr-prev')?.addEventListener('click', () => draw(visiblePages[Math.max(0, visiblePages.indexOf(page) - 1)]));
     $('v2-ocr-next')?.addEventListener('click', () => draw(visiblePages[Math.min(visiblePages.length - 1, visiblePages.indexOf(page) + 1)]));
     $('v2-ocr-zoom')?.addEventListener('input', event => { scale = Number(event.target.value) / 100; draw(page); });
