@@ -20,6 +20,7 @@ trait ManagesAdminHomePage
         canonicalAmountSql as protected paymentCanonicalAmountSql;
         effectiveCatalogAmountSql as protected paymentEffectiveCatalogAmountSql;
     }
+    use SecureAdminComponent;
 
     #[Url(as: 'period', keep: true)]
     public string $periodFilter = '30';

@@ -73,6 +73,19 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (\Throwable $exception, Request $request) {
+            $adminSurface = $request->routeIs('admin.*') || ($request->is('livewire/*') && auth('admin')->check());
+            if ($adminSurface && ! $exception instanceof \Illuminate\Validation\ValidationException
+                && ! $exception instanceof \Illuminate\Auth\AuthenticationException) {
+                $status = $exception instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface ? $exception->getStatusCode() : 500;
+                if ($exception instanceof \Illuminate\Auth\Access\AuthorizationException) {
+                    $status = 403;
+                }
+                $message = __('admin_p0.request_failed');
+
+                return $request->expectsJson() || $request->is('livewire/*')
+                    ? response()->json(['message' => $message], $status)->header('Cache-Control', 'private, no-store')
+                    : response($message, $status)->header('Content-Type', 'text/plain; charset=UTF-8')->header('Cache-Control', 'private, no-store');
+            }
             if ($request->is('api/v2', 'api/v2/*')) {
                 return app(\App\Http\Middleware\ApiV2Boundary::class)->renderException($exception);
             }

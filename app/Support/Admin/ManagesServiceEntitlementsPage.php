@@ -7,6 +7,7 @@ use App\Models\ServicePlan;
 use App\Models\ToolAction;
 use App\Services\CustomerApi\CustomerApiAccessService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
@@ -14,6 +15,8 @@ use Livewire\Attributes\Url;
 
 trait ManagesServiceEntitlementsPage
 {
+    use SecureAdminComponent;
+
     #[Url(as: 'q', keep: true)]
     public string $search = '';
 
@@ -185,13 +188,15 @@ trait ManagesServiceEntitlementsPage
         $this->entitlementToolActionId = (int) $entitlement->tool_action_id;
         $this->entitlementChannel = PlanEntitlement::normalizeChannel((string) ($entitlement->entitlement_channel ?? PlanEntitlement::CHANNEL_APP), PlanEntitlement::CHANNEL_APP, true);
         $this->entitlementAllowed = $entitlement->allowed ? 'allowed' : 'blocked';
-        $this->entitlementLimitsJson = $entitlement->limits ? (string) json_encode($entitlement->limits, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
+        $this->entitlementLimitsJson = $entitlement->limits ? (string) json_encode(AdminData::redact($entitlement->limits), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
 
         $this->dispatch('services-entitlements:modal-show', id: 'serviceEntitlementModal');
     }
 
     public function saveEntitlement(): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         $this->validate([
             'entitlementServicePlanId' => ['required', 'integer', Rule::exists('service_plans', 'id')],
             'entitlementToolActionId' => ['required', 'integer', Rule::exists('tool_actions', 'id')],
@@ -237,6 +242,8 @@ trait ManagesServiceEntitlementsPage
 
     public function toggleEntitlementAllowed(int $entitlementId): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         $entitlement = PlanEntitlement::query()->findOrFail($entitlementId);
         $entitlement->update(['allowed' => ! $entitlement->allowed]);
         $this->syncApiScopeForEntitlement($entitlement->fresh(), (bool) $entitlement->fresh()?->allowed);
@@ -258,10 +265,14 @@ trait ManagesServiceEntitlementsPage
 
     public function performDelete(): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         if ($this->entitlementIdPendingDelete) {
             $entitlement = PlanEntitlement::query()->findOrFail($this->entitlementIdPendingDelete);
-            $this->syncApiScopeForEntitlement($entitlement, false);
-            $entitlement->delete();
+            DB::transaction(function () use ($entitlement) {
+                app(\App\Services\Admin\AdminCatalogDeletion::class)->delete($entitlement);
+                $this->syncApiScopeForEntitlement($entitlement, false);
+            });
             $this->dispatch('alert', type: 'success', message: __('Plan entitlement deleted successfully.'));
         }
 

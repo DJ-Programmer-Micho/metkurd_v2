@@ -13,6 +13,8 @@ use Livewire\Attributes\Url;
 
 trait ManagesServiceVoicesPage
 {
+    use SecureAdminComponent;
+
     #[Url(as: 'q', keep: true)]
     public string $search = '';
 
@@ -240,13 +242,15 @@ trait ManagesServiceVoicesPage
         $this->voiceVisibility = $voice->is_public ? 'public' : 'private';
         $this->voiceStatus = $voice->is_active ? 'active' : 'maintenance';
         unset($meta['engine'], $meta['gender'], $meta['notes']);
-        $this->voiceMetaJson = $meta ? (string) json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
+        $this->voiceMetaJson = $meta ? (string) json_encode(\App\Support\Admin\AdminData::redact($meta), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
 
         $this->dispatch('services-voices:modal-show', id: 'serviceVoiceModal');
     }
 
     public function saveVoice(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $rules = [
             'voiceName' => ['required', 'string', 'min:2', 'max:120'],
             'voiceEngine' => ['nullable', 'string', 'max:80'],
@@ -292,6 +296,8 @@ trait ManagesServiceVoicesPage
 
     public function toggleVoiceStatus(int $voiceId): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $voice = Voice::query()->findOrFail($voiceId);
         $voice->update(['is_active' => ! $voice->is_active]);
         $this->dispatch('alert', type: 'success', message: $voice->is_active ? __('Voice activated.') : __('Voice moved to maintenance.'));
@@ -318,13 +324,15 @@ trait ManagesServiceVoicesPage
         $this->accessSortOrder = (int) $access->sort_order;
         $this->accessNotes = (string) data_get($meta, 'notes', '');
         unset($meta['notes']);
-        $this->accessMetaJson = $meta ? (string) json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
+        $this->accessMetaJson = $meta ? (string) json_encode(\App\Support\Admin\AdminData::redact($meta), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
 
         $this->dispatch('services-voices:modal-show', id: 'serviceVoiceAccessModal');
     }
 
     public function saveAccess(): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         $this->validate([
             'accessPlanId' => ['required', 'integer', Rule::exists('service_plans', 'id')],
             'accessVoiceId' => ['required', 'integer', Rule::exists('voices', 'id')],
@@ -373,6 +381,8 @@ trait ManagesServiceVoicesPage
 
     public function toggleAccessStatus(int $accessId): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         $access = PlanVoiceAccess::query()->findOrFail($accessId);
         $access->update(['is_active' => ! $access->is_active]);
         $this->dispatch('alert', type: 'success', message: $access->is_active ? __('Plan access activated.') : __('Plan access moved to maintenance.'));
@@ -400,13 +410,15 @@ trait ManagesServiceVoicesPage
 
     public function performDelete(): void
     {
+        $this->authorizeAdminChange($this->deleteTarget === 'access' ? 'admin.pricing' : 'admin.catalog');
+
         if ($this->deleteTarget === 'voice' && $this->voiceIdPendingDelete) {
-            Voice::query()->findOrFail($this->voiceIdPendingDelete)->delete();
+            app(\App\Services\Admin\AdminCatalogDeletion::class)->delete(Voice::query()->findOrFail($this->voiceIdPendingDelete));
             $this->dispatch('alert', type: 'success', message: __('Voice deleted successfully.'));
         }
 
         if ($this->deleteTarget === 'access' && $this->accessIdPendingDelete) {
-            PlanVoiceAccess::query()->findOrFail($this->accessIdPendingDelete)->delete();
+            app(\App\Services\Admin\AdminCatalogDeletion::class)->delete(PlanVoiceAccess::query()->findOrFail($this->accessIdPendingDelete));
             $this->dispatch('alert', type: 'success', message: __('Voice access deleted successfully.'));
         }
 

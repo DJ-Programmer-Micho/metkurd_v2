@@ -15,6 +15,7 @@ use Livewire\Attributes\Url;
 trait ManagesPaymentPlansPage
 {
     use InteractsWithPaymentAdmin;
+    use SecureAdminComponent;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -314,6 +315,8 @@ trait ManagesPaymentPlansPage
 
     public function savePlan(): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         if (($this->appMonthlyCredits === '' || $this->appMonthlyCredits === null) && $this->monthlyCredits !== '') {
             $this->appMonthlyCredits = $this->monthlyCredits;
         }
@@ -422,6 +425,8 @@ trait ManagesPaymentPlansPage
 
     public function togglePlanStatus(int $planId): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         $plan = ServicePlan::query()->findOrFail($planId);
         $plan->update(['is_active' => ! $plan->is_active]);
         unset($this->plans, $this->topStats);
@@ -445,6 +450,8 @@ trait ManagesPaymentPlansPage
 
     public function deletePlan(): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         $plan = ServicePlan::query()->findOrFail($this->deletePlanId);
 
         $hasDependencies = $plan->subscriptions()->exists()
@@ -465,7 +472,7 @@ trait ManagesPaymentPlansPage
             return;
         }
 
-        $plan->delete();
+        app(\App\Services\Admin\AdminCatalogDeletion::class)->delete($plan);
         unset($this->plans, $this->topStats);
         $this->resetDeleteState();
         $this->dispatch('payments-plans:modal-hide', id: 'paymentPlanDeleteModal');

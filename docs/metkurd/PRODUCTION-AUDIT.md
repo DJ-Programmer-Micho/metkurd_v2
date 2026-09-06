@@ -1,6 +1,46 @@
 # MetKurd V2 production-hardening audit
 
-## API V2 implementation phase — 2026-09-06 (current)
+## Local service follow-up — 2026-09-06 (latest)
+
+The user reports completing tests of all V2 services with working results. This
+is user-reported service acceptance in the local environment, not independent
+verification of every live workflow, production deployment or API V2 acceptance.
+The user subsequently reported the API-disabled notice; activation instructions
+are in [API-V2.md](API-V2.md#activation-runbook). Documentation updates have not
+enabled API V2 or applied its idempotency migration.
+
+- Completed-provider/failed-alert mismatch: the local database lacked the existing
+  poll-coordination columns. Applied only the existing poll migration to the
+  confirmed local database. The two reported jobs subsequently reached persisted
+  completion without resubmission or another charge. No production migration.
+- Vector 1.5/2.0: fixed FilePond capturing an unregistered Livewire component;
+  reconnects across navigation and handles temporary IDs, cancellation and revert.
+  Six uploader regression tests and 11 clone workspace tests passed in that run.
+- Scanned PDF rejection: reproduced the error with a generated image-only PDF
+  under the normal system/user PATH, then configured the existing PDF executable
+  through the local `OCR_PDFINFO_BINARY` setting. The real application probe
+  verified both pages afterward. Eleven PDF probe tests passed. The user's exact
+  scanned file was not independently tested. No PDF text layer is required.
+- OCR status: new submissions invalidate cached previous-job values immediately;
+  a single polling card names the document, terminal results use no spinner, and
+  a new upload clears the previous result from the editor. Active jobs remain
+  monitored and take precedence over newer terminal history on page load.
+- STEM 2/4: uploader initialization handles delayed FilePond loading, Livewire
+  registration and navigation. Current processing uses its source filename;
+  refreshed job/result state replaces stale request-local values.
+- Latest focused UI verification: **19 PHP tests / 111 assertions** across
+  OcrV2WorkspaceStatusTest, StemV2WorkspaceTest and V2CoreReviewTest; **13 frontend
+  tests** across clone-upload, stem-upload and stem-player. Vite build, changed
+  component PHP lint, focused test Pint, translation-key checks and diff whitespace
+  checks passed. PHP tests use in-memory SQLite, array cache/session and fake
+  storage/mocked submissions. These counts overlap earlier checks; do not add
+  them to previous totals as unique suite coverage.
+- Interactive acceptance of the latest uploader/navigation/status changes remains
+  pending. Rendered response tests include EN/AR/KU; they do not prove visual RTL
+  layout or real browser file transfer. Production API, queue/cache, storage and
+  rollout checks below remain separate from the user's local service report.
+
+## API V2 implementation phase — 2026-09-06
 
 The API V2 phase supersedes the earlier API deferral. The native seven-service
 API, localized developer portal and shared input boundary are now implemented.

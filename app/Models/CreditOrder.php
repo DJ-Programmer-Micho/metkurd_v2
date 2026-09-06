@@ -119,29 +119,16 @@ class CreditOrder extends Model
 
     public function isRevenueExcluded(): bool
     {
-        if ((bool) data_get($this->meta, 'revenue_excluded', false)) {
-            return true;
-        }
-
-        if (data_get($this->meta, 'revenue_record') === false) {
-            return true;
-        }
-
-        return in_array((string) data_get($this->meta, 'billing_source', ''), [
-            'admin_manual_grant',
-            'internal_non_revenue',
-        ], true);
+        return in_array(data_get($this->meta, 'revenue_excluded'), [true, 1, '1', 'true'], true)
+            || in_array(data_get($this->meta, 'revenue_record'), [false, 0, '0', 'false'], true)
+            || in_array(data_get($this->meta, 'billing_source'), ['admin_manual_grant', 'internal_non_revenue'], true);
     }
 
     public function scopeRevenueIncluded(Builder $query): Builder
     {
-        return $query->where(function (Builder $builder): void {
-            $builder
-                ->whereNull('meta->revenue_excluded')
-                ->orWhere('meta->revenue_excluded', false)
-                ->orWhere('meta->revenue_excluded', 0)
-                ->orWhere('meta->revenue_excluded', '0')
-                ->orWhere('meta->revenue_excluded', 'false');
-        });
+        return $query
+            ->where(fn (Builder $q) => $q->whereNull('meta->revenue_excluded')->orWhereNotIn('meta->revenue_excluded', [true, 1, '1', 'true']))
+            ->where(fn (Builder $q) => $q->whereNull('meta->revenue_record')->orWhereNotIn('meta->revenue_record', [false, 0, '0', 'false']))
+            ->where(fn (Builder $q) => $q->whereNull('meta->billing_source')->orWhereNotIn('meta->billing_source', ['admin_manual_grant', 'internal_non_revenue']));
     }
 }

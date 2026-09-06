@@ -10,6 +10,7 @@ use Livewire\Attributes\Url;
 trait ManagesCustomerSuspendedPage
 {
     use InteractsWithCustomerAdmin;
+    use SecureAdminComponent;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -112,7 +113,11 @@ trait ManagesCustomerSuspendedPage
 
     public function restoreCustomer(int $customerId): void
     {
-        Customer::query()->whereKey($customerId)->update(['status' => 1]);
+        $this->authorizeAdminChange('admin.customers');
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($customerId) {
+            Customer::query()->lockForUpdate()->findOrFail($customerId)->update(['status' => 1]);
+        });
         $this->dispatch('alert', type: 'success', message: __('Customer restored successfully.'));
     }
 }

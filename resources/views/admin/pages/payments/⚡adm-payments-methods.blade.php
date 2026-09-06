@@ -19,6 +19,7 @@ class extends Component
 <x-slot:title>{{ __('Payment Methods') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">

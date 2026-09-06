@@ -1,5 +1,65 @@
 # Infrastructure relationships
 
+## Admin P0 rollout — 2026-09-06
+
+This is a deployment runbook, not evidence of deployment. No application DB
+migration or account provisioning was executed during implementation.
+
+For the designated `eu-metkurd-v1-260906.sql` local import, use the
+[snapshot-specific migration plan](PRODUCTION-DB-IMPORT.md): eight migrations
+are pending and their data migrations supply the new V2 catalog. Do not run the
+general development/billing seeders over that baseline. The plan also records
+unresolved billing findings. The P0 deletion-guard customer-column defect is now
+fixed in source, but native MySQL execution remains unverified; applying schema
+alone is not deployment acceptance. The
+[routing review](ADMIN-ROUTING-REVIEW.md) separates missing schema from route boot.
+
+1. Deploy the additive migration
+   `2026_09_06_000002_add_admin_operation_safety.php` before serving the new Admin
+   code. Coordinate application maintenance/release ordering because the new
+   code expects operation/audit tables and the capability column. Review the
+   usual backup and migration plan for the target environment.
+2. Apply migrations using the established deployment procedure. This migration
+   adds `users.admin_capabilities`, `admin_operations`, `admin_audit_events`, and
+   `users.status` only where absent. It does not infer mutation permissions or
+   backfill financial history.
+3. Provision existing Admin IDs explicitly through the trusted deployment
+   console. The command **replaces** the list; specify every capability to retain:
+
+   ```text
+   php artisan admin:capabilities ADMIN_USER_ID admin.finance admin.reconcile --reason="Approved finance and payment reconciliation access"
+   ```
+
+   Replace `ADMIN_USER_ID` with the verified numeric ID. Supported capabilities:
+
+   | Capability | Scope |
+   | --- | --- |
+   | `admin.read` | Read/support; implicit for active Admin accounts |
+   | `admin.customers` | Customer access/status and verification support actions |
+   | `admin.catalog` | Tool/action, voice, add-on, storage, coupon and method management |
+   | `admin.pricing` | Service plans, pricing, entitlements, plan voice access and currency changes |
+   | `admin.finance` | Manual grants, plan/credit corrections and revenue correction |
+   | `admin.reconcile` | Provider reconciliation/reference correction and eligible invalidation |
+
+   Verified-paid grants require both finance and reconciliation. Use
+   `admin.read` alone to revoke mutation capabilities. The command records a
+   console-origin audit event and does not activate inactive accounts; deployment
+   access controls establish the human actor for this trusted console operation.
+4. Verify intended read/denied/allowed behavior, audit writes, and a controlled
+   replay scenario on the deployment database engine before operational use.
+   Capabilities and active status are refetched at execution, including existing
+   Livewire sessions. No feature flag is enabled by this migration or command.
+
+Retain operation/audit rows for financial traceability and replay protection.
+An identical pending intent may be retried after resolving its safe failure;
+changing the payload requires an explicitly new intent. Provider replacement
+references fail closed if fresh responses lack the local merchant reference
+needed to establish ownership. Do not bypass this check with an arbitrary ID.
+SQL atomicity is not a guarantee for external cancellation/notifications in
+existing provider fulfillment; investigate ambiguous provider outcomes before
+issuing a new correction. A schema rollback drops replay/audit evidence and
+must not be used as routine data cleanup.
+
 ## API V2 rollout requirements — 2026-09-06
 
 API V2 adds no GPU/queue/storage architecture. Deploy the API idempotency migration
@@ -10,8 +70,25 @@ workers. Confirm ffprobe and OCR_PDFINFO_BINARY, private object permissions, upl
 limits, native endpoints, API-channel pricing/entitlements and plan scopes.
 CUSTOMER_API_V2_AUTH_FAILURES_PER_MINUTE configures the failure-only IP bucket
 (default 60/minute); authenticated request limits remain plan-controlled and
-shared with V1. No live configuration, migrations or rollout were performed here.
-See [API-V2.md](API-V2.md) for recovery and acceptance requirements.
+shared with V1. No production configuration, migrations or rollout were performed.
+See [API-V2.md](API-V2.md#activation-runbook) for exact enable/disable steps,
+configuration refresh, migrations and read-only activation checks. Localhost is
+supported; the API-disabled notice means the machine feature gate is false.
+
+### Local troubleshooting evidence (2026-09-06)
+
+The existing poll-coordination migration was applied to the confirmed local
+database after completed-provider jobs could not be synchronized. That is not
+evidence of its deployment elsewhere; the API idempotency migration is a separate
+requirement. API V2 is still disabled as reported by the user.
+
+A local application process could not find pdfinfo through its normal PATH.
+Configuring `OCR_PDFINFO_BINARY` to the existing executable allowed the real probe
+to count a generated two-page image-only PDF. Scanned PDFs need no selectable
+text for page counting. On Windows or managed services, configure the executable
+for the actual web/worker process; a utility available only in an interactive
+shell may be unavailable to that process. Keep machine-specific paths out of
+committed files and verify deployment dependencies independently.
 
 
 ## Previous core-review scope — 2026-09-06

@@ -16,6 +16,7 @@ function servicePricingGroupingAdmin(): User
 {
     return User::unguarded(function (): User {
         return User::query()->create([
+            'admin_capabilities' => \App\Support\Admin\AdminAccess::CAPABILITIES,
             'name' => 'Pricing Group Admin',
             'email' => 'pricing-group-admin-'.Str::lower(Str::random(8)).'@example.com',
             'password' => 'Secret123!',
@@ -67,7 +68,7 @@ it('groups app mobile and api pricing rows into one visual row', function () {
 
     $this->actingAs($admin, 'admin');
 
-    $component = Livewire::test('admin::pages.services.adm-services-pricing')
+    $component = Livewire::test('admin::pages.services.adm-services-pricing')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('search', $metricCode)
         ->assertSee('App Price')
         ->assertSee('Mobile Price')
@@ -92,7 +93,7 @@ it('shows grouped app mobile and api prices once for the shared rule', function 
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.services.adm-services-pricing')
+    Livewire::test('admin::pages.services.adm-services-pricing')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('search', $metricCode)
         ->assertSee('10 credits')
         ->assertSee('11 credits')
@@ -114,13 +115,13 @@ it('shows fallback and not configured labels without adding duplicate legacy cha
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.services.adm-services-pricing')
+    Livewire::test('admin::pages.services.adm-services-pricing')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('search', $fallbackMetric)
         ->assertSee('Fallback: 9 credits')
         ->assertSee('Legacy All: 9 credits')
         ->assertDontSee('Legacy All Channels');
 
-    Livewire::test('admin::pages.services.adm-services-pricing')
+    Livewire::test('admin::pages.services.adm-services-pricing')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('search', $missingMetric)
         ->assertSee('7 credits')
         ->assertSee('Not configured');
@@ -137,7 +138,7 @@ it('loads grouped app mobile and api prices into the edit modal', function () {
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.services.adm-services-pricing')
+    Livewire::test('admin::pages.services.adm-services-pricing')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openPricingRuleEditModal', (int) $rules['app']->id)
         ->assertSet('ruleMetricCode', $metricCode)
         ->assertSet('ruleAppCreditsPerUnit', '4')
@@ -156,7 +157,7 @@ it('disables all primary rows in a grouped pricing row', function () {
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.services.adm-services-pricing')
+    Livewire::test('admin::pages.services.adm-services-pricing')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('togglePricingRuleStatus', (int) $rules['app']->id)
         ->assertHasNoErrors();
 
@@ -176,7 +177,7 @@ it('deletes grouped primary rows and preserves legacy all fallback rows', functi
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.services.adm-services-pricing')
+    Livewire::test('admin::pages.services.adm-services-pricing')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('confirmPricingRuleDelete', (int) $rules['app']->id)
         ->assertSet('ruleIdsPendingDelete', [
             (int) $rules['app']->id,
@@ -202,7 +203,7 @@ it('keeps channel filtering grouped without reintroducing duplicate rows', funct
 
     $this->actingAs($admin, 'admin');
 
-    $component = Livewire::test('admin::pages.services.adm-services-pricing')
+    $component = Livewire::test('admin::pages.services.adm-services-pricing')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('search', $metricCode)
         ->set('channelFilter', 'api')
         ->assertSee('Fallback: 9 credits');

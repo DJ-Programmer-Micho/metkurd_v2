@@ -19,6 +19,7 @@ function adminDashboardAdmin(): User
 {
     return User::unguarded(function (): User {
         return User::query()->create([
+            'admin_capabilities' => \App\Support\Admin\AdminAccess::CAPABILITIES,
             'name' => 'Admin Dashboard User',
             'email' => 'admin-dashboard@example.com',
             'password' => 'Secret123!',
@@ -60,7 +61,7 @@ it('renders the admin dashboard in IQD by default and switches to USD on toggle'
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.home.app-home')
+    Livewire::test('admin::pages.home.app-home')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->assertSee($expectedIqd)
         ->set('displayCurrencyCode', 'USD')
         ->assertSee($expectedUsd);
@@ -79,7 +80,7 @@ it('keeps dashboard totals and chart revenue numerically consistent across the I
 
     $this->actingAs($admin, 'admin');
 
-    $component = Livewire::test('admin::pages.home.app-home');
+    $component = Livewire::test('admin::pages.home.app-home')->set('adminChangeReason', 'Authorized catalog correction for regression verification.');
     $iqdCharts = (fn () => $this->chartPayload)->call($component->instance());
     $iqdStats = (fn () => $this->overviewStats)->call($component->instance());
 
@@ -144,7 +145,7 @@ it('excludes internal non-revenue orders from dashboard revenue totals', functio
     Cache::flush();
     $this->actingAs($admin, 'admin');
 
-    $component = Livewire::test('admin::pages.home.app-home');
+    $component = Livewire::test('admin::pages.home.app-home')->set('adminChangeReason', 'Authorized catalog correction for regression verification.');
     $stats = (fn () => $this->overviewStats)->call($component->instance());
 
     expect((float) $stats['revenue_total'])->toBe((float) $realOrder->base_amount_iqd)

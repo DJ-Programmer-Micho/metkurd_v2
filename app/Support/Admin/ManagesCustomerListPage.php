@@ -11,6 +11,7 @@ use Livewire\Attributes\Url;
 trait ManagesCustomerListPage
 {
     use InteractsWithCustomerAdmin;
+    use SecureAdminComponent;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -163,10 +164,15 @@ trait ManagesCustomerListPage
 
     public function toggleCustomerStatus(int $customerId): void
     {
-        $customer = Customer::query()->findOrFail($customerId);
-        $nextStatus = (int) $customer->status === 0 ? 1 : 0;
+        $this->authorizeAdminChange('admin.customers');
 
-        $customer->update(['status' => $nextStatus]);
+        [$customer, $nextStatus] = \Illuminate\Support\Facades\DB::transaction(function () use ($customerId) {
+            $customer = Customer::query()->lockForUpdate()->findOrFail($customerId);
+            $nextStatus = (int) $customer->status === 0 ? 1 : 0;
+            $customer->update(['status' => $nextStatus]);
+
+            return [$customer, $nextStatus];
+        });
 
         if ($nextStatus === 0) {
             CustomerEmailNotifier::sendAccountSuspended(
@@ -197,6 +203,8 @@ trait ManagesCustomerListPage
 
     public function sendVerificationSupportEmail(int $customerId): void
     {
+        $this->authorizeAdminChange('admin.customers');
+
         $customer = Customer::query()->with('profile')->findOrFail($customerId);
 
         $emailPending = ! (bool) $customer->email_verify;

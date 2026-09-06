@@ -3,6 +3,95 @@
 Implemented in the 2026-09-06 API phase. This supersedes the earlier API deferral.
 Repository evidence is not live deployment acceptance. No secrets belong here.
 
+## Activation runbook
+
+The portal message **"API V2 is not enabled in this environment yet."** means
+`config('customer_api.v2_enabled')` is false. It is an environment feature gate,
+not a restriction against localhost. `ApiV2Boundary` returns HTTP 404 with
+`invalid_request` while disabled, before bearer authentication.
+
+| Setting | Controls |
+|---|---|
+| `FEATURE_API_V2` | Machine endpoints under `/api/v2`; defaults false. |
+| `FEATURE_APP_V2` | Localized web pages, including `/{locale}/app-v2/api`; defaults false. Independent of the machine API gate. |
+
+These are configuration examples for an operator to apply to the intended
+environment; documenting activation does not activate this checkout.
+
+1. Deploy the API V2 code and inspect migration status with
+   `php artisan migrate:status`. The existing application/API schema must already
+   be present. Before accepting V2 requests, apply these additive migrations if
+   pending through the environment's normal migration procedure:
+
+   ```sh
+   php artisan migrate --path=database/migrations/2026_09_05_000001_add_poll_coordination_to_ml_jobs.php --force
+   php artisan migrate --path=database/migrations/2026_09_06_000001_add_v2_idempotency_to_api_jobs.php --force
+   ```
+
+   The first supports durable reconciliation; the second adds the customer-wide
+   API idempotency constraint. `--force` is for an intentional production
+   deployment. Do not run production migrations as a test. Do not rerun seeders
+   to activate the API. The poll migration was applied during local troubleshooting;
+   recheck each deployment's status rather than assuming that applies elsewhere.
+
+2. Prepare the existing dependencies: customer plan API access and V2 scopes,
+   active tools/actions, API-channel entitlements/prices and API wallet balance;
+   configured native processing endpoints; reachable private object storage;
+   ffprobe and Poppler pdfinfo in the application/worker runtime. Use
+   `OCR_PDFINFO_BINARY` for an explicit executable location if necessary.
+   App credits alone do not establish API credits or permission.
+
+3. Set the machine gate in the target environment's `.env` or deployment variables:
+
+   ```dotenv
+   FEATURE_API_V2=true
+   ```
+
+   To expose the V2 developer portal as well, set `FEATURE_APP_V2=true`.
+   Configure `APP_URL` to the base URL clients should use. A process-level
+   environment override can take precedence over `.env`.
+
+4. Refresh configuration. For local development, run `php artisan config:clear`
+   and restart `php artisan serve` if it retains old environment values. For a
+   production deployment, rebuild with `php artisan config:cache`, refresh the
+   route cache with `php artisan route:cache` when deploying these routes, and
+   reload long-lived application processes using the deployment's normal process
+   manager. Run `php artisan queue:restart` for existing queue workers and ensure
+   their process manager starts replacements. Keep the existing scheduler running
+   every minute and the reconciliation queue serviced: API GETs do not poll GPUs.
+
+5. Refresh `/{locale}/app-v2/api`; the disabled notice should disappear. A simple
+   read-only gate/auth check, using the actual environment base URL, is:
+
+   ```sh
+   curl -i -H "Accept: application/json" http://127.0.0.1:8000/api/v2/services
+   ```
+
+   Without a key, expect 401 `authentication_failed` once enabled, rather than
+   the gate's 404 `invalid_request` (assuming the request is not rate-limited).
+   Use `curl.exe` in Windows PowerShell if `curl` resolves to its web-request
+   alias. For a deployed server, replace the localhost origin with its HTTPS
+   origin. Verify routes with `php artisan route:list --path=api/v2` if needed.
+
+6. Create a V2 key in the portal for an API-enabled customer plan. Use the key
+   privately as `Authorization: Bearer YOUR_API_KEY` on `GET /api/v2/services`;
+   successful access returns 200. This read does not start a job or charge credits.
+   Then use the portal's service examples when ready for a paid acceptance job;
+   every POST needs an `Idempotency-Key`. Do not paste real keys into docs or logs.
+
+Local clients can use `http://127.0.0.1:8000/api/v2`. Other machines cannot reach
+this host through their own localhost address. Local full processing still needs
+the configured processing API, reachable HTTPS object-storage inputs/outputs,
+the correct schema, account permissions and reconciliation. The API does not
+require production hosting merely to enable its routes.
+
+If the notice remains, check the loaded feature flag, process-level environment,
+configuration cache and the app instance serving that URL. A 403 after activation
+indicates a separate access/scopes issue; insufficient credits is separate from
+the gate too. To disable new API access, set `FEATURE_API_V2=false` and refresh
+configuration/processes again. This does not cancel accepted jobs or stop their
+reconciliation; disabling the web gate is not necessary to disable the API.
+
 ## Routes and product boundary
 
 Machine endpoints have no locale prefix. All require a customer bearer key.

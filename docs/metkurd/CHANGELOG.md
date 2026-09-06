@@ -1,5 +1,66 @@
 # Architectural and behavioral decisions
 
+## 2026-09-06 — Close the Admin P0 normalized-plan deletion defect
+
+- Removed the invalid physical customer-plan column query. ServicePlan retains
+  its existing subscription/history and catalog/financial dependency checks.
+  PlanVoiceAccess now checks the parent plan's current and previous subscription
+  relationships without status/date filters; access alone does not imply use.
+- Added regression checks that reject the invalid SQL even under SQLite, and
+  cover retained history, dependencies added after preview, disposable fixtures
+  and existing catalog/financial protections. Native MySQL execution remains
+  unverified. No UI, migrations, pricing/billing policy or historical data changed;
+  Admin P1 remains deferred. See [Admin audit](ADMIN-AUDIT.md).
+
+## 2026-09-06 — Admin routing integrity and V1 import baseline
+
+- Preserved the intentional P0/V2 route structure. Fixed the pre-existing shared
+  authentication redirect so named Admin pages send guests to Admin sign-in;
+  customer and JSON/API branches retain their behavior. Isolated route tests
+  cover read access, middleware separation and Livewire status revocation.
+- Recorded the final V1 snapshot's eight pending migrations and no-general-seed
+  import procedure. Existing seeders can overwrite production catalog settings.
+  Historical billing findings and a P0 deletion guard querying a nonexistent
+  customer plan column were recorded as unresolved at that review; the later
+  guard repair is recorded above. No financial data or catalog logic was changed
+  during the routing review. P1 localization remains deferred. See
+  [routing review](ADMIN-ROUTING-REVIEW.md) and [import plan](PRODUCTION-DB-IMPORT.md).
+
+## 2026-09-06 — Admin P0 financial, authorization and data integrity
+
+- Added explicit active-admin Laravel capability Gates and final Livewire
+  enforcement for scoped customer/catalog/pricing/financial/reconciliation
+  changes. Existing active accounts default to read/support until explicit
+  trusted-console provisioning. No enterprise roles or Admin redesign.
+- Added durable Admin operation identity and sanitized audit history. Replays
+  reuse outcomes; payload/actor changes fail. Manual plan plus App/API credit
+  sync share a transaction and retain full-new-allowance policy and add-on funds.
+- Invalidating a review now locks and validates source state, rejecting paid
+  evidence and fulfilled/applied history. Provider correction validates fresh
+  paid evidence and local linkage before committing candidate references.
+- Future manual add-on/storage grants are explicitly no-revenue unless a
+  verified Payment is fulfilled through the existing domain. Revenue predicates
+  agree; new add-on orders retain `credit_product_id`. No historical backfill.
+- Final catalog deletion rechecks historical and pending dependencies. Currency
+  changes verify locked pair/context and protect the base currency. Operational
+  payload display is allowlisted; settings/audit redact secrets and signed URLs.
+- Added isolated regression coverage, including injected plan/sync failure and
+  two-process same-intent replay. Deployment migration, actual provisioning,
+  production-engine concurrency and browser acceptance remain separate checks.
+  P1–P4 and Landing CMS remain open. See [ADMIN-AUDIT.md](ADMIN-AUDIT.md).
+
+## 2026-09-06 — Workspace job identity and upload readiness
+
+- OCR submission/synchronization invalidates request-cached job, status and text
+  together. A new document clears terminal editor state; active work stays in
+  focus. The document-labelled status card owns the active poll, preventing a
+  previous completed result from presenting as the new job.
+- Vector/STEM upload controllers wait for Livewire registration and reconnect
+  on navigation; STEM also retries initialization when FilePond becomes available.
+  Upload success uses the temporary server identifier and abort uses cancellation.
+- These are web workspace state changes. Persisted job identities, paid dispatch,
+  storage ownership and app/API wallet boundaries remain unchanged.
+
 ## 2026-09-06 — API V2 uses the native V2 core (later phase)
 
 - Supersedes the earlier same-day API deferral. Added the versioned machine API

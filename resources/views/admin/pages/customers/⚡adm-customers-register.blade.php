@@ -19,6 +19,15 @@ class extends Component
 <x-slot:title>{{ __('Customers Register') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div class="mb-3">
+        <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="startNewCorrection">{{ __('admin_p0.new_correction') }}</button>
+        <label class="form-label ms-2" for="admin-credit-reason">{{ __('admin_p0.sync_reason') }}</label>
+        <input id="admin-credit-reason" class="form-control" wire:model="creditSyncReason" maxlength="500">
+        @error('creditSyncReason') <div class="text-danger">{{ $message }}</div> @enderror
+        @foreach (['operation', 'providerReference', 'classification', 'paymentId', 'billingCycle', 'delete'] as $errorKey)
+            @error($errorKey) <div class="text-danger">{{ $message }}</div> @enderror
+        @endforeach
+    </div>
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -414,11 +423,13 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Provider Reference (Optional)') }}</label>
-                                <input type="text" class="form-control" wire:model.defer="storagePlanProviderRef" placeholder="{{ __('FIB subscription/payment reference') }}">
-                                @error('storagePlanProviderRef')
-                                    <div class="text-danger small mt-1">{{ $message }}</div>
-                                @enderror
+                                <label class="form-label">{{ __('admin_p0.classification') }}</label>
+                                <select class="form-select" wire:model="storageClassification">
+                                    <option value="no_revenue">{{ __('admin_p0.no_revenue') }}</option>
+                                    <option value="verified_paid">{{ __('admin_p0.verified_paid') }}</option>
+                                </select>
+                                <label class="form-label">{{ __('admin_p0.payment_evidence') }}</label>
+                                <input type="number" min="1" class="form-control" wire:model="storagePaymentId">
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">{{ __('Admin Note') }}</label>
@@ -448,11 +459,13 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Provider Reference (Optional)') }}</label>
-                                <input type="text" class="form-control" wire:model.defer="addonProviderRef" placeholder="{{ __('FIB payment reference') }}">
-                                @error('addonProviderRef')
-                                    <div class="text-danger small mt-1">{{ $message }}</div>
-                                @enderror
+                                <label class="form-label">{{ __('admin_p0.classification') }}</label>
+                                <select class="form-select" wire:model="addonClassification">
+                                    <option value="no_revenue">{{ __('admin_p0.no_revenue') }}</option>
+                                    <option value="verified_paid">{{ __('admin_p0.verified_paid') }}</option>
+                                </select>
+                                <label class="form-label">{{ __('admin_p0.payment_evidence') }}</label>
+                                <input type="number" min="1" class="form-control" wire:model="addonPaymentId">
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">{{ __('Admin Note') }}</label>
@@ -573,7 +586,7 @@ class extends Component
                                                 </div>
                                                 <div class="text-muted small mt-1">{{ \Illuminate\Support\Str::headline((string) ($payment->status?->value ?? $payment->status ?? __('n/a'))) }}</div>
                                                 @if ($payment->reviewMessage())
-                                                    <div class="text-warning small mt-1">{{ $payment->reviewMessage() }}</div>
+                                                    <div class="text-warning small mt-1">{{ \App\Support\Admin\AdminData::redact($payment->reviewMessage()) }}</div>
                                                 @endif
                                                 @if ($payment->requiresOpenReview())
                                                     <div class="d-flex flex-wrap gap-2 mt-2">

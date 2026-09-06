@@ -34,12 +34,13 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
             return;
         }
 
-        $credentialsEmail = ['email' => $this->login, 'password' => $this->password];
-        $credentialsUser  = ['username' => $this->login, 'password' => $this->password];
+        $credentialsEmail = ['email' => $this->login, 'password' => $this->password, 'status' => 1];
+        $credentialsUser  = ['username' => $this->login, 'password' => $this->password, 'status' => 1];
 
         $ok =
             Auth::guard('admin')->attempt($credentialsEmail, $this->remember) ||
-            Auth::guard('admin')->attempt($credentialsUser, $this->remember);
+            (\Illuminate\Support\Facades\Schema::hasColumn('users', 'username')
+                && Auth::guard('admin')->attempt($credentialsUser, $this->remember));
 
         if (! $ok) {
             RateLimiter::hit($key, 60);

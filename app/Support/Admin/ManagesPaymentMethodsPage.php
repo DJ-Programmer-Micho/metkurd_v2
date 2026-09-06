@@ -14,6 +14,7 @@ use Livewire\Attributes\Url;
 trait ManagesPaymentMethodsPage
 {
     use InteractsWithPaymentAdmin;
+    use SecureAdminComponent;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -199,6 +200,8 @@ trait ManagesPaymentMethodsPage
 
     public function saveMethod(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $validated = $this->validate($this->formRules());
         $settings = $this->decodeJsonTextarea($validated['settingsJson'] ?? '', 'settingsJson');
         $feeConfig = $this->decodeJsonTextarea($validated['feeConfigJson'] ?? '', 'feeConfigJson');
@@ -250,6 +253,8 @@ trait ManagesPaymentMethodsPage
 
     public function toggleMethodStatus(int $methodId): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $method = PaymentMethod::query()->findOrFail($methodId);
         $method->update(['is_active' => ! $method->is_active]);
         app(PaymentMethodCatalog::class)->flushCache();
@@ -261,6 +266,8 @@ trait ManagesPaymentMethodsPage
 
     public function toggleMethodVisibility(int $methodId): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $method = PaymentMethod::query()->findOrFail($methodId);
         $method->update(['is_visible' => ! $method->is_visible]);
         app(PaymentMethodCatalog::class)->flushCache();
@@ -282,6 +289,8 @@ trait ManagesPaymentMethodsPage
 
     public function deleteMethod(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $method = PaymentMethod::query()->findOrFail($this->deleteMethodId);
 
         $hasUsage = PaymentIntent::query()->where('payment_method', $method->code)->exists()
@@ -297,7 +306,7 @@ trait ManagesPaymentMethodsPage
             return;
         }
 
-        $method->delete();
+        app(\App\Services\Admin\AdminCatalogDeletion::class)->delete($method);
         app(PaymentMethodCatalog::class)->flushCache();
         $this->resetDeleteState();
         $this->dispatch('payments-methods:modal-hide', id: 'paymentMethodDeleteModal');

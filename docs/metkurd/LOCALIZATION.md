@@ -1,5 +1,13 @@
 # Localization
 
+## Workspace status follow-up — 2026-09-06
+
+OCR distinguishes `Current job` and `Previous result` through app EN/AR/KU JSON
+catalogs. The status card renders the source document with `dir="auto"`, separates
+its state/stage onto distinct lines, and shows a spinner only for active work.
+STEM's active-job card similarly names the current source with automatic direction.
+Locale response tests passed; interactive visual RTL acceptance remains pending.
+
 ## API V2 developer portal — 2026-09-06
 
 The /{locale}/app-v2/api portal uses the V2 layout and Storage visual conventions.

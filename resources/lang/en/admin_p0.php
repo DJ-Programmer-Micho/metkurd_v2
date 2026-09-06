@@ -1,0 +1,22 @@
+<?php
+
+return [
+    'change_reason' => 'Reason for administrative change',
+    'operation_conflict' => 'This correction identity belongs to a different request. Start a new correction.',
+    'invalidation' => 'This payment is no longer eligible for invalidation.',
+    'provider_failed' => 'Provider verification failed. The original payment reference has been preserved.',
+    'provider_mismatch' => 'Provider evidence does not verify this payment and customer. No reference was changed.',
+    'state_changed' => 'The payment or subscription changed. Review its current state before correcting it.',
+    'classification_invalid' => 'Select a valid correction classification and payment evidence.',
+    'evidence_mismatch' => 'The payment evidence does not match this customer and product.',
+    'dependencies' => 'This record has dependencies or history. Deactivate it instead of deleting.',
+    'cycle_invalid' => 'This billing cycle is not enabled for the selected plan.',
+    'new_correction' => 'Start a new correction',
+    'sync_reason' => 'Reason for credit synchronization',
+    'classification' => 'Correction classification',
+    'no_revenue' => 'No-revenue administrative grant',
+    'verified_paid' => 'Verified paid correction',
+    'payment_evidence' => 'Payment record ID (required for paid correction)',
+    'currency_target' => 'The selected rate does not belong to this editable currency pair.',
+    'request_failed' => 'The Admin request could not be completed. Review the operation before retrying.',
+];

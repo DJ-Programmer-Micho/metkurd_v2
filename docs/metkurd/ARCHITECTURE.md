@@ -1,5 +1,37 @@
 # MetKurd architecture
 
+## Admin P0 safety boundary — 2026-09-06
+
+Admin retains `auth:admin` and adds fresh active-user capability Gates on final
+scoped mutations. `users.admin_capabilities` is provisioned explicitly; active
+accounts without a list have read/support access. `SecureAdminComponent` and
+persistent active-admin middleware also cover Livewire requests.
+
+`AdminOperationRunner` owns durable financial intent identity and locks the
+operation/customer around existing domain services. Manual plan grants and App/API
+credit synchronization now commit or roll back together; full-new-allowance and
+separate wallet semantics remain unchanged. Add-on balances are retained.
+Completed identical intents return recorded outcomes; changed actor/customer/
+action/target/reason under an existing identity is rejected. Failed execution
+retains a pending intent and a sanitized failed-attempt audit entry.
+
+Explicit payment invalidation verifies current locked state. Provider reference
+correction verifies fresh paid evidence and local relationships before writes.
+Manual add-on/storage grants default to no revenue; verified-paid corrections
+require matched provider-backed Payment evidence and existing fulfillment.
+New add-on CreditOrders retain the product FK. No historical repair runs.
+
+Final catalog deletion checks history, pending purchases and relevant API/file
+relationships; referenced entries must be retained/deactivated. Admin audit
+records are additive and redact sensitive values. Provider payloads exposed to
+components use an operational allowlist, while editable settings mask secrets
+and preserve their server copy. Database atomicity does not cover external
+provider cancellation/notification effects in existing fulfillment.
+
+See [Admin implementation status](ADMIN-AUDIT.md#admin-p0-implementation-status--2026-09-06)
+and [rollout prerequisites](INFRASTRUCTURE.md#admin-p0-rollout--2026-09-06).
+P1–P4 and Landing CMS remain outside this change.
+
 ## API V2 phase — 2026-09-06 (current)
 
 The public /api/v2 namespace and /{locale}/app-v2/api developer portal now consume
@@ -10,6 +42,12 @@ CustomerOutputStorage handle processing. API status reads only persisted state.
 See [API-V2.md](API-V2.md) for the exact public/security contract and migration.
 FEATURE_API_V2 and FEATURE_APP_V2 remain disabled by default; source implementation
 is not evidence of deployment. The previous core-review scope below is historical.
+
+The API-disabled portal notice reflects the machine gate, not a localhost
+restriction. [API activation](API-V2.md#activation-runbook) documents the independent
+API/web flags and prerequisites. The latest [local follow-up](PRODUCTION-AUDIT.md)
+records user-reported working services, local infrastructure repairs and the
+subsequent OCR status/Vector-STEM uploader fixes, with verification limits.
 
 
 ## Previous core-review scope — 2026-09-06

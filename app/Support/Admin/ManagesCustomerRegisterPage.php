@@ -2,39 +2,55 @@
 
 namespace App\Support\Admin;
 
-use App\Domain\Payments\Actions\ConfirmFibPayment;
-use App\Domain\Payments\Enums\PaymentInternalStatus;
 use App\Domain\Payments\Enums\PaymentMode;
 use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
-use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
-use App\Domain\Payments\Fib\FibSubscriptionMapper;
-use App\Domain\Payments\Fib\FibSubscriptionService;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
-use App\Enums\PaymentRecurringStrategy;
 use App\Models\CreditProduct;
 use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
-use App\Services\Billing\CreditService;
-use App\Services\Billing\ManualServicePlanGrantService;
-use App\Services\Billing\PlanSwitcher;
-use App\Services\Payments\AddonPurchaseService;
 use App\Services\Payments\ManualRevenueReclassificationService;
-use App\Support\TelegramSubscriptionLifecycleNotifier;
-use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
 
 trait ManagesCustomerRegisterPage
 {
     use InteractsWithCustomerAdmin;
+    use SecureAdminComponent;
+
+    #[\Livewire\Attributes\Locked]
+    public array $adminIntentIds = [];
+
+    public string $creditSyncReason = '';
+
+    public string $addonClassification = 'no_revenue';
+
+    public string $addonPaymentId = '';
+
+    public string $storageClassification = 'no_revenue';
+
+    public string $storagePaymentId = '';
+
+    public function startNewCorrection(): void
+    {
+        $admin = AdminAccess::authorize('admin.read');
+        if (! \Illuminate\Support\Facades\Gate::forUser($admin)->allows('admin.reconcile')) {
+            AdminAccess::authorize('admin.finance');
+        }
+        $this->newCorrectionIdentities();
+    }
+
+    protected function newCorrectionIdentities(): void
+    {
+        foreach (['plan', 'addon', 'storage', 'credits', 'invalidate', 'reference', 'reconcile', 'non_revenue'] as $action) {
+            $this->adminIntentIds[$action] = (string) \Illuminate\Support\Str::uuid();
+        }
+    }
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -106,6 +122,7 @@ trait ManagesCustomerRegisterPage
 
     public function mount(): void
     {
+        $this->newCorrectionIdentities();
         if ($this->customerFilter === 'all') {
             return;
         }
@@ -318,6 +335,8 @@ trait ManagesCustomerRegisterPage
 
     public function applyServicePlanAdjustment(): void
     {
+        \App\Support\Admin\AdminAccess::authorize('admin.finance');
+
         $customer = $this->resolveFocusedCustomer();
 
         if (! $customer) {
@@ -367,249 +386,61 @@ trait ManagesCustomerRegisterPage
             trim((string) ($validated['servicePlanGrantReasonOther'] ?? '')),
             trim((string) ($validated['servicePlanAdjustmentNote'] ?? ''))
         );
-        $previousAllowances = $this->servicePlanAllowances($customer->currentServicePlan());
-
-        $subscription = app(ManualServicePlanGrantService::class)->grant($customer, $plan, [
-            'billing_cycle' => $billingCycle,
-            'admin_id' => auth('admin')->id(),
-            'reason' => $adminNote,
-        ]);
-
-        $syncResult = [
-            'changed' => false,
-            'app_added_credits' => 0,
-            'api_added_credits' => 0,
-        ];
-
-        if ((string) $validated['servicePlanCreditSyncPolicy'] === 'safe_top_up_only') {
-            $syncResult = app(CreditService::class)->syncCustomerSubscriptionCreditsToPlan($customer->fresh(), $plan, [
-                'type' => 'admin_credit_sync',
-                'source_type' => 'admin_manual_grant',
-                'source_id' => (string) $subscription->id,
-                'related_type' => $subscription::class,
-                'related_id' => (string) $subscription->id,
-                'admin_id' => auth('admin')->id(),
-                'admin_note' => $adminNote,
-                'billing_cycle' => $billingCycle,
-                'description' => sprintf(
-                    'Admin manual no-revenue service plan grant for customer %d to %s.',
-                    (int) $customer->id,
-                    (string) $plan->code
-                ),
-                'cycle_started_on' => $subscription->cycle_started_on?->toDateString(),
-                'cycle_ends_on' => $subscription->cycle_ends_on?->toDateString(),
-                'current_cycle_key' => $subscription->cycle_started_on?->format('Y-m') ?? now()->format('Y-m'),
-                'current_allowances' => $previousAllowances,
-            ]);
-        }
-
-        Log::info('Admin applied manual service plan adjustment.', [
-            'admin_id' => auth('admin')->id(),
-            'customer_id' => $customer->id,
-            'service_plan_id' => $plan->id,
-            'service_plan_code' => $plan->code,
-            'billing_cycle' => $billingCycle,
-            'billing_source' => 'admin_manual_grant',
-            'revenue_record' => false,
-            'app_added_credits' => $syncResult['app_added_credits'],
-            'api_added_credits' => $syncResult['api_added_credits'],
-        ]);
-
-        $this->servicePlanProviderRef = '';
-        $this->servicePlanGrantReason = '';
-        $this->servicePlanGrantReasonOther = '';
-        $this->servicePlanCreditSyncPolicy = 'safe_top_up_only';
-        $this->servicePlanAdjustmentNote = '';
-        $this->servicePlanAdjustmentId = (string) $plan->id;
-
-        $this->dispatch(
-            'alert',
-            type: 'success',
-            message: $this->creditSyncStatusMessage(
-                $syncResult,
-                __('Manual plan grant applied successfully without creating a revenue/provider record.')
-            )
+        $syncResult = app(\App\Services\Admin\AdminFinancialCorrections::class)->plan(
+            $this->adminIntentIds['plan'], $customer->id, $plan->id, $billingCycle, $adminNote
         );
+        $this->dispatch('alert', type: 'success', message: $this->creditSyncStatusMessage(
+            $syncResult, __('Manual plan grant applied successfully without creating a revenue/provider record.')
+        ));
     }
 
     public function applyStoragePlanAdjustment(): void
     {
+        \App\Support\Admin\AdminAccess::authorize('admin.finance');
         $customer = $this->resolveFocusedCustomer();
-
         if (! $customer) {
             return;
         }
-
-        $validated = $this->validate([
-            'storagePlanAdjustmentId' => 'required|integer',
-            'storagePlanBillingCycle' => 'required|string|in:monthly,yearly',
-            'storagePlanProviderRef' => 'nullable|string|max:191',
+        $this->validate([
+            'storagePlanAdjustmentId' => 'required|integer', 'storagePlanBillingCycle' => 'required|in:monthly,yearly',
             'storagePlanAdjustmentNote' => 'required|string|min:10|max:500',
+            'storageClassification' => 'required|in:no_revenue,verified_paid', 'storagePaymentId' => 'nullable|integer',
         ]);
-
-        $plan = StoragePlan::query()
-            ->where('is_active', true)
-            ->find((int) $validated['storagePlanAdjustmentId']);
-
-        if (! $plan) {
-            $this->dispatch('alert', type: 'error', message: __('Selected storage plan is inactive or unavailable.'));
-
-            return;
-        }
-
-        $billingCycle = (string) $validated['storagePlanBillingCycle'];
-
-        if (! $plan->supportsBillingInterval($billingCycle)) {
-            $this->dispatch(
-                'alert',
-                type: 'error',
-                message: __('This billing cycle is not enabled for the selected storage plan.')
-            );
-
-            return;
-        }
-
-        $providerRef = $this->normalizedAdminProviderRef((string) ($validated['storagePlanProviderRef'] ?? ''), 'ADMIN-STORAGE');
-        $adminNote = trim((string) $validated['storagePlanAdjustmentNote']);
-        $activeUntil = $billingCycle === 'yearly' ? now()->addYear() : now()->addMonth();
-
-        app(PlanSwitcher::class)->switchStoragePlan($customer, (int) $plan->id, [
-            'provider' => 'admin_manual',
-            'provider_ref' => $providerRef,
-            'payment_method' => 'admin_manual',
-            'billing_cycle' => $billingCycle,
-            'renewal_strategy' => PaymentRecurringStrategy::PROVIDER_SCHEDULE->value,
-            'paid_at' => now(),
-            'active_until' => $activeUntil,
-            'ui' => 'admin.customers.register',
-            'admin_adjustment' => true,
-            'admin_id' => auth('admin')->id(),
-            'admin_note' => $adminNote,
-        ]);
-
-        Log::info('Admin applied manual storage plan adjustment.', [
-            'admin_id' => auth('admin')->id(),
-            'customer_id' => $customer->id,
-            'storage_plan_id' => $plan->id,
-            'storage_plan_code' => $plan->code,
-            'billing_cycle' => $billingCycle,
-            'provider_ref' => $providerRef,
-        ]);
-
-        $this->storagePlanProviderRef = '';
-        $this->storagePlanAdjustmentNote = '';
-        $this->storagePlanAdjustmentId = (string) $plan->id;
-
+        app(\App\Services\Admin\AdminFinancialCorrections::class)->storage(
+            $this->adminIntentIds['storage'], $customer->id, (int) $this->storagePlanAdjustmentId,
+            $this->storagePlanBillingCycle, trim($this->storagePlanAdjustmentNote), $this->storageClassification,
+            $this->storagePaymentId !== '' ? (int) $this->storagePaymentId : null
+        );
         $this->dispatch('alert', type: 'success', message: __('Storage plan updated successfully for this customer.'));
     }
 
     public function applyAddonAdjustment(): void
     {
+        \App\Support\Admin\AdminAccess::authorize('admin.finance');
         $customer = $this->resolveFocusedCustomer();
-
         if (! $customer) {
             return;
         }
-
-        $validated = $this->validate([
-            'addonProductAdjustmentId' => 'required|integer',
-            'addonProviderRef' => 'nullable|string|max:191',
-            'addonAdjustmentNote' => 'required|string|min:10|max:500',
+        $this->validate([
+            'addonProductAdjustmentId' => 'required|integer', 'addonAdjustmentNote' => 'required|string|min:10|max:500',
+            'addonClassification' => 'required|in:no_revenue,verified_paid', 'addonPaymentId' => 'nullable|integer',
         ]);
-
-        $product = CreditProduct::query()
-            ->where('is_active', true)
-            ->find((int) $validated['addonProductAdjustmentId']);
-
-        if (! $product) {
-            $this->dispatch('alert', type: 'error', message: __('Selected addon pack is inactive or unavailable.'));
-
-            return;
-        }
-
-        $providerRef = $this->normalizedAdminProviderRef((string) ($validated['addonProviderRef'] ?? ''), 'ADMIN-ADDON');
-        $adminNote = trim((string) $validated['addonAdjustmentNote']);
-
-        try {
-            app(AddonPurchaseService::class)->purchase($customer, (int) $product->id, [
-                'provider' => 'admin_manual',
-                'provider_ref' => $providerRef,
-                'payment_method' => 'admin_manual',
-                'paid_at' => now(),
-                'ui' => 'admin.customers.register',
-                'admin_adjustment' => true,
-                'admin_id' => auth('admin')->id(),
-                'admin_note' => $adminNote,
-            ]);
-        } catch (AuthorizationException $exception) {
-            $this->dispatch('alert', type: 'error', message: $exception->getMessage());
-
-            return;
-        }
-
-        Log::info('Admin applied manual addon credit adjustment.', [
-            'admin_id' => auth('admin')->id(),
-            'customer_id' => $customer->id,
-            'credit_product_id' => $product->id,
-            'credit_product_code' => $product->code,
-            'provider_ref' => $providerRef,
-        ]);
-
-        $this->addonProviderRef = '';
-        $this->addonAdjustmentNote = '';
-        $this->addonProductAdjustmentId = (string) $product->id;
-
+        app(\App\Services\Admin\AdminFinancialCorrections::class)->addon(
+            $this->adminIntentIds['addon'], $customer->id, (int) $this->addonProductAdjustmentId,
+            trim($this->addonAdjustmentNote), $this->addonClassification,
+            $this->addonPaymentId !== '' ? (int) $this->addonPaymentId : null
+        );
         $this->dispatch('alert', type: 'success', message: __('Addon credits added successfully for this customer.'));
     }
 
     public function syncCustomerCreditsToPlan(int $customerId): void
     {
-        $customer = Customer::query()->find($customerId);
-
-        if (! $customer) {
-            $this->dispatch('alert', type: 'error', message: __('The selected customer could not be found.'));
-
-            return;
-        }
-
-        $subscription = $customer->activeServiceSubscription()->with('servicePlan')->first();
-        $plan = $subscription?->servicePlan;
-
-        if (! $subscription || ! $plan) {
-            $this->dispatch('alert', type: 'warning', message: __('Customer does not have an active service plan to sync from.'));
-
-            return;
-        }
-
-        $syncResult = app(CreditService::class)->syncCustomerSubscriptionCreditsToPlan($customer->fresh(), $plan, [
-            'type' => 'admin_credit_sync',
-            'source_type' => 'admin_credit_sync',
-            'source_id' => (string) $subscription->id,
-            'related_type' => $subscription::class,
-            'related_id' => (string) $subscription->id,
-            'admin_id' => auth('admin')->id(),
-            'description' => sprintf(
-                'Admin credit sync for customer %d using current plan %s.',
-                (int) $customer->id,
-                (string) $plan->code
-            ),
-            'cycle_started_on' => $subscription->cycle_started_on?->toDateString(),
-            'cycle_ends_on' => $subscription->cycle_ends_on?->toDateString(),
-            'current_cycle_key' => $subscription->cycle_started_on?->format('Y-m') ?? now()->format('Y-m'),
-            'current_allowances' => $this->servicePlanAllowances($plan),
-        ]);
-
-        if (! $syncResult['changed']) {
-            $this->dispatch('alert', type: 'info', message: __('Customer already has enough subscription credits for the current plan.'));
-
-            return;
-        }
-
-        $this->dispatch(
-            'alert',
-            type: 'success',
-            message: $this->creditSyncStatusMessage($syncResult, __('Synced successfully.'))
+        \App\Support\Admin\AdminAccess::authorize('admin.finance');
+        $this->validate(['creditSyncReason' => 'required|string|min:10|max:500']);
+        $result = app(\App\Services\Admin\AdminFinancialCorrections::class)->credits(
+            $this->adminIntentIds['credits'], $customerId, trim($this->creditSyncReason)
         );
+        $this->dispatch('alert', type: 'success', message: $this->creditSyncStatusMessage($result, __('Synced successfully.')));
     }
 
     public function prefillPaidSubscriptionReconciliation(int $paymentId): void
@@ -635,6 +466,8 @@ trait ManagesCustomerRegisterPage
 
     public function applyPaidSubscriptionReconciliation(): void
     {
+        \App\Support\Admin\AdminAccess::authorize('admin.reconcile');
+
         $customer = $this->resolveFocusedCustomer();
 
         if (! $customer) {
@@ -669,13 +502,7 @@ trait ManagesCustomerRegisterPage
         $reason = trim((string) $validated['paidReconciliationReason']);
 
         if ($payment->fulfilled_at !== null) {
-            if ($mode !== 'manual_correction_already_applied') {
-                $this->dispatch('alert', type: 'error', message: __('This payment was already fulfilled. Refusing to run fulfillment again. Use status-only reconciliation if you only need to reconnect local state.'));
-
-                return;
-            }
-
-            if (! $this->paidReconciliationStatusOnlyConfirmation) {
+            if ($mode === 'manual_correction_already_applied' && ! $this->paidReconciliationStatusOnlyConfirmation) {
                 $this->addError('paidReconciliationStatusOnlyConfirmation', __('Confirm that this is a status-only reconciliation for an already fulfilled payment.'));
 
                 return;
@@ -694,10 +521,8 @@ trait ManagesCustomerRegisterPage
             return;
         }
 
-        $this->paidReconciliationReason = '';
         $this->paidReconciliationPaymentId = (string) $reconciled->id;
         $this->paidReconciliationFibSubscriptionId = (string) ($reconciled->fib_subscription_id ?? '');
-        $this->paidReconciliationStatusOnlyConfirmation = false;
 
         $message = $mode === 'manual_correction_already_applied'
             ? __('Paid FIB subscription reconnected without a duplicate credit refill.')
@@ -708,6 +533,8 @@ trait ManagesCustomerRegisterPage
 
     public function repairPaidSubscription(int $paymentId): void
     {
+        \App\Support\Admin\AdminAccess::authorize('admin.reconcile');
+
         $payment = Payment::query()
             ->with(['customer', 'purchasable'])
             ->find($paymentId);
@@ -741,7 +568,7 @@ trait ManagesCustomerRegisterPage
         }
 
         if ($repaired->requiresReview()) {
-            $this->dispatch('alert', type: 'warning', message: $repaired->reviewMessage() ?? __('The subscription now requires manual review.'));
+            $this->dispatch('alert', type: 'warning', message: AdminData::redact($repaired->reviewMessage() ?? __('The subscription now requires manual review.')));
 
             return;
         }
@@ -772,223 +599,69 @@ trait ManagesCustomerRegisterPage
 
     public function attachCorrectReviewProviderReference(): void
     {
+        \App\Support\Admin\AdminAccess::authorize('admin.reconcile');
         $customer = $this->resolveFocusedCustomer();
-
         if (! $customer) {
             return;
         }
-
-        $validated = $this->validate([
-            'reviewPaymentId' => 'required|integer',
-            'reviewCorrectFibSubscriptionId' => 'nullable|string|max:191',
-            'reviewCorrectFibPaymentId' => 'nullable|string|max:191',
-            'reviewReconnectMode' => 'required|string|in:manual_correction_already_applied,apply_fulfillment_once',
-            'reviewResolutionReason' => 'required|string|min:10|max:500',
-        ]);
-
-        $payment = Payment::query()
-            ->with(['customer', 'purchasable'])
-            ->find((int) $validated['reviewPaymentId']);
-
-        if (! $payment instanceof Payment || (int) $payment->customer_id !== (int) $customer->id) {
-            $this->dispatch('alert', type: 'error', message: __('The selected review payment is invalid for this customer.'));
-
-            return;
+        $this->validate(['reviewPaymentId' => 'required|integer', 'reviewResolutionReason' => 'required|string|min:10|max:500',
+            'reviewCorrectFibSubscriptionId' => 'nullable|string|max:190', 'reviewCorrectFibPaymentId' => 'nullable|string|max:190',
+            'reviewReconnectMode' => 'required|in:manual_correction_already_applied,apply_fulfillment_once']);
+        $payment = Payment::query()->where('customer_id', $customer->id)->findOrFail((int) $this->reviewPaymentId);
+        if ($payment->isProviderSubscriptionObject()
+            && trim($this->reviewCorrectFibPaymentId) !== (string) ($payment->fib_payment_id ?? '')) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['providerReference' => __('admin_p0.provider_mismatch')]);
         }
-
-        $fibSubscriptionId = trim((string) $validated['reviewCorrectFibSubscriptionId']);
-        $fibPaymentId = trim((string) $validated['reviewCorrectFibPaymentId']);
-        $reason = trim((string) $validated['reviewResolutionReason']);
-        $mode = (string) $validated['reviewReconnectMode'];
-
-        if ($fibSubscriptionId === '' && $fibPaymentId === '') {
-            $this->addError('reviewCorrectFibSubscriptionId', __('Provide a correct FIB subscription id or FIB payment id.'));
-            $this->addError('reviewCorrectFibPaymentId', __('Provide a correct FIB subscription id or FIB payment id.'));
-
-            return;
-        }
-
-        if ($payment->isProviderSubscriptionObject() && $fibSubscriptionId === '') {
-            $this->addError('reviewCorrectFibSubscriptionId', __('Recurring FIB subscription payments require the correct fib_subscription_id to reconnect safely.'));
-
-            return;
-        }
-
-        if ($fibPaymentId !== '' && (string) ($payment->fib_payment_id ?? '') !== $fibPaymentId) {
-            $payment->forceFill(['fib_payment_id' => $fibPaymentId])->save();
-            $payment = $payment->fresh(['customer', 'purchasable']) ?? $payment;
-        }
-
-        if ($payment->isProviderSubscriptionObject()) {
-            $reconciled = $mode === 'manual_correction_already_applied'
-                ? $this->reconcilePaidSubscriptionWithoutRefill($payment, $fibSubscriptionId, $reason)
-                : $this->reconcilePaidSubscriptionWithFulfillment($payment, $fibSubscriptionId, $reason);
-
-            if (! $reconciled instanceof Payment) {
-                return;
-            }
-
-            $payment = $reconciled;
-        } else {
-            if ((string) ($payment->fib_payment_id ?? '') !== $fibPaymentId) {
-                $payment->forceFill(['fib_payment_id' => $fibPaymentId])->save();
-            }
-
-            if ($mode === 'apply_fulfillment_once') {
-                $payment = app(ConfirmFibPayment::class)->handle(
-                    $payment,
-                    'admin_review_reference_attach',
-                    is_array($payment->callback_payload) ? $payment->callback_payload : null,
-                )->fresh() ?? $payment;
-            }
-        }
-
-        $meta = array_merge((array) ($payment->meta ?? []), [
-            'review_resolution' => [
-                'action' => 'attach_correct_provider_reference',
-                'closed_at' => now()->toIso8601String(),
-                'reason' => $reason,
-                'mode' => $mode,
-                'fib_subscription_id' => $payment->fib_subscription_id,
-                'fib_payment_id' => $payment->fib_payment_id,
-            ],
-        ]);
-
-        $payment->forceFill([
-            'meta' => $meta,
-        ])->save();
-
-        app(PaymentEventRecorder::class)->record($payment, [
-            'event_type' => 'admin_payment_reference_attached',
-            'source' => 'admin_customer_register_review',
-            'event_key' => 'admin-payment-reference-attached:'.$payment->id.':'.$mode,
-            'before_status' => $payment->status?->value,
-            'after_status' => $payment->status?->value,
-            'meta' => [
-                'reason' => $reason,
-                'mode' => $mode,
-                'fib_subscription_id' => $payment->fib_subscription_id,
-                'fib_payment_id' => $payment->fib_payment_id,
-            ],
-        ]);
-
-        $this->openReviewPayment((int) $payment->id);
+        $candidate = $payment->isProviderSubscriptionObject() ? $this->reviewCorrectFibSubscriptionId : $this->reviewCorrectFibPaymentId;
+        app(\App\Services\Admin\AdminPaymentReconciliation::class)->handle(
+            $this->adminIntentIds['reference'], $customer->id, $payment->id, trim($candidate), $this->reviewReconnectMode, trim($this->reviewResolutionReason), true
+        );
+        unset($this->selectedReviewPayment, $this->selectedCustomer);
         $this->dispatch('alert', type: 'success', message: __('The correct FIB reference was attached safely and the payment was updated without duplicate fulfillment.'));
     }
 
     public function markReviewPaymentInvalid(): void
     {
+        \App\Support\Admin\AdminAccess::authorize('admin.reconcile');
         $customer = $this->resolveFocusedCustomer();
-
         if (! $customer) {
             return;
         }
-
-        $validated = $this->validate([
-            'reviewPaymentId' => 'required|integer',
-            'reviewResolutionReason' => 'required|string|min:10|max:500',
-        ]);
-
-        /** @var Payment|null $payment */
-        $payment = Payment::query()->find((int) $validated['reviewPaymentId']);
-
-        if (! $payment instanceof Payment || (int) $payment->customer_id !== (int) $customer->id) {
-            $this->dispatch('alert', type: 'error', message: __('The selected review payment is invalid for this customer.'));
-
-            return;
-        }
-
-        $reason = trim((string) $validated['reviewResolutionReason']);
-
-        DB::transaction(function () use ($payment, $reason) {
-            /** @var Payment $locked */
-            $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
-            $locked->forceFill([
-                'status' => PaymentStatus::EXPIRED,
-                'internal_status' => PaymentInternalStatus::EXPIRED,
-                'expired_at' => $locked->expired_at ?? now(),
-                'review_required_at' => null,
-                'mismatch_reason' => $reason,
-                'meta' => array_merge((array) ($locked->meta ?? []), [
-                    'review_resolution' => [
-                        'action' => 'mark_invalid_expired',
-                        'closed_at' => now()->toIso8601String(),
-                        'reason' => $reason,
-                    ],
-                ]),
-            ])->save();
-
-            app(PaymentEventRecorder::class)->record($locked, [
-                'event_type' => 'admin_payment_marked_invalid',
-                'source' => 'admin_customer_register_review',
-                'event_key' => 'admin-payment-marked-invalid:'.$locked->id,
-                'before_status' => $payment->status?->value,
-                'after_status' => $locked->status?->value,
-                'meta' => [
-                    'reason' => $reason,
-                ],
-            ]);
-        }, 3);
-
-        $this->openReviewPayment((int) $payment->id);
+        $this->validate(['reviewPaymentId' => 'required|integer', 'reviewResolutionReason' => 'required|string|min:10|max:500']);
+        app(\App\Domain\Payments\Actions\InvalidateAdminReviewPayment::class)->handle(
+            $this->adminIntentIds['invalidate'], $customer->id, (int) $this->reviewPaymentId, trim($this->reviewResolutionReason)
+        );
+        unset($this->selectedReviewPayment, $this->selectedCustomer);
         $this->dispatch('alert', type: 'success', message: __('The review payment was marked invalid/expired and removed from actionable review processing.'));
     }
 
     public function markReviewPaymentNonRevenue(): void
     {
+        \App\Support\Admin\AdminAccess::authorize('admin.reconcile');
         $customer = $this->resolveFocusedCustomer();
-
         if (! $customer) {
             return;
         }
+        $this->validate(['reviewPaymentId' => 'required|integer', 'reviewResolutionReason' => 'required|string|min:10|max:500']);
+        $paymentId = (int) $this->reviewPaymentId;
+        $reason = trim($this->reviewResolutionReason);
+        $id = $this->adminIntentIds['non_revenue'];
+        app(\App\Services\Admin\AdminOperationRunner::class)->run($id, 'admin.reconcile', 'payment.non_revenue', $customer->id,
+            ['payment_id' => $paymentId], $reason, function () use ($customer, $paymentId, $reason, $id) {
+                $payment = Payment::query()->lockForUpdate()->where('customer_id', $customer->id)->findOrFail($paymentId);
+                $before = $payment->status?->value;
+                app(ManualRevenueReclassificationService::class)->execute($payment, $customer->id, 'manual_grant', $reason, false);
+                $payment->refresh();
+                $payment->forceFill(['review_required_at' => null])->save();
+                app(PaymentEventRecorder::class)->record($payment, [
+                    'event_type' => 'admin_payment_marked_non_revenue', 'source' => 'admin_customer_register_review',
+                    'event_key' => 'admin-non-revenue:'.$id, 'before_status' => $before, 'after_status' => $payment->status?->value,
+                    'meta' => ['admin_id' => auth('admin')->id(), 'operation_id' => $id, 'reason' => $reason],
+                ]);
 
-        $validated = $this->validate([
-            'reviewPaymentId' => 'required|integer',
-            'reviewResolutionReason' => 'required|string|min:10|max:500',
-        ]);
-
-        $payment = Payment::query()->find((int) $validated['reviewPaymentId']);
-
-        if (! $payment instanceof Payment || (int) $payment->customer_id !== (int) $customer->id) {
-            $this->dispatch('alert', type: 'error', message: __('The selected review payment is invalid for this customer.'));
-
-            return;
-        }
-
-        app(ManualRevenueReclassificationService::class)->execute(
-            $payment,
-            (int) $customer->id,
-            'manual_grant',
-            trim((string) $validated['reviewResolutionReason']),
-            false,
-        );
-
-        $payment = $payment->fresh() ?? $payment;
-
-        $payment->forceFill([
-            'review_required_at' => null,
-            'meta' => array_merge((array) ($payment->meta ?? []), [
-                'review_resolution' => [
-                    'action' => 'mark_non_revenue_internal',
-                    'closed_at' => now()->toIso8601String(),
-                    'reason' => trim((string) $validated['reviewResolutionReason']),
-                ],
-            ]),
-        ])->save();
-
-        app(PaymentEventRecorder::class)->record($payment, [
-            'event_type' => 'admin_payment_marked_non_revenue',
-            'source' => 'admin_customer_register_review',
-            'event_key' => 'admin-payment-marked-non-revenue:'.$payment->id,
-            'before_status' => $payment->status?->value,
-            'after_status' => $payment->status?->value,
-            'meta' => [
-                'reason' => trim((string) $validated['reviewResolutionReason']),
-                'billing_source' => data_get($payment->meta, 'billing_source'),
-            ],
-        ]);
-
-        $this->openReviewPayment((int) $payment->id);
+                return ['payment_id' => $payment->id];
+            });
+        unset($this->selectedReviewPayment, $this->selectedCustomer);
         $this->dispatch('alert', type: 'success', message: __('The record was reclassified as a no-revenue manual/internal grant without deleting payment history.'));
     }
 
@@ -1014,194 +687,23 @@ trait ManagesCustomerRegisterPage
             return null;
         }
 
-        if ((string) ($payment->fib_subscription_id ?? '') !== $fibSubscriptionId) {
-            $payment->forceFill(['fib_subscription_id' => $fibSubscriptionId])->save();
-            $payment = $payment->fresh(['customer', 'purchasable']) ?? $payment;
-        }
-
         return $payment;
     }
 
     protected function reconcilePaidSubscriptionWithFulfillment(Payment $payment, string $fibSubscriptionId, string $reason): ?Payment
     {
-        try {
-            $payment = $this->normalizePaidReconciliationPayment($payment, $fibSubscriptionId);
-
-            if (! $payment instanceof Payment) {
-                return null;
-            }
-
-            $repaired = app(ConfirmFibPayment::class)->handle(
-                $payment,
-                'admin_paid_subscription_reconciliation',
-                is_array($payment->callback_payload) ? $payment->callback_payload : null,
-            )->fresh();
-        } catch (\Throwable $exception) {
-            $this->dispatch('alert', type: 'error', message: __('The paid subscription could not be applied: :message', ['message' => $exception->getMessage()]));
-
-            return null;
-        }
-
-        if ($repaired instanceof Payment) {
-            $this->recordAdminPaidReconciliationMeta($repaired, 'apply_fulfillment_once', $reason);
-        }
-
-        return $repaired;
+        return app(\App\Services\Admin\AdminPaymentReconciliation::class)->handle(
+            $this->adminIntentIds['reconcile'], (int) $payment->customer_id, (int) $payment->id,
+            $fibSubscriptionId, 'apply_fulfillment_once', $reason
+        );
     }
 
     protected function reconcilePaidSubscriptionWithoutRefill(Payment $payment, string $fibSubscriptionId, string $reason): ?Payment
     {
-        $payment = $this->normalizePaidReconciliationPayment($payment, $fibSubscriptionId);
-
-        if (! $payment instanceof Payment) {
-            return null;
-        }
-
-        $customer = $payment->customer;
-        $plan = $payment->purchasable;
-
-        if (! $customer instanceof Customer || ! $plan instanceof ServicePlan) {
-            $this->dispatch('alert', type: 'error', message: __('The payment customer or service plan could not be loaded.'));
-
-            return null;
-        }
-
-        try {
-            $status = app(FibSubscriptionService::class)->getStatusBySubscriptionId($fibSubscriptionId);
-        } catch (\Throwable $exception) {
-            $this->dispatch('alert', type: 'error', message: __('Provider status lookup failed: :message', ['message' => $exception->getMessage()]));
-
-            return null;
-        }
-
-        $subscriptions = app(FibSubscriptionService::class);
-        $mapper = app(FibSubscriptionMapper::class);
-        $providerStatus = $subscriptions->normalizeProviderStatus($status->status);
-        $providerPaymentStatus = $mapper->explicitPaidStatusFromPayloads(
-            $status,
-            is_array($payment->callback_payload) ? $payment->callback_payload : null,
-            is_array($payment->status_response) ? $payment->status_response : null,
+        return app(\App\Services\Admin\AdminPaymentReconciliation::class)->handle(
+            $this->adminIntentIds['reconcile'], (int) $payment->customer_id, (int) $payment->id,
+            $fibSubscriptionId, 'manual_correction_already_applied', $reason
         );
-        $hasPaidEvidence = $mapper->hasConfirmedPaymentEvidence(
-            $status,
-            is_array($payment->callback_payload) ? $payment->callback_payload : null,
-            is_array($payment->status_response) ? $payment->status_response : null,
-        );
-
-        if (! in_array($providerStatus, ['ACTIVE', 'SUBSCRIBED'], true) || ! $hasPaidEvidence) {
-            $this->dispatch('alert', type: 'error', message: __('The provider subscription is not in a safe ACTIVE/PAID state for no-refill reconciliation.'));
-
-            return null;
-        }
-
-        $activeSubscription = CustomerServiceSubscription::query()
-            ->with('servicePlan')
-            ->where('customer_id', $customer->id)
-            ->where('status', 'active')
-            ->where(function ($query) {
-                $query->whereNull('starts_at')->orWhere('starts_at', '<=', now());
-            })
-            ->where(function ($query) {
-                $query->whereNull('ends_at')->orWhere('ends_at', '>=', now());
-            })
-            ->latest('id')
-            ->first();
-
-        $validationError = $this->validateNoRefillReconciliationState($customer, $plan, $activeSubscription);
-
-        if ($validationError !== null) {
-            $this->dispatch('alert', type: 'error', message: $validationError);
-
-            return null;
-        }
-
-        DB::transaction(function () use ($payment, $customer, $activeSubscription, $status, $providerStatus, $providerPaymentStatus, $reason, $fibSubscriptionId) {
-            /** @var Payment $lockedPayment */
-            $lockedPayment = Payment::query()->lockForUpdate()->findOrFail($payment->id);
-            /** @var CustomerServiceSubscription $lockedSubscription */
-            $lockedSubscription = CustomerServiceSubscription::query()->lockForUpdate()->findOrFail($activeSubscription->id);
-
-            $paidAt = $lockedPayment->paid_at ?? $status->lastPaymentAt ?? now();
-            $providerCycleKey = trim((string) ($status->lastPaymentAt?->copy()->utc()->format('Y-m-d\TH:i:s\Z') ?? ''));
-            $providerCycleKey = $providerCycleKey !== ''
-                ? 'fib:'.$fibSubscriptionId.':'.$providerCycleKey
-                : ($lockedPayment->providerRecurringCycleKey() ?? null);
-
-            $lockedPayment->forceFill([
-                'status' => PaymentStatus::PAID,
-                'internal_status' => PaymentInternalStatus::APPLIED,
-                'provider_status' => $providerStatus,
-                'provider_subscription_status' => $providerStatus,
-                'provider_payment_status' => $providerPaymentStatus ?? $lockedPayment->provider_payment_status ?? PaymentStatus::PAID->value,
-                'paid_at' => $paidAt,
-                'fulfilled_at' => $lockedPayment->fulfilled_at ?? now(),
-                'review_required_at' => null,
-                'mismatch_reason' => null,
-                'active_until' => $status->activeUntil ?? $lockedPayment->active_until,
-                'last_payment_at' => $status->lastPaymentAt ?? $lockedPayment->last_payment_at,
-                'status_response' => $status->raw,
-                'last_status_checked_at' => now(),
-            ])->save();
-
-            $subscriptionMeta = array_merge((array) ($lockedSubscription->meta ?? []), [
-                'billing_source' => 'admin_paid_reconciliation',
-                'revenue_record' => true,
-                'provider' => 'fib',
-                'fib_subscription_id' => $fibSubscriptionId,
-                'manual_correction_already_applied' => true,
-                'no_credit_refill' => true,
-                'admin_id' => auth('admin')->id(),
-                'reason' => $reason,
-                'provider_status' => $providerStatus,
-                'provider_last_payment_at' => $status->lastPaymentAt?->toIso8601String(),
-                'provider_cycle_key' => $providerCycleKey,
-                'last_provider_sync_at' => now()->toIso8601String(),
-            ]);
-
-            $lockedSubscription->forceFill([
-                'payment_id' => $lockedPayment->id,
-                'source' => PaymentProvider::FIB->value,
-                'provider_ref' => $lockedPayment->providerReference(),
-                'auto_renew' => true,
-                'renewal_strategy' => PaymentRecurringStrategy::PROVIDER_SCHEDULE->value,
-                'cycle_started_on' => ($status->lastPaymentAt ?? $lockedSubscription->cycle_started_on)?->toDateString(),
-                'cycle_ends_on' => ($status->activeUntil ?? $lockedSubscription->cycle_ends_on)?->toDateString(),
-                'next_renewal_on' => ($status->activeUntil ?? $lockedSubscription->next_renewal_on)?->toDateString(),
-                'meta' => $subscriptionMeta,
-            ])->save();
-
-            $customer->syncResolvedServicePlan($lockedSubscription);
-        }, 3);
-
-        $payment = $payment->fresh(['customer', 'purchasable']) ?? $payment;
-        $this->recordAdminPaidReconciliationMeta($payment, 'manual_correction_already_applied', $reason);
-
-        app(PaymentEventRecorder::class)->record($payment, [
-            'event_type' => 'operator_subscription_reconciled',
-            'source' => 'admin_paid_subscription_reconciliation',
-            'event_key' => 'admin-paid-reconciliation:'.$payment->id.':no-refill',
-            'before_status' => $payment->status?->value,
-            'after_status' => $payment->status?->value,
-            'meta' => [
-                'manual_correction_already_applied' => true,
-                'no_credit_refill' => true,
-                'admin_id' => auth('admin')->id(),
-                'reason' => $reason,
-            ],
-        ]);
-
-        app(TelegramSubscriptionLifecycleNotifier::class)->send(
-            __('FIB subscription reconnected manually without credit refill'),
-            [
-                'Customer ID' => $payment->customer_id,
-                'Payment ID' => $payment->id,
-                'Provider ref' => $payment->providerReference(),
-                'Reason' => $reason,
-            ],
-            'Admin paid reconciliation'
-        );
-
-        return $payment->fresh(['customer', 'purchasable']) ?? $payment;
     }
 
     protected function resolveFocusedCustomer(): ?Customer
@@ -1451,12 +953,12 @@ trait ManagesCustomerRegisterPage
             'fib_payment_id' => (string) ($payment->fib_payment_id ?? __('n/a')),
             'fib_subscription_id' => (string) ($payment->fib_subscription_id ?? __('n/a')),
             'provider_status' => (string) ($payment->providerStatusLabel() ?? __('n/a')),
-            'callback_payload' => $this->encodeJsonTextarea($payment->callback_payload),
-            'status_response' => $this->encodeJsonTextarea($payment->status_response),
+            'callback_payload' => $this->encodeJsonTextarea(\App\Support\Admin\AdminData::diagnostics($payment->callback_payload)),
+            'status_response' => $this->encodeJsonTextarea(\App\Support\Admin\AdminData::diagnostics($payment->status_response)),
             'created_at' => $payment->created_at?->format('M d, Y H:i') ?? __('n/a'),
             'paid_at' => $payment->paid_at?->format('M d, Y H:i') ?? __('n/a'),
             'fulfilled_at' => $payment->fulfilled_at?->format('M d, Y H:i') ?? __('n/a'),
-            'reason' => $payment->reviewMessage() ?? __('n/a'),
+            'reason' => \App\Support\Admin\AdminData::redact($payment->reviewMessage() ?? __('n/a')),
             'requires_open_review' => $payment->requiresOpenReview(),
         ];
     }
@@ -1479,7 +981,7 @@ trait ManagesCustomerRegisterPage
             return '';
         }
 
-        return (string) json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return (string) json_encode(\App\Support\Admin\AdminData::redact($value), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     protected function buildManualGrantReason(string $reasonCode, string $otherReason = '', string $additionalNote = ''): string

@@ -15,8 +15,11 @@ new
 #[Layout('admin::layouts.app')]
 class extends Component
 {
+    use \App\Support\Admin\SecureAdminComponent;
+
     public string $search = '';
 
+    #[\Livewire\Attributes\Locked]
     public ?string $editingCurrencyCode = null;
     public ?int $editingRateId = null;
 
@@ -220,15 +223,28 @@ class extends Component
 
     public function saveRate(): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         $validated = $this->validate($this->formRules());
         $quoteCurrencyCode = strtoupper(trim((string) $validated['quoteCurrencyCode']));
 
         DB::transaction(function () use ($validated, $quoteCurrencyCode) {
             $currency = Currency::query()
+                ->lockForUpdate()
                 ->where('code', $quoteCurrencyCode)
                 ->where('code', '!=', $this->baseCurrencyCode)
                 ->firstOrFail();
 
+            $rateRow = $this->editingRateId
+                ? CurrencyExchangeRate::query()->lockForUpdate()->find($this->editingRateId)
+                : null;
+            if (($this->editingCurrencyCode !== null && $this->editingCurrencyCode !== $quoteCurrencyCode)
+                || ($this->editingRateId && (! $rateRow
+                    || $rateRow->base_currency_code !== $this->managedBaseCurrencyForQuote($quoteCurrencyCode)
+                    || $rateRow->quote_currency_code !== $quoteCurrencyCode))) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['rate' => __('admin_p0.currency_target')]);
+            }
+            $before = ['currency' => $currency->getAttributes(), 'rates' => CurrencyExchangeRate::where('quote_currency_code', $quoteCurrencyCode)->get()->toArray()];
             $currencyPayload = [
                 'decimal_places' => (int) $validated['decimalPlaces'],
                 'is_active' => (bool) $this->isActive,
@@ -251,10 +267,6 @@ class extends Component
                 ->where('quote_currency_code', $quoteCurrencyCode)
                 ->update(['is_current' => false]);
 
-            $rateRow = $this->editingRateId
-                ? CurrencyExchangeRate::query()->find($this->editingRateId)
-                : null;
-
             if (! $rateRow) {
                 $rateRow = new CurrencyExchangeRate();
             }
@@ -271,6 +283,8 @@ class extends Component
                 'is_current' => (bool) $this->isActive,
             ]);
             $rateRow->save();
+            app(\App\Services\Admin\AdminAudit::class)->record('currency.rate', Currency::class, $currency->code,
+                $before, $validated, ['currency' => $currency->getAttributes(), 'rate' => $rateRow->getAttributes()]);
         });
 
         unset($this->currencyRows, $this->topStats, $this->editableCurrencies);
@@ -282,17 +296,26 @@ class extends Component
 
     public function deactivateRate(string $currencyCode): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         $currencyCode = strtoupper(trim($currencyCode));
+        if ($currencyCode === $this->baseCurrencyCode || ! array_key_exists($currencyCode, $this->editableCurrencies)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['rate' => __('admin_p0.currency_target')]);
+        }
 
         DB::transaction(function () use ($currencyCode) {
-            Currency::query()
+            $currency = Currency::query()->lockForUpdate()
                 ->where('code', $currencyCode)
-                ->update(['is_active' => false]);
+                ->where('code', '!=', $this->baseCurrencyCode)->firstOrFail();
+            $before = ['currency' => $currency->getAttributes(), 'rates' => CurrencyExchangeRate::where('quote_currency_code', $currencyCode)->get()->toArray()];
+            $currency->update(['is_active' => false]);
 
             CurrencyExchangeRate::query()
                 ->where('base_currency_code', $this->managedBaseCurrencyForQuote($currencyCode))
                 ->where('quote_currency_code', $currencyCode)
                 ->update(['is_current' => false]);
+            app(\App\Services\Admin\AdminAudit::class)->record('currency.deactivate', Currency::class, $currencyCode,
+                $before, ['is_active' => false], ['currency' => $currency->getAttributes(), 'rates' => CurrencyExchangeRate::where('quote_currency_code', $currencyCode)->get()->toArray()]);
         });
 
         unset($this->currencyRows, $this->topStats, $this->editableCurrencies);
@@ -323,6 +346,7 @@ class extends Component
 <x-slot:title>{{ __('Currency Exchange Rates') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">

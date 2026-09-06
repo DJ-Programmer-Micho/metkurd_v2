@@ -118,3 +118,15 @@ or turn missing local configuration into a refundable GPU failure. Tests restore
 configuration and resume the same provider ID without resubmission. Browser polls
 are five seconds; OCR has one active polling element. Leo/Caption refresh local
 state before returning a completion response.
+
+## Workspace identity follow-up — 2026-09-06
+
+OCR invalidates request-cached current job, presentation, stage, text and history
+after submission/synchronization. The status card and its poll therefore refer
+to the newly accepted job in the same response; an old completed result cannot
+stop polling or label new work as done. New uploads clear terminal editor state
+while active jobs remain monitored. STEM similarly invalidates computed state
+when switching or reconciling jobs and identifies the active source in its card.
+These are presentation-state fixes; durable job/refund/reconciliation contracts
+remain unchanged. Local repair of missing poll columns and its verification scope
+are recorded in [PRODUCTION-AUDIT.md](PRODUCTION-AUDIT.md).

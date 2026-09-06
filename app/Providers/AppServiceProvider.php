@@ -42,6 +42,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        \App\Support\Admin\AdminAccess::register();
+        $this->app->scoped(\App\Services\Admin\AdminAudit::class);
+        Livewire::addPersistentMiddleware([\App\Http\Middleware\EnsureAdminIsActive::class]);
+        foreach ([\App\Models\Customer::class, \App\Models\Tool::class, \App\Models\ToolAction::class,
+            \App\Models\ServicePlan::class, \App\Models\StoragePlan::class, \App\Models\CreditProduct::class,
+            \App\Models\Coupon::class, \App\Models\PaymentMethod::class, \App\Models\PricingRule::class,
+            \App\Models\PlanEntitlement::class, \App\Models\Voice::class, \App\Models\PlanVoiceAccess::class,
+            \App\Models\Currency::class, \App\Models\CurrencyExchangeRate::class,
+            \App\Models\CustomerServiceSubscription::class, \App\Models\CustomerStorageSubscription::class,
+            \App\Models\CreditOrder::class, Payment::class] as $auditedModel) {
+            $auditedModel::observe(\App\Observers\AdminAuditObserver::class);
+        }
         // Framework validation groups complement the existing area JSON catalogs.
         app('translation.loader')->addPath(resource_path('lang'));
         // Blaze::optimize()->in(

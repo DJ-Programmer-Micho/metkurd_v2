@@ -13,6 +13,7 @@ function couponAdminUser(): User
 {
     return User::unguarded(function (): User {
         return User::query()->create([
+            'admin_capabilities' => \App\Support\Admin\AdminAccess::CAPABILITIES,
             'name' => 'Coupon Admin',
             'email' => 'coupon-admin@example.com',
             'password' => 'Secret123!',
@@ -25,7 +26,7 @@ it('renders the admin coupon management page', function () {
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.payments.adm-payments-coupons')
+    Livewire::test('admin::pages.payments.adm-payments-coupons')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->assertSee('Checkout Coupons')
         ->assertSee('Recurring provider limitation');
 });
@@ -35,7 +36,7 @@ it('allows an admin to create and update coupons', function () {
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.payments.adm-payments-coupons')
+    Livewire::test('admin::pages.payments.adm-payments-coupons')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openCreateCouponModal')
         ->set('code', 'WELCOME50')
         ->set('name', 'Welcome 50')
@@ -66,7 +67,7 @@ it('allows an admin to create and update coupons', function () {
         ->and((int) ($coupon->max_uses_per_customer ?? 0))->toBe(1)
         ->and((int) ($coupon->minimum_amount_iqd ?? 0))->toBe(5000);
 
-    Livewire::test('admin::pages.payments.adm-payments-coupons')
+    Livewire::test('admin::pages.payments.adm-payments-coupons')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openEditCouponModal', $coupon->id)
         ->set('name', 'Welcome 55')
         ->set('discountValue', '55')
@@ -104,14 +105,14 @@ it('surfaces unsupported legacy recurring durations until the admin selects a pr
         'duration_cycles' => 3,
     ]);
 
-    Livewire::test('admin::pages.payments.adm-payments-coupons')
+    Livewire::test('admin::pages.payments.adm-payments-coupons')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openEditCouponModal', $coupon->id)
         ->assertSee('legacy recurring duration')
         ->assertSee('fixed recurring amount')
         ->call('saveCoupon')
         ->assertHasErrors(['durationType']);
 
-    Livewire::test('admin::pages.payments.adm-payments-coupons')
+    Livewire::test('admin::pages.payments.adm-payments-coupons')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openEditCouponModal', $coupon->id)
         ->set('durationType', 'forever')
         ->call('saveCoupon')
@@ -130,7 +131,7 @@ it('keeps add-on coupons one-time and hides recurring-only behavior', function (
 
     $product = \App\Models\CreditProduct::query()->where('is_active', true)->firstOrFail();
 
-    Livewire::test('admin::pages.payments.adm-payments-coupons')
+    Livewire::test('admin::pages.payments.adm-payments-coupons')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openCreateCouponModal')
         ->set('targetType', 'addon_credits')
         ->assertSee('One-time add-on coupon')

@@ -11,6 +11,7 @@ use Livewire\Attributes\Url;
 trait ManagesPaymentAddonsPage
 {
     use InteractsWithPaymentAdmin;
+    use SecureAdminComponent;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -205,6 +206,8 @@ trait ManagesPaymentAddonsPage
 
     public function saveProduct(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $validated = $this->validate($this->productFormRules());
         $meta = $this->decodeJsonTextarea($validated['metaJson'] ?? '', 'metaJson');
         $priceIqd = max(0, (int) $validated['priceIqd']);
@@ -241,6 +244,8 @@ trait ManagesPaymentAddonsPage
 
     public function toggleProductStatus(int $productId): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $product = CreditProduct::query()->findOrFail($productId);
         $product->update(['is_active' => ! $product->is_active]);
 
@@ -263,6 +268,8 @@ trait ManagesPaymentAddonsPage
 
     public function deleteProduct(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $product = CreditProduct::query()->findOrFail($this->deleteProductId);
 
         if ($product->orders()->exists()) {
@@ -275,7 +282,7 @@ trait ManagesPaymentAddonsPage
             return;
         }
 
-        $product->delete();
+        app(\App\Services\Admin\AdminCatalogDeletion::class)->delete($product);
         $this->resetDeleteState();
         $this->dispatch('payments-addons:modal-hide', id: 'paymentAddonDeleteModal');
         $this->dispatch('alert', type: 'success', message: __('Credit product deleted successfully.'));

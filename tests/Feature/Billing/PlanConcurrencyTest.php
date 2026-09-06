@@ -36,6 +36,7 @@ function planConcurrencyAdmin(): User
 {
     return User::unguarded(function (): User {
         return User::query()->create([
+            'admin_capabilities' => ['admin.pricing'],
             'name' => 'Admin User',
             'email' => 'admin-plan-limits@example.com',
             'password' => 'Secret123!',
@@ -100,6 +101,7 @@ it('updates plan concurrency limits from the admin page and refreshes cached run
     $this->actingAs($admin, 'admin');
 
     Livewire::test('admin::pages.payments.adm-payments-plans')
+        ->set('adminChangeReason', 'Approved plan configuration regression.')
         ->call('openEditPlanModal', (int) $plan->id)
         ->set('concurrentJobsLimit', 11)
         ->call('savePlan')
@@ -116,6 +118,7 @@ it('updates app and api plan controls independently from the admin page', functi
     $this->actingAs($admin, 'admin');
 
     Livewire::test('admin::pages.payments.adm-payments-plans')
+        ->set('adminChangeReason', 'Approved plan configuration regression.')
         ->call('openEditPlanModal', (int) $plan->id)
         ->set('appMonthlyCredits', 12345)
         ->set('apiMonthlyCredits', 67890)

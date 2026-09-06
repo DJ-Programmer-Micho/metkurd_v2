@@ -129,6 +129,10 @@ registering files/quota through `CustomerOutputStorage`. `StemRenderController`
 serves owned tracks, payload and a ZIP; its ZIP cache is local, see storage docs.
 The shared STEM view separates histories by mode; it includes upload/preview,
 job presentation, download and deletion controls. No dedicated V2 history cache.
+FilePond waits for its library and Livewire component, reconciles on navigation
+and morphs, and preserves connected upload/player instances. The active status
+card names the current source instead of an older selected separation; it owns
+the active poll. Frontend tests cover delayed loading and switching both modes.
 
 ## Legacy inventory: Translation (outside V2 scope)
 

@@ -19,6 +19,7 @@ class extends Component
 <x-slot:title>{{ __('Services Entitlements') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -162,7 +163,7 @@ class extends Component
                                 <td><span class="badge {{ $this->statusBadgeClasses((bool) $entitlement->allowed) }}">{{ $entitlement->allowed ? __('Allowed') : __('Blocked') }}</span></td>
                                 <td>
                                     @if ($entitlement->limits)
-                                        <code>{{ json_encode($entitlement->limits) }}</code>
+                                        <code>{{ json_encode(\App\Support\Admin\AdminData::redact($entitlement->limits)) }}</code>
                                     @else
                                         <span class="text-muted">{{ __('No limits') }}</span>
                                     @endif

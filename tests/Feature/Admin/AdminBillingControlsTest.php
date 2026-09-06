@@ -29,6 +29,7 @@ function billingAdmin(): User
 {
     return User::unguarded(function (): User {
         return User::query()->create([
+            'admin_capabilities' => \App\Support\Admin\AdminAccess::CAPABILITIES,
             'name' => 'Billing Admin',
             'email' => 'billing-admin@example.com',
             'password' => 'Secret123!',
@@ -87,7 +88,7 @@ it('creates a manual plan grant without revenue or provider subscription records
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->set('servicePlanAdjustmentId', (string) $proPlan->id)
         ->set('servicePlanGrantReason', 'internal_team_account')
@@ -117,7 +118,7 @@ it('requires a reason before applying a manual grant', function () {
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->set('servicePlanAdjustmentId', (string) $proPlan->id)
         ->set('servicePlanBillingCycle', 'monthly')
@@ -136,7 +137,7 @@ it('applies a safe manual plan correction for upgrades across app and api wallet
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->set('servicePlanAdjustmentId', (string) $proPlan->id)
         ->set('servicePlanGrantReason', 'company_account')
@@ -179,7 +180,7 @@ it('does not subtract existing balances during a safe downgrade correction', fun
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->set('servicePlanAdjustmentId', (string) $studentPlan->id)
         ->set('servicePlanGrantReason', 'partner_access')
@@ -211,8 +212,8 @@ it('syncs current plan credits with the customer button logic and skips duplicat
 
     $this->actingAs($admin, 'admin');
 
-    $component = Livewire::test('admin::pages.customers.adm-customers-register')
-        ->call('syncCustomerCreditsToPlan', (int) $customer->id)
+    $component = Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
+        ->set('creditSyncReason', 'Verified allowance correction requested by support.')->call('syncCustomerCreditsToPlan', (int) $customer->id)
         ->assertHasNoErrors();
 
     $customer = $customer->fresh(['wallet', 'apiWallet']);
@@ -229,7 +230,7 @@ it('syncs current plan credits with the customer button logic and skips duplicat
 
     expect($ledgerCount)->toBe(2);
 
-    $component->call('syncCustomerCreditsToPlan', (int) $customer->id);
+    $component->set('creditSyncReason', 'Verified allowance correction requested by support.')->call('syncCustomerCreditsToPlan', (int) $customer->id);
 
     expect(CreditLedger::query()
         ->where('customer_id', $customer->id)
@@ -244,7 +245,7 @@ it('renders the customer sync credits button behind a native confirmation withou
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->assertSee('Sync Credits To Plan')
         ->assertSee('confirm(', false)
         ->assertSee('customer\u0027s subscription credits with their current plan', false)
@@ -259,7 +260,7 @@ it('renders manual billing customer labels with real values and never with liter
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->assertSee($customer->username.' ('.$customer->email.')')
         ->assertDontSee('{{ $focusedCustomer->username }}', false);
@@ -275,8 +276,8 @@ it('sync credits to plan tops up only the missing app and api credits for the cu
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
-        ->call('syncCustomerCreditsToPlan', (int) $customer->id)
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
+        ->set('creditSyncReason', 'Verified allowance correction requested by support.')->call('syncCustomerCreditsToPlan', (int) $customer->id)
         ->assertHasNoErrors();
 
     $customer = $customer->fresh(['wallet', 'apiWallet']);
@@ -304,7 +305,7 @@ it('uses updated plan definitions for future sync credits to plan actions', func
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.payments.adm-payments-plans')
+    Livewire::test('admin::pages.payments.adm-payments-plans')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openEditPlanModal', (int) $plan->id)
         ->set('appMonthlyCredits', 111111)
         ->set('apiMonthlyCredits', 222222)
@@ -314,8 +315,8 @@ it('uses updated plan definitions for future sync credits to plan actions', func
     seedBillingWallet($customer, CreditWallet::TYPE_APP, 1100, 10);
     seedBillingWallet($customer, CreditWallet::TYPE_API, 2200, 20);
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
-        ->call('syncCustomerCreditsToPlan', (int) $customer->id)
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
+        ->set('creditSyncReason', 'Verified allowance correction requested by support.')->call('syncCustomerCreditsToPlan', (int) $customer->id)
         ->assertHasNoErrors();
 
     $customer = $customer->fresh(['wallet', 'apiWallet']);
@@ -334,7 +335,7 @@ it('uses updated plan definitions for future manual billing corrections', functi
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.payments.adm-payments-plans')
+    Livewire::test('admin::pages.payments.adm-payments-plans')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openEditPlanModal', (int) $proPlan->id)
         ->set('appMonthlyCredits', 333333)
         ->set('apiMonthlyCredits', 444444)
@@ -344,7 +345,7 @@ it('uses updated plan definitions for future manual billing corrections', functi
     seedBillingWallet($customer, CreditWallet::TYPE_APP, 1000, 5);
     seedBillingWallet($customer, CreditWallet::TYPE_API, 2000, 6);
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->set('servicePlanAdjustmentId', (string) $proPlan->id)
         ->set('servicePlanGrantReason', 'founder_admin_access')
@@ -439,6 +440,7 @@ it('repairs a provider-paid fib subscription locally and supersedes the older fi
         'provider_payment_status' => null,
         'callback_payload' => [
             'id' => 'fib-broken-pro-admin-456',
+            'monetaryValue' => ['amount' => 35000, 'currency' => 'IQD'],
             'status' => 'ACTIVE',
             'paymentStatus' => 'PAID',
         ],
@@ -463,6 +465,8 @@ it('repairs a provider-paid fib subscription locally and supersedes the older fi
         ], 200),
         'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-broken-pro-admin-456' => Http::response([
             'id' => 'fib-broken-pro-admin-456',
+            'monetaryValue' => ['amount' => 35000, 'currency' => 'IQD'],
+            'paymentStatus' => 'PAID',
             'status' => 'ACTIVE',
             'activeUntil' => now()->addMonth()->toIso8601String(),
             'lastPaymentAt' => null,
@@ -478,7 +482,7 @@ it('repairs a provider-paid fib subscription locally and supersedes the older fi
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->assertSee('Provider Paid / Local Not Applied')
         ->call('repairPaidSubscription', (int) $brokenPayment->id)
@@ -538,6 +542,7 @@ it('reconciles a real paid fib subscription in no-refill mode without duplicatin
         'provider_subscription_status' => 'ACTIVE',
         'callback_payload' => [
             'id' => 'fib-no-refill-pro-123',
+            'monetaryValue' => ['amount' => 35000, 'currency' => 'IQD'],
             'status' => 'ACTIVE',
             'paymentStatus' => 'PAID',
         ],
@@ -559,6 +564,7 @@ it('reconciles a real paid fib subscription in no-refill mode without duplicatin
         ], 200),
         'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-no-refill-pro-123' => Http::response([
             'id' => 'fib-no-refill-pro-123',
+            'monetaryValue' => ['amount' => 35000, 'currency' => 'IQD'],
             'status' => 'ACTIVE',
             'paymentStatus' => 'PAID',
             'activeUntil' => now()->addMonth()->toIso8601String(),
@@ -568,7 +574,7 @@ it('reconciles a real paid fib subscription in no-refill mode without duplicatin
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->set('paidReconciliationPaymentId', (string) $payment->id)
         ->set('paidReconciliationFibSubscriptionId', 'fib-no-refill-pro-123')
@@ -633,6 +639,7 @@ it('attaches the correct fib reference from review mode without refilling credit
         'provider_subscription_status' => 'NOT_FOUND',
         'callback_payload' => [
             'id' => 'fib-review-no-refill-pro-123',
+            'monetaryValue' => ['amount' => 35000, 'currency' => 'IQD'],
             'status' => 'ACTIVE',
             'paymentStatus' => 'PAID',
         ],
@@ -656,6 +663,7 @@ it('attaches the correct fib reference from review mode without refilling credit
         ], 200),
         'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-review-no-refill-pro-123' => Http::response([
             'id' => 'fib-review-no-refill-pro-123',
+            'monetaryValue' => ['amount' => 35000, 'currency' => 'IQD'],
             'status' => 'ACTIVE',
             'paymentStatus' => 'PAID',
             'activeUntil' => now()->addMonth()->toIso8601String(),
@@ -665,7 +673,7 @@ it('attaches the correct fib reference from review mode without refilling credit
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->call('openReviewPayment', (int) $payment->id)
         ->assertSee('Review Payment')
@@ -697,7 +705,7 @@ it('requires a local payment id for paid reconciliation', function () {
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->set('paidReconciliationFibSubscriptionId', 'fib-required-check')
         ->set('paidReconciliationReason', 'Reconnect real paid FIB subscription safely.')
@@ -711,7 +719,7 @@ it('requires a fib subscription id for paid reconciliation', function () {
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->set('paidReconciliationPaymentId', '123')
         ->set('paidReconciliationReason', 'Reconnect real paid FIB subscription safely.')
@@ -725,7 +733,7 @@ it('defaults paid reconciliation to the safer no-credit-refill mode and renders 
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->assertSet('paidReconciliationMode', 'manual_correction_already_applied')
         ->assertSee('Manual Grant — No Revenue / No Provider Subscription')
@@ -759,6 +767,7 @@ it('applies paid reconciliation fulfillment once and creates credit ledgers once
         ], 200),
         'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-apply-once-pro-001' => Http::response([
             'id' => 'fib-apply-once-pro-001',
+            'monetaryValue' => ['amount' => 35000, 'currency' => 'IQD'],
             'status' => 'ACTIVE',
             'paymentStatus' => 'PAID',
             'activeUntil' => now()->addMonth()->toIso8601String(),
@@ -783,6 +792,7 @@ it('applies paid reconciliation fulfillment once and creates credit ledgers once
         'provider_subscription_status' => 'ACTIVE',
         'callback_payload' => [
             'id' => 'fib-apply-once-pro-001',
+            'monetaryValue' => ['amount' => 35000, 'currency' => 'IQD'],
             'status' => 'ACTIVE',
             'paymentStatus' => 'PAID',
         ],
@@ -799,7 +809,7 @@ it('applies paid reconciliation fulfillment once and creates credit ledgers once
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->set('paidReconciliationPaymentId', (string) $payment->id)
         ->set('paidReconciliationFibSubscriptionId', 'fib-apply-once-pro-001')
@@ -855,7 +865,7 @@ it('blocks already fulfilled payments unless status-only reconciliation is expli
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->set('paidReconciliationPaymentId', (string) $payment->id)
         ->set('paidReconciliationFibSubscriptionId', 'fib-already-fulfilled-pro-001')
@@ -873,7 +883,7 @@ it('lets an admin create grouped pricing rules for app mobile and api from one m
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.services.adm-services-pricing')
+    Livewire::test('admin::pages.services.adm-services-pricing')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('ruleToolActionId', (int) $action->id)
         ->set('ruleType', 'unit')
         ->set('rulePriority', 250)
@@ -965,7 +975,7 @@ it('lets an admin edit grouped pricing rules across app mobile and api', functio
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.services.adm-services-pricing')
+    Livewire::test('admin::pages.services.adm-services-pricing')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openPricingRuleEditModal', (int) $appRule->id)
         ->set('ruleAppCreditsPerUnit', '12')
         ->set('ruleMobileCreditsPerUnit', '13')
@@ -985,7 +995,7 @@ it('keeps api entitlements aligned with api allowed plan scopes', function () {
 
     $this->actingAs($admin, 'admin');
 
-    $component = Livewire::test('admin::pages.services.adm-services-entitlements')
+    $component = Livewire::test('admin::pages.services.adm-services-entitlements')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('entitlementServicePlanId', (int) $plan->id)
         ->set('entitlementToolActionId', (int) $action->id)
         ->set('entitlementChannel', 'api')

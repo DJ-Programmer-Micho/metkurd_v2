@@ -3,25 +3,25 @@
 use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\App\Auth\AppAuthController;
 use App\Http\Controllers\App\Auth\SocialAuthController;
-use App\Http\Controllers\App\V2StorageFileController;
 use App\Http\Controllers\App\Services\CaptionRenderController;
-use App\Http\Controllers\App\Services\CttsReferenceStreamController;
 use App\Http\Controllers\App\Services\CloneXomniRenderController;
 use App\Http\Controllers\App\Services\CloneXttsRenderController;
+use App\Http\Controllers\App\Services\CttsReferenceStreamController;
 use App\Http\Controllers\App\Services\F5ttsRenderController;
 use App\Http\Controllers\App\Services\F5ttsSpeakerAssetController;
 use App\Http\Controllers\App\Services\OcrRenderController;
 use App\Http\Controllers\App\Services\QasrRenderController;
 use App\Http\Controllers\App\Services\StemRenderController;
 use App\Http\Controllers\App\Services\TranRenderController;
+use App\Http\Controllers\App\Services\VectorV2RenderController;
 use App\Http\Controllers\App\Services\WasrRenderController;
 use App\Http\Controllers\App\Services\XomniRenderController;
-use App\Http\Controllers\App\Services\XomniV2RenderController;
-use App\Http\Controllers\App\Services\VectorV2RenderController;
 use App\Http\Controllers\App\Services\XomniSpeakerAssetController;
+use App\Http\Controllers\App\Services\XomniV2RenderController;
 use App\Http\Controllers\App\Services\XttsRenderController;
 use App\Http\Controllers\App\Services\XttsSpeakerAssetController;
 use App\Http\Controllers\App\Services\YoutubeRenderController;
+use App\Http\Controllers\App\V2StorageFileController;
 use App\Http\Controllers\Landing\PublicLandingMediaController;
 use App\Http\Controllers\Payments\AreebaWebhookController;
 use App\Http\Controllers\Payments\FibCallbackController;
@@ -81,7 +81,7 @@ Route::middleware('guest:admin')->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::prefix('{locale}/'.app('aurl'))
-    ->middleware(['auth:admin', LocalizationMainMiddleware::class])
+    ->middleware(['auth:admin', \App\Http\Middleware\EnsureAdminIsActive::class, LocalizationMainMiddleware::class])
     ->group(function () {
         Route::livewire('/home', 'admin::pages.home.app-home')->name('admin.home');
         Route::livewire('/services/tools', 'admin::pages.services.adm-services-tools')->name('admin.services.tools');

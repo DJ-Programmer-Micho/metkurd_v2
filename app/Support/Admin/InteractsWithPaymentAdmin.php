@@ -38,7 +38,7 @@ trait InteractsWithPaymentAdmin
             return '';
         }
 
-        return (string) json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return (string) json_encode(\App\Support\Admin\AdminData::redact($value), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     #[Computed]

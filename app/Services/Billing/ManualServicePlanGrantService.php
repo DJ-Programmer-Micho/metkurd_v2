@@ -63,6 +63,7 @@ class ManualServicePlanGrantService
                 'reason' => (string) ($meta['reason'] ?? ''),
                 'admin_id' => $meta['admin_id'] ?? null,
                 'granted_at' => now()->toIso8601String(),
+                'operation_id' => $meta['operation_id'] ?? null,
                 'billing_cycle' => $billingCycle,
             ], static fn (mixed $value): bool => $value !== null);
 

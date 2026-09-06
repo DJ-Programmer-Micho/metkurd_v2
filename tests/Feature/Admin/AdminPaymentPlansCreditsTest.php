@@ -21,6 +21,7 @@ function paymentPlansAdminUser(): User
 {
     return User::unguarded(function (): User {
         return User::query()->create([
+            'admin_capabilities' => \App\Support\Admin\AdminAccess::CAPABILITIES,
             'name' => 'Payments Admin',
             'email' => 'payments-admin-'.Str::lower(Str::random(8)).'@example.com',
             'password' => 'Secret123!',
@@ -83,7 +84,7 @@ it('shows the current database app and api credits on the admin payment plans pa
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.payments.adm-payments-plans')
+    Livewire::test('admin::pages.payments.adm-payments-plans')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->assertSee('123,456')
         ->assertSee('654,321')
         ->assertSee('Legacy monthly credits stay synchronized.');
@@ -98,7 +99,7 @@ it('updates plan credit fields, refreshes the table immediately, and clears land
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.payments.adm-payments-plans')
+    Livewire::test('admin::pages.payments.adm-payments-plans')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openEditPlanModal', (int) $plan->id)
         ->set('appMonthlyCredits', 222222)
         ->set('apiMonthlyCredits', 333333)
@@ -129,7 +130,7 @@ it('does not overwrite existing customer wallet balances when a plan definition 
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.payments.adm-payments-plans')
+    Livewire::test('admin::pages.payments.adm-payments-plans')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->call('openEditPlanModal', (int) $plan->id)
         ->set('appMonthlyCredits', 444444)
         ->set('apiMonthlyCredits', 555555)

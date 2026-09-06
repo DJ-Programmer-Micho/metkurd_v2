@@ -12,6 +12,7 @@ use Livewire\Attributes\Url;
 trait ManagesCustomerRankingPage
 {
     use InteractsWithCustomerAdmin;
+    use SecureAdminComponent;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';

@@ -15,6 +15,8 @@ use Livewire\Attributes\Url;
 
 trait ManagesServiceToolsPage
 {
+    use SecureAdminComponent;
+
     #[Url(as: 'q', keep: true)]
     public string $search = '';
 
@@ -364,6 +366,8 @@ trait ManagesServiceToolsPage
 
     public function saveTool(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $tool = $this->editingToolId
             ? Tool::query()->findOrFail($this->editingToolId)
             : new Tool;
@@ -407,6 +411,8 @@ trait ManagesServiceToolsPage
 
     public function toggleToolStatus(int $toolId): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $tool = Tool::query()->findOrFail($toolId);
         $tool->update(['is_active' => ! $tool->is_active]);
 
@@ -461,6 +467,8 @@ trait ManagesServiceToolsPage
 
     public function saveAction(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $rules = [
             'actionToolId' => ['required', 'integer', Rule::exists('tools', 'id')],
             'actionName' => ['required', 'string', 'min:2', 'max:160'],
@@ -520,6 +528,8 @@ trait ManagesServiceToolsPage
 
     public function toggleActionStatus(int $actionId): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $action = ToolAction::query()->findOrFail($actionId);
         $action->update(['is_active' => ! $action->is_active]);
 
@@ -573,14 +583,16 @@ trait ManagesServiceToolsPage
 
     public function performDelete(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         if ($this->deleteTarget === 'tool' && $this->toolIdPendingDelete) {
-            Tool::query()->findOrFail($this->toolIdPendingDelete)->delete();
+            app(\App\Services\Admin\AdminCatalogDeletion::class)->delete(Tool::query()->findOrFail($this->toolIdPendingDelete));
             $this->dispatch('alert', type: 'success', message: __('Tool deleted successfully.'));
         }
 
         if ($this->deleteTarget === 'action' && $this->actionIdPendingDelete) {
             DB::transaction(function () {
-                ToolAction::query()->findOrFail($this->actionIdPendingDelete)->delete();
+                app(\App\Services\Admin\AdminCatalogDeletion::class)->delete(ToolAction::query()->findOrFail($this->actionIdPendingDelete));
             });
 
             $this->dispatch('alert', type: 'success', message: __('Tool action deleted successfully.'));
@@ -707,7 +719,7 @@ trait ManagesServiceToolsPage
             return '';
         }
 
-        return (string) json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return (string) json_encode(\App\Support\Admin\AdminData::redact($value), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     protected function emptyToNull(?string $value): ?string

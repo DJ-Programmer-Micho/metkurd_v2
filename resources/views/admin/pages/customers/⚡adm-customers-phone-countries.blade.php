@@ -13,6 +13,8 @@ new
 #[Layout('admin::layouts.app')]
 class extends Component
 {
+    use \App\Support\Admin\SecureAdminComponent;
+
     public string $search = '';
 
     public array $enabledCountries = [];
@@ -100,6 +102,8 @@ class extends Component
 
     public function save(): void
     {
+        $this->authorizeAdminChange('admin.customers');
+
         if (! $this->registrationCountriesTableExists()) {
             $this->dispatch('alert', type: 'error', message: __('Run the migration for registration phone countries before using this page.'));
             return;
@@ -159,6 +163,7 @@ class extends Component
 <x-slot:title>{{ __('Phone Registration Countries') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">

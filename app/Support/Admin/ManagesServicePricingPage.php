@@ -15,6 +15,8 @@ use Livewire\Attributes\Url;
 
 trait ManagesServicePricingPage
 {
+    use SecureAdminComponent;
+
     #[Url(as: 'q', keep: true)]
     public string $search = '';
 
@@ -282,8 +284,8 @@ trait ManagesServicePricingPage
         $this->ruleRoundingMode = (string) $rule->rounding_mode;
         $this->ruleRoundingStep = (string) $rule->rounding_step;
         $this->ruleMinimumCredits = (int) $rule->minimum_credits;
-        $this->ruleConditionsJson = $rule->conditions ? (string) json_encode($rule->conditions, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
-        $this->ruleConfigJson = $rule->config ? (string) json_encode($rule->config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
+        $this->ruleConditionsJson = $rule->conditions ? (string) json_encode(AdminData::redact($rule->conditions), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
+        $this->ruleConfigJson = $rule->config ? (string) json_encode(AdminData::redact($rule->config), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
         $this->ruleStatus = $rule->is_active ? 'active' : 'inactive';
         $this->ruleStartsAt = $rule->starts_at?->format('Y-m-d\TH:i') ?? '';
         $this->ruleEndsAt = $rule->ends_at?->format('Y-m-d\TH:i') ?? '';
@@ -293,6 +295,8 @@ trait ManagesServicePricingPage
 
     public function savePricingRule(): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         $rules = [
             'ruleToolActionId' => ['required', 'integer', Rule::exists('tool_actions', 'id')],
             'ruleServicePlanId' => ['nullable', 'integer', Rule::exists('service_plans', 'id')],
@@ -368,6 +372,8 @@ trait ManagesServicePricingPage
 
     public function togglePricingRuleStatus(int $ruleId): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         $seed = PricingRule::query()->findOrFail($ruleId);
         $group = $this->resolveRuleGroup($seed);
         $primaryIds = $group
@@ -417,8 +423,14 @@ trait ManagesServicePricingPage
 
     public function performDelete(): void
     {
+        $this->authorizeAdminChange('admin.pricing');
+
         if ($this->ruleIdsPendingDelete !== []) {
-            PricingRule::query()->whereIn('id', $this->ruleIdsPendingDelete)->delete();
+            \Illuminate\Support\Facades\DB::transaction(function () {
+                foreach (PricingRule::query()->whereIn('id', $this->ruleIdsPendingDelete)->get() as $rule) {
+                    app(\App\Services\Admin\AdminCatalogDeletion::class)->delete($rule);
+                }
+            });
             unset($this->pricingRules, $this->groupedPricingRules, $this->topStats);
             $this->dispatch('alert', type: 'success', message: __('Pricing rule group deleted successfully.'));
         }

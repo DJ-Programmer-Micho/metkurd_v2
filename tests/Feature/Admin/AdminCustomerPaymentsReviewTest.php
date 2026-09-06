@@ -21,6 +21,7 @@ function adminPaymentsReviewAdmin(): User
 {
     return User::unguarded(function (): User {
         return User::query()->create([
+            'admin_capabilities' => \App\Support\Admin\AdminAccess::CAPABILITIES,
             'name' => 'Admin Payments Review',
             'email' => 'admin-payments-review@example.com',
             'password' => 'Secret123!',
@@ -76,7 +77,7 @@ it('shows review-required fib payments in the admin customer support view', func
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->assertSee('FIB Payment Ledger')
         ->assertSee('Requires Review')
@@ -99,7 +100,7 @@ it('opens the guided payment review panel and can close a review row as invalid 
         'purchase_type' => PurchaseType::PLAN_SUBSCRIPTION,
         'payment_mode' => PaymentMode::RECURRING,
         'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
-        'status' => PaymentStatus::PAID,
+        'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
         'internal_status' => PaymentInternalStatus::REQUIRES_REVIEW,
         'local_reference' => 'ADMIN-REVIEW-CLOSE-'.strtoupper(Str::random(8)),
         'idempotency_key' => (string) Str::uuid(),
@@ -109,7 +110,7 @@ it('opens the guided payment review panel and can close a review row as invalid 
         'provider_subscription_status' => 'NOT_FOUND',
         'mismatch_reason' => 'Stored subscription id was not found at the provider and should not be fulfilled automatically.',
         'review_required_at' => now(),
-        'paid_at' => now(),
+        'paid_at' => null,
         'callback_payload' => [
             'id' => 'fib-admin-review-close-123',
             'status' => 'NOT_FOUND',
@@ -128,7 +129,7 @@ it('opens the guided payment review panel and can close a review row as invalid 
 
     $this->actingAs($admin, 'admin');
 
-    Livewire::test('admin::pages.customers.adm-customers-register')
+    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->call('openReviewPayment', (int) $payment->id)
         ->assertSet('reviewPaymentId', (string) $payment->id)

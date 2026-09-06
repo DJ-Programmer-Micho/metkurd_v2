@@ -23,6 +23,7 @@ use Livewire\Attributes\Url;
 trait ManagesPaymentCouponsPage
 {
     use InteractsWithPaymentAdmin;
+    use SecureAdminComponent;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -390,6 +391,8 @@ trait ManagesPaymentCouponsPage
 
     public function saveCoupon(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $validated = $this->validate($this->couponFormRules());
         $metadata = $this->decodeJsonTextarea($validated['metadataJson'] ?? '', 'metadataJson');
         $discountValue = (float) $validated['discountValue'];
@@ -476,6 +479,8 @@ trait ManagesPaymentCouponsPage
 
     public function toggleCouponStatus(int $couponId): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $coupon = Coupon::query()->findOrFail($couponId);
         $coupon->update(['is_active' => ! $coupon->is_active]);
 
@@ -497,6 +502,8 @@ trait ManagesPaymentCouponsPage
 
     public function deleteCoupon(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $coupon = Coupon::query()->findOrFail($this->deleteCouponId);
 
         if ($coupon->redemptions()->exists()) {
@@ -510,7 +517,7 @@ trait ManagesPaymentCouponsPage
             return;
         }
 
-        $coupon->delete();
+        app(\App\Services\Admin\AdminCatalogDeletion::class)->delete($coupon);
 
         $this->dispatch(
             'alert',

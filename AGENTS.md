@@ -7,7 +7,42 @@ with `FEATURE_APP_V2` (default false); this does not prove production enablement
 V1 `/{locale}/app` is legacy and will be retired. Its continued presence is not
 a requirement to modernize it or preserve obsolete behavior.
 
+## Latest local follow-up (2026-09-06)
+
+- The user reports all V2 services working in their service tests. Record this
+  as user-reported local acceptance, not independent production or API acceptance.
+- Vector and STEM FilePond initialization must handle initial registration,
+  delayed library loading and Livewire navigation. Resolve the current component
+  at upload time; use Livewire's temporary upload token and cancellation API.
+- OCR uses one document-labelled status card. New uploads clear terminal editor
+  results; active scans stay monitored. Invalidate computed job/status/text values
+  when submitting, syncing or changing job identity so old results cannot render
+  as the new job. Preserve this in future workspace changes.
+- Local polling was repaired by applying the existing poll-coordination migration;
+  local scanned-PDF probing was repaired by configuring `OCR_PDFINFO_BINARY`.
+  Never generalize those local changes to production or commit local binary paths.
+- API V2 remains disabled in the environment reported by the user. It can run
+  locally: `FEATURE_API_V2` controls `/api/v2` independently of `FEATURE_APP_V2`,
+  which controls the web portal. Use the activation runbook in
+  [API-V2.md](docs/metkurd/API-V2.md#activation-runbook). An explanation or docs
+  update is not an instruction to enable a gate or apply migrations.
+- Latest UI regression run: 19 focused PHP tests plus 13 frontend tests passed;
+  build, focused PHP lint/Pint and translation checks passed. New navigation/status
+  changes still need interactive browser acceptance. See the dated follow-up in
+  [PRODUCTION-AUDIT.md](docs/metkurd/PRODUCTION-AUDIT.md) for verification scope.
+
 ## Product scope (2026-09-06)
+
+For the designated final V1 database snapshot `eu-metkurd-v1-260906.sql`, follow
+the [local import plan](docs/metkurd/PRODUCTION-DB-IMPORT.md). It has eight pending
+migrations; their data migrations supply the new V2 catalog. General development
+or billing seeders can overwrite production settings and are not an import step.
+Historical billing findings remain unresolved. The P0 deletion guard's invalid
+customer-column query is fixed in source: use the plan's unfiltered subscription
+and previous-subscription relationships, never `customers.service_plan_id`.
+Native MySQL acceptance remains separate from SQLite regression coverage. Read the
+[routing review](docs/metkurd/ADMIN-ROUTING-REVIEW.md) before attributing missing
+P0 schema or the deferred Admin localization mismatch to route damage.
 
 - Current core: Apollo, Vector, Leo, Caption, OCR, STEM 2 and STEM 4, plus V2
   Storage and shared infrastructure those services need. Report any additional
@@ -78,6 +113,11 @@ issues and the limits of verification; it is not deployment approval.
    Blade/PHP/JavaScript, with EN/LTR and AR/KU/RTL; use `dir="auto"` for mixed
    dynamic text where appropriate. Translate alerts, errors, labels, and modals.
    Customer wording must not expose RunPod; retain internal provider identifiers.
+7. Admin P0 mutations must preserve fresh active-user capability checks, durable
+   financial intent identity, locked payment transitions, final dependency guards
+   and sanitized audit/display boundaries. Read [Admin implementation status](docs/metkurd/ADMIN-AUDIT.md)
+   before changing these paths. Never automatically provision privileges, bypass
+   provider evidence or backfill historical financial rows. P1–P4 remain separate.
 
 ## Verification and documentation maintenance
 

@@ -11,6 +11,7 @@ use Livewire\Attributes\Url;
 trait ManagesCustomerUsagePage
 {
     use InteractsWithCustomerAdmin;
+    use SecureAdminComponent;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';

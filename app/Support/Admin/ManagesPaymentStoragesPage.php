@@ -13,6 +13,7 @@ use Livewire\Attributes\Url;
 trait ManagesPaymentStoragesPage
 {
     use InteractsWithPaymentAdmin;
+    use SecureAdminComponent;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -228,6 +229,8 @@ trait ManagesPaymentStoragesPage
 
     public function saveStoragePlan(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $validated = $this->validate($this->storageFormRules());
         $billingIntervals = $this->normalizeStorageBillingIntervals($validated['billingIntervals'] ?? []);
         $priceIqd = max(0, (int) $validated['priceIqd']);
@@ -291,6 +294,8 @@ trait ManagesPaymentStoragesPage
 
     public function toggleStorageStatus(int $storageId): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $plan = StoragePlan::query()->findOrFail($storageId);
         $plan->update(['is_active' => ! $plan->is_active]);
 
@@ -313,6 +318,8 @@ trait ManagesPaymentStoragesPage
 
     public function deleteStoragePlan(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $plan = StoragePlan::query()->findOrFail($this->deleteStorageId);
 
         if ($plan->subscriptions()->exists()) {
@@ -325,7 +332,7 @@ trait ManagesPaymentStoragesPage
             return;
         }
 
-        $plan->delete();
+        app(\App\Services\Admin\AdminCatalogDeletion::class)->delete($plan);
         $this->resetDeleteState();
         $this->dispatch('payments-storage:modal-hide', id: 'paymentStorageDeleteModal');
         $this->dispatch('alert', type: 'success', message: __('Storage plan deleted successfully.'));
