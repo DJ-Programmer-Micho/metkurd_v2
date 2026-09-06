@@ -1,5 +1,10 @@
 # MetKurd V2 shared submission plan
 
+> Historical Phase A plan. For the current implementation and exceptions, start
+> with [the MetKurd knowledge baseline](../metkurd/ARCHITECTURE.md). Native Vector,
+> Leo, Caption, OCR and STEM now exist; fallback and refund statements below
+> describe the earlier phase, not the complete current codebase.
+
 ## Implemented Phase A boundary
 
 `MlJob` remains the one customer job record for V1 and V2. V2 does not have a

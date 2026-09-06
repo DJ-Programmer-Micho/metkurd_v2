@@ -12,7 +12,6 @@ use App\Services\MetKurd\V2\RunPodV2Adapter;
 use App\Services\Security\JobExecutionLockService;
 use App\Services\Storage\CustomerOutputStorage;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -29,8 +28,9 @@ class LeoSubmissionService
     ) {}
 
     /** @param array{model_variant:string,language:string,intelligent:bool,duration_sec:float,billable_minutes:int,input_hash:string} $options */
-    public function submit(Customer $customer, UploadedFile $audio, array $options): MlJob
+    public function submit(Customer $customer, UploadedFile $audio, array $options, ?SubmissionContext $context = null): MlJob
     {
+        $context ??= new SubmissionContext;
         $tool = Tool::query()->where('code', 'leo')->firstOrFail();
         $action = ToolAction::query()->where('full_code', 'leo.transcribe')->firstOrFail();
         $minutes = max(0, (int) ($options['billable_minutes'] ?? 0));
@@ -40,11 +40,12 @@ class LeoSubmissionService
         if (! $audio->isValid() || $minutes < 1 || $model !== 'fine_tuned' || ! in_array($language, ['ckb', 'ar', 'en'], true)) {
             throw new \InvalidArgumentException('The audio upload or transcription options are invalid.');
         }
-        if (method_exists($customer, 'isAllowed') && ! $customer->isAllowed('leo.transcribe')) {
+        if (method_exists($customer, 'isAllowed') && ! $customer->isAllowed('leo.transcribe', $context->channel())) {
             throw new \RuntimeException('Your plan does not allow Leo transcription.');
         }
 
         $cost = max(0, (int) $customer->priceCreditsFor('leo.transcribe', [
+            'channel' => $context->channel(),
             'minutes' => $minutes, 'metric_code' => 'minute', 'model_variant' => $model, 'language' => $language,
         ]));
         if ($cost < 1) {
@@ -56,9 +57,9 @@ class LeoSubmissionService
         $charged = false;
         $savedAudio = null;
 
-        try {
-            DB::transaction(function () use ($customer, $tool, $action, $jobId, $cost, $model, $language, $intelligent, $options): void {
-                MlJob::create([
+        [$job, $created] = app(DurableUploadSubmission::class)->begin((int) $customer->id,
+            (string) ($options['submission_key'] ?? Str::uuid()), 'leo.transcribe', $cost, 'leo_transcribe_charge', ['minutes' => $minutes, 'seconds' => (float) ($options['duration_sec'] ?? 0), 'intelligent' => $intelligent], function () use ($customer, $tool, $action, $jobId, $cost, $model, $language, $intelligent, $options) {
+                return MlJob::create([
                     'id' => $jobId, 'customer_id' => (int) $customer->id, 'tool_id' => (int) $tool->id, 'tool_action_id' => (int) $action->id,
                     'job_kind' => 'leo', 'status' => 'queued', 'provider' => 'runpod', 'endpoint_key' => 'qasr_v2',
                     'charge_reference' => "ml-job:{$jobId}:charge", 'input_hash' => (string) ($options['input_hash'] ?? ''), 'credits_charged' => $cost,
@@ -68,13 +69,11 @@ class LeoSubmissionService
                         'audio_billable_min' => (int) ($options['billable_minutes'] ?? 0), 'audio_mime' => (string) ($options['audio_mime'] ?? 'audio/*'),
                     ],
                 ]);
-            }, 3);
-
-            $charged = $this->credits->charge((int) $customer->id, $cost, 'leo_transcribe_charge', [
-                'reference_code' => "ml-job:{$jobId}:charge", 'related_type' => 'ml_job', 'related_id' => $jobId, 'ml_job_id' => $jobId,
-                'tool_action' => 'leo.transcribe', 'minutes' => $minutes, 'seconds' => (float) ($options['duration_sec'] ?? 0), 'intelligent' => $intelligent,
-            ]);
-
+            }, $context);
+        if (! $created) {
+            return $job;
+        }
+        try {
             $savedAudio = $this->storage->saveUploadedFileToS3((int) $customer->id, $audio, $this->storage->inputPath($customer, 'leo', $jobId, 'wav', 'audio'), [
                 'job_id' => $jobId, 'tool' => 'leo', 'purpose' => 'input_audio', 'role' => 'source_audio',
                 'checksum' => (string) ($options['input_hash'] ?? ''), 'original_name' => (string) ($options['audio_name'] ?? $audio->getClientOriginalName()),
@@ -89,6 +88,7 @@ class LeoSubmissionService
                 throw new \RuntimeException((string) ($lock['message'] ?? 'Could not acquire the Leo transcription lock.'));
             }
 
+            MlJob::query()->whereKey($jobId)->update(['submission_attempted_at' => now()]);
             $response = $this->provider->qasr('speech-to-text', 'leo', [
                 'audio_url' => $audioUrl, 'model_variant' => $model, 'language' => $language, 'intelligent' => $intelligent ? 1 : 0,
             ]);
@@ -101,8 +101,9 @@ class LeoSubmissionService
         } catch (\Throwable $exception) {
             Log::warning('LEO_SUBMISSION_FAILED', ['job_id' => $jobId, 'customer_id' => (int) $customer->id, 'exception' => $exception::class, 'message' => $exception->getMessage()]);
             $this->locks->releaseLock($jobId);
-            if ($charged) $this->refunds->refundFailedJob($jobId, 'provider_submission');
-            MlJob::query()->whereKey($jobId)->update(['status' => 'failed', 'failure_stage' => 'provider_submission', 'error' => ['message' => 'Transcription could not be started. Please try again.'], 'finished_at' => now()]);
+            if ($failedJob = MlJob::find($jobId)) {
+                app(DurableUploadSubmission::class)->failed($failedJob, $exception);
+            }
             $this->workspaceCache->forgetTranscriptions((int) $customer->id);
         }
 

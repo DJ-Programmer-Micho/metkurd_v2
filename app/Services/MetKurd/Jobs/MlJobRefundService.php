@@ -2,6 +2,7 @@
 
 namespace App\Services\MetKurd\Jobs;
 
+use App\Models\CreditLedger;
 use App\Models\MlJob;
 use App\Services\Billing\CreditService;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,21 @@ class MlJobRefundService
             $fresh = MlJob::query()->lockForUpdate()->find($jobId);
 
             if (! $fresh || (int) $fresh->credits_charged <= 0) {
+                return false;
+            }
+
+            if ($fresh->refunded_at) {
+                return true;
+            }
+            if ($fresh->status !== 'failed' || $fresh->failure_stage === 'provider_submission_unknown'
+                || data_get($fresh->error, 'type') === 'eliminated_by_customer'
+                || data_get($fresh->input, 'api_job_id')) {
+                return false;
+            }
+            $debit = CreditLedger::query()->where('customer_id', $fresh->customer_id)
+                ->where('wallet_type', 'app')->where('direction', 'debit')
+                ->where('reference_code', $fresh->charge_reference ?: "ml-job:{$fresh->id}:charge")->exists();
+            if (! $debit) {
                 return false;
             }
 

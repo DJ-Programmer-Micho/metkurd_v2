@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'v2_enabled' => (bool) env('FEATURE_API_V2', false),
+    'v2_auth_failures_per_minute' => max(1, (int) env('CUSTOMER_API_V2_AUTH_FAILURES_PER_MINUTE', 60)),
     'key_prefix' => env('CUSTOMER_API_KEY_PREFIX', 'mk_live_'),
     'max_keys' => max(1, (int) env('CUSTOMER_API_MAX_KEYS', 5)),
     'temporary_file_ttl_days' => max(1, (int) env('CUSTOMER_API_TEMP_FILE_TTL_DAYS', 7)),

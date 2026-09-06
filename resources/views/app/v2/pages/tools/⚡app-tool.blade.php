@@ -25,19 +25,17 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 
     protected $paginationTheme = 'bootstrap';
 
-    public string $serviceSlug;
-    public string $toolSlug;
-    public array $serviceDefinition = [];
-    public array $toolDefinition = [];
-    public string $processingMode = 'standard';
-    public bool $runLlmCorrector = false;
+    #[\Livewire\Attributes\Locked] public string $serviceSlug;
+    #[\Livewire\Attributes\Locked] public string $toolSlug;
+    #[\Livewire\Attributes\Locked] public array $serviceDefinition = [];
+    #[\Livewire\Attributes\Locked] public array $toolDefinition = [];
     public string $text = '';
     public string $speakerId = '';
     public string $language = 'ckb';
-    public string $submissionKey = '';
-    public int $maxCharacters = 400;
+    #[\Livewire\Attributes\Locked] public string $submissionKey = '';
+    #[\Livewire\Attributes\Locked] public int $maxCharacters = 400;
     public int $creditsCost = 0;
-    public array $speakerGroups = [];
+    #[\Livewire\Attributes\Locked] public array $speakerGroups = [];
     public string $expandedSpeakerGroup = '';
     public ?string $currentJobId = null;
     public array $currentJob = [];
@@ -54,25 +52,16 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         abort_unless($catalog->isKnownTool($service, $tool), 404);
         $definition = $catalog->tool($service, $tool);
         abort_if(($definition['coming_soon'] ?? false) === true, 404);
+        abort_unless(in_array($definition['kind'] ?? null, ['omni_tts', 'omni_clone'], true), 404);
         $this->serviceSlug = $service;
         $this->toolSlug = $tool;
         $this->serviceDefinition = $catalog->service($service);
         $this->toolDefinition = $definition;
         $this->submissionKey = (string) Str::uuid();
 
-        // OCR's correction stage is a product-facing choice. Keep it
-        // separate from the legacy processing-mode placeholder so a future
-        // OCR submission service can pass the worker option directly.
-        if (($definition['kind'] ?? null) === 'kocr') {
-            $this->runLlmCorrector = true;
-        }
-
         if (in_array($definition['kind'] ?? null, ['omni_tts', 'omni_clone'], true)) {
             $customer = auth('app')->user();
-            $limit = $customer && method_exists($customer, 'entitlementLimitFor')
-                ? $customer->entitlementLimitFor((string) $definition['legacy_action'], 'max_chars_per_submit')
-                : null;
-            $this->maxCharacters = max(1, (int) ($limit ?? 400));
+            $this->maxCharacters = $customer ? app(\App\Services\MetKurd\V2\InputBoundary::class)->characterLimit($customer, (string) $definition['legacy_action']) : 400;
             if (($definition['kind'] ?? null) === 'omni_tts') {
                 $this->speakerGroups = $speakers->forCustomer($customer, app()->getLocale());
                 $this->expandedSpeakerGroup = (string) array_key_first($this->speakerGroups);
@@ -169,18 +158,16 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         }
 
         try {
-            $job = $submissions->submit(auth('app')->user(), $this->serviceSlug, $this->toolSlug, $this->submissionKey, [
-                'text' => $this->text,
-                'ref_audio' => (string) $speaker['ref_audio'],
-                'language' => $this->language,
-            ]);
+            $input = app(\App\Services\MetKurd\V2\InputBoundary::class)->text(auth('app')->user(), (string) $this->toolDefinition['legacy_action'], ['text' => $this->text, 'voice' => $this->speakerId, 'language' => $this->language], true);
+            $job = $submissions->submit(auth('app')->user(), $this->serviceSlug, $this->toolSlug, $this->submissionKey, $input);
             $this->currentJobId = (string) $job->id;
+            if ($job->provider_job_id) $this->submissionKey = (string) Str::uuid();
             $this->queuedSince = null;
             $this->syncCurrentJobState();
             $this->resetPage(pageName: 'v2ApolloRendersPage');
             $this->dispatch('header:refresh');
         } catch (\Throwable $exception) {
-            $this->submissionError = $exception->getMessage();
+            $this->submissionError = \App\Support\CustomerFacingError::message($exception->getMessage());
         }
     }
 
@@ -193,7 +180,11 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             'referenceAudio' => ['nullable', 'file', 'mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm', 'max:20480'],
         ]);
         try {
-            $job = $submissions->submit(auth('app')->user(), $this->serviceSlug, $this->toolSlug, $this->submissionKey, ['text' => $this->text, 'language' => $this->language], $this->referenceAudio, $this->selectedReferenceId);
+            $boundary = app(\App\Services\MetKurd\V2\InputBoundary::class);
+            $input = $boundary->text(auth('app')->user(), (string) $this->toolDefinition['legacy_action'], ['text' => $this->text, 'language' => $this->language]);
+            if ($this->referenceAudio) $boundary->audio($this->referenceAudio, true);
+            elseif ($this->selectedReferenceId) $boundary->reference(auth('app')->user(), $this->selectedReferenceId);
+            $job = $submissions->submit(auth('app')->user(), $this->serviceSlug, $this->toolSlug, $this->submissionKey, $input, $this->referenceAudio, $this->selectedReferenceId);
             $this->currentJobId = (string) $job->id;
             $this->queuedSince = null;
             $this->syncCurrentJobState();
@@ -204,7 +195,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             $this->submissionKey = (string) Str::uuid();
             $this->dispatch('header:refresh');
         } catch (\Throwable $exception) {
-            $this->submissionError = $exception->getMessage();
+            $this->submissionError = \App\Support\CustomerFacingError::message($exception->getMessage());
         }
     }
 
@@ -215,20 +206,14 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         }
 
         $job = MlJob::query()->with('tool')->whereKey($this->currentJobId)->where('customer_id', auth('app')->id())->first();
+        $previousStatus = $job?->status;
         if ($job?->tool && $job->isActive()) {
             $sync->sync($job, $job->tool);
-            if (($this->toolDefinition['kind'] ?? null) === 'omni_clone') {
-                app(CttsWorkspaceCache::class)->forgetRenders((int) $job->customer_id, (string) $job->tool->code);
-            }
+
         }
 
         $this->syncCurrentJobState();
-        $this->dispatch('header:refresh');
-    }
-
-    public function modeLabel(): string
-    {
-        return $this->processingMode === 'intelligent' ? __('Intelligent') : __('Standard');
+        if ($job && $previousStatus !== ($this->currentJob['status'] ?? null)) $this->dispatch('header:refresh');
     }
 
     public function selectedSpeakerName(): string
@@ -264,7 +249,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             ? MlJob::query()->whereKey($this->currentJobId)->where('customer_id', auth('app')->id())->first()
             : null;
         $status = (string) ($job?->status ?? '');
-        $this->currentJob = $job ? ['status' => $status, 'message' => (string) data_get($job->error, 'customer_message')] : [];
+        $this->currentJob = $job ? ['status' => $status, 'message' => (string) data_get($job->error, 'customer_message', data_get($job->error, 'message'))] : [];
 
         if ($status === 'queued') {
             $this->queuedSince ??= now()->toIso8601String();
@@ -430,11 +415,11 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             @include('app.v2.components.xomni-tts.speaker-picker', ['groups' => $speakerGroups, 'selected' => $speakerId, 'expanded' => $expandedSpeakerGroup])
             <main class="v2-workspace-panel v2-create-panel">
                 <div class="v2-panel-heading"><span>{{ __('Create audio') }}</span><small>{{ __('Selected voice: :voice', ['voice' => $this->selectedSpeakerName()]) }}</small></div>
-                <div class="v2-editor-wrap"><textarea dir="rtl" wire:model.live="text" class="v2-audio-editor" rows="12" maxlength="{{ $maxCharacters }}" placeholder="{{ __('Write the text you want to hear…') }}"></textarea><div class="v2-editor-footer"><span dir="ltr">{{ $this->currentChars }} / {{ $maxCharacters }} {{ __('characters') }}</span><span dir="ltr">{{ __('Estimated cost: :cost credits', ['cost' => number_format($creditsCost)]) }}</span></div></div>
+                <div class="v2-editor-wrap"><textarea dir="auto" wire:model.live="text" class="v2-audio-editor" rows="12" maxlength="{{ $maxCharacters }}" placeholder="{{ __('Write the text you want to hear…') }}"></textarea><div class="v2-editor-footer"><span dir="ltr">{{ $this->currentChars }} / {{ $maxCharacters }} {{ __('characters') }}</span><span>{{ __('Estimated cost: :cost credits', ['cost' => number_format($creditsCost)]) }}</span></div></div>
                 <div class="row g-3 mt-1"><div class="col-sm-6"><label class="form-label" for="v2-language">{{ __('Generation language') }}</label><select id="v2-language" wire:model.change="language" class="form-select v2-control"><option value="ckb">{{ __('Kurdish / Sorani') }}</option><option value="en">{{ __('English') }}</option><option value="ar">{{ __('Arabic') }}</option></select></div></div>
-                @if ($submissionError)<div class="alert alert-danger mt-3 mb-0">{{ $submissionError }}</div>@endif
+                @if ($submissionError)<div class="alert alert-danger mt-3 mb-0">{{ \App\Support\CustomerFacingError::message($submissionError) }}</div>@endif
                 @php($currentJobPresentation = $this->currentJobPresentation)
-                <div class="v2-create-actions {{ $currentJobId ? 'is-'.$currentJobPresentation['semantic'] : '' }}"><button wire:click="submitOmni" wire:loading.attr="disabled" wire:target="submitOmni" class="btn btn-primary waves-effect px-4" @disabled(empty($speakerGroups) || $currentJobPresentation['is_active'])><span wire:loading.remove wire:target="submitOmni">{{ __('Generate audio') }}</span><span wire:loading wire:target="submitOmni">{{ __('Preparing…') }}</span></button>@if($currentJobId)<span class="v2-job-state glass-load {{ $currentJobPresentation['glass_class'] }} {{ $currentJobPresentation['is_active'] ? 'is-active' : '' }}" @if($currentJobPresentation['is_active']) wire:poll.500ms="pollOmni" @endif>{{ $currentJobPresentation['label'] }}@if($currentJob['message'] ?? false): {{ $currentJob['message'] }}@endif</span>@endif</div>
+                <div class="v2-create-actions {{ $currentJobId ? 'is-'.$currentJobPresentation['semantic'] : '' }}"><button wire:click="submitOmni" wire:loading.attr="disabled" wire:target="submitOmni" class="btn btn-primary waves-effect px-4" @disabled(empty($speakerGroups) || $currentJobPresentation['is_active'])><span wire:loading.remove wire:target="submitOmni">{{ __('Generate audio') }}</span><span wire:loading wire:target="submitOmni">{{ __('Preparing…') }}</span></button>@if($currentJobId)<span class="v2-job-state glass-load {{ $currentJobPresentation['glass_class'] }} {{ $currentJobPresentation['is_active'] ? 'is-active' : '' }}" @if($currentJobPresentation['is_active']) wire:poll.5s="pollOmni" @endif>{{ $currentJobPresentation['label'] }}@if($currentJob['message'] ?? false): {{ \App\Support\CustomerFacingError::message($currentJob['message']) }}@endif</span>@endif</div>
                 @if($this->showQueueMessage)<div dir="{{ in_array(app()->getLocale(), ['ar', 'ku'], true) ? 'rtl' : 'ltr' }}" class="v2-queue-message glass-load glass-load--warning"><i class="ri-time-line" aria-hidden="true"></i><span>{{ __('MetKurd AI GPUs are currently busy. Your job is queued and will start automatically as soon as capacity is available.') }}</span></div>@endif
             </main>
             @include('app.v2.components.shared.recent-renders', ['renders' => $this->recentRenders, 'locale' => app()->getLocale(), 'subtitle' => __('Your Apollo history')])
@@ -444,24 +429,14 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             @include('app.v2.components.ctts.reference-history', ['references' => $this->referencePage, 'selectedId' => $selectedReferenceId])
             <main class="v2-workspace-panel v2-create-panel v2-ctts-create-panel">
                 @include('app.v2.components.ctts.reference-upload', ['selectedReference' => $this->selectedReference, 'referenceAudioName' => $referenceAudioName, 'referenceAudioBytes' => $referenceAudioBytes, 'referenceAudioMime' => $referenceAudioMime])
-                <div class="v2-editor-wrap v2-ctts-editor-wrap"><textarea dir="rtl" wire:model.live="text" class="v2-audio-editor" rows="8" maxlength="{{ $maxCharacters }}" placeholder="{{ __('Enter the text that should be spoken using the cloned voice…') }}"></textarea><div class="v2-editor-footer"><span dir="ltr">{{ $this->currentChars }} / {{ $maxCharacters }} {{ __('characters') }}</span><span dir="ltr">{{ __('Estimated cost: :cost credits', ['cost' => number_format($creditsCost)]) }}</span></div></div>
+                <div class="v2-editor-wrap v2-ctts-editor-wrap"><textarea dir="auto" wire:model.live="text" class="v2-audio-editor" rows="8" maxlength="{{ $maxCharacters }}" placeholder="{{ __('Enter the text that should be spoken using the cloned voice…') }}"></textarea><div class="v2-editor-footer"><span dir="ltr">{{ $this->currentChars }} / {{ $maxCharacters }} {{ __('characters') }}</span><span>{{ __('Estimated cost: :cost credits', ['cost' => number_format($creditsCost)]) }}</span></div></div>
                 <div class="row g-3 mt-1"><div class="col-sm-6"><label class="form-label" for="v2-ctts-language">{{ __('Generation language') }}</label><select id="v2-ctts-language" wire:model.change="language" class="form-select v2-control"><option value="ckb">{{ __('Kurdish / Sorani') }}</option><option value="en">{{ __('English') }}</option><option value="ar">{{ __('Arabic') }}</option></select></div></div>
-                @if ($submissionError)<div class="alert alert-danger mt-3 mb-0">{{ $submissionError }}</div>@endif
+                @if ($submissionError)<div class="alert alert-danger mt-3 mb-0">{{ \App\Support\CustomerFacingError::message($submissionError) }}</div>@endif
                 @php($currentJobPresentation = $this->currentJobPresentation)
-                <div class="v2-create-actions v2-ctts-actions {{ $currentJobId ? 'is-'.$currentJobPresentation['semantic'] : '' }}"><button wire:click="submitClone" wire:loading.attr="disabled" wire:target="submitClone,referenceAudio" class="btn btn-danger waves-effect px-4" @disabled((!$selectedReferenceId && !$referenceAudio) || $currentJobPresentation['is_active'])><span wire:loading.remove wire:target="submitClone,referenceAudio">{{ __('Generate cloned speech') }}</span><span wire:loading wire:target="submitClone,referenceAudio">{{ __('Preparing…') }}</span></button>@if($currentJobId)<span class="v2-job-state glass-load {{ $currentJobPresentation['glass_class'] }} {{ $currentJobPresentation['is_active'] ? 'is-active' : '' }}" @if($currentJobPresentation['is_active']) wire:poll.500ms="pollOmni" @endif>{{ $currentJobPresentation['label'] }}@if($currentJob['message'] ?? false): {{ $currentJob['message'] }}@endif</span>@endif</div>
+                <div class="v2-create-actions v2-ctts-actions {{ $currentJobId ? 'is-'.$currentJobPresentation['semantic'] : '' }}"><button wire:click="submitClone" wire:loading.attr="disabled" wire:target="submitClone,referenceAudio" class="btn btn-danger waves-effect px-4" @disabled((!$selectedReferenceId && !$referenceAudio) || $currentJobPresentation['is_active'])><span wire:loading.remove wire:target="submitClone,referenceAudio">{{ __('Generate cloned speech') }}</span><span wire:loading wire:target="submitClone,referenceAudio">{{ __('Preparing…') }}</span></button>@if($currentJobId)<span class="v2-job-state glass-load {{ $currentJobPresentation['glass_class'] }} {{ $currentJobPresentation['is_active'] ? 'is-active' : '' }}" @if($currentJobPresentation['is_active']) wire:poll.5s="pollOmni" @endif>{{ $currentJobPresentation['label'] }}@if($currentJob['message'] ?? false): {{ \App\Support\CustomerFacingError::message($currentJob['message']) }}@endif</span>@endif</div>
             </main>
             @include('app.v2.components.shared.recent-renders', ['renders' => $this->recentRenders, 'locale' => app()->getLocale(), 'subtitle' => __('Your CTTS history'), 'accent' => 'danger', 'keyPrefix' => 'v2-ctts-render'])
         </div>
-    @else
-        @if (($toolDefinition['kind'] ?? '') === 'kocr')
-            <label class="v2-asr-intelligent v2-ocr-intelligent mb-4">
-                <span><strong>{{ __('Intelligent Correction') }} <em>{{ __('Beta') }}</em></strong><small>{{ __('Improves extracted text with AI post-processing.') }}</small></span>
-                <span class="v2-asr-switch"><input type="checkbox" wire:model="runLlmCorrector" role="switch" aria-label="{{ __('Enable Intelligent Correction') }}"><i aria-hidden="true"></i></span>
-            </label>
-        @elseif (in_array($toolDefinition['kind'] ?? '', ['qasr', 'caption'], true))
-            <div class="glass-load glass-load--info p-4 mb-4"><h2 class="h5">{{ __('Processing mode') }}</h2><div class="btn-group"><button wire:click="$set('processingMode', 'standard')" class="btn {{ $processingMode === 'standard' ? 'btn-primary' : 'btn-outline-secondary' }}">{{ __('Standard') }}</button><button wire:click="$set('processingMode', 'intelligent')" class="btn {{ $processingMode === 'intelligent' ? 'btn-primary' : 'btn-outline-secondary' }}">{{ __('Intelligent') }}</button></div></div>
-        @endif
-        @include('app.v2.components.shared.legacy-workspace', ['tool' => $toolDefinition])
     @endif
 </section>
 
@@ -502,12 +477,21 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             const state = window.__METKURD_V2_CTTS_POND__ ||= {};
             const input = () => document.getElementById('v2-ctts-reference-pond');
             const root = () => document.querySelector('.v2-ctts-workspace')?.closest('[wire\\:id]');
-            const destroy = () => { try { state.pond?.destroy(); } catch (_) {} state.pond = null; };
+            const component = () => {
+                const host = root();
+                return host && window.Livewire ? window.Livewire.find(host.getAttribute('wire:id')) : null;
+            };
+            const destroy = () => {
+                const pond = state.pond;
+                state.pond = null;
+                state.host = null;
+                try { pond?.destroy(); } catch (_) {}
+            };
             const boot = () => {
                 const field = input(), host = root();
-                if (!field || !host || !window.FilePond || state.pond) return;
+                if (!field || !host || !window.FilePond || state.pond || !component()) return;
                 if (!state.plugins) { FilePond.registerPlugin(FilePondPluginFileValidateType, FilePondPluginFileValidateSize); state.plugins = true; }
-                const lw = Livewire.find(host.getAttribute('wire:id'));
+                state.host = host;
                 state.pond = FilePond.create(field, {
                     allowMultiple: false, credits: false,
                     acceptedFileTypes: ['audio/wav','audio/x-wav','audio/mpeg','audio/mp3','audio/mp4','audio/x-m4a','audio/aac','audio/ogg','audio/webm'],
@@ -515,27 +499,37 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                     labelIdle: '<strong>{{ __('Drop a reference audio file') }}</strong><br><span class="filepond--label-action">{{ __('Browse') }}</span>',
                     server: {
                         process: (name, file, meta, load, error, progress, abort) => {
-                            lw.upload('referenceAudio', file, () => load(file.name), () => error('{{ __('Upload failed') }}'), event => progress(event.lengthComputable, event.loaded, event.total));
-                            return { abort: () => { lw.removeUpload('referenceAudio', file.name, () => {}); abort(); } };
+                            // Resolve at upload time: navigation can replace the Livewire component.
+                            const lw = component();
+                            if (!lw) { error('{{ __('Upload failed') }}'); return { abort }; }
+                            lw.upload('referenceAudio', file, temporaryName => load(temporaryName), () => error('{{ __('Upload failed') }}'), event => progress(event.lengthComputable, event.loaded, event.total));
+                            return { abort: () => { lw.cancelUpload('referenceAudio'); abort(); } };
                         },
-                        revert: (id, load) => { lw.call('removeReferenceAudio'); load(); },
+                        revert: (id, load, error) => {
+                            const lw = component();
+                            if (!lw) { error('{{ __('Upload failed') }}'); return; }
+                            Promise.resolve(lw.call('removeReferenceAudio')).then(load, () => error('{{ __('Upload failed') }}'));
+                        },
                     },
                 });
             };
             const reconcile = () => requestAnimationFrame(() => {
-                if (state.pond && !input()) destroy();
+                if (state.pond && (state.host !== root() || state.pond.element?.isConnected === false)) destroy();
                 boot();
             });
+            const bindLivewire = () => {
+                if (!window.Livewire || state.livewireBound) return;
+                state.livewireBound = true;
+                window.Livewire.on('ctts-reference-audio-cleared', () => state.pond?.removeFiles({ revert: false }));
+                window.Livewire.hook('morphed', reconcile);
+            };
             if (!state.listeners) {
                 state.listeners = true;
                 document.addEventListener('livewire:navigating', destroy);
-                document.addEventListener('livewire:navigated', reconcile);
-                document.addEventListener('livewire:initialized', () => {
-                    Livewire.on('ctts-reference-audio-cleared', () => state.pond?.removeFiles());
-                    Livewire.hook?.('commit', ({ succeed }) => succeed(reconcile));
-                    reconcile();
-                });
+                document.addEventListener('livewire:navigated', () => { bindLivewire(); reconcile(); });
+                document.addEventListener('livewire:initialized', () => { bindLivewire(); reconcile(); });
             }
+            bindLivewire();
             reconcile();
         })();
         </script>

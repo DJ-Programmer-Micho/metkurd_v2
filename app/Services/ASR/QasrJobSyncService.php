@@ -4,12 +4,12 @@ namespace App\Services\ASR;
 
 use App\Models\MlJob;
 use App\Models\Tool;
+use App\Services\MetKurd\Jobs\MlJobRefundService;
+use App\Services\MetKurd\V2\CaptionWorkspaceCache;
+use App\Services\MetKurd\V2\LeoWorkspaceCache;
 use App\Services\Providers\RunPodProvider;
 use App\Services\Security\JobExecutionLockService;
 use App\Services\Storage\CustomerOutputStorage;
-use App\Services\MetKurd\V2\LeoWorkspaceCache;
-use App\Services\MetKurd\V2\CaptionWorkspaceCache;
-use App\Services\MetKurd\Jobs\MlJobRefundService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -22,21 +22,34 @@ class QasrJobSyncService
 
     public function sync(MlJob $job, Tool $tool): array
     {
+        return app(\App\Services\MetKurd\Jobs\JobPollCoordinator::class)->sync(
+            $job, fn ($fresh) => $this->syncProvider($fresh, $tool), fn ($fresh) => $this->payload($fresh)
+        );
+    }
+
+    protected function syncProvider(MlJob $job, Tool $tool): array
+    {
         if (in_array((string) $job->status, ['done', 'failed', 'deleted', 'deleting', 'delete_failed'], true)) {
             return $this->payload($job);
         }
 
         $endpointRef = (string) data_get($tool->meta, 'runpod_endpoint_ref', '');
         $jobEndpointKey = trim((string) $job->endpoint_key);
-        $endpointId = (string) (
-            ($jobEndpointKey !== '' ? config("runpod.endpoints.{$jobEndpointKey}") : null)
-            ?: data_get($tool->meta, 'runpod_endpoint_id')
+        if ($jobEndpointKey === '' && (string) $tool->code === 'leo') {
+            $jobEndpointKey = 'qasr_v2';
+        }
+        $endpointId = $jobEndpointKey !== '' ? trim((string) config("runpod.endpoints.{$jobEndpointKey}")) : (string) (
+            data_get($tool->meta, 'runpod_endpoint_id')
             ?: ($endpointRef !== '' ? config($endpointRef) : null)
             ?: config('runpod.endpoints.qasr')
             ?: env('RUNPOD_ENDPOINT_ID_QASR')
         );
 
         if ($endpointId === '') {
+            if ($jobEndpointKey !== '') {
+                throw new \RuntimeException('The configured GPU endpoint is unavailable.');
+            }
+
             return $this->failJob($job, 'Missing RunPod QASR endpoint id.');
         }
 
@@ -50,6 +63,9 @@ class QasrJobSyncService
         $st = $runpod->status($endpointId, $providerJobId);
 
         $rawStatus = strtoupper((string) data_get($st, 'status', ''));
+        if (in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true) && (data_get($st, 'output.success') === false || data_get($st, 'output.ok') === false)) {
+            $rawStatus = 'FAILED';
+        }
         $output = data_get($st, 'output');
         $errMsg = (string) (data_get($st, 'error') ?: data_get($output, 'error') ?: '');
 
@@ -69,13 +85,13 @@ class QasrJobSyncService
             'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 'queued',
             'IN_PROGRESS', 'RUNNING' => 'running',
             'COMPLETED', 'SUCCESS' => ($hasRenderableOutput ? 'saving' : 'failed'),
-            'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
+            'FAILED', 'ERROR', 'CANCELLED', 'TIMED_OUT' => 'failed',
             default => 'running',
         };
 
         $this->locks->refreshLock((string) $job->id, 60);
 
-        if ($mapped === 'failed' && ! $hasRenderableOutput) {
+        if ($mapped === 'failed') {
             $message = $errMsg !== '' ? $errMsg : (
                 in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true)
                     ? 'RunPod completed but returned no transcription text.'
@@ -90,7 +106,7 @@ class QasrJobSyncService
             return $this->failJob($job, $message);
         }
 
-        if ($hasRenderableOutput) {
+        if (in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true) && $hasRenderableOutput) {
             return $this->finalizeSuccess(
                 job: $job,
                 tool: $tool,
@@ -103,7 +119,7 @@ class QasrJobSyncService
             );
         }
 
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => $mapped,
             'updated_at' => now(),
         ]);
@@ -128,6 +144,10 @@ class QasrJobSyncService
 
             if (! $fresh) {
                 throw new \RuntimeException('ASR Job not found during finalize.');
+            }
+
+            if (! $fresh->isActive()) {
+                return $this->payload($fresh);
             }
 
             if ((string) $fresh->status === 'done' && data_get($fresh->output, 'path')) {
@@ -217,7 +237,7 @@ class QasrJobSyncService
 
     protected function failJob(MlJob $job, string $message): array
     {
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => 'failed',
             'error' => ['message' => $message],
             'finished_at' => now(),
@@ -309,6 +329,9 @@ class QasrJobSyncService
             ]);
 
             throw $e;
+        } finally {
+            app(LeoWorkspaceCache::class)->forgetTranscriptions((int) $job->customer_id);
+            app(CaptionWorkspaceCache::class)->forgetCaptions((int) $job->customer_id);
         }
     }
 

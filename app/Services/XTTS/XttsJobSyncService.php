@@ -4,10 +4,10 @@ namespace App\Services\XTTS;
 
 use App\Models\MlJob;
 use App\Models\Tool;
+use App\Services\MetKurd\V2\CttsWorkspaceCache;
 use App\Services\Providers\RunPodProvider;
 use App\Services\Security\JobExecutionLockService;
 use App\Services\Storage\CustomerOutputStorage;
-use App\Services\MetKurd\V2\CttsWorkspaceCache;
 use Illuminate\Support\Facades\DB;
 
 class XttsJobSyncService
@@ -20,18 +20,32 @@ class XttsJobSyncService
 
     public function sync(MlJob $job, Tool $tool): array
     {
-        if (in_array((string) $job->status, ['done', 'failed', 'deleted', 'deleting'], true)) {
+        return app(\App\Services\MetKurd\Jobs\JobPollCoordinator::class)->sync(
+            $job, fn ($fresh) => $this->syncProvider($fresh, $tool), fn ($fresh) => $this->payload($fresh)
+        );
+    }
+
+    protected function syncProvider(MlJob $job, Tool $tool): array
+    {
+        if (in_array((string) $job->status, ['done', 'failed', 'deleted', 'deleting', 'delete_failed', 'cancelled', 'canceled'], true)) {
             return $this->payload($job);
         }
 
         $toolCode = strtolower(trim((string) $tool->code));
-        $endpointId = (string) (
-            ($job->endpoint_key ? config("runpod.endpoints.{$job->endpoint_key}") : null)
-            ?: data_get($tool->meta, 'runpod_endpoint_id')
-            ?: $this->fallbackEndpointForTool($toolCode)
-        );
+        $endpointKey = trim((string) $job->endpoint_key);
+        if ($endpointKey === '' && (in_array($toolCode, ['xomni-v2', 'vector-v2'], true) || $job->model_key)) {
+            $endpointKey = 'omni_v2';
+        }
+        $endpointId = $endpointKey !== ''
+            ? trim((string) config("runpod.endpoints.{$endpointKey}"))
+            : (string) (data_get($tool->meta, 'runpod_endpoint_id') ?: $this->fallbackEndpointForTool($toolCode));
 
         if ($endpointId === '') {
+            if ($endpointKey !== '') {
+                // Missing local configuration does not prove accepted work failed.
+                throw new \RuntimeException('The configured GPU endpoint is unavailable.');
+            }
+
             return $this->failJob($job, 'Missing RunPod endpoint id.', $toolCode);
         }
 
@@ -45,6 +59,9 @@ class XttsJobSyncService
         $st = $runpod->status($endpointId, $providerJobId);
 
         $rawStatus = strtoupper((string) data_get($st, 'status', ''));
+        if (in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true) && (data_get($st, 'output.success') === false || data_get($st, 'output.ok') === false)) {
+            $rawStatus = 'FAILED';
+        }
         $out = (array) data_get($st, 'output', []);
         $wavB64 = $this->extractAudioBase64($out, $st);
 
@@ -53,8 +70,8 @@ class XttsJobSyncService
         $mapped = match ($rawStatus) {
             'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 'queued',
             'IN_PROGRESS', 'RUNNING' => 'running',
-            'COMPLETED' => ($wavB64 !== '' ? 'saving' : 'running'),
-            'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
+            'COMPLETED', 'SUCCESS' => ($wavB64 !== '' ? 'saving' : 'running'),
+            'FAILED', 'ERROR', 'CANCELLED', 'TIMED_OUT' => 'failed',
             default => 'running',
         };
 
@@ -72,8 +89,7 @@ class XttsJobSyncService
         }
 
         if (
-            $rawStatus === 'COMPLETED'
-            && in_array($toolCode, ['ftts', 'xomni', 'xomni-v2', 'clone_xomni', 'vector-v2'], true)
+            in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true)
             && $wavB64 === ''
         ) {
             return $this->failJob($job, $this->normalizeProviderFailureMessage(
@@ -84,11 +100,11 @@ class XttsJobSyncService
             ), $toolCode);
         }
 
-        if ($wavB64 !== '') {
+        if (in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true) && $wavB64 !== '') {
             return $this->finalizeSuccess($job, $tool, $wavB64, $out);
         }
 
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => $mapped,
             'updated_at' => now(),
         ]);
@@ -105,6 +121,10 @@ class XttsJobSyncService
 
             if (! $fresh) {
                 throw new \RuntimeException('Job not found during finalize.');
+            }
+
+            if (! $fresh->isActive()) {
+                return $this->payload($fresh);
             }
 
             if ((string) $fresh->status === 'done' && data_get($fresh->output, 'path')) {
@@ -189,7 +209,7 @@ class XttsJobSyncService
 
     protected function failJob(MlJob $job, string $message, string $toolCode = ''): array
     {
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => 'failed',
             'error' => ['message' => $message],
             'finished_at' => now(),
@@ -214,7 +234,7 @@ class XttsJobSyncService
         DB::transaction(function () use ($job) {
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
 
-            if (! $fresh || (string) $fresh->status !== 'done') {
+            if (! $fresh || ! in_array((string) $fresh->status, ['done', 'delete_failed'], true)) {
                 throw new \RuntimeException('Render not found or already deleted.');
             }
 

@@ -12,6 +12,30 @@ use Illuminate\Support\Facades\Storage;
 
 class OcrJobSyncService
 {
+    public function cancel(MlJob $job): bool
+    {
+        if (! $job->isActive() || ! $job->provider_job_id) {
+            return false;
+        }
+        $endpointKey = $job->endpoint_key ?: (data_get($job->input, 'v2') ? 'kocr_v2' : 'kocr');
+        $endpointId = trim((string) config("runpod.endpoints.{$endpointKey}"));
+        if ($endpointId === '') {
+            return false;
+        }
+        $job->update(['input' => array_merge((array) $job->input, ['customer_cancel_requested' => true])]);
+        $response = $this->runpod->cancel($endpointId, (string) $job->provider_job_id);
+        if (strtoupper((string) data_get($response, 'status')) !== 'CANCELLED') {
+            return false;
+        }
+        $changed = MlJob::query()->whereKey($job->id)->active()->update(['status' => 'cancelled',
+            'failure_stage' => 'customer_cancelled', 'finished_at' => now(), 'error' => ['message' => __('Cancelled by customer.')]]);
+        if ($changed) {
+            $this->locks->releaseLock((string) $job->id);
+        }
+
+        return (bool) $changed;
+    }
+
     public function __construct(
         protected RunPodProvider $runpod,
         protected CustomerOutputStorage $storage,
@@ -72,13 +96,24 @@ class OcrJobSyncService
 
     public function sync(MlJob $job): array
     {
+        return app(\App\Services\MetKurd\Jobs\JobPollCoordinator::class)->sync(
+            $job, fn ($fresh) => $this->syncProvider($fresh), fn ($fresh) => $this->payloadFromJob($fresh)
+        );
+    }
+
+    protected function syncProvider(MlJob $job): array
+    {
         if (in_array((string) $job->status, ['done', 'failed', 'deleted', 'deleting', 'delete_failed'], true)) {
             return $this->payloadFromJob($job);
         }
 
-        $endpointKey = data_get($job->input, 'v2') ? 'kocr_v2' : 'kocr';
+        $endpointKey = $job->endpoint_key ?: (data_get($job->input, 'v2') ? 'kocr_v2' : 'kocr');
         $endpointId = trim((string) config("runpod.endpoints.{$endpointKey}"));
         if ($endpointId === '') {
+            if ($endpointKey === 'kocr_v2') {
+                throw new \RuntimeException('The configured GPU endpoint is unavailable.');
+            }
+
             return $this->failJob($job, 'Missing RunPod OCR endpoint id.');
         }
 
@@ -92,9 +127,12 @@ class OcrJobSyncService
 
             $statusPayload = $this->runpod->status($endpointId, $providerJobId);
             $rawStatus = strtoupper((string) data_get($statusPayload, 'status', ''));
+            if (in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true) && (data_get($statusPayload, 'output.success') === false || data_get($statusPayload, 'output.ok') === false)) {
+                $rawStatus = 'FAILED';
+            }
             $error = (string) (data_get($statusPayload, 'error') ?: data_get($statusPayload, 'output.error') ?: '');
 
-            MlJob::query()->where('id', $job->id)->update([
+            MlJob::query()->where('id', $job->id)->active()->update([
                 ...$this->providerMetrics($statusPayload),
                 'updated_at' => now(),
             ]);
@@ -120,7 +158,7 @@ class OcrJobSyncService
 
     protected function markStatus(MlJob $job, string $status, int $progress, string $message): array
     {
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => $status,
             'updated_at' => now(),
         ]);
@@ -144,6 +182,10 @@ class OcrJobSyncService
                 throw new \RuntimeException('OCR job not found during finalize.');
             }
 
+            if (! $fresh->isActive()) {
+                return $this->payloadFromJob($fresh);
+            }
+
             if ((string) $fresh->status === 'done' && data_get($fresh->output, 'text.path')) {
                 return $this->payloadFromJob($fresh, 'OCR completed.');
             }
@@ -154,6 +196,11 @@ class OcrJobSyncService
             $isV2 = (bool) data_get($fresh->input, 'v2');
             $textPath = (string) (data_get($response, 'output.uploaded_keys.text') ?: $paths['text']);
             $jsonPath = (string) (data_get($response, 'output.uploaded_keys.json') ?: $paths['json']);
+            foreach ([$textPath, $jsonPath] as $returnedPath) {
+                if (! $this->ownedArtifactPath($returnedPath, dirname($paths['text']))) {
+                    return $this->failJob($fresh, 'Processing returned an invalid result location.');
+                }
+            }
             $workerOutput = (array) data_get($response, 'output.output', []);
             $layoutJson = $isV2 ? $this->v2LayoutJson($workerOutput['json'] ?? null) : null;
 
@@ -169,11 +216,15 @@ class OcrJobSyncService
                 ?: '') : '';
             if ($isV2 && ! Storage::disk($disk)->exists($textPath)) {
                 if ($inlineText !== '') {
-                    Storage::disk($disk)->put($textPath, $inlineText, ['ContentType' => 'text/plain; charset=UTF-8']);
+                    if (Storage::disk($disk)->put($textPath, $inlineText, ['ContentType' => 'text/plain; charset=UTF-8']) !== true) {
+                        throw new \App\Services\Storage\StorageObjectUnavailable('The customer result could not be persisted.');
+                    }
                 }
             }
             if ($isV2 && $layoutJson !== null && ! Storage::disk($disk)->exists($jsonPath)) {
-                Storage::disk($disk)->put($jsonPath, $layoutJson, ['ContentType' => 'application/json']);
+                if (Storage::disk($disk)->put($jsonPath, $layoutJson, ['ContentType' => 'application/json']) !== true) {
+                    throw new \App\Services\Storage\StorageObjectUnavailable('The customer result could not be persisted.');
+                }
             }
 
             $textObject = $this->storage->registerExistingObject((int) $fresh->customer_id, $disk, $textPath, array_merge(
@@ -199,12 +250,13 @@ class OcrJobSyncService
                     continue;
                 }
                 $path = (string) (data_get($response, "output.uploaded_keys.{$format}") ?: data_get($response, "output.files.{$format}.path") ?: data_get($response, "output.{$format}_path"));
-                $path = ltrim(str_replace('\\', '/', $path), '/');
-                if ($path === '' || ($basePath !== '' && ! str_starts_with($path, $basePath.'/')) || ! Storage::disk($disk)->exists($path)) {
+                if ($path === '' || ! $this->ownedArtifactPath($path, dirname($paths['text'])) || ! Storage::disk($disk)->exists($path)) {
                     continue;
                 }
                 $saved = $this->storage->registerExistingObject((int) $fresh->customer_id, $disk, $path, array_merge($this->storage->apiOutputMeta($fresh, 'ocr', 'render', $format), ['mime' => $mime]));
-                if ($saved) $artifacts[$format] = ['path' => (string) $saved['path'], 'bytes' => (int) $saved['bytes'], 'mime' => (string) $saved['mime']];
+                if ($saved) {
+                    $artifacts[$format] = ['path' => (string) $saved['path'], 'bytes' => (int) $saved['bytes'], 'mime' => (string) $saved['mime']];
+                }
             }
 
             // The V2 worker intentionally responds in summary-and-text mode.
@@ -255,6 +307,12 @@ class OcrJobSyncService
 
             return $this->payloadFromJob($fresh, 'OCR completed.');
         }, 3);
+    }
+
+    private function ownedArtifactPath(string $path, string $base): bool
+    {
+        return $base !== '' && $base !== '.' && str_starts_with($path, rtrim($base, '/').'/')
+            && ! str_contains($path, '\\') && ! preg_match('~(^|/)(\.\.?)(/|$)|[\x00-\x1f]|%[0-9a-f]{2}~i', $path);
     }
 
     private function v2LayoutJson(mixed $value): ?string
@@ -325,7 +383,7 @@ class OcrJobSyncService
 
     protected function failJob(MlJob $job, string $message, array $response = []): array
     {
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => 'failed',
             'error' => ['message' => $message],
             ...$this->providerMetrics($response),

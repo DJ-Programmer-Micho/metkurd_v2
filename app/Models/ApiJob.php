@@ -22,6 +22,7 @@ class ApiJob extends Model
         'engine',
         'status',
         'input_hash',
+        'idempotency_hash',
         'estimated_credits',
         'reserved_credits',
         'final_credits',

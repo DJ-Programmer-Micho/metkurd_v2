@@ -68,6 +68,10 @@ class AudioProbeService
         $streams = (array) data_get($json, 'streams', []);
         $audioStream = collect($streams)->first(fn ($s) => (string) ($s['codec_type'] ?? '') === 'audio') ?? [];
 
+        if ($audioStream === []) {
+            throw new \RuntimeException('The file does not contain an audio stream.');
+        }
+
         $codecName = (string) ($audioStream['codec_name'] ?? '');
         $sampleRate = (int) ($audioStream['sample_rate'] ?? 0);
         $channels = (int) ($audioStream['channels'] ?? 0);

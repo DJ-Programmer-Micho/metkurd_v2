@@ -12,6 +12,7 @@ return [
     |
     */
     'enabled' => (bool) env('FEATURE_APP_V2', false),
+    'ocr_pdfinfo_binary' => env('OCR_PDFINFO_BINARY', 'pdfinfo'),
 
     'cache' => [
         // Voice artwork/reference metadata is shared per plan and locale; jobs remain canonical.
@@ -32,6 +33,9 @@ return [
         'failed' => ['label' => 'Failed', 'semantic' => 'danger', 'glass_class' => 'glass-load--danger'],
         'cancelled' => ['label' => 'Cancelled', 'semantic' => 'secondary', 'glass_class' => 'glass-load--secondary'],
         'canceled' => ['label' => 'Cancelled', 'semantic' => 'secondary', 'glass_class' => 'glass-load--secondary'],
+        'deleting' => ['label' => 'Deleting', 'semantic' => 'warning', 'glass_class' => 'glass-load--warning'],
+        'deleted' => ['label' => 'Deleted', 'semantic' => 'secondary', 'glass_class' => 'glass-load--secondary'],
+        'delete_failed' => ['label' => 'Deletion failed', 'semantic' => 'danger', 'glass_class' => 'glass-load--danger'],
         'idle' => ['label' => 'Idle', 'semantic' => 'secondary', 'glass_class' => 'glass-load--secondary'],
     ],
 
@@ -60,8 +64,6 @@ return [
                     'endpoint' => 'omni_v2',
                     'provider_model' => 'model_1',
                     'kind' => 'omni_tts',
-                    'legacy_route' => 'app.xomni',
-                    'legacy_workspace_name' => 'Apollo 1.5v',
                 ],
                 'apollo-2' => [
                     'name' => 'Apollo 2.0v',
@@ -71,8 +73,6 @@ return [
                     'endpoint' => 'omni_v2',
                     'provider_model' => 'model_2',
                     'kind' => 'omni_tts',
-                    'legacy_route' => 'app.xomni',
-                    'legacy_workspace_name' => 'Apollo 2.0v',
                 ],
                 'multi-speaker-1' => [
                     'name' => 'Multi Speaker 1.0v',
@@ -94,8 +94,6 @@ return [
                     'endpoint' => 'omni_v2',
                     'provider_model' => 'model_1',
                     'kind' => 'omni_clone',
-                    'legacy_route' => 'app.clone-xomni',
-                    'legacy_workspace_name' => 'Vector 1.5v',
                 ],
                 'vector-2' => [
                     'name' => 'Vector 2.0v',
@@ -105,8 +103,6 @@ return [
                     'endpoint' => 'omni_v2',
                     'provider_model' => 'model_2',
                     'kind' => 'omni_clone',
-                    'legacy_route' => 'app.clone-xomni',
-                    'legacy_workspace_name' => 'Vector 2.0v',
                 ],
             ],
         ],
@@ -123,8 +119,6 @@ return [
                     'access' => 'leo.transcribe',
                     'endpoint' => 'qasr_v2',
                     'kind' => 'qasr',
-                    'legacy_route' => 'app.qasr',
-                    'legacy_workspace_name' => 'Leo',
                 ],
                 'caption' => [
                     'name' => 'Caption',
@@ -133,8 +127,6 @@ return [
                     'access' => 'caption.standard',
                     'endpoint' => 'qasr_v2',
                     'kind' => 'caption',
-                    'legacy_route' => 'app.caption',
-                    'legacy_workspace_name' => 'Caption',
                 ],
                 'caption-edit' => [
                     'name' => 'Caption + Edit',
@@ -155,8 +147,6 @@ return [
                     'access' => 'ocr.standard',
                     'endpoint' => 'kocr_v2',
                     'kind' => 'kocr',
-                    'legacy_route' => 'app.ocr',
-                    'legacy_workspace_name' => 'OCR Scanner',
                 ],
             ],
         ],
@@ -169,24 +159,20 @@ return [
                 '2-stem' => [
                     'name' => '2 Separation',
                     'legacy_tool' => 'stem',
-                    'legacy_action' => 'stem.2',
+                    'legacy_action' => 'stem.sep2',
                     'access' => 'stem',
                     'endpoint' => 'stem',
                     'kind' => 'stem',
                     'stems' => 2,
-                    'legacy_route' => 'app.stem',
-                    'legacy_workspace_name' => 'STEM',
                 ],
                 '4-stem' => [
                     'name' => '4 Separation',
                     'legacy_tool' => 'stem',
-                    'legacy_action' => 'stem.4',
+                    'legacy_action' => 'stem.sep4',
                     'access' => 'stem',
                     'endpoint' => 'stem',
                     'kind' => 'stem',
                     'stems' => 4,
-                    'legacy_route' => 'app.stem',
-                    'legacy_workspace_name' => 'STEM',
                 ],
                 'create-ads' => [
                     'name' => 'Create Ads',

@@ -18,8 +18,22 @@ class CustomerApiKeyService
             throw new \RuntimeException('API access is available only on paid plans.');
         }
 
+        return $this->issueWithScopes($customer, $name, $scopes, $this->access->availableScopesForCustomer($customer));
+    }
+
+    public function issueV2(Customer $customer, string $name): array
+    {
+        $available = app(\App\Services\CustomerApi\V2\ApiCatalog::class)->scopes($customer);
+        if ($available === []) {
+            throw new \RuntimeException('API access is not available.');
+        }
+
+        return $this->issueWithScopes($customer, $name, ['*'], $available);
+    }
+
+    private function issueWithScopes(Customer $customer, string $name, array $scopes, array $availableScopes): array
+    {
         $plain = (string) config('customer_api.key_prefix', 'mk_live_').Str::random(40);
-        $availableScopes = $this->access->availableScopesForCustomer($customer);
         $normalizedScopes = collect($scopes)
             ->map(fn (mixed $scope): string => CustomerApiAccessService::canonicalScope((string) $scope))
             ->filter()

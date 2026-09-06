@@ -30,6 +30,7 @@ class extends Component
     protected string $toolCode = 'tran';
     protected string $fullActionCode = 'tran.standard';
 
+    #[\Livewire\Attributes\Locked] public string $submissionKey = '';
     public ?string $currentJobId = null;
     public ?string $providerJobId = null;
     public ?string $currentStatus = null;
@@ -77,6 +78,7 @@ class extends Component
 
     public function mount(): void
     {
+        $this->submissionKey = (string) Str::uuid();
         $this->syncWallet();
         $this->syncCostPreview();
         $this->dismissedJobStatusFor = session('tran.dismissed_job_status_for');
@@ -447,21 +449,15 @@ class extends Component
         $charged = false;
 
         try {
-            $credits->charge((int) $customer->id, $cost, 'tran_charge', [
-                'related_type' => 'ml_job',
-                'related_id' => null,
-                'tool_action' => $this->fullActionCode,
-                'chars' => $chars,
-                'source_lang' => $this->sourceLang,
-                'target_lang' => $this->targetLang,
-            ]);
-            $charged = true;
-
             [$tool, $action] = $this->findToolAndAction();
             $this->dismissedJobStatusFor = null;
             session()->forget('tran.dismissed_job_status_for');
 
-            MlJob::create([
+            [$job, $created] = app(\App\Services\MetKurd\Jobs\DurableUploadSubmission::class)->begin(
+                (int) $customer->id, $this->submissionKey, $this->fullActionCode, $cost, 'tran_charge',
+                ['chars'=>$chars, 'source_lang'=>$this->sourceLang, 'target_lang'=>$this->targetLang],
+                function () use ($jobId,$customer,$tool,$action,$text,$chars,$cost) {
+                    return MlJob::create([
                 'id' => $jobId,
                 'customer_id' => (int) $customer->id,
                 'tool_id' => (int) $tool->id,
@@ -485,6 +481,9 @@ class extends Component
                 'storage_in_bytes' => 0,
                 'storage_out_bytes' => 0,
             ]);
+                }
+            );
+            if (! $created) { $this->hydrateCurrentJobFromDb(); return; }
 
             $customerFresh = $customer->loadMissing('profile');
             $folder = $this->currentFolderForCustomer($customerFresh);
@@ -521,6 +520,7 @@ class extends Component
                 throw new \RuntimeException(__('RUNPOD_ENDPOINT_ID_TRAN is missing.'));
             }
 
+            $job->update(['submission_attempted_at'=>now(), 'failure_stage'=>null, 'endpoint_key'=>'tran']);
             $response = $runpod->run($endpointId, [
                 'text' => $text,
                 'source_lang' => $this->sourceLang,
@@ -543,6 +543,7 @@ class extends Component
             ]);
 
             $this->currentJobId = $jobId;
+            $this->submissionKey = (string) Str::uuid();
             $this->providerJobId = $providerJobId;
             $this->currentStatus = 'running';
             $this->jobFinished = false;
@@ -557,40 +558,13 @@ class extends Component
 
             $this->syncWallet();
         } catch (\Throwable $e) {
-            Log::warning('TRAN_START_FAIL', ['job_id' => $jobId, 'error' => $e->getMessage()]);
-
-            try {
-                if ($savedSource && !empty($savedSource['path'])) {
-                    $storage->deleteFromS3AndUncount((int) $customer->id, (string) $savedSource['path'], (int) ($savedSource['bytes'] ?? 0));
-                }
-            } catch (\Throwable $cleanup) {
-                Log::warning('TRAN_START_CLEANUP_FAIL', ['job_id' => $jobId, 'error' => $cleanup->getMessage()]);
-            }
-
-            if ($charged) {
-                try {
-                    $credits->refund((int) $customer->id, $cost, 'tran_refund', [
-                        'related_type' => 'ml_job',
-                        'related_id' => $jobId,
-                        'tool_action' => $this->fullActionCode,
-                        'reason' => 'provider_start_failed',
-                    ]);
-                } catch (\Throwable $refund) {
-                    Log::warning('TRAN_REFUND_FAIL', ['job_id' => $jobId, 'error' => $refund->getMessage()]);
-                }
-            }
-
-            MlJob::query()->where('id', $jobId)->update([
-                'status' => 'failed',
-                'error' => ['message' => $e->getMessage()],
-                'finished_at' => now(),
-                'updated_at' => now(),
-            ]);
-
+            Log::warning('TRAN_START_FAIL', ['job_id'=>$jobId,'exception'=>$e::class]);
+            if ($failedJob = MlJob::find($jobId)) app(\App\Services\MetKurd\Jobs\DurableUploadSubmission::class)->failed($failedJob,$e);
+            $this->hydrateCurrentJobFromDb();
             $this->syncWallet();
             $this->dispatch('header:refresh');
             $this->dispatch('customerStorageUpdated');
-            $this->dispatch('alert', type: 'error', message: __('Translation failed to start: :message', ['message' => $e->getMessage()]));
+            $this->dispatch('alert', type: 'error', message: \App\Support\CustomerFacingError::message($e->getMessage()));
             $this->hydrateCurrentJobFromDb();
         }
     }

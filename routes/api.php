@@ -127,3 +127,16 @@ Route::prefix('v1')
         Route::get('/jobs/{job}', [JobController::class, 'show'])->name('jobs.show');
         Route::get('/files/{file}/download', [FileController::class, 'download'])->name('files.download');
     });
+
+// Native V2 public API. The portal's locale belongs to web routes, not this namespace.
+Route::prefix('v2')->name('api.customer.v2.')->middleware([
+    \App\Http\Middleware\ApiV2Boundary::class,
+    'customer.api', 'customer.api.rate_limit',
+])->group(function () {
+    Route::get('/services', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'services'])->name('services');
+    Route::get('/voices', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'voices'])->name('voices');
+    Route::get('/jobs/{id}', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'show'])->name('jobs.show');
+    Route::get('/files/{id}/download', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'download'])->name('files.download');
+    Route::post('/{service}', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'submit'])
+        ->whereIn('service', \App\Services\CustomerApi\V2\ApiCatalog::SERVICES)->name('submit');
+});

@@ -1,0 +1,129 @@
+# Localization
+
+## API V2 developer portal — 2026-09-06
+
+The /{locale}/app-v2/api portal uses the V2 layout and Storage visual conventions.
+Its headings, navigation, service explanations, validation, one-time key UI and
+SweetAlert revoke confirmation use resources/lang/app/{en,ar,ku}.json. Technical
+blocks, headers, routes, keys and JSON remain LTR; customer key names use dir=auto.
+Desktop documentation has navigation/content/code columns, collapsing to a select
+and stacked panels on mobile. ApiDocumentation generates cURL/PHP/Python/Node.js
+examples using YOUR_API_KEY only. The newly created secret is delivered once in
+a Livewire event, held in Alpine memory, and cleared on dismissal/navigation; it
+is never a public Livewire property or substituted into documentation examples.
+Machine API errors are stable English JSON codes/messages without locale prefixes.
+
+
+## Previous core-review scope — 2026-09-06
+
+V2 customer workspaces and Storage are the current localization/UI target.
+Shared locale/catalog/asset infrastructure is acceptable. V1-only service copy
+and UI modernization are deferred. Preserve EN/LTR, AR/RTL, KU/RTL and safe
+customer-facing provider wording; do not preserve obsolete V1 notification
+behavior merely because V2 once reused its view.
+
+
+MetKurd UI locales are **en (English, LTR), ar (Arabic, RTL), ku (Kurdish Sorani,
+RTL)**. Worker language `ckb` and UI locale `ku` have distinct contracts.
+
+## Translation sources and resolution
+
+The main source is `resources/lang/*`. The area system has nine JSON catalogs:
+`{app,admin,landing}/{en,ar,ku}.json`. Hardening also added
+`{en,ar,ku}/validation.php` for the rules and field labels used by the service
+workspaces and shared uploads; AppServiceProvider adds this framework loader path.
+Always enumerate the tree again when changing customer text; inspect all relevant
+English/Arabic/Kurdish PHP and JSON files, including newly added catalogs.
+
+`LocalizationMainMiddleware` resolves route locale, then session `applocale`, then
+app default, and adds the area's JSON path to Laravel Lang. Both `/app` and
+`/app-v2` use app catalogs; `/super-admin` uses admin; other routes use landing.
+`AppServiceProvider` registers locale middleware for Livewire updates and as
+persistent middleware. Verify locale/area on update requests as well as page GETs.
+
+`AreaJsonTranslations` separately reads resource JSON with an in-process cache,
+supports flattened groups, and can be passed explicit area/locale. Landing
+translation management has its own support classes. Keep area detection aligned
+with middleware when adding routes. Missing JSON keys can render their English
+source text, so equal catalog key counts alone do not establish coverage.
+
+The audit aligned this helper's `/app-v2` detection with the middleware. V2 now
+loads bundled SweetAlert assets and `app/v2/partials/notifications.blade.php` for
+alert events; popup direction comes from the document and settings refresh on
+navigation. V1 continues using its Toastr bridge and ignores events on V2 pages.
+`CustomerFacingError` translates known catalog errors at V2 render boundaries and
+uses a localized generic fallback for unknown diagnostics. Do not persist a
+locale-specific cache of these display strings across customers/locales.
+
+## Authoring conventions
+
+Use existing `__()` / `@lang` conventions and preserve existing keys where callers
+depend on them. Add matching EN/AR/KU values with identical replacement tokens
+(e.g. `:count`, `:message`), punctuation intent and escaping. Do not introduce
+hardcoded English into Blade/PHP/JavaScript to bypass the translation system.
+
+| Text surface | Convention |
+|---|---|
+| Titles, descriptions, instructions | Translate the complete phrase; inherit UI direction and use logical alignment. Catalog config descriptions passed through `__()` also need entries. |
+| Labels, buttons, result labels | Translate captions and accessible labels, including icon-only controls, upload state, pagination and download actions. Product/format identifiers may intentionally remain unchanged. |
+| Alerts and errors | Translate message and dialog buttons in the active area/locale. Do not inject raw provider exceptions into a customer alert. Preserve placeholders, but do not treat arbitrary provider text as a safe translated placeholder. |
+| History and empty states | Translate headings, status labels, dates where supported, pagination, confirmations and no-results instructions. User filenames/text are data, not keys to machine-translate. |
+| Tooltips and modals | Translate title/body/close/confirm/cancel and aria text. Inherit document direction; do not duplicate RTL modal implementations. |
+| Generated/result text | Preserve actual output language. Use `dir="auto"` when content can differ from UI language, or an established explicit source/target language helper when language is known. |
+| Mixed-direction content | Use `dir="auto"`/`bdi` for user text and filenames; isolate IDs, times, URLs and numeric technical tokens with LTR where necessary. Avoid forcing an entire translated sentence LTR just because it includes a number. |
+
+V2 layout sets html lang/dir from locale and uses existing application assets.
+Leo/Caption/OCR results already use auto direction; Translation has a language
+direction helper. Apollo/Vector editors now use dir="auto" so generated/user
+content can differ from the UI language. Storage filenames, breadcrumbs and
+result content also use auto direction; numeric bytes are isolated.
+
+## Provider terminology and SweetAlert audit
+
+Search case-insensitively for RunPod throughout **customer-visible values and
+callers**, not only key names. Existing app keys containing provider/config names
+can remain compatibility keys when translated values say GPU/processing server.
+Internal RUNPOD_* env names, endpoint keys, provider metadata and admin JSON
+configuration examples must retain their technical meaning.
+
+Inspect the app layout notification bridge, V2 layout integration, direct STEM
+SweetAlert upload notification, service alert dispatchers and JS upload/copy
+handlers. EN/AR/KU message/button availability and popup direction must be
+checked together; translated text alone does not guarantee the alert is wired.
+
+The initial inventory found 1486 keys per app catalog, 766 per admin catalog,
+985 English/Arabic landing keys and 986 Kurdish landing keys. No customer-facing
+app/landing **values** contained the provider name, but untranslated service
+exceptions and missing V2 keys can still leak it through fallback. Four Kurdish
+configuration-error values contained corrupt `PH_0__` artifacts. These counts
+describe the pre-audit snapshot, not a required target count.
+
+See [PRODUCTION-AUDIT.md](PRODUCTION-AUDIT.md) for audit changes, coverage and
+remaining verification. Translation inventory checks do not substitute for a
+native-speaker review or actual browser inspection of dynamic dialogs.
+
+## Confirmation and exception boundary (2026-09-05)
+
+V2 action confirmations use data-v2-confirm and the shared SweetAlert helper;
+storage bulk confirmation uses that helper as well. The listener is installed
+once across navigation, uses localized Confirm/Cancel, and sets popup direction
+from the document. Livewire request failures use the same notification bridge;
+inline validation remains inline. Required/file/MIME/size/type messages and
+service field names now have EN/AR/KU framework translations, verified through
+the actual validator. This is coverage of these workspace rules, not a claim
+that every unrelated framework validation rule has been translated. Customer-facing unhandled exceptions are
+sanitized even with app.debug enabled, and raw errors are sanitized before
+assignment to public V2 component error state. Internal provider identifiers
+and admin catalog examples remain intact.
+
+EN/AR/KU rendered response checks passed during hardening. Actual desktop/mobile
+browser verification was blocked by the browser tool (ERR_BLOCKED_BY_CLIENT on
+both local hostnames), so visual dialogs and responsive behavior remain an
+explicit acceptance check rather than a claimed browser pass.
+
+## V2 final review — 2026-09-06
+
+Deletion states have EN/AR/KU catalog labels. STEM persistent script reads messages
+from the current page after navigation; upload feedback uses the shared SweetAlert
+bridge and generic translated errors. OCR correction has an explicit accessible
+label. Actual mobile/RTL/browser locale-switch acceptance remains outstanding.

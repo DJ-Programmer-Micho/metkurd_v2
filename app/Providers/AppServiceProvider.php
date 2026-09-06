@@ -42,6 +42,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Framework validation groups complement the existing area JSON catalogs.
+        app('translation.loader')->addPath(resource_path('lang'));
         // Blaze::optimize()->in(
         //     resource_path('views/app'),
         //     fold: true,

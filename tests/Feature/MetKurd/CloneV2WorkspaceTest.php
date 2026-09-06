@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\CreditWallet;
 use App\Models\CreditLedger;
+use App\Models\CreditWallet;
 use App\Models\Customer;
 use App\Models\CustomerFile;
 use App\Models\MlJob;
@@ -9,12 +9,12 @@ use App\Models\Tool;
 use App\Services\MetKurd\Jobs\CloneOmniSubmissionService;
 use App\Services\MetKurd\V2\RunPodV2Adapter;
 use App\Services\Providers\RunPodProvider;
-use App\Services\XTTS\XttsJobSyncService;
 use App\Services\Storage\StorageFileDeletionService;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
+use App\Services\XTTS\XttsJobSyncService;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -32,6 +32,7 @@ function cloneV2Customer(string $suffix): Customer
         'status' => 1, 'email_verify' => true, 'phone_verify' => true,
     ]);
     CreditWallet::query()->updateOrCreate(['customer_id' => $customer->id, 'wallet_type' => CreditWallet::TYPE_APP], ['balance_credits' => 1000, 'subscription_balance_credits' => 1000, 'addon_balance_credits' => 0]);
+
     return $customer->fresh();
 }
 
@@ -39,6 +40,7 @@ function cloneV2Reference(Customer $customer, string $name, array $attributes = 
 {
     $path = "renders/customer-{$customer->id}/clone_xomni/reference/{$name}";
     Storage::disk('s3')->put($path, 'reference-audio');
+
     return CustomerFile::create(array_merge([
         'customer_id' => $customer->id, 'purpose' => 'reference', 'tool_code' => 'clone_xomni', 'disk' => 's3',
         'path' => $path, 'size_bytes' => 15, 'mime' => 'audio/wav', 'status' => 'active', 'counts_toward_quota' => true,
@@ -196,6 +198,9 @@ it('materializes a legacy owned reference on private S3 before submitting either
 
 it('stores a new FilePond/Livewire reference as a reusable CTTS customer file', function () {
     $customer = cloneV2Customer('upload');
+    $probe = Mockery::mock(\App\Services\Media\AudioProbeService::class);
+    $probe->shouldReceive('probeUploadedFile')->once()->andReturn(['duration_sec' => 10]);
+    app()->instance(\App\Services\Media\AudioProbeService::class, $probe);
     $adapter = Mockery::mock(RunPodV2Adapter::class);
     $adapter->shouldReceive('omni')->once()->andReturn(['id' => 'runpod-ctts-upload']);
     app()->instance(RunPodV2Adapter::class, $adapter);

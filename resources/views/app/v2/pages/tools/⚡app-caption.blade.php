@@ -23,28 +23,30 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     public bool $intelligent = false;
     public ?string $audioName = null;
     public ?string $audioMime = null;
-    public ?float $audioDurationSec = null;
-    public int $audioBillableMinutes = 0;
-    public ?string $audioHash = null;
-    public int $creditsCost = 0;
+    #[\Livewire\Attributes\Locked] public ?float $audioDurationSec = null;
+    #[\Livewire\Attributes\Locked] public int $audioBillableMinutes = 0;
+    #[\Livewire\Attributes\Locked] public ?string $audioHash = null;
+    #[\Livewire\Attributes\Locked] public int $creditsCost = 0;
     public ?string $currentJobId = null;
     public ?string $selectedCaptionJobId = null;
+    #[\Livewire\Attributes\Locked] public string $submissionKey = '';
     public string $submissionError = '';
 
-    public function mount(): void { $this->hydrateCurrentJob(); }
+    public function mount(): void { $this->submissionKey = (string) \Illuminate\Support\Str::uuid(); $this->hydrateCurrentJob(); }
 
     public function updatedAudioFile(AudioProbeService $probe): void
     {
+        $this->submissionKey = (string) \Illuminate\Support\Str::uuid();
         $this->validateOnly('audioFile');
         if (! $this->audioFile) return;
         try {
-            $info = $probe->probeUploadedFile($this->audioFile);
+            $info = app(\App\Services\MetKurd\V2\InputBoundary::class)->audio($this->audioFile);
             $this->audioName = $this->audioFile->getClientOriginalName();
             $this->audioMime = $this->audioFile->getMimeType() ?: 'audio/*';
             $this->audioDurationSec = (float) $info['duration_sec'];
             $this->audioBillableMinutes = (int) $info['billable_min'];
             $path = $this->audioFile->getRealPath();
-            $this->audioHash = $path && is_file($path) ? hash_file('sha256', $path) : sha1($this->audioName.'|'.$this->audioFile->getSize());
+            $this->audioHash = $info['input_hash'];
             $this->refreshCost();
         } catch (\Throwable) {
             $this->removeAudio();
@@ -65,7 +67,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         $this->validate();
         if ($this->audioBillableMinutes < 1) { $this->submissionError = __('Could not determine audio duration.'); return; }
         try {
-            $job = $submissions->submit(auth('app')->user(), $this->audioFile, [
+            $job = $submissions->submit(auth('app')->user(), $this->audioFile, ['submission_key' => $this->submissionKey ?: (string) \Illuminate\Support\Str::uuid(),
                 'model_variant' => $this->modelVariant, 'language' => $this->language, 'intelligent' => $this->intelligent,
                 'duration_sec' => (float) $this->audioDurationSec, 'billable_minutes' => $this->audioBillableMinutes, 'input_hash' => (string) $this->audioHash,
                 'audio_name' => (string) $this->audioName, 'audio_mime' => (string) $this->audioMime,
@@ -74,15 +76,18 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             if ((string) $job->status === 'failed') $this->submissionError = (string) data_get($job->error, 'message', __('Caption could not be completed.'));
             $this->resetPage('captionRendersPage');
             $this->dispatch('header:refresh');
-        } catch (\Throwable $e) { $this->submissionError = $e->getMessage(); }
+        } catch (\Throwable $e) { $this->submissionError = \App\Support\CustomerFacingError::message($e->getMessage()); }
     }
 
     public function pollCaption(QasrJobSyncService $sync): void
     {
         $job = $this->currentJob;
+        $previousStatus = $job?->status;
         if ($job && $job->tool) $sync->sync($job, $job->tool);
+        $job?->refresh();
         $this->hydrateCurrentJob();
-        $this->dispatch('header:refresh');
+        unset($this->currentJob);
+        if ($job && $previousStatus !== $job->status) $this->dispatch('header:refresh');
     }
 
     #[Computed] public function currentJob(): ?MlJob { return $this->currentJobId ? MlJob::query()->with('tool')->whereKey($this->currentJobId)->where('customer_id', auth('app')->id())->where('job_kind', 'caption')->first() : null; }
@@ -110,16 +115,16 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     {
         $customerId = (int) auth('app')->id(); $page = $this->getPage('captionRendersPage');
         $active = MlJob::query()->where('customer_id', $customerId)->where('job_kind', 'caption')->whereIn('status', ['queued', 'running', 'saving'])->exists();
-        $resolver = fn () => MlJob::query()->where('customer_id', $customerId)->where('job_kind', 'caption')->latest('updated_at')->paginate(5, pageName: 'captionRendersPage');
+        $resolver = fn () => MlJob::query()->where('customer_id', $customerId)->where('job_kind', 'caption')->whereNotIn('status', ['deleted', 'deleting'])->latest('updated_at')->paginate(5, pageName: 'captionRendersPage');
         $renders = clone app(CaptionWorkspaceCache::class)->recentCaptions($customerId, $page, $active, $resolver);
         $locale = app()->getLocale();
         $renders->setCollection($renders->getCollection()->map(fn (MlJob $job) => [
             'id' => (string) $job->id, 'status' => (string) $job->status, 'name' => (string) data_get($job->input, 'audio_name', __('Uploaded audio')),
             'caption' => Str::limit((string) (data_get($job->output, 'srt') ?: data_get($job->output, 'text', '')), 220),
             'duration' => (float) data_get($job->input, 'audio_duration_sec', 0), 'when' => ($when = $job->finished_at ?: $job->updated_at) ? Carbon::parse($when)->diffForHumans() : '',
-            'txt_url' => (string) $job->status === 'done' ? route('app.v2.caption.txt', ['locale' => $locale, 'jobId' => $job->id]) : null,
+            'txt_url' => (string) $job->status === 'done' && data_get($job->output, 'path') ? route('app.v2.caption.txt', ['locale' => $locale, 'jobId' => $job->id]) : null,
             'srt_url' => (string) $job->status === 'done' && (string) (data_get($job->output, 'srt_path') ?: data_get($job->output, 'srt', '')) !== '' ? route('app.v2.caption.srt', ['locale' => $locale, 'jobId' => $job->id]) : null,
-            'audio_url' => (string) $job->status === 'done' ? route('app.v2.caption.audio', ['locale' => $locale, 'jobId' => $job->id]).'?proxy=1' : null,
+            'audio_url' => (string) $job->status === 'done' && data_get($job->input, 'audio_path') ? route('app.v2.caption.audio', ['locale' => $locale, 'jobId' => $job->id]).'?proxy=1' : null,
         ]));
         return $renders;
     }
@@ -155,17 +160,17 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             @error('audioFile')<small class="text-danger mt-2">{{ $message }}</small>@enderror
             <label class="v2-asr-intelligent mt-3"><span><strong>{{ __('Intelligent') }} <em>{{ __('Beta') }}</em></strong><small>{{ __('Improves captions using intelligent post-processing.') }}</small></span><span class="v2-asr-switch"><input type="checkbox" wire:model="intelligent" role="switch" aria-label="{{ __('Enable Intelligent captions') }}"><i aria-hidden="true"></i></span></label>
             <div class="v2-editor-footer mt-3"><span>{{ __('Estimated cost') }}</span><span>{{ number_format($creditsCost) }} {{ __('credits') }}</span></div>
-            @if($submissionError)<div class="alert alert-danger mt-3 mb-0">{{ $submissionError }}</div>@endif
+            @if($submissionError)<div class="alert alert-danger mt-3 mb-0">{{ \App\Support\CustomerFacingError::message($submissionError) }}</div>@endif
             @php($presentation = $this->currentPresentation)
-            <div class="v2-create-actions"><button wire:click="submitCaption" wire:loading.attr="disabled" wire:target="submitCaption,audioFile" @disabled(!$audioFile || $presentation['is_active']) class="btn btn-success px-4"><span wire:loading.remove wire:target="submitCaption,audioFile">{{ __('Create Captions') }}</span><span wire:loading wire:target="submitCaption,audioFile">{{ __('Preparing…') }}</span></button>@if($currentJobId)<span class="v2-job-state glass-load {{ $presentation['glass_class'] }}" @if($presentation['is_active']) wire:poll.1000ms="pollCaption" @endif>{{ $presentation['label'] }}</span>@endif</div>
+            <div class="v2-create-actions"><button wire:click="submitCaption" wire:loading.attr="disabled" wire:target="submitCaption,audioFile" @disabled(!$audioFile || $presentation['is_active']) class="btn btn-success px-4"><span wire:loading.remove wire:target="submitCaption,audioFile">{{ __('Create Captions') }}</span><span wire:loading wire:target="submitCaption,audioFile">{{ __('Preparing…') }}</span></button>@if($currentJobId)<span class="v2-job-state glass-load {{ $presentation['glass_class'] }}" @if($presentation['is_active']) wire:poll.5s="pollCaption" @endif>{{ $presentation['label'] }}</span>@endif</div>
         </main>
         <aside class="v2-workspace-panel v2-caption-results-panel">
             <div class="v2-panel-heading"><span>{{ __('Current Caption Result') }}</span><small>{{ __('Latest result') }}</small></div>
             @if($this->currentJob && $presentation['is_active'])<div class="v2-caption-processing"><span class="spinner-border spinner-border-sm"></span>{{ __('Processing your captions…') }}</div>
-            @elseif($this->currentJob && $this->currentJob->status === 'failed')<div class="v2-caption-failed">{{ data_get($this->currentJob->error, 'message', __('Caption could not be completed.')) }}</div>
-            @elseif($this->currentCaption)<div class="v2-caption-result" dir="auto">@foreach($this->currentCaptionBlocks as $captionBlock)<article class="v2-caption-result-block">@if($captionBlock['timing'])<time>{{ $captionBlock['timing'] }}</time>@endif<p>{{ $captionBlock['text'] }}</p></article>@endforeach</div><div class="d-flex flex-wrap gap-2 mt-2"><button wire:click="copyCaption" class="btn btn-sm btn-outline-success">{{ __('Copy') }}</button><a href="{{ route('app.v2.caption.txt', ['locale' => app()->getLocale(), 'jobId' => $currentJobId]) }}" class="btn btn-sm btn-outline-light">{{ __('Download Text') }}</a>@if((string) (data_get($this->currentJob->output, 'srt_path') ?: data_get($this->currentJob->output, 'srt', '')) !== '')<a href="{{ route('app.v2.caption.srt', ['locale' => app()->getLocale(), 'jobId' => $currentJobId]) }}" class="btn btn-sm btn-outline-success">{{ __('Download SRT') }}</a>@endif</div>
+            @elseif($this->currentJob && $this->currentJob->status === 'failed')<div class="v2-caption-failed">{{ \App\Support\CustomerFacingError::message(data_get($this->currentJob->error, 'message', __('Caption could not be completed.'))) }}</div>
+            @elseif($this->currentCaption)<div class="v2-caption-result" dir="auto">@foreach($this->currentCaptionBlocks as $captionBlock)<article class="v2-caption-result-block">@if($captionBlock['timing'])<time>{{ $captionBlock['timing'] }}</time>@endif<p>{{ $captionBlock['text'] }}</p></article>@endforeach</div><div class="d-flex flex-wrap gap-2 mt-2"><button wire:click="copyCaption" class="btn btn-sm btn-outline-success">{{ __('Copy') }}</button>@if(data_get($this->currentJob?->output, 'path'))<a href="{{ route('app.v2.caption.txt', ['locale' => app()->getLocale(), 'jobId' => $currentJobId]) }}" class="btn btn-sm btn-outline-light">{{ __('Download Text') }}</a>@endif@if((string) (data_get($this->currentJob->output, 'srt_path') ?: data_get($this->currentJob->output, 'srt', '')) !== '')<a href="{{ route('app.v2.caption.srt', ['locale' => app()->getLocale(), 'jobId' => $currentJobId]) }}" class="btn btn-sm btn-outline-success">{{ __('Download SRT') }}</a>@endif</div>
             @else<div class="v2-empty-state v2-caption-empty">{{ __('Your caption result will appear here.') }}</div>@endif
-            <div class="v2-caption-history"><div class="v2-panel-heading"><span>{{ __('Recent Captions') }}</span><small>{{ __('Caption only') }}</small></div>@forelse($this->recentCaptions as $render)<article class="v2-render-item is-{{ $render['status'] }}" wire:key="caption-render-{{ $render['id'] }}"><div class="d-flex justify-content-between gap-2"><strong>{{ $render['name'] }}</strong><span class="v2-render-status is-{{ $render['status'] === 'done' ? 'success' : ($render['status'] === 'failed' ? 'danger' : 'info') }}">{{ __(ucfirst($render['status'])) }}</span></div><p dir="auto">{{ $render['caption'] ?: __('Caption is still processing.') }}</p><small class="v2-muted">{{ $render['when'] }} @if($render['duration']) · {{ number_format($render['duration'], 1) }}s @endif</small>@if($render['audio_url'])<div class="v2-caption-recent-waveform" wire:ignore data-metkurd-waveform data-job="caption-audio-{{ $render['id'] }}" data-accent="success" data-url="{{ $render['audio_url'] }}"><div class="v2-render-player-controls"><button type="button" class="v2-waveform-toggle" data-metkurd-waveform-toggle aria-label="{{ __('Play or pause original audio') }}"><i class="ri-play-fill" data-metkurd-waveform-icon></i></button><span class="v2-waveform-time" data-metkurd-waveform-time>00:00 / --:--</span></div><div class="v2-waveform-canvas" data-metkurd-waveform-canvas></div></div>@endif<div class="d-flex flex-wrap gap-2 mt-2">@if($render['txt_url'])<a class="btn btn-sm btn-outline-light" href="{{ $render['txt_url'] }}">{{ __('Text') }}</a>@endif@if($render['srt_url'])<a class="btn btn-sm btn-outline-success" href="{{ $render['srt_url'] }}">{{ __('SRT') }}</a>@endif@if($render['status'] === 'done')<button type="button" wire:click="showCaption('{{ $render['id'] }}')" class="btn btn-sm btn-outline-success">{{ __('View Caption') }}</button><button type="button" wire:click="deleteCaption('{{ $render['id'] }}')" wire:confirm="{{ __('Delete this Caption job and its stored files?') }}" class="btn btn-sm btn-outline-danger">{{ __('Delete') }}</button>@endif</div></article>@empty<div class="v2-empty-state">{{ __('Your recent Caption jobs will appear here.') }}</div>@endforelse
+            <div class="v2-caption-history"><div class="v2-panel-heading"><span>{{ __('Recent Captions') }}</span><small>{{ __('Caption only') }}</small></div>@forelse($this->recentCaptions as $render)<article class="v2-render-item is-{{ $render['status'] }}" wire:key="caption-render-{{ $render['id'] }}"><div class="d-flex justify-content-between gap-2"><strong dir="auto">{{ $render['name'] }}</strong><span class="v2-render-status is-{{ $render['status'] === 'done' ? 'success' : ($render['status'] === 'failed' ? 'danger' : 'info') }}">{{ app(\App\Support\MetKurdV2JobStatusPresentation::class)->for($render['status'])['label'] }}</span></div><p dir="auto">{{ $render['caption'] ?: __('Caption is still processing.') }}</p><small class="v2-muted">{{ $render['when'] }} @if($render['duration']) · {{ number_format($render['duration'], 1) }}s @endif</small>@if($render['audio_url'])<div class="v2-caption-recent-waveform" wire:ignore data-metkurd-waveform data-job="caption-audio-{{ $render['id'] }}" data-accent="success" data-url="{{ $render['audio_url'] }}"><div class="v2-render-player-controls"><button type="button" class="v2-waveform-toggle" data-metkurd-waveform-toggle aria-label="{{ __('Play or pause original audio') }}"><i class="ri-play-fill" data-metkurd-waveform-icon></i></button><span class="v2-waveform-time" data-metkurd-waveform-time>00:00 / --:--</span></div><div class="v2-waveform-canvas" data-metkurd-waveform-canvas></div></div>@endif<div class="d-flex flex-wrap gap-2 mt-2">@if($render['txt_url'])<a class="btn btn-sm btn-outline-light" href="{{ $render['txt_url'] }}">{{ __('Text') }}</a>@endif@if($render['srt_url'])<a class="btn btn-sm btn-outline-success" href="{{ $render['srt_url'] }}">{{ __('SRT') }}</a>@endif@if($render['status'] === 'done')<button type="button" wire:click="showCaption('{{ $render['id'] }}')" class="btn btn-sm btn-outline-success">{{ __('View Caption') }}</button>@endif@if(in_array($render['status'], ['done', 'delete_failed'], true))<button type="button" wire:click="deleteCaption('{{ $render['id'] }}')" data-v2-confirm="{{ __('Delete this Caption job and its stored files?') }}" class="btn btn-sm btn-outline-danger">{{ __('Delete') }}</button>@endif</div></article>@empty<div class="v2-empty-state">{{ __('Your recent Caption jobs will appear here.') }}</div>@endforelse
             @if($this->recentCaptions->hasPages())<nav class="v2-render-pagination"><button wire:click="previousRecentCaptionsPage" @disabled($this->recentCaptions->onFirstPage())>{{ __('Previous') }}</button><span>{{ $this->recentCaptions->currentPage() }} / {{ $this->recentCaptions->lastPage() }}</span><button wire:click="nextRecentCaptionsPage" @disabled(! $this->recentCaptions->hasMorePages())>{{ __('Next') }}</button></nav>@endif</div>
         </aside>
     </div>

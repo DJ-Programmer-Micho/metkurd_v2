@@ -50,6 +50,8 @@ class MlJob extends Model
     ];
 
     protected $casts = [
+        'next_poll_at' => 'datetime',
+        'poll_locked_until' => 'datetime',
         'input' => 'array',
         'output' => 'array',
         'error' => 'array',

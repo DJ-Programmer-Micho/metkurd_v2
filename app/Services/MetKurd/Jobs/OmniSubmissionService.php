@@ -25,8 +25,9 @@ class OmniSubmissionService
     ) {}
 
     /** @param array{text:string,ref_audio:string,language?:string,ref_text?:string} $input */
-    public function submit(Customer $customer, string $service, string $toolSlug, string $submissionKey, array $input): MlJob
+    public function submit(Customer $customer, string $service, string $toolSlug, string $submissionKey, array $input, ?SubmissionContext $context = null): MlJob
     {
+        $context ??= new SubmissionContext;
         $definition = $this->catalog->tool($service, $toolSlug);
         if (! is_array($definition) || ! in_array($definition['kind'] ?? null, ['omni_tts'], true)) {
             throw new \InvalidArgumentException('This is not a native OMNI text-to-speech tool.');
@@ -45,11 +46,12 @@ class OmniSubmissionService
         }
 
         [$tool, $action] = $this->resolveToolAndAction($definition);
-        if (method_exists($customer, 'isAllowed') && ! $customer->isAllowed((string) $action->full_code)) {
+        if (method_exists($customer, 'isAllowed') && ! $customer->isAllowed((string) $action->full_code, $context->channel())) {
             throw new \RuntimeException('Your plan does not allow this tool.');
         }
 
         $cost = max(0, (int) $customer->priceCreditsFor((string) $action->full_code, [
+            'channel' => $context->channel(),
             'chars' => mb_strlen($text),
             'metric_code' => 'character',
             'language' => $language,
@@ -58,7 +60,7 @@ class OmniSubmissionService
             throw new \RuntimeException('Pricing is not configured for this service.');
         }
 
-        [$job, $shouldSubmit] = DB::transaction(function () use ($customer, $submissionKey, $definition, $tool, $action, $cost, $text, $refAudio, $language): array {
+        [$job, $shouldSubmit] = DB::transaction(function () use ($context, $customer, $submissionKey, $definition, $tool, $action, $cost, $text, $refAudio, $language): array {
             $job = MlJob::query()
                 ->where('customer_id', $customer->id)
                 ->where('submission_key', $submissionKey)
@@ -92,7 +94,7 @@ class OmniSubmissionService
                     ],
                 ]);
 
-                $this->credits->charge(
+                $context->charge(
                     customerId: (int) $customer->id,
                     credits: $cost,
                     type: 'omni_charge',
@@ -107,6 +109,7 @@ class OmniSubmissionService
                 );
             }
 
+            $job->refresh();
             if ($job->provider_job_id || $job->submission_attempted_at || in_array((string) $job->status, ['done', 'failed'], true)) {
                 return [$job, false];
             }
@@ -136,17 +139,7 @@ class OmniSubmissionService
                 'updated_at' => now(),
             ]);
         } catch (\Throwable $exception) {
-            // A response-less network failure remains provider-ambiguous. It is
-            // never retried automatically because that could create a second
-            // remote render; operations can reconcile it from the durable job.
-            MlJob::query()->whereKey($job->id)->update([
-                'status' => 'failed',
-                'failure_stage' => 'provider_submission',
-                'error' => ['message' => $exception->getMessage()],
-                'finished_at' => now(),
-                'updated_at' => now(),
-            ]);
-            $this->refunds->refundFailedJob((string) $job->id, 'provider_start_failed');
+            app(DurableUploadSubmission::class)->failed($job, $exception);
         }
 
         return $job->fresh();

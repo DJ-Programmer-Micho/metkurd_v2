@@ -52,53 +52,7 @@ class CustomerOutputStorage
             throw new \RuntimeException('Invalid wav_b64.');
         }
 
-        $disk = 's3';
-        $bytes = strlen($bin);
-        $mime = $meta['mime'] ?? 'audio/wav';
-        $startedAt = microtime(true);
-        $countsTowardQuota = (bool) ($meta['counts_toward_quota'] ?? true);
-
-        if ($countsTowardQuota) {
-            $this->assertCanConsumeStorage($customerId, $bytes);
-        }
-
-        // Log::info('CUSTOMER_OUTPUT_S3_SAVE_START', [
-        //     'disk' => $disk,
-        //     'path' => $path,
-        //     'bytes' => $bytes,
-        //     'mime' => $mime,
-        //     'bucket' => config('filesystems.disks.s3.bucket'),
-        //     'region' => config('filesystems.disks.s3.region'),
-        //     'endpoint' => config('filesystems.disks.s3.endpoint'),
-        //     'use_path_style_endpoint' => config('filesystems.disks.s3.use_path_style_endpoint'),
-        //     'config_cached' => app()->configurationIsCached(),
-        // ]);
-
-        try {
-            Storage::disk($disk)->put($path, $bin, [
-                'visibility' => 'private',
-                'ContentType' => $mime,
-            ]);
-        } catch (\Throwable $e) {
-            Log::error('CUSTOMER_OUTPUT_S3_SAVE_FAIL', [
-                'disk' => $disk,
-                'path' => $path,
-                'elapsed_ms' => (int) round((microtime(true) - $startedAt) * 1000),
-                'message' => $e->getMessage(),
-            ]);
-
-            throw $e;
-        }
-
-        // Log::info('CUSTOMER_OUTPUT_S3_SAVE_DONE', [
-        //     'disk' => $disk,
-        //     'path' => $path,
-        //     'elapsed_ms' => (int) round((microtime(true) - $startedAt) * 1000),
-        // ]);
-
-        $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
-
-        return compact('disk', 'path', 'bytes', 'mime');
+        return $this->writeObject($customerId, 's3', $path, $bin, strlen($bin), $meta['mime'] ?? 'audio/wav', $meta);
     }
 
     public function saveTextToS3(int $customerId, string $path, string $content, array $meta = []): array
@@ -107,23 +61,7 @@ class CustomerOutputStorage
             throw new \RuntimeException('Cannot save empty text content.');
         }
 
-        $disk = 's3';
-        $bytes = strlen($content);
-        $mime = $meta['mime'] ?? 'text/plain';
-        $countsTowardQuota = (bool) ($meta['counts_toward_quota'] ?? true);
-
-        if ($countsTowardQuota) {
-            $this->assertCanConsumeStorage($customerId, $bytes);
-        }
-
-        Storage::disk($disk)->put($path, $content, [
-            'visibility' => 'private',
-            'ContentType' => $mime,
-        ]);
-
-        $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
-
-        return compact('disk', 'path', 'bytes', 'mime');
+        return $this->writeObject($customerId, 's3', $path, $content, strlen($content), $meta['mime'] ?? 'text/plain', $meta);
     }
 
     public function saveUploadedFileToS3(int $customerId, UploadedFile $file, string $path, array $meta = []): array
@@ -131,36 +69,43 @@ class CustomerOutputStorage
         if (! $file->isValid()) {
             throw new \RuntimeException('Uploaded file is not valid.');
         }
-
-        $disk = 's3';
         $stream = $this->openUploadedFileReadStream($file);
-
         if (! is_resource($stream)) {
             throw new \RuntimeException('Unable to open uploaded file stream.');
         }
-
-        $mime = $file->getMimeType() ?: 'application/octet-stream';
-        $bytes = (int) $file->getSize();
-        $countsTowardQuota = (bool) ($meta['counts_toward_quota'] ?? true);
-
-        if ($countsTowardQuota) {
-            $this->assertCanConsumeStorage($customerId, $bytes);
-        }
-
         try {
-            Storage::disk($disk)->put($path, $stream, [
-                'visibility' => 'private',
-                'ContentType' => $mime,
-            ]);
+            return $this->writeObject($customerId, 's3', $path, $stream, (int) $file->getSize(), $file->getMimeType() ?: 'application/octet-stream', $meta);
         } finally {
-            if (is_resource($stream)) {
-                fclose($stream);
-            }
+            fclose($stream);
         }
+    }
 
-        $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
+    /** Serialize a customer's accounting and record only confirmed writes. */
+    private function writeObject(int $customerId, string $disk, string $path, mixed $content, int $bytes, string $mime, array $meta): array
+    {
+        $meta = $this->withApiRetention($customerId, $meta);
 
-        return compact('disk', 'path', 'bytes', 'mime');
+        return DB::transaction(function () use ($customerId, $disk, $path, $content, $bytes, $mime, $meta): array {
+            Customer::query()->whereKey($customerId)->lockForUpdate()->firstOrFail();
+            $existing = CustomerFile::query()->where('customer_id', $customerId)->where('disk', $disk)->where('path', $path)->lockForUpdate()->first();
+            if ($existing && $existing->status === 'deleted') {
+                throw new \RuntimeException('A deleted customer result cannot be overwritten.');
+            }
+            $previous = $existing && $existing->counts_toward_quota ? (int) $existing->size_bytes : 0;
+            $delta = ($meta['counts_toward_quota'] ?? true) ? max(0, $bytes - $previous) : 0;
+            if ($delta > 0) {
+                $this->assertCanConsumeStorage($customerId, $delta);
+            }
+            if (is_resource($content)) {
+                rewind($content);
+            }
+            if (Storage::disk($disk)->put($path, $content, ['visibility' => 'private', 'ContentType' => $mime]) !== true) {
+                throw new StorageObjectUnavailable('The customer result could not be persisted.');
+            }
+            $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
+
+            return compact('disk', 'path', 'bytes', 'mime');
+        }, 3);
     }
 
     public function inputBaseDir(Customer $customer, string $toolCode, string $jobId): string
@@ -286,7 +231,7 @@ class CustomerOutputStorage
 
         app(StorageFileDeletionService::class)->assertDestructiveOperationsAllowed();
 
-        DB::transaction(function () use ($customerId, $disk, $path, $bytes) {
+        DB::transaction(function () use ($customerId, $disk, $path) {
             $file = CustomerFile::query()
                 ->where('customer_id', $customerId)
                 ->where('disk', $disk)
@@ -294,9 +239,11 @@ class CustomerOutputStorage
                 ->lockForUpdate()
                 ->first();
 
-            $actualBytes = $bytes > 0
-                ? $bytes
-                : (int) ($file?->size_bytes ?? 0);
+            if ($file && (string) $file->status === 'deleted') {
+                return;
+            }
+            $actualBytes = $file && (string) $file->status === 'active' && $file->counts_toward_quota
+                ? (int) $file->size_bytes : 0;
 
             if (Storage::disk($disk)->exists($path) && Storage::disk($disk)->delete($path) === false) {
                 throw new \RuntimeException('The remote object could not be deleted.');
@@ -325,29 +272,32 @@ class CustomerOutputStorage
 
     public function registerExistingObject(int $customerId, string $disk, string $path, array $meta = []): ?array
     {
-        if ($path === '' || ! Storage::disk($disk)->exists($path)) {
+        if ($path === '') {
             return null;
         }
 
-        $existing = CustomerFile::query()
-            ->where('customer_id', $customerId)
-            ->where('disk', $disk)
-            ->where('path', $path)
-            ->where('status', '!=', 'deleted')
-            ->first();
+        $meta = $this->withApiRetention($customerId, $meta);
 
-        $bytes = (int) Storage::disk($disk)->size($path);
-        $mime = (string) (Storage::disk($disk)->mimeType($path) ?: ($meta['mime'] ?? 'application/octet-stream'));
-        $countsTowardQuota = (bool) ($meta['counts_toward_quota'] ?? true);
-
-        if (! $existing) {
-            if ($countsTowardQuota) {
-                $this->assertCanConsumeStorage($customerId, $bytes);
+        return DB::transaction(function () use ($customerId, $disk, $path, $meta): ?array {
+            Customer::query()->whereKey($customerId)->lockForUpdate()->firstOrFail();
+            $existing = CustomerFile::query()->where('customer_id', $customerId)->where('disk', $disk)->where('path', $path)->lockForUpdate()->first();
+            if ($existing && $existing->status === 'deleted') {
+                throw new \RuntimeException('A deleted customer result cannot be registered again.');
+            }
+            if (! Storage::disk($disk)->exists($path)) {
+                return null;
+            }
+            $bytes = (int) Storage::disk($disk)->size($path);
+            $mime = (string) (Storage::disk($disk)->mimeType($path) ?: ($meta['mime'] ?? 'application/octet-stream'));
+            $previous = $existing && $existing->counts_toward_quota ? (int) $existing->size_bytes : 0;
+            $delta = ($meta['counts_toward_quota'] ?? true) ? max(0, $bytes - $previous) : 0;
+            if ($delta > 0) {
+                $this->assertCanConsumeStorage($customerId, $delta);
             }
             $this->recordCustomerFile($customerId, $disk, $path, $bytes, $mime, $meta);
-        }
 
-        return compact('disk', 'path', 'bytes', 'mime');
+            return compact('disk', 'path', 'bytes', 'mime');
+        }, 3);
     }
 
     protected function recordCustomerFile(
@@ -359,9 +309,16 @@ class CustomerOutputStorage
         array $meta = []
     ): void {
         DB::transaction(function () use ($customerId, $disk, $path, $bytes, $mime, $meta) {
+            Customer::query()->whereKey($customerId)->lockForUpdate()->firstOrFail();
+            $file = CustomerFile::query()->where('customer_id', $customerId)->where('disk', $disk)->where('path', $path)->lockForUpdate()->first();
+            if ($file && $file->status === 'deleted') {
+                throw new \RuntimeException('A deleted customer result cannot be registered again.');
+            }
+            $previous = $file && $file->counts_toward_quota ? (int) $file->size_bytes : 0;
             $countsTowardQuota = (bool) ($meta['counts_toward_quota'] ?? true);
-
-            CustomerFile::create([
+            $delta = ($countsTowardQuota ? $bytes : 0) - $previous;
+            $file ??= new CustomerFile;
+            $file->fill([
                 'customer_id' => $customerId,
                 'purpose' => $meta['purpose'] ?? 'render',
                 'tool_code' => $meta['tool'] ?? 'tts',
@@ -378,9 +335,9 @@ class CustomerOutputStorage
                 'source_id' => isset($meta['source_id']) ? (string) $meta['source_id'] : null,
                 'counts_toward_quota' => $countsTowardQuota,
                 'meta' => $meta,
-            ]);
+            ])->save();
 
-            if ($countsTowardQuota) {
+            if ($delta !== 0) {
                 $usage = CustomerUsage::query()->lockForUpdate()->firstOrCreate(
                     ['customer_id' => $customerId],
                     [
@@ -391,7 +348,7 @@ class CustomerOutputStorage
                     ]
                 );
 
-                $usage->storage_used_bytes = (int) $usage->storage_used_bytes + $bytes;
+                $usage->storage_used_bytes = max(0, (int) $usage->storage_used_bytes + $delta);
                 $usage->save();
             }
         }, 3);
@@ -642,6 +599,29 @@ class CustomerOutputStorage
 
     public function deleteStemOutputs(MlJob $job): void
     {
+        app(StorageFileDeletionService::class)->assertDestructiveOperationsAllowed();
+        $job = DB::transaction(function () use ($job) {
+            $fresh = MlJob::query()->lockForUpdate()->findOrFail($job->id);
+            if (! in_array($fresh->status, ['done', 'failed', 'cancelled', 'delete_failed'], true)) {
+                return null;
+            }
+            $fresh->update(['status' => 'deleting']);
+
+            return $fresh;
+        }, 3);
+        if (! $job) {
+            return;
+        }
+        try {
+            $this->deleteStemArtifacts($job);
+        } catch (\Throwable $exception) {
+            $job->update(['status' => 'delete_failed', 'error' => ['message' => 'Stored files could not be deleted. Please try again.']]);
+            throw $exception;
+        }
+    }
+
+    private function deleteStemArtifacts(MlJob $job): void
+    {
         $output = (array) ($job->output ?? []);
         $outputDisk = (string) data_get($output, 'disk', $this->stemDisk());
         $inputDisk = (string) data_get($job->input, 'audio_disk', 's3');
@@ -790,6 +770,29 @@ class CustomerOutputStorage
 
     public function deleteOcrOutputs(MlJob $job): void
     {
+        app(StorageFileDeletionService::class)->assertDestructiveOperationsAllowed();
+        $job = DB::transaction(function () use ($job) {
+            $fresh = MlJob::query()->lockForUpdate()->findOrFail($job->id);
+            if (! in_array($fresh->status, ['done', 'failed', 'cancelled', 'delete_failed'], true)) {
+                return null;
+            }
+            $fresh->update(['status' => 'deleting']);
+
+            return $fresh;
+        }, 3);
+        if (! $job) {
+            return;
+        }
+        try {
+            $this->deleteOcrArtifacts($job);
+        } catch (\Throwable $exception) {
+            $job->update(['status' => 'delete_failed', 'error' => ['message' => 'Stored files could not be deleted. Please try again.']]);
+            throw $exception;
+        }
+    }
+
+    private function deleteOcrArtifacts(MlJob $job): void
+    {
         $output = (array) ($job->output ?? []);
         $outputDisk = (string) data_get($output, 'disk', $this->ocrDisk());
         $inputDisk = (string) data_get($job->input, 'file_disk', 's3');
@@ -849,6 +852,18 @@ class CustomerOutputStorage
                 __('This action would exceed your current storage quota. Delete files or upgrade your storage plan and try again.')
             );
         }
+    }
+
+    private function withApiRetention(int $customerId, array $meta): array
+    {
+        if (! empty($meta['job_id'])) {
+            $job = MlJob::query()->where('customer_id', $customerId)->find($meta['job_id']);
+            if ($job && data_get($job->input, 'api_version') === 2) {
+                return array_merge($meta, $this->apiOutputMeta($job, (string) ($meta['tool'] ?? $job->job_kind), (string) ($meta['purpose'] ?? 'render'), $meta['role'] ?? null));
+            }
+        }
+
+        return $meta;
     }
 
     public function apiOutputMeta(MlJob $job, string $toolCode, string $purpose = 'render', ?string $role = null): array

@@ -26,6 +26,7 @@ function leoV2Customer(string $suffix): Customer
 {
     $customer = Customer::create(['username' => "leo_{$suffix}", 'email' => "leo-{$suffix}@example.test", 'password' => 'Secret123!', 'status' => 1, 'email_verify' => true, 'phone_verify' => true]);
     CreditWallet::query()->updateOrCreate(['customer_id' => $customer->id, 'wallet_type' => CreditWallet::TYPE_APP], ['balance_credits' => 100000, 'subscription_balance_credits' => 100000, 'addon_balance_credits' => 0]);
+
     return $customer->fresh();
 }
 
@@ -49,7 +50,7 @@ it('renders the green two-panel Leo workspace with FilePond and Intelligent off 
         ->assertSee('Recent Transcriptions')
         ->set('audioName', 'uploaded.wav')
         ->set('audioMime', 'audio/wav')
-        ->set('audioDurationSec', 12.5)
+
         ->assertSee('data-leo-upload-waveform', false)
         ->assertSee('data-job="leo-upload"', false)
         ->assertSee('data-accent="success"', false);
@@ -58,8 +59,7 @@ it('renders the green two-panel Leo workspace with FilePond and Intelligent off 
 it('submits Leo with explicit Intelligent worker values and an isolated S3 prefix', function (bool $intelligent, int $expected) {
     $customer = leoV2Customer($intelligent ? 'intelligent-on' : 'intelligent-off');
     $adapter = Mockery::mock(RunPodV2Adapter::class);
-    $adapter->shouldReceive('qasr')->once()->with('speech-to-text', 'leo', Mockery::on(fn (array $payload): bool =>
-        (int) data_get($payload, 'intelligent') === $expected
+    $adapter->shouldReceive('qasr')->once()->with('speech-to-text', 'leo', Mockery::on(fn (array $payload): bool => (int) data_get($payload, 'intelligent') === $expected
         && (string) data_get($payload, 'model_variant') === 'fine_tuned'
         && (string) data_get($payload, 'audio_url') !== ''))->andReturn(['id' => 'leo-runpod-'.$expected]);
     app()->instance(RunPodV2Adapter::class, $adapter);

@@ -44,39 +44,43 @@ class MarkStaleMlJobsFailed extends Command
         }
 
         $timeouts = $this->resolveTimeouts($statuses);
-        $query = MlJob::query()->where(function ($builder) use ($statuses, $timeouts) {
-            foreach ($statuses as $status) {
-                $timeout = $timeouts[$status] ?? null;
+        $query = MlJob::query()
+            ->whereNull('provider_job_id')
+            ->whereNull('charge_reference')
+            ->whereNull('submission_attempted_at')
+            ->where(function ($builder) use ($statuses, $timeouts) {
+                foreach ($statuses as $status) {
+                    $timeout = $timeouts[$status] ?? null;
 
-                if ($timeout === null) {
-                    continue;
-                }
-
-                $threshold = now()->subMinutes($timeout);
-
-                $builder->orWhere(function ($statusQuery) use ($status, $threshold) {
-                    $statusQuery->where('status', $status);
-
-                    if (in_array($status, ['queue', 'queued'], true)) {
-                        $statusQuery->where('created_at', '<=', $threshold);
-
-                        return;
+                    if ($timeout === null) {
+                        continue;
                     }
 
-                    $statusQuery->where(function ($timeQuery) use ($threshold) {
-                        $timeQuery
-                            ->where(function ($started) use ($threshold) {
-                                $started->whereNotNull('started_at')->where('started_at', '<=', $threshold);
-                            })
-                            ->orWhere(function ($fallback) use ($threshold) {
-                                $fallback
-                                    ->whereNull('started_at')
-                                    ->where('updated_at', '<=', $threshold);
-                            });
+                    $threshold = now()->subMinutes($timeout);
+
+                    $builder->orWhere(function ($statusQuery) use ($status, $threshold) {
+                        $statusQuery->where('status', $status);
+
+                        if (in_array($status, ['queue', 'queued'], true)) {
+                            $statusQuery->where('created_at', '<=', $threshold);
+
+                            return;
+                        }
+
+                        $statusQuery->where(function ($timeQuery) use ($threshold) {
+                            $timeQuery
+                                ->where(function ($started) use ($threshold) {
+                                    $started->whereNotNull('started_at')->where('started_at', '<=', $threshold);
+                                })
+                                ->orWhere(function ($fallback) use ($threshold) {
+                                    $fallback
+                                        ->whereNull('started_at')
+                                        ->where('updated_at', '<=', $threshold);
+                                });
+                        });
                     });
-                });
-            }
-        });
+                }
+            });
 
         if ($customerId > 0) {
             $query->where('customer_id', $customerId);
@@ -250,6 +254,11 @@ class MarkStaleMlJobsFailed extends Command
             $locked = MlJob::query()->lockForUpdate()->find($job->id);
 
             if (! $locked instanceof MlJob) {
+                return false;
+            }
+
+            // Dispatch may have begun after the command selected its candidates.
+            if ($locked->provider_job_id || $locked->charge_reference || $locked->submission_attempted_at) {
                 return false;
             }
 

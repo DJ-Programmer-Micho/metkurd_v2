@@ -25,6 +25,8 @@ $applySchedulerGuards = static function ($event, string $name, int $lockMinutes 
     return $event;
 };
 
+$applySchedulerGuards(Schedule::command('ml-jobs:reconcile --limit=200')->everyMinute(), 'ml-jobs:reconcile', 5);
+
 // Stale ML jobs can happen when workers crash/time out mid-flight.
 $applySchedulerGuards(
     Schedule::command('ml-jobs:mark-stale-failed --queued-minutes=30 --processing-minutes=60')

@@ -349,6 +349,7 @@
                 window.__APP_TOASTR_BOUND__ = true;
 
                 const dispatchToast = (payload) => {
+                    if (document.body.classList.contains('metkurd-v2')) return;
                     if (typeof toastr === 'undefined') return;
 
                     toastr.options = {
@@ -363,7 +364,10 @@
                             : (payload || {}));
 
                     const type = detail.type || 'info';
-                    const message = detail.message || '';
+                    const rawMessage = String(detail.message || '');
+                    const message = /runpod/i.test(rawMessage)
+                        ? @js(__('Processing could not be completed. Please try again.'))
+                        : rawMessage;
                     const title = detail.title || '';
 
                     if (typeof toastr[type] === 'function') {

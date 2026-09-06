@@ -1,13 +1,13 @@
 <?php
 
+use App\Models\Customer;
+use App\Models\MlJob;
+use App\Models\Tool;
 use App\Services\MetKurd\V2\RunPodV2Adapter;
 use App\Services\OCR\OcrJobSyncService;
 use App\Services\Providers\RunPodProvider;
 use App\Support\MetKurdV2JobStatusPresentation;
 use App\Support\MetKurdV2ToolCatalog;
-use App\Models\Customer;
-use App\Models\MlJob;
-use App\Models\Tool;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -93,18 +93,17 @@ it('renders V2 root and maps the OCR correction switch in the V2 leaf state', fu
         ->assertSee('Multi Speaker 1.0v')
         ->assertSee('Coming soon');
 
-    Livewire::test('app::v2.pages.tools.app-tool', ['service' => 'ocr', 'tool' => 'scanner'])
+    Livewire::test('app::v2.pages.tools.app-ocr')
         ->assertSee('OCR Scanner 2.0')
         ->assertSet('runLlmCorrector', true)
-        ->assertSee('Intelligent Correction')
+        ->assertSee('Intelligent')
         ->assertSee('Beta')
-        ->assertSee('Open V1 workspace')
-        ->assertSee(route('app.ocr', ['locale' => 'en']))
+        ->assertDontSee('Open V1 workspace')
         ->set('runLlmCorrector', false)
         ->assertSet('runLlmCorrector', false);
 });
 
-it('maps each available V2 leaf to an existing V1 workspace instead of a second executor', function () {
+it('defines active V2 contracts without a legacy workspace fallback', function () {
     $catalog = app(MetKurdV2ToolCatalog::class);
 
     foreach ($catalog->services() as $service) {
@@ -113,8 +112,9 @@ it('maps each available V2 leaf to an existing V1 workspace instead of a second 
                 continue;
             }
 
-            expect($tool['legacy_route'])->not->toBeEmpty()
-                ->and(Route::has($tool['legacy_route']))->toBeTrue();
+            expect($tool)->not->toHaveKey('legacy_route')
+                ->and($tool['endpoint'])->not->toBeEmpty()
+                ->and($tool['legacy_action'])->not->toBeEmpty();
         }
     }
 });

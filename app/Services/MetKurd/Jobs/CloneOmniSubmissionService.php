@@ -8,8 +8,8 @@ use App\Models\MlJob;
 use App\Models\Tool;
 use App\Models\ToolAction;
 use App\Services\Billing\CreditService;
-use App\Services\MetKurd\V2\RunPodV2Adapter;
 use App\Services\MetKurd\V2\CttsWorkspaceCache;
+use App\Services\MetKurd\V2\RunPodV2Adapter;
 use App\Services\Security\JobExecutionLockService;
 use App\Services\Storage\CustomerOutputStorage;
 use App\Support\MetKurdV2ToolCatalog;
@@ -45,7 +45,9 @@ class CloneOmniSubmissionService
         array $input,
         ?UploadedFile $uploadedReference = null,
         ?int $referenceFileId = null,
+        ?SubmissionContext $context = null,
     ): MlJob {
+        $context ??= new SubmissionContext;
         $definition = $this->catalog->tool($service, $toolSlug);
         if (! is_array($definition) || ($definition['kind'] ?? null) !== 'omni_clone') {
             throw new \InvalidArgumentException('This is not a native CTTS tool.');
@@ -66,18 +68,19 @@ class CloneOmniSubmissionService
         }
 
         [$tool, $action] = $this->resolveToolAndAction($definition);
-        if (method_exists($customer, 'isAllowed') && ! $customer->isAllowed((string) $action->full_code)) {
+        if (method_exists($customer, 'isAllowed') && ! $customer->isAllowed((string) $action->full_code, $context->channel())) {
             throw new \RuntimeException('Your plan does not allow this tool.');
         }
 
         $cost = max(0, (int) $customer->priceCreditsFor((string) $action->full_code, [
+            'channel' => $context->channel(),
             'chars' => mb_strlen($text), 'metric_code' => 'character', 'language' => $language,
         ]));
         if ($cost <= 0) {
             throw new \RuntimeException('Pricing is not configured for this service.');
         }
 
-        [$job, $shouldSubmit] = DB::transaction(function () use ($customer, $submissionKey, $definition, $tool, $action, $cost, $text, $language): array {
+        [$job, $shouldSubmit] = DB::transaction(function () use ($context, $customer, $submissionKey, $definition, $tool, $action, $cost, $text, $language, $input): array {
             $job = MlJob::query()->where('customer_id', $customer->id)->where('submission_key', $submissionKey)->lockForUpdate()->first();
             if (! $job) {
                 $jobId = (string) Str::uuid();
@@ -87,18 +90,20 @@ class CloneOmniSubmissionService
                     'provider' => 'runpod', 'submission_key' => $submissionKey,
                     'endpoint_key' => (string) $definition['endpoint'], 'model_key' => (string) $definition['provider_model'],
                     'charge_reference' => "ml-job:{$jobId}:charge", 'credits_charged' => $cost,
-                    'input' => ['mode' => 'audio_url', 'text' => $text, 'language' => $language, 'text_language' => $language, 'ref_text' => '', 'output_format' => 'wav', 'return_base64' => true, 'ref_max_sec' => 20],
+                    'input' => ['mode' => 'audio_url', 'text' => $text, 'language' => $language, 'text_language' => $language, 'ref_text' => (string) ($input['reference_text'] ?? ''), 'output_format' => 'wav', 'return_base64' => true, 'ref_max_sec' => 20],
                 ]);
-                $this->credits->charge((int) $customer->id, $cost, (string) $tool->code.'_charge', [
+                $context->charge((int) $customer->id, $cost, (string) $tool->code.'_charge', [
                     'reference_code' => (string) $job->charge_reference, 'related_type' => 'ml_job', 'related_id' => (string) $job->id,
                     'ml_job_id' => (string) $job->id, 'tool_action' => (string) $action->full_code, 'chars' => mb_strlen($text),
                 ]);
             }
+            $job->refresh();
             if ($job->provider_job_id || $job->submission_attempted_at || in_array((string) $job->status, ['done', 'failed'], true)) {
                 return [$job, false];
             }
             $job->submission_attempted_at = now();
             $job->save();
+
             return [$job, true];
         }, 3);
 
@@ -139,6 +144,7 @@ class CloneOmniSubmissionService
             $job->storage_in_bytes = (int) $reference->size_bytes;
             $job->save();
 
+            $job->update(['input' => array_merge((array) $job->input, ['remote_dispatch_started' => true])]);
             $response = $this->provider->omni($service, $toolSlug, array_merge((array) $job->input, ['audio_url' => $audioUrl]));
             $providerJobId = trim((string) data_get($response, 'id'));
             if ($providerJobId === '') {
@@ -146,7 +152,13 @@ class CloneOmniSubmissionService
             }
             MlJob::query()->whereKey($job->id)->update(['status' => 'running', 'provider_job_id' => $providerJobId, 'started_at' => now(), 'failure_stage' => null]);
         } catch (\Throwable $exception) {
-            return $this->failAndRefund($job, 'provider_submission', $exception->getMessage());
+            if (! data_get($job->input, 'remote_dispatch_started')) {
+                $job->update(['submission_attempted_at' => null]);
+            }
+            $result = app(DurableUploadSubmission::class)->failed($job, $exception);
+            $this->workspaceCache->forgetRenders((int) $job->customer_id, (string) $tool->code);
+
+            return $result;
         }
 
         return $job->fresh();
@@ -159,6 +171,7 @@ class CloneOmniSubmissionService
         if (! $reference || ! $this->isReferenceFile($reference) || ! Storage::disk((string) $reference->disk)->exists((string) $reference->path)) {
             throw new \RuntimeException('That saved reference voice is no longer available.');
         }
+
         return $reference;
     }
 
@@ -242,7 +255,10 @@ class CloneOmniSubmissionService
     {
         $tool = Tool::query()->where('code', (string) $definition['legacy_tool'])->first();
         $action = ToolAction::query()->where('full_code', (string) $definition['legacy_action'])->first();
-        if (! $tool || ! $action) throw new \RuntimeException('The configured CTTS tool or action is missing.');
+        if (! $tool || ! $action) {
+            throw new \RuntimeException('The configured CTTS tool or action is missing.');
+        }
+
         return [$tool, $action];
     }
 
@@ -250,8 +266,10 @@ class CloneOmniSubmissionService
     {
         MlJob::query()->whereKey($job->id)->update(['status' => 'failed', 'failure_stage' => $stage, 'error' => ['message' => $message], 'finished_at' => now()]);
         $this->locks->releaseLock((string) $job->id);
-        $this->refunds->refundFailedJob((string) $job->id, $stage);
+        $job->refresh()->update(['failure_stage' => 'refund_pending']);
+        app(DurableUploadSubmission::class)->retryRefund($job);
         $this->workspaceCache->forgetRenders((int) $job->customer_id, (string) $job->tool?->code);
+
         return $job->fresh();
     }
 }

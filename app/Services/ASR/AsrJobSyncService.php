@@ -18,6 +18,13 @@ class AsrJobSyncService
 
     public function sync(MlJob $job, Tool $tool): array
     {
+        return app(\App\Services\MetKurd\Jobs\JobPollCoordinator::class)->sync(
+            $job, fn ($fresh) => $this->syncProvider($fresh, $tool), fn ($fresh) => $this->payload($fresh)
+        );
+    }
+
+    protected function syncProvider(MlJob $job, Tool $tool): array
+    {
         if (in_array((string) $job->status, ['done', 'failed', 'deleted', 'deleting', 'delete_failed'], true)) {
             return $this->payload($job);
         }
@@ -42,6 +49,9 @@ class AsrJobSyncService
         $st = $runpod->status($endpointId, $providerJobId);
 
         $rawStatus = strtoupper((string) data_get($st, 'status', ''));
+        if (in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true) && (data_get($st, 'output.success') === false || data_get($st, 'output.ok') === false)) {
+            $rawStatus = 'FAILED';
+        }
         $output = data_get($st, 'output');
         $errMsg = (string) (data_get($st, 'error') ?: data_get($output, 'error') ?: '');
 
@@ -53,13 +63,13 @@ class AsrJobSyncService
             'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 'queued',
             'IN_PROGRESS', 'RUNNING' => 'running',
             'COMPLETED', 'SUCCESS' => ($text !== '' ? 'saving' : 'failed'),
-            'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
+            'FAILED', 'ERROR', 'CANCELLED', 'TIMED_OUT' => 'failed',
             default => 'running',
         };
 
         $this->locks->refreshLock((string) $job->id, 60);
 
-        if ($mapped === 'failed' && $text === '') {
+        if ($mapped === 'failed') {
             $message = $errMsg !== '' ? $errMsg : (
                 in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true)
                     ? 'RunPod completed but returned no transcription text.'
@@ -69,11 +79,11 @@ class AsrJobSyncService
             return $this->failJob($job, $message);
         }
 
-        if ($text !== '') {
+        if (in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true) && $text !== '') {
             return $this->finalizeSuccess($job, $tool, $text, $chunks, $st);
         }
 
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => $mapped,
             'updated_at' => now(),
         ]);
@@ -95,6 +105,10 @@ class AsrJobSyncService
 
             if (! $fresh) {
                 throw new \RuntimeException('ASR Job not found during finalize.');
+            }
+
+            if (! $fresh->isActive()) {
+                return $this->payload($fresh);
             }
 
             if ((string) $fresh->status === 'done' && data_get($fresh->output, 'path')) {
@@ -143,7 +157,7 @@ class AsrJobSyncService
 
     protected function failJob(MlJob $job, string $message): array
     {
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => 'failed',
             'error' => ['message' => $message],
             'finished_at' => now(),

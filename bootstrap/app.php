@@ -72,6 +72,27 @@ return Application::configure(basePath: dirname(__DIR__))
         });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (\Throwable $exception, Request $request) {
+            if ($request->is('api/v2', 'api/v2/*')) {
+                return app(\App\Http\Middleware\ApiV2Boundary::class)->renderException($exception);
+            }
+            $customerSurface = $request->is('*/app-v2', '*/app-v2/*', '*/app/*')
+                || ($request->is('livewire/*') && auth('app')->check());
+            if (! $customerSurface || $exception instanceof \Illuminate\Validation\ValidationException
+                || $exception instanceof \Illuminate\Auth\AuthenticationException) {
+                return null;
+            }
+            $status = $exception instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface
+                ? $exception->getStatusCode() : 500;
+            if ($status < 500 && stripos($exception->getMessage(), 'runpod') === false) {
+                return null;
+            }
+            $message = \App\Support\CustomerFacingError::message($exception->getMessage());
+
+            return $request->expectsJson() || $request->is('livewire/*')
+                ? response()->json(['message' => $message], $status)
+                : response($message, $status)->header('Content-Type', 'text/plain; charset=UTF-8')->header('Cache-Control', 'private, no-store');
+        });
         $exceptions->shouldRenderJsonWhen(function (Request $request, \Throwable $exception): bool {
             return $request->is('api/*') || $request->expectsJson();
         });

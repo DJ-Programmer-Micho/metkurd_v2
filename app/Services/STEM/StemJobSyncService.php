@@ -61,12 +61,24 @@ class StemJobSyncService
 
     public function sync(MlJob $job): array
     {
+        return app(\App\Services\MetKurd\Jobs\JobPollCoordinator::class)->sync(
+            $job, fn ($fresh) => $this->syncProvider($fresh), fn ($fresh) => $this->payloadFromJob($fresh)
+        );
+    }
+
+    protected function syncProvider(MlJob $job): array
+    {
         if (in_array((string) $job->status, ['done', 'failed', 'deleted', 'deleting', 'delete_failed'], true)) {
             return $this->payloadFromJob($job);
         }
 
-        $endpointId = (string) (config('runpod.endpoints.stem') ?: env('RUNPOD_ENDPOINT_ID_STEM'));
+        $isV2 = data_get($job->input, 'workspace') === 'stem_v2';
+        $endpointId = trim((string) ($isV2 ? config('runpod.endpoints.stem') : (config('runpod.endpoints.stem') ?: env('RUNPOD_ENDPOINT_ID_STEM'))));
         if ($endpointId === '') {
+            if ($isV2) {
+                throw new \RuntimeException('The configured GPU endpoint is unavailable.');
+            }
+
             return $this->failJob($job, 'Missing RunPod STEM endpoint id.');
         }
 
@@ -80,9 +92,12 @@ class StemJobSyncService
 
             $st = $this->runpod->status($endpointId, $providerJobId);
             $rawStatus = strtoupper((string) data_get($st, 'status', ''));
+            if (in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true) && (data_get($st, 'output.success') === false || data_get($st, 'output.ok') === false)) {
+                $rawStatus = 'FAILED';
+            }
             $error = (string) (data_get($st, 'error') ?: data_get($st, 'output.error') ?: '');
 
-            MlJob::query()->where('id', $job->id)->update([
+            MlJob::query()->where('id', $job->id)->active()->update([
                 ...$this->providerMetrics($st),
                 'updated_at' => now(),
             ]);
@@ -108,7 +123,7 @@ class StemJobSyncService
 
     protected function markStatus(MlJob $job, string $status, int $progress, string $message): array
     {
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => $status,
             'updated_at' => now(),
         ]);
@@ -130,6 +145,10 @@ class StemJobSyncService
             $fresh = MlJob::query()->lockForUpdate()->find($job->id);
             if (! $fresh) {
                 throw new \RuntimeException('Stem job not found during finalize.');
+            }
+
+            if (! $fresh->isActive()) {
+                return $this->payloadFromJob($fresh);
             }
 
             if ((string) $fresh->status === 'done' && ! empty(data_get($fresh->output, 'stems'))) {
@@ -199,7 +218,7 @@ class StemJobSyncService
 
     protected function failJob(MlJob $job, string $message, array $response = []): array
     {
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => 'failed',
             'error' => ['message' => $message],
             ...$this->providerMetrics($response),

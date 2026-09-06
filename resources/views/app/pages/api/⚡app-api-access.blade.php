@@ -55,6 +55,10 @@ class extends Component
 
     public function mount(): void
     {
+        if (config('metkurd_v2.enabled')) {
+            $this->redirectRoute('app.v2.api', ['locale' => app()->getLocale()]);
+            return;
+        }
         $this->refreshPageState();
     }
 

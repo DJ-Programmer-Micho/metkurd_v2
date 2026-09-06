@@ -16,6 +16,7 @@
     <link rel="shortcut icon" href="{{ app('logo_1024_tran_black') }}">
     <link href="{{ asset('app/css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ asset('app/css/icons.min.css') }}" rel="stylesheet">
+    <link href="{{ asset('app/libs/sweetalert2/sweetalert2.min.css') }}" rel="stylesheet">
     <link href="{{ asset('app/css/app.min.css') }}" rel="stylesheet">
     @vite('resources/js/app.js')
     @livewireStyles
@@ -100,6 +101,8 @@
     <form id="v2-language-form" action="{{ route('setLocale') }}" method="POST" class="d-none">@csrf<input type="hidden" name="locale" id="v2-selected-locale" value="{{ app()->getLocale() }}"></form>
     <script src="{{ asset('app/libs/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ asset('app/libs/node-waves/waves.min.js') }}"></script>
+    <script src="{{ asset('app/libs/sweetalert2/sweetalert2.min.js') }}"></script>
+    @include('app.v2.partials.notifications')
     @livewireScripts
     @stack('scripts')
     <script data-navigate-once>

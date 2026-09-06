@@ -411,6 +411,7 @@ Route::prefix('{locale}')
     ->middleware(['auth:app', 'app.active', 'app.verified', 'app.v2.enabled', LocalizationMainMiddleware::class])
     ->group(function () {
         Route::livewire('/app-v2', 'app::v2.pages.home.app-home')->name('app.v2.home');
+        Route::livewire('/app-v2/api', 'app::v2.pages.api.app-api')->name('app.v2.api');
         Route::livewire('/app-v2/storage', 'app::v2.pages.storage.app-storage')->name('app.v2.storage');
         Route::get('/app-v2/storage/files/download', [V2StorageFileController::class, 'bulkDownload'])->name('app.v2.storage.bulk-download');
         Route::get('/app-v2/storage/files/{file}/download', [V2StorageFileController::class, 'download'])->name('app.v2.storage.download');

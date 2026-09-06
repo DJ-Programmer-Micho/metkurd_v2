@@ -146,7 +146,7 @@ it('keeps Apollo versions distinct through jobs, credits, storage, and output re
 it('refunds a provider start failure exactly once and restores the wallet', function () {
     $customer = omniLifecycleCustomer('refund');
     $provider = Mockery::mock(RunPodProvider::class);
-    $provider->shouldReceive('run')->once()->andThrow(new RuntimeException('RunPod rejected request'));
+    $provider->shouldReceive('run')->once()->andThrow(new \Illuminate\Http\Client\RequestException(new \Illuminate\Http\Client\Response(new \GuzzleHttp\Psr7\Response(422))));
     app()->instance(RunPodProvider::class, $provider);
 
     $job = app(OmniSubmissionService::class)->submit($customer, 'text-to-speech', 'apollo-1', 'failed-submission-key', [
@@ -163,7 +163,7 @@ it('refunds a provider start failure exactly once and restores the wallet', func
 it('records an Apollo 2.0 refund against its own action identity', function () {
     $customer = omniLifecycleCustomer('apollo-2-refund');
     $provider = Mockery::mock(RunPodProvider::class);
-    $provider->shouldReceive('run')->once()->andThrow(new RuntimeException('RunPod rejected request'));
+    $provider->shouldReceive('run')->once()->andThrow(new \Illuminate\Http\Client\RequestException(new \Illuminate\Http\Client\Response(new \GuzzleHttp\Psr7\Response(422))));
     app()->instance(RunPodProvider::class, $provider);
 
     $job = app(OmniSubmissionService::class)->submit($customer, 'text-to-speech', 'apollo-2', 'apollo-2-failure-key', [
@@ -330,7 +330,7 @@ it('keeps the Apollo editor RTL for every supported interface locale', function 
     foreach (['en', 'ar', 'ku'] as $locale) {
         app()->setLocale($locale);
         Livewire::test('app::v2.pages.tools.app-tool', ['service' => 'text-to-speech', 'tool' => 'apollo-1'])
-            ->assertSee('dir="rtl"', false);
+            ->assertSee('<textarea dir="auto"', false);
     }
 
     app()->setLocale('en');

@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CustomerApiKey extends Model
 {
+    protected $hidden = ['key_hash'];
+
     protected $fillable = [
         'customer_id',
         'name',

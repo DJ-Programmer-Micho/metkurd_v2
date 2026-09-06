@@ -142,7 +142,7 @@
             $shell = app(\App\Support\AppShellData::class)->forCurrentCustomer();
             $apiAccessEnabled = (bool) ($shell['api_access_enabled'] ?? false);
             $apiRoute = $apiAccessEnabled
-                ? route('app.api-access', ['locale' => app()->getLocale()])
+                ? route(config('metkurd_v2.enabled') ? 'app.v2.api' : 'app.api-access', ['locale' => app()->getLocale()])
                 : route('subscription-plan', ['locale' => app()->getLocale()]);
         @endphp
 

@@ -6,9 +6,6 @@ use App\Models\ApiResultFile;
 use App\Models\Customer;
 use App\Models\CustomerFile;
 use App\Models\CustomerUsage;
-use App\Models\MlJob;
-use App\Services\MetKurd\V2\CttsWorkspaceCache;
-use App\Services\MetKurd\V2\LeoWorkspaceCache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -65,6 +62,8 @@ class StorageFileDeletionService
                         'updated_at' => $deletedAt,
                     ]);
 
+                app(DeletedResultReconciliation::class)->reconcile($fresh);
+
                 return ['file' => $fresh, 'remote_missing' => false];
             }
 
@@ -115,12 +114,10 @@ class StorageFileDeletionService
                 }
             }
 
+            app(DeletedResultReconciliation::class)->reconcile($fresh);
+
             return ['file' => $fresh, 'remote_missing' => ! $exists];
         }, 3);
-
-        $this->forgetCttsWorkspaceCache($result['file']);
-        $this->forgetLeoWorkspaceCache($result['file']);
-        $this->reconcileStemJobAfterFileDeletion($result['file']);
 
         return $result;
     }
@@ -166,74 +163,5 @@ class StorageFileDeletionService
         }
 
         return $outcome;
-    }
-
-    private function forgetCttsWorkspaceCache(CustomerFile $file): void
-    {
-        if (! in_array((string) $file->tool_code, ['clone_tts', 'clone_xomni', 'vector-v2'], true)) {
-            return;
-        }
-
-        $cache = app(CttsWorkspaceCache::class);
-        if ((string) $file->purpose === 'reference') {
-            $cache->forgetReferences((int) $file->customer_id);
-            return;
-        }
-
-        if ((string) $file->purpose === 'render') {
-            $cache->forgetRenders((int) $file->customer_id, (string) $file->tool_code);
-        }
-    }
-
-    private function forgetLeoWorkspaceCache(CustomerFile $file): void
-    {
-        if ((string) $file->tool_code === 'leo') {
-            app(LeoWorkspaceCache::class)->forgetTranscriptions((int) $file->customer_id);
-        }
-    }
-
-    /**
-     * Storage is the source of truth for customer-visible STEM artifacts.
-     * When the final render is removed from My Storage, hide the matching job
-     * from the STEM workspace as well. This deliberately does not react to a
-     * source-audio deletion while playable render tracks are still present.
-     */
-    private function reconcileStemJobAfterFileDeletion(CustomerFile $file): void
-    {
-        if ((string) $file->tool_code !== 'stem') {
-            return;
-        }
-
-        $jobId = trim((string) (data_get($file->meta, 'job_id')
-            ?: ((string) $file->source_type === 'ml_job' ? $file->source_id : '')));
-
-        if ($jobId === '') {
-            return;
-        }
-
-        $hasRemainingRender = CustomerFile::query()
-            ->where('customer_id', (int) $file->customer_id)
-            ->where('tool_code', 'stem')
-            ->where('purpose', 'render')
-            ->where('source_id', $jobId)
-            ->where('status', 'active')
-            ->exists();
-
-        if ($hasRemainingRender) {
-            return;
-        }
-
-        MlJob::query()
-            ->whereKey($jobId)
-            ->where('customer_id', (int) $file->customer_id)
-            ->where('job_kind', 'stem')
-            ->where('status', 'done')
-            ->update([
-                'status' => 'deleted',
-                'output' => null,
-                'storage_out_bytes' => 0,
-                'error' => null,
-                'updated_at' => now(),
-            ]);
     }
 }

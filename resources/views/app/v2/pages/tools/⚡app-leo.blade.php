@@ -23,28 +23,30 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     public bool $intelligent = false;
     public ?string $audioName = null;
     public ?string $audioMime = null;
-    public ?float $audioDurationSec = null;
-    public int $audioBillableMinutes = 0;
-    public ?string $audioHash = null;
-    public int $creditsCost = 0;
+    #[\Livewire\Attributes\Locked] public ?float $audioDurationSec = null;
+    #[\Livewire\Attributes\Locked] public int $audioBillableMinutes = 0;
+    #[\Livewire\Attributes\Locked] public ?string $audioHash = null;
+    #[\Livewire\Attributes\Locked] public int $creditsCost = 0;
     public ?string $currentJobId = null;
     public ?string $selectedTranscriptJobId = null;
+    #[\Livewire\Attributes\Locked] public string $submissionKey = '';
     public string $submissionError = '';
 
-    public function mount(): void { $this->hydrateCurrentJob(); }
+    public function mount(): void { $this->submissionKey = (string) \Illuminate\Support\Str::uuid(); $this->hydrateCurrentJob(); }
 
     public function updatedAudioFile(AudioProbeService $probe): void
     {
+        $this->submissionKey = (string) \Illuminate\Support\Str::uuid();
         $this->validateOnly('audioFile');
         if (! $this->audioFile) return;
         try {
-            $info = $probe->probeUploadedFile($this->audioFile);
+            $info = app(\App\Services\MetKurd\V2\InputBoundary::class)->audio($this->audioFile);
             $this->audioName = $this->audioFile->getClientOriginalName();
             $this->audioMime = $this->audioFile->getMimeType() ?: 'audio/*';
             $this->audioDurationSec = (float) $info['duration_sec'];
             $this->audioBillableMinutes = (int) $info['billable_min'];
             $path = $this->audioFile->getRealPath();
-            $this->audioHash = $path && is_file($path) ? hash_file('sha256', $path) : sha1($this->audioName.'|'.$this->audioFile->getSize());
+            $this->audioHash = $info['input_hash'];
             $this->refreshCost();
         } catch (\Throwable) {
             $this->removeAudio();
@@ -65,7 +67,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         $this->validate();
         if ($this->audioBillableMinutes < 1) { $this->submissionError = __('Could not determine audio duration.'); return; }
         try {
-            $job = $submissions->submit(auth('app')->user(), $this->audioFile, [
+            $job = $submissions->submit(auth('app')->user(), $this->audioFile, ['submission_key' => $this->submissionKey ?: (string) \Illuminate\Support\Str::uuid(),
                 'model_variant' => $this->modelVariant, 'language' => $this->language, 'intelligent' => $this->intelligent,
                 'duration_sec' => (float) $this->audioDurationSec, 'billable_minutes' => $this->audioBillableMinutes, 'input_hash' => (string) $this->audioHash,
                 'audio_name' => (string) $this->audioName, 'audio_mime' => (string) $this->audioMime,
@@ -74,15 +76,18 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             if ((string) $job->status === 'failed') $this->submissionError = (string) data_get($job->error, 'message', __('Transcription could not be started.'));
             $this->resetPage('leoRendersPage');
             $this->dispatch('header:refresh');
-        } catch (\Throwable $e) { $this->submissionError = $e->getMessage(); }
+        } catch (\Throwable $e) { $this->submissionError = \App\Support\CustomerFacingError::message($e->getMessage()); }
     }
 
     public function pollLeo(QasrJobSyncService $sync): void
     {
         $job = $this->currentJob;
+        $previousStatus = $job?->status;
         if ($job && $job->tool) $sync->sync($job, $job->tool);
+        $job?->refresh();
         $this->hydrateCurrentJob();
-        $this->dispatch('header:refresh');
+        unset($this->currentJob);
+        if ($job && $previousStatus !== $job->status) $this->dispatch('header:refresh');
     }
 
     #[Computed] public function currentJob(): ?MlJob
@@ -102,15 +107,15 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     {
         $customerId = (int) auth('app')->id(); $page = $this->getPage('leoRendersPage');
         $active = MlJob::query()->where('customer_id', $customerId)->where('job_kind', 'leo')->whereIn('status', ['queued', 'running', 'saving'])->exists();
-        $resolver = fn () => MlJob::query()->where('customer_id', $customerId)->where('job_kind', 'leo')->latest('updated_at')->paginate(5, pageName: 'leoRendersPage');
+        $resolver = fn () => MlJob::query()->where('customer_id', $customerId)->where('job_kind', 'leo')->whereNotIn('status', ['deleted', 'deleting'])->latest('updated_at')->paginate(5, pageName: 'leoRendersPage');
         $renders = clone app(LeoWorkspaceCache::class)->recentTranscriptions($customerId, $page, $active, $resolver);
         $locale = app()->getLocale();
         $renders->setCollection($renders->getCollection()->map(fn (MlJob $job) => [
             'id' => (string) $job->id, 'status' => (string) $job->status, 'name' => (string) data_get($job->input, 'audio_name', __('Uploaded audio')),
             'text' => Str::limit((string) data_get($job->output, 'text', ''), 180), 'duration' => (float) data_get($job->input, 'audio_duration_sec', 0),
             'when' => ($when = $job->finished_at ?: $job->updated_at) ? Carbon::parse($when)->diffForHumans() : '',
-            'download_url' => (string) $job->status === 'done' ? route('app.v2.leo.txt', ['locale' => $locale, 'jobId' => $job->id]) : null,
-            'audio_url' => (string) $job->status === 'done' ? route('app.v2.leo.audio', ['locale' => $locale, 'jobId' => $job->id]).'?proxy=1' : null,
+            'download_url' => (string) $job->status === 'done' && data_get($job->output, 'path') ? route('app.v2.leo.txt', ['locale' => $locale, 'jobId' => $job->id]) : null,
+            'audio_url' => (string) $job->status === 'done' && data_get($job->input, 'audio_path') ? route('app.v2.leo.audio', ['locale' => $locale, 'jobId' => $job->id]).'?proxy=1' : null,
         ]));
         return $renders;
     }
@@ -139,17 +144,17 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             @error('audioFile')<small class="text-danger mt-2">{{ $message }}</small>@enderror
             <label class="v2-leo-intelligent mt-3"><span><strong>{{ __('Intelligent') }} <em>{{ __('Beta') }}</em></strong><small>{{ __('Improves transcription using intelligent post-processing.') }}</small></span><input type="checkbox" wire:model="intelligent" role="switch"></label>
             <div class="v2-editor-footer mt-3"><span>{{ __('Estimated cost') }}</span><span>{{ number_format($creditsCost) }} {{ __('credits') }}</span></div>
-            @if($submissionError)<div class="alert alert-danger mt-3 mb-0">{{ $submissionError }}</div>@endif
+            @if($submissionError)<div class="alert alert-danger mt-3 mb-0">{{ \App\Support\CustomerFacingError::message($submissionError) }}</div>@endif
             @php($presentation = $this->currentPresentation)
-            <div class="v2-create-actions"><button wire:click="submitLeo" wire:loading.attr="disabled" wire:target="submitLeo,audioFile" @disabled(!$audioFile || $presentation['is_active']) class="btn btn-success px-4"><span wire:loading.remove wire:target="submitLeo,audioFile">{{ __('Transcribe') }}</span><span wire:loading wire:target="submitLeo,audioFile">{{ __('Preparing…') }}</span></button>@if($currentJobId)<span class="v2-job-state glass-load {{ $presentation['glass_class'] }}" @if($presentation['is_active']) wire:poll.1000ms="pollLeo" @endif>{{ $presentation['label'] }}</span>@endif</div>
+            <div class="v2-create-actions"><button wire:click="submitLeo" wire:loading.attr="disabled" wire:target="submitLeo,audioFile" @disabled(!$audioFile || $presentation['is_active']) class="btn btn-success px-4"><span wire:loading.remove wire:target="submitLeo,audioFile">{{ __('Transcribe') }}</span><span wire:loading wire:target="submitLeo,audioFile">{{ __('Preparing…') }}</span></button>@if($currentJobId)<span class="v2-job-state glass-load {{ $presentation['glass_class'] }}" @if($presentation['is_active']) wire:poll.5s="pollLeo" @endif>{{ $presentation['label'] }}</span>@endif</div>
         </main>
         <aside class="v2-workspace-panel v2-leo-results-panel">
             <div class="v2-panel-heading"><span>{{ __('Transcribed Text') }}</span><small>{{ __('Latest result') }}</small></div>
             @if($this->currentJob && $presentation['is_active'])<div class="v2-leo-processing"><span class="spinner-border spinner-border-sm"></span>{{ __('Processing your transcription…') }}</div>
-            @elseif($this->currentJob && $this->currentJob->status === 'failed')<div class="v2-leo-failed">{{ data_get($this->currentJob->error, 'message', __('Transcription could not be completed.')) }}</div>
-            @elseif($this->currentTranscript)<div class="v2-leo-transcript" dir="auto">{{ $this->currentTranscript }}</div><div class="d-flex gap-2 mt-2"><button wire:click="copyTranscript" class="btn btn-sm btn-outline-success">{{ __('Copy') }}</button><a href="{{ route('app.v2.leo.txt', ['locale' => app()->getLocale(), 'jobId' => $currentJobId]) }}" class="btn btn-sm btn-outline-light">{{ __('Download') }}</a></div>
+            @elseif($this->currentJob && $this->currentJob->status === 'failed')<div class="v2-leo-failed">{{ \App\Support\CustomerFacingError::message(data_get($this->currentJob->error, 'message', __('Transcription could not be completed.'))) }}</div>
+            @elseif($this->currentTranscript)<div class="v2-leo-transcript" dir="auto">{{ $this->currentTranscript }}</div><div class="d-flex gap-2 mt-2"><button wire:click="copyTranscript" class="btn btn-sm btn-outline-success">{{ __('Copy') }}</button>@if(data_get($this->currentJob?->output, 'path'))<a href="{{ route('app.v2.leo.txt', ['locale' => app()->getLocale(), 'jobId' => $currentJobId]) }}" class="btn btn-sm btn-outline-light">{{ __('Download') }}</a>@endif</div>
             @else<div class="v2-empty-state v2-leo-empty">{{ __('Your transcription will appear here.') }}</div>@endif
-            <div class="v2-leo-history"><div class="v2-panel-heading"><span>{{ __('Recent Transcriptions') }}</span><small>{{ __('Leo only') }}</small></div>@forelse($this->recentTranscriptions as $render)<article class="v2-render-item is-{{ $render['status'] }}" wire:key="leo-render-{{ $render['id'] }}"><div class="d-flex justify-content-between gap-2"><strong>{{ $render['name'] }}</strong><span class="v2-render-status is-{{ $render['status'] === 'done' ? 'success' : ($render['status'] === 'failed' ? 'danger' : 'info') }}">{{ __(ucfirst($render['status'])) }}</span></div><p dir="auto">{{ $render['text'] ?: __('Transcription is still processing.') }}</p><small class="v2-muted">{{ $render['when'] }} @if($render['duration']) · {{ number_format($render['duration'], 1) }}s @endif</small>@if($render['audio_url'])<div class="v2-leo-recent-waveform" wire:ignore data-metkurd-waveform data-job="leo-audio-{{ $render['id'] }}" data-accent="success" data-url="{{ $render['audio_url'] }}"><div class="v2-render-player-controls"><button type="button" class="v2-waveform-toggle" data-metkurd-waveform-toggle aria-label="{{ __('Play or pause original audio') }}"><i class="ri-play-fill" data-metkurd-waveform-icon></i></button><span class="v2-waveform-time" data-metkurd-waveform-time>00:00 / --:--</span></div><div class="v2-waveform-canvas" data-metkurd-waveform-canvas></div></div>@endif<div class="d-flex flex-wrap gap-2 mt-2">@if($render['download_url'])<a class="btn btn-sm btn-outline-success" href="{{ $render['download_url'] }}">{{ __('Download') }}</a>@endif@if($render['status'] === 'done')<button type="button" wire:click="showTranscript('{{ $render['id'] }}')" class="btn btn-sm btn-outline-success">{{ __('View Transcript') }}</button>@endif</div></article>@empty<div class="v2-empty-state">{{ __('Your recent Leo transcriptions will appear here.') }}</div>@endforelse
+            <div class="v2-leo-history"><div class="v2-panel-heading"><span>{{ __('Recent Transcriptions') }}</span><small>{{ __('Leo only') }}</small></div>@forelse($this->recentTranscriptions as $render)<article class="v2-render-item is-{{ $render['status'] }}" wire:key="leo-render-{{ $render['id'] }}"><div class="d-flex justify-content-between gap-2"><strong dir="auto">{{ $render['name'] }}</strong><span class="v2-render-status is-{{ $render['status'] === 'done' ? 'success' : ($render['status'] === 'failed' ? 'danger' : 'info') }}">{{ app(\App\Support\MetKurdV2JobStatusPresentation::class)->for($render['status'])['label'] }}</span></div><p dir="auto">{{ $render['text'] ?: __('Transcription is still processing.') }}</p><small class="v2-muted">{{ $render['when'] }} @if($render['duration']) · {{ number_format($render['duration'], 1) }}s @endif</small>@if($render['audio_url'])<div class="v2-leo-recent-waveform" wire:ignore data-metkurd-waveform data-job="leo-audio-{{ $render['id'] }}" data-accent="success" data-url="{{ $render['audio_url'] }}"><div class="v2-render-player-controls"><button type="button" class="v2-waveform-toggle" data-metkurd-waveform-toggle aria-label="{{ __('Play or pause original audio') }}"><i class="ri-play-fill" data-metkurd-waveform-icon></i></button><span class="v2-waveform-time" data-metkurd-waveform-time>00:00 / --:--</span></div><div class="v2-waveform-canvas" data-metkurd-waveform-canvas></div></div>@endif<div class="d-flex flex-wrap gap-2 mt-2">@if($render['download_url'])<a class="btn btn-sm btn-outline-success" href="{{ $render['download_url'] }}">{{ __('Download') }}</a>@endif@if($render['status'] === 'done')<button type="button" wire:click="showTranscript('{{ $render['id'] }}')" class="btn btn-sm btn-outline-success">{{ __('View Transcript') }}</button>@endif</div></article>@empty<div class="v2-empty-state">{{ __('Your recent Leo transcriptions will appear here.') }}</div>@endforelse
             @if($this->recentTranscriptions->hasPages())<nav class="v2-render-pagination"><button wire:click="previousRecentTranscriptionsPage" @disabled($this->recentTranscriptions->onFirstPage())>{{ __('Previous') }}</button><span>{{ $this->recentTranscriptions->currentPage() }} / {{ $this->recentTranscriptions->lastPage() }}</span><button wire:click="nextRecentTranscriptionsPage" @disabled(! $this->recentTranscriptions->hasMorePages())>{{ __('Next') }}</button></nav>@endif</div>
         </aside>
     </div>

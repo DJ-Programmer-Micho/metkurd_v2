@@ -29,3 +29,6 @@ docs
 docs/*
 !docs/architecture/
 !docs/architecture/metkurd-v2-shared-submission-plan.md
+!docs/metkurd/
+docs/metkurd/*
+!docs/metkurd/*.md

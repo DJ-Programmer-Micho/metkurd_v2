@@ -6,6 +6,14 @@ use Illuminate\Support\Facades\Http;
 
 class RunPodProvider
 {
+    public function cancel(string $endpointId, string $jobId): array
+    {
+        $base = rtrim(config('runpod.base_url'), '/');
+
+        return Http::withToken(config('runpod.api_key'))->timeout((int) config('runpod.timeout', 60))
+            ->post("{$base}/v2/{$endpointId}/cancel/{$jobId}")->throw()->json();
+    }
+
     public function run(string $endpointId, array $input, ?int $timeout = null): array
     {
         $base = rtrim(config('runpod.base_url'), '/');

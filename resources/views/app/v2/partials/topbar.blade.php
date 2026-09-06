@@ -1,9 +1,7 @@
 @php
     $shell = app(\App\Support\AppShellData::class)->forCurrentCustomer();
-    $apiAccessEnabled = (bool) ($shell['api_access_enabled'] ?? false);
-    $apiRoute = $apiAccessEnabled
-        ? route('app.api-access', ['locale' => app()->getLocale()])
-        : route('subscription-plan', ['locale' => app()->getLocale()]);
+    $apiAccessEnabled = auth('app')->check() && app(\App\Services\CustomerApi\V2\ApiCatalog::class)->scopes(auth('app')->user()) !== [];
+    $apiRoute = route('app.v2.api', ['locale' => app()->getLocale()]);
     $profile = $shell['profile'] ?? null;
     $fallbackAvatarUrl = app(\App\Support\AvatarFallbackUrl::class)->customer();
     $avatarUrl = $profile?->avatar_url ?: $fallbackAvatarUrl;
@@ -29,7 +27,7 @@
                 </div>
             </div>
 
-            <a wire:navigate href="{{ $apiRoute }}" class="btn btn-sm {{ $apiAccessEnabled ? 'btn-info' : 'btn-outline-secondary' }} v2-topbar-control" aria-label="{{ $apiAccessEnabled ? __('Open API Access') : __('View API subscription options') }}"><i class="mdi mdi-api"></i><span class="d-none d-md-inline ms-1">{{ __('API') }}</span></a>
+            <a wire:navigate href="{{ $apiRoute }}" class="btn btn-sm {{ $apiAccessEnabled ? 'btn-info' : 'btn-outline-secondary' }} v2-topbar-control" aria-label="{{ __('Open API Access') }}"><i class="mdi mdi-api"></i><span class="d-none d-md-inline ms-1">{{ __('API') }}</span></a>
 
             <div class="v2-process-slots"><livewire:partials.process-slots /></div>
 

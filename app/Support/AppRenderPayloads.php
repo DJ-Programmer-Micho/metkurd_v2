@@ -23,7 +23,8 @@ class AppRenderPayloads
     {
         $locale = $locale ?: app()->getLocale();
         $mode = (int) (data_get($job->meta, 'separation_mode') ?: data_get($job->input, 'stems', 4));
-        $tracks = self::stemTracks($mode);
+        $unavailable = (array) data_get($job->output, 'unavailable_paths', []);
+        $tracks = array_values(array_filter(self::stemTracks($mode), fn ($track) => $unavailable === [] || data_get($job->output, $track === 'original' ? 'original.path' : "stems.{$track}.path")));
 
         $streams = [];
         $downloads = [];

@@ -27,6 +27,7 @@ function captionV2Customer(string $suffix): Customer
 {
     $customer = Customer::create(['username' => "caption_{$suffix}", 'email' => "caption-{$suffix}@example.test", 'password' => 'Secret123!', 'status' => 1, 'email_verify' => true, 'phone_verify' => true]);
     CreditWallet::query()->updateOrCreate(['customer_id' => $customer->id, 'wallet_type' => CreditWallet::TYPE_APP], ['balance_credits' => 100000, 'subscription_balance_credits' => 100000, 'addon_balance_credits' => 0]);
+
     return $customer->fresh();
 }
 
@@ -42,7 +43,7 @@ it('renders the green Caption workspace with FilePond, WaveSurfer, and no fixed 
         ->assertSet('intelligent', false)->assertSee('v2-caption-workspace', false)
         ->assertSee('v2-caption-audio-pond', false)->assertSee('Intelligent')->assertSee('Beta')
         ->assertSee('Current Caption Result')->assertSee('Recent Captions')
-        ->set('audioName', 'uploaded.wav')->set('audioMime', 'audio/wav')->set('audioDurationSec', 12.5)
+        ->set('audioName', 'uploaded.wav')->set('audioMime', 'audio/wav')
         ->assertSee('data-caption-upload-waveform', false)->assertSee('data-job="caption-upload"', false)
         ->assertSee('data-accent="success"', false);
 });
@@ -50,8 +51,7 @@ it('renders the green Caption workspace with FilePond, WaveSurfer, and no fixed 
 it('preserves the V1 Caption worker contract and adds only intelligent', function (bool $intelligent, int $expected) {
     $customer = captionV2Customer($intelligent ? 'intelligent-on' : 'intelligent-off');
     $adapter = Mockery::mock(RunPodV2Adapter::class);
-    $adapter->shouldReceive('qasr')->once()->with('speech-to-text', 'caption', Mockery::on(fn (array $payload): bool =>
-        (string) data_get($payload, 'audio_url') !== ''
+    $adapter->shouldReceive('qasr')->once()->with('speech-to-text', 'caption', Mockery::on(fn (array $payload): bool => (string) data_get($payload, 'audio_url') !== ''
         && (string) data_get($payload, 'model_variant') === 'fine_tuned'
         && (string) data_get($payload, 'language') === 'ckb'
         && (string) data_get($payload, 'type') === 'caption'

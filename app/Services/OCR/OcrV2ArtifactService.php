@@ -3,8 +3,8 @@
 namespace App\Services\OCR;
 
 use App\Models\MlJob;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Creates customer-requested V2 OCR exports when a worker response contains
@@ -34,7 +34,9 @@ class OcrV2ArtifactService
         }
 
         foreach ($contents as $format => $content) {
-            Storage::disk($disk)->put($paths[$format]['path'], $content, ['ContentType' => $paths[$format]['mime']]);
+            if (Storage::disk($disk)->put($paths[$format]['path'], $content, ['ContentType' => $paths[$format]['mime']]) !== true) {
+                throw new \App\Services\Storage\StorageObjectUnavailable('The customer result could not be persisted.');
+            }
             $existing[$format] = $this->stored($disk, $paths[$format]);
         }
 
@@ -48,7 +50,9 @@ class OcrV2ArtifactService
                 }
             }
             $zip = $this->zip($archiveEntries);
-            Storage::disk($disk)->put($paths['zip']['path'], $zip, ['ContentType' => $paths['zip']['mime']]);
+            if (Storage::disk($disk)->put($paths['zip']['path'], $zip, ['ContentType' => $paths['zip']['mime']]) !== true) {
+                throw new \App\Services\Storage\StorageObjectUnavailable('The customer result could not be persisted.');
+            }
             $existing['zip'] = $this->stored($disk, $paths['zip']);
         }
 
@@ -58,7 +62,7 @@ class OcrV2ArtifactService
     /**
      * Persist binary exports returned inline by the upgraded OCR worker.
      *
-     * @param array{docx_base64?: mixed, html?: mixed} $workerOutput
+     * @param  array{docx_base64?: mixed, html?: mixed}  $workerOutput
      * @return array<string, array{path:string, bytes:int, mime:string}>
      */
     public function persistWorkerArtifacts(MlJob $job, string $disk, array $workerOutput): array
@@ -70,13 +74,17 @@ class OcrV2ArtifactService
         if (($exports['export_docx'] ?? false) && is_string($workerOutput['docx_base64'] ?? null)) {
             $docx = base64_decode((string) $workerOutput['docx_base64'], true);
             if ($docx !== false && $docx !== '') {
-                Storage::disk($disk)->put($paths['docx']['path'], $docx, ['ContentType' => $paths['docx']['mime']]);
+                if (Storage::disk($disk)->put($paths['docx']['path'], $docx, ['ContentType' => $paths['docx']['mime']]) !== true) {
+                    throw new \App\Services\Storage\StorageObjectUnavailable('The customer result could not be persisted.');
+                }
                 $stored['docx'] = $this->stored($disk, $paths['docx']);
             }
         }
 
         if (($exports['export_html'] ?? false) && is_string($workerOutput['html'] ?? null) && $workerOutput['html'] !== '') {
-            Storage::disk($disk)->put($paths['html']['path'], (string) $workerOutput['html'], ['ContentType' => $paths['html']['mime']]);
+            if (Storage::disk($disk)->put($paths['html']['path'], (string) $workerOutput['html'], ['ContentType' => $paths['html']['mime']]) !== true) {
+                throw new \App\Services\Storage\StorageObjectUnavailable('The customer result could not be persisted.');
+            }
             $stored['html'] = $this->stored($disk, $paths['html']);
         }
 
@@ -143,7 +151,7 @@ class OcrV2ArtifactService
         }
 
         try {
-            $archive = new \ZipArchive();
+            $archive = new \ZipArchive;
             if ($archive->open($path, \ZipArchive::OVERWRITE) !== true) {
                 throw new \RuntimeException('Unable to create OCR export archive.');
             }

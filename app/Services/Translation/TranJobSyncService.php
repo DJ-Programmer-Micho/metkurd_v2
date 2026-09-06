@@ -18,6 +18,13 @@ class TranJobSyncService
 
     public function sync(MlJob $job, Tool $tool): array
     {
+        return app(\App\Services\MetKurd\Jobs\JobPollCoordinator::class)->sync(
+            $job, fn ($fresh) => $this->syncProvider($fresh, $tool), fn ($fresh) => $this->payload($fresh)
+        );
+    }
+
+    protected function syncProvider(MlJob $job, Tool $tool): array
+    {
         if (in_array((string) $job->status, ['done', 'failed', 'deleted', 'deleting', 'delete_failed'], true)) {
             return $this->payload($job);
         }
@@ -42,6 +49,9 @@ class TranJobSyncService
         $statusPayload = $runpod->status($endpointId, $providerJobId);
 
         $rawStatus = strtoupper((string) data_get($statusPayload, 'status', ''));
+        if (in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true) && (data_get($statusPayload, 'output.success') === false || data_get($statusPayload, 'output.ok') === false)) {
+            $rawStatus = 'FAILED';
+        }
         $output = data_get($statusPayload, 'output');
         $errorMessage = (string) (data_get($statusPayload, 'error') ?: data_get($output, 'error') ?: '');
 
@@ -50,13 +60,13 @@ class TranJobSyncService
             'IN_QUEUE', 'QUEUED', 'PENDING', 'THROTTLED', 'THROTTLING', 'NO_CAPACITY', 'NO_WORKERS', 'RATE_LIMITED' => 'queued',
             'IN_PROGRESS', 'RUNNING' => 'running',
             'COMPLETED', 'SUCCESS' => ($translatedText !== '' ? 'saving' : 'failed'),
-            'FAILED', 'CANCELLED', 'TIMED_OUT' => 'failed',
+            'FAILED', 'ERROR', 'CANCELLED', 'TIMED_OUT' => 'failed',
             default => 'running',
         };
 
         $this->locks->refreshLock((string) $job->id, 60);
 
-        if ($mapped === 'failed' && $translatedText === '') {
+        if ($mapped === 'failed') {
             $message = $errorMessage !== '' ? $errorMessage : (
                 in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true)
                     ? 'RunPod completed but returned no translated text.'
@@ -66,11 +76,11 @@ class TranJobSyncService
             return $this->failJob($job, $message);
         }
 
-        if ($translatedText !== '') {
+        if (in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true) && $translatedText !== '') {
             return $this->finalizeSuccess($job, $tool, $translatedText, $statusPayload);
         }
 
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => $mapped,
             'updated_at' => now(),
         ]);
@@ -87,6 +97,10 @@ class TranJobSyncService
 
             if (! $fresh) {
                 throw new \RuntimeException('Translation job not found during finalize.');
+            }
+
+            if (! $fresh->isActive()) {
+                return $this->payload($fresh);
             }
 
             if ((string) $fresh->status === 'done' && data_get($fresh->output, 'path')) {
@@ -132,7 +146,7 @@ class TranJobSyncService
 
     protected function failJob(MlJob $job, string $message): array
     {
-        MlJob::query()->where('id', $job->id)->update([
+        MlJob::query()->where('id', $job->id)->active()->update([
             'status' => 'failed',
             'error' => ['message' => $message],
             'finished_at' => now(),

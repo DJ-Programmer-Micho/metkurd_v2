@@ -128,7 +128,7 @@ class AreaJsonTranslations
             return 'admin';
         }
 
-        if (preg_match('#^/(en|ar|ku)/app(?:/|$)#', $path)) {
+        if (preg_match('#^/(en|ar|ku)/app(?:-v2)?(?:/|$)#', $path)) {
             return 'app';
         }
 

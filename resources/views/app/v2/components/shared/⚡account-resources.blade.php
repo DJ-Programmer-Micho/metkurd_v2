@@ -45,7 +45,7 @@ new class extends Component
                 __('API Credits'),
                 $apiCredits,
                 'api',
-                route('app.api-access', ['locale' => $locale]),
+                route('app.v2.api', ['locale' => $locale]),
             );
         }
 
@@ -56,7 +56,7 @@ new class extends Component
             'value' => __(':used MB / :total MB', ['used' => number_format($used), 'total' => number_format($quota)]),
             'percent' => $this->visualPercent((int) ($this->shell['storage_pct'] ?? 0)),
             'tone' => 'storage',
-            'href' => route('app.storage', ['locale' => $locale]),
+            'href' => route('app.v2.storage', ['locale' => $locale]),
         ];
 
         return $rows;
@@ -65,6 +65,11 @@ new class extends Component
     private function loadData(bool $forceRefresh = false): void
     {
         $this->shell = app(AppShellData::class)->forCurrentCustomer($forceRefresh);
+        $customer = auth('app')->user();
+        $this->shell['api_access_enabled'] = $customer !== null && app(\App\Services\CustomerApi\V2\ApiCatalog::class)->scopes($customer) !== [];
+        if ($this->shell['api_access_enabled']) {
+            $this->shell['api_credits'] = app(\App\Services\Billing\CustomerUsageSummaryService::class)->forApiCustomer($customer)['credits'];
+        }
     }
 
     /** @param array<string,mixed> $credits */

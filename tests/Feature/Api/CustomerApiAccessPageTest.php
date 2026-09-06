@@ -16,6 +16,7 @@ use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 beforeEach(function () {
+    config()->set('metkurd_v2.enabled', false); // Exercise the retained legacy page with rollout disabled.
     Cache::flush();
     $this->seed();
     app()->setLocale('en');

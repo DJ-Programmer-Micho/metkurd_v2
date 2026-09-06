@@ -6,7 +6,7 @@
         @forelse($renders as $render)
             <article class="v2-render-item is-{{ $render['status_semantic'] }}" wire:key="{{ $keyPrefix }}-{{ $render['id'] }}">
                 <div class="d-flex justify-content-between gap-2"><strong>{{ $render['label'] }}</strong><span class="v2-render-status is-{{ $render['status_semantic'] }}">{{ $render['status_label'] }}</span></div>
-                <p>{{ $render['text'] }}</p>
+                <p dir="auto">{{ $render['text'] }}</p>
                 <small class="v2-muted">{{ $render['speaker'] }} · {{ $render['when'] }}</small>
                 @if($render['status'] === 'failed')
                     <small class="v2-render-outcome">{{ __('Generation could not be completed.') }}</small>
