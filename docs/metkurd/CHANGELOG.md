@@ -1,5 +1,115 @@
 # Architectural and behavioral decisions
 
+## 2026-09-07 — Simplify to the existing local database upgrade
+
+The operator cancelled the separate Docker/MySQL acceptance environment. Remove
+its prepared Compose/verifier tooling; no container/import was performed. Use the
+existing local database, retaining customer/history/financial data, without new
+environments, snapshot imports, broad seeders or historical repairs. Actual status
+is 66 recorded / eight pending with Admin P0 already applied. Preview succeeded;
+normal migration remains manual after a straightforward local export backup.
+Compare the captured counts, financial fingerprints, catalog/pricing and schema
+afterward. This local MariaDB rehearsal is not RDS MySQL execution evidence.
+
+## 2026-09-07 — R2A retains development MariaDB and isolates MySQL acceptance
+
+The operator chose a separate native MySQL environment rather than replacing the
+existing XAMPP/MariaDB installation. Prepare a pinned MySQL 8.4.8 Docker instance
+from operator-reported server evidence, on loopback 3307 with separate credentials,
+schema and volume. Use only the hash-verified original V1 snapshot: its 65 recorded
+migrations imply nine pending, unlike the mutated development database's 66/eight.
+Do not seed, transform business data, start workers/reconciliation or enable gates.
+An external private environment and guarded config-only/identity entry point avoid
+normal development configuration. Preparation does not start Docker, import,
+run migrations or establish native/RDS acceptance. See RELEASE-R2A-MYSQL.md.
+## 2026-09-07 — R2 requires native MySQL evidence
+
+The operator confirms MySQL locally and Amazon RDS for MySQL in production as
+the intended platform. Rename the phase to R2 — native MySQL migration acceptance.
+A fresh `SELECT VERSION()` through Laravel's active `mysql` connection returned
+`10.4.28-MariaDB`, so native-engine acceptance stopped before migration or
+application acceptance. Retain accurate historical R1 MariaDB observations, but
+do not treat them as MySQL/RDS evidence. Await the operator's decision on replacing
+the local engine or rehearsing on MySQL; no application code, database, environment,
+feature flag or worker state was changed. See PRODUCTION-DB-IMPORT.md.
+
+## 2026-09-07 — Approved V2 launch parity through an additive pricing correction
+
+Preserve original Apollo 2/Vector 2/Leo registration migrations because their
+execution history across maintained environments is unknown. Append
+`2026_09_07_000001_normalize_v2_launch_pricing`: global all/App/Mobile/API rates
+are Apollo 2 20/20/20/15 per character, Vector 2 24/24/24/18 per character, Leo
+1,100/1,100/1,100/825 per minute; minimums 1/1/1,100, unit 1, ceil/step 1.
+Use explicit approved economics, never a tied QASR selection. Reuse stable row
+identities, normalize four active global rules and retain superseded global rows
+inactive; preserve scoped overrides, legacy rates, grants and P1 API ownership.
+Fail transactionally on absent/mismatched registrations; repeated execution is
+stable. Pretend skips the data-dependent body; down retains the approved policy.
+No customer financial/history mutation or automatic rollout is part of this
+change. R1's last observed target would now need eight migrations (74 total after
+success), subject to actual history. See PRODUCTION-DB-IMPORT.md and ADMIN-AUDIT.md
+for test evidence, explicit manual maintenance and unverified native execution.
+
+## 2026-09-07 — Admin P4B bounded legacy source retirement
+
+Remove only the P4A-proven unused AdminController and CustomerApiTtsService and
+the two shadowed Admin navigation components. Retain the runtime-selected App
+navigation copies and Livewire location order, current Admin auth/Livewire pages,
+active V1/V2 API submission services, public/mobile routes and shared result/job
+infrastructure. Source obsolescence does not authorize catalog/history deletion,
+V1 UI/API retirement or asset cleanup. Verify each deletion independently against
+isolated tests; preserve unrelated baseline failures. See LEGACY-RETIREMENT.md
+and ADMIN-AUDIT.md for results and remaining compatibility work. No application
+database access, billing-policy or deployment change belongs to this removal.
+
+## 2026-09-07 — Admin P3 presentation and localization
+
+Keep the existing Admin route/Livewire/Bootstrap structure. Consolidate high-impact
+confirmation into an Admin-owned SweetAlert bridge that retains P0 operation identity,
+blocks duplicate pending clicks and discards stale navigation confirmations. Use
+request-local permission hints without replacing server checks. Connect customer
+bookmarks, separate operational evidence badges, and expose configured/effective
+catalog previews with advanced technical details. Complete scoped EN/AR/KU copy and
+RTL presentation, including pagination and current-page chart/dialog labels. Include
+locale in dashboard cache identity. No price, wallet, historical data, schema, API
+behavior or legacy cleanup changes belong to P3. See ADMIN-AUDIT.md for verification,
+two broader customer API test failures and remaining browser/MySQL acceptance.
+
+## 2026-09-07 — Dashboard customer population and cache correctness
+
+Confirmed that the customer-count discrepancy came from cached Laravel configuration
+selecting a different local database. Preserve the all-record metric and label it
+Total Customers. Read its population/status aggregates once per request; retain
+five-minute caching for heavier analytics with opaque database/environment key
+separation. No account data, schema or local connection activation was changed.
+See ADMIN-AUDIT.md for native read-only evidence and isolated regression results.
+
+## 2026-09-06 — Admin P2 operational visibility
+
+Added read-only Operations and customer detail with separate App/API wallets,
+normalized subscription/storage context, bounded job/ledger/payment/API/audit
+traces and conservative review queues. Local persisted evidence only; no remote
+polling, recovery mutation or historical repair. P0 capabilities/redaction and P1
+catalog/runtime scope semantics remain intact. Customer search is bounded;
+pricing streams a canonical group index and loads page detail only; currencies
+reuse request-local read context. New EN/AR/KU copy follows the Admin area.
+See ADMIN-AUDIT.md for verification and remaining acceptance work.
+
+## 2026-09-06 — Admin P1 V2 correctness
+
+- Added a V2-first read projection from existing web/API catalogs and DB rows,
+  preserving nine action identities and legacy history. Missing records and
+  unresolved migration prices are diagnostics, never automatic repairs.
+- Entitlement/configuration writes now preserve explicit scope ownership while
+  transactionally deriving V2 family scopes from complete sibling entitlement
+  state, including both sides of plan moves. No schema/backfill or V1 removal.
+- Grouped App/Mobile/API pricing writes are atomic; read previews reuse runtime
+  pricing and effective plan access rather than an Admin pricing/access algorithm.
+- Corrected configured Admin area routing for direct/verified Livewire requests,
+  with basic direction and technical LTR isolation. P0 invariants remain intact;
+  business prices, P2/P3/P4 and deployment acceptance remain open.
+  See [Admin P1 implementation and tests](ADMIN-AUDIT.md).
+
 ## 2026-09-06 — Close the Admin P0 normalized-plan deletion defect
 
 - Removed the invalid physical customer-plan column query. ServicePlan retains

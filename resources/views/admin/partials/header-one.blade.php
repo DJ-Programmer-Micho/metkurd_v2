@@ -35,7 +35,7 @@
                 </a>
             </div>
 
-            <button type="button" class="btn btn-sm px-3 fs-16 header-item vertical-menu-btn topnav-hamburger" id="topnav-hamburger-icon">
+            <button type="button" class="btn btn-sm px-3 fs-16 header-item vertical-menu-btn topnav-hamburger" id="topnav-hamburger-icon" aria-label="{{ __('admin_p3.navigation') }}">
                 <span class="hamburger-icon">
                     <span></span>
                     <span></span>
@@ -179,13 +179,13 @@ $notifications = [];
 // dd(auth('app')->user()->profile);
 @endphp
             <div class="ms-1 header-item d-none d-sm-flex">
-                <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle" data-toggle="fullscreen">
+                <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle" data-toggle="fullscreen" aria-label="{{ __('Toggle full screen') }}">
                     <i class='bx bx-fullscreen fs-22'></i>
                 </button>
             </div>
 
             <div class="ms-1 header-item d-none d-sm-flex">
-                <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle light-dark-mode">
+                <button type="button" class="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle light-dark-mode" aria-label="{{ __('Toggle color theme') }}">
                     <i class='bx bx-moon fs-22'></i>
                 </button>
             </div>

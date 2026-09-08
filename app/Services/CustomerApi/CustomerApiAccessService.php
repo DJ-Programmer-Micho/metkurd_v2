@@ -70,6 +70,12 @@ class CustomerApiAccessService
     public function configForCustomer(Customer $customer): array
     {
         $plan = $this->planForCustomer($customer);
+
+        return $this->configForPlan($plan);
+    }
+
+    public function configForPlan(ServicePlan $plan): array
+    {
         $isFreePlan = (bool) ($plan->is_free ?? false);
 
         return [

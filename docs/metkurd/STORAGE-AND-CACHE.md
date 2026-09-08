@@ -1,5 +1,24 @@
 # Storage, cache and history
 
+## Admin dashboard cache boundary — 2026-09-07
+
+Customer population is a single uncached aggregate within the request-computed
+Admin overview. It stays authoritative after model changes and same-database bulk
+imports. Other dashboard analytics keep their five-minute cache. Versioned keys
+include an opaque application/environment/effective-database identity, without
+exposing names or credentials. Switching the environment file alone does not
+replace Laravel's cached configuration: refresh configuration as part of the
+confirmed local import/activation sequence. See ADMIN-AUDIT.md for the diagnosed
+configuration mismatch, exact metric semantics and verification limits.
+
+## Admin P2 file metadata — 2026-09-06
+
+The read-only Operations trace lists CustomerFile and ApiResultFile metadata,
+retention/expiry, quota inclusion and record availability. It does not probe
+objects, generate signed links, display object keys or retrieve customer content.
+Object presence is labeled not checked; metadata is not proof of physical access.
+No cache, cleanup or destructive-storage policy is changed by this read surface.
+
 ## API V2 storage contract — 2026-09-06
 
 Native input/output writes carrying an owned API V2 MlJob now inherit its API

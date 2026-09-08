@@ -19,6 +19,7 @@ class extends Component
 
     public string $search = '';
 
+
     #[\Livewire\Attributes\Locked]
     public ?string $editingCurrencyCode = null;
     public ?int $editingRateId = null;
@@ -39,15 +40,21 @@ class extends Component
         $this->effectiveAt = now()->format('Y-m-d\TH:i');
     }
 
+    #[Computed]
+    public function currencySchema(): array
+    {
+        return Schema::getColumnListing('currencies');
+    }
+
     protected function currenciesHaveRoundingColumns(): bool
     {
-        return Schema::hasColumn('currencies', 'rounding_step')
-            && Schema::hasColumn('currencies', 'rounding_mode');
+        return in_array('rounding_step', $this->currencySchema, true)
+            && in_array('rounding_mode', $this->currencySchema, true);
     }
 
     protected function currenciesHaveLocaleHintColumn(): bool
     {
-        return Schema::hasColumn('currencies', 'locale_hint');
+        return in_array('locale_hint', $this->currencySchema, true);
     }
 
     #[Computed]
@@ -121,13 +128,19 @@ class extends Component
             ->where('is_current', true)
             ->orderByDesc('effective_at')
             ->get()
+            ->unique(fn (CurrencyExchangeRate $rate) => $rate->base_currency_code . ':' . $rate->quote_currency_code)
             ->keyBy(fn (CurrencyExchangeRate $rate) => $rate->base_currency_code . ':' . $rate->quote_currency_code);
 
         return $currencies->map(function (Currency $currency) use ($currencyService, $currentRates) {
             $managedBase = $this->managedBaseCurrencyForQuote($currency->code);
             /** @var CurrencyExchangeRate|null $currentRate */
             $currentRate = $currentRates->get($managedBase . ':' . $currency->code);
-            $derivedRate = $currencyService->currentDerivedRateForQuote($currency->code);
+            // Reuse this read's newest persisted rates, including the existing direct fallback.
+            $direct = $currentRates->get($this->baseCurrencyCode . ':' . $currency->code)?->rate;
+            $bridge = $currentRates->get($this->baseCurrencyCode . ':' . $this->secondaryCurrencyCode)?->rate;
+            $cross = $currentRates->get($this->secondaryCurrencyCode . ':' . $currency->code)?->rate;
+            $derivedRate = $currency->code === $this->secondaryCurrencyCode ? ($direct !== null ? (float) $direct : null)
+                : ($bridge !== null && $cross !== null ? round((float) $bridge * (float) $cross, 12) : ($direct !== null ? (float) $direct : null));
 
             return [
                 'code' => $currency->code,
@@ -346,6 +359,7 @@ class extends Component
 <x-slot:title>{{ __('Currency Exchange Rates') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
@@ -356,13 +370,13 @@ class extends Component
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <span class="badge bg-primary-subtle text-primary fs-12">{{ __('Base: :currency', ['currency' => $this->baseCurrencyCode]) }}</span>
-                    <button type="button" class="btn btn-primary" wire:click="openCreateModal">{{ __('New Rate') }}</button>
+                    <button type="button" class="btn btn-primary" wire:click="openCreateModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('New Rate') }}</button>
                 </div>
             </div>
         </div>
     </div>
 
-    @if (!Schema::hasColumn('currencies', 'rounding_step') || !Schema::hasColumn('currencies', 'rounding_mode'))
+    @if (!in_array('rounding_step', $this->currencySchema, true) || !in_array('rounding_mode', $this->currencySchema, true))
         <div class="alert alert-warning">
             {{ __('The rounding columns are not available yet in this database. Rates can still be managed, but per-currency rounding settings will stay on fallback defaults until the latest currency migration is applied.') }}
         </div>
@@ -411,9 +425,9 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-6">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-currencies-1">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.300ms="search" placeholder="{{ __('Search currency code or name...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.300ms="search" placeholder="{{ __('Search currency code or name...') }}" id="admin-field-adm-payments-currencies-1">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
@@ -504,8 +518,8 @@ class extends Component
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openEditModal('{{ $row['code'] }}')">{{ __('Edit') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="deactivateRate('{{ $row['code'] }}')">{{ __('Deactivate') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openEditModal('{{ $row['code'] }}')" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-danger" data-admin-method="deactivateRate" data-admin-args="{{ json_encode([$row['code']]) }}" data-admin-impact="{{ __('admin_p3.pricing') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('Deactivate') }}</button>
                                     </div>
                                 </td>
                             </tr>
@@ -530,13 +544,14 @@ class extends Component
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetForm"></button>
                 </div>
-                <form wire:submit="saveRate">
+                <form data-admin-method="saveRate" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.pricing') }}">
+<fieldset @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>
                     @csrf
                     <div class="modal-body">
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label class="form-label">{{ __('Quote Currency') }}</label>
-                                <select class="form-select @error('quoteCurrencyCode') is-invalid @enderror" wire:model.live="quoteCurrencyCode">
+                                <label class="form-label" for="admin-field-adm-payments-currencies-2">{{ __('Quote Currency') }}</label>
+                                <select class="form-select @error('quoteCurrencyCode') is-invalid @enderror" wire:model.live="quoteCurrencyCode" data-admin-review id="admin-field-adm-payments-currencies-2">
                                     <option value="">{{ __('Select currency') }}</option>
                                     @foreach ($this->editableCurrencies as $currencyCode => $currencyLabel)
                                         <option value="{{ $currencyCode }}">{{ $currencyLabel }}</option>
@@ -546,10 +561,10 @@ class extends Component
                                 <div class="form-text">{{ $this->selectedRatePairLabel() }}</div>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">
+                                <label class="form-label" for="admin-field-adm-payments-currencies-3">
                                     {{ __('Rate (1 :base = ? :quote)', ['base' => $this->managedBaseCurrencyForQuote(), 'quote' => $quoteCurrencyCode !== '' ? $quoteCurrencyCode : __('currency')]) }}
                                 </label>
-                                <input type="number" min="0" step="0.00000001" class="form-control @error('rate') is-invalid @enderror" wire:model.live.debounce.250ms="rate">
+                                <input type="number" min="0" step="0.00000001" class="form-control @error('rate') is-invalid @enderror" wire:model.live.debounce.250ms="rate" id="admin-field-adm-payments-currencies-3">
                                 @error('rate') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             @if ($quoteCurrencyCode !== '')
@@ -564,33 +579,33 @@ class extends Component
                                 </div>
                             @endif
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Source') }}</label>
-                                <input type="text" class="form-control @error('source') is-invalid @enderror" wire:model.defer="source" placeholder="{{ __('manual') }}">
+                                <label class="form-label" for="admin-field-adm-payments-currencies-4">{{ __('Source') }}</label>
+                                <input type="text" class="form-control @error('source') is-invalid @enderror" wire:model.defer="source" placeholder="{{ __('manual') }}" id="admin-field-adm-payments-currencies-4">
                                 @error('source') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Effective At') }}</label>
-                                <input type="datetime-local" class="form-control @error('effectiveAt') is-invalid @enderror" wire:model.defer="effectiveAt">
+                                <label class="form-label" for="admin-field-adm-payments-currencies-5">{{ __('Effective At') }}</label>
+                                <input type="datetime-local" class="form-control @error('effectiveAt') is-invalid @enderror" wire:model.defer="effectiveAt" id="admin-field-adm-payments-currencies-5">
                                 @error('effectiveAt') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Expires At') }}</label>
-                                <input type="datetime-local" class="form-control @error('expiresAt') is-invalid @enderror" wire:model.defer="expiresAt">
+                                <label class="form-label" for="admin-field-adm-payments-currencies-6">{{ __('Expires At') }}</label>
+                                <input type="datetime-local" class="form-control @error('expiresAt') is-invalid @enderror" wire:model.defer="expiresAt" id="admin-field-adm-payments-currencies-6">
                                 @error('expiresAt') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">{{ __('Decimal Places') }}</label>
-                                <input type="number" min="0" max="6" class="form-control @error('decimalPlaces') is-invalid @enderror" wire:model.defer="decimalPlaces">
+                                <label class="form-label" for="admin-field-adm-payments-currencies-7">{{ __('Decimal Places') }}</label>
+                                <input type="number" min="0" max="6" class="form-control @error('decimalPlaces') is-invalid @enderror" wire:model.defer="decimalPlaces" id="admin-field-adm-payments-currencies-7">
                                 @error('decimalPlaces') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">{{ __('Rounding Step') }}</label>
-                                <input type="number" min="0.0001" step="0.0001" class="form-control @error('roundingStep') is-invalid @enderror" wire:model.defer="roundingStep">
+                                <label class="form-label" for="admin-field-adm-payments-currencies-8">{{ __('Rounding Step') }}</label>
+                                <input type="number" min="0.0001" step="0.0001" class="form-control @error('roundingStep') is-invalid @enderror" wire:model.defer="roundingStep" id="admin-field-adm-payments-currencies-8">
                                 @error('roundingStep') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">{{ __('Rounding Mode') }}</label>
-                                <select class="form-select @error('roundingMode') is-invalid @enderror" wire:model.defer="roundingMode">
+                                <label class="form-label" for="admin-field-adm-payments-currencies-9">{{ __('Rounding Mode') }}</label>
+                                <select class="form-select @error('roundingMode') is-invalid @enderror" wire:model.defer="roundingMode" id="admin-field-adm-payments-currencies-9">
                                     <option value="nearest">{{ __('Nearest') }}</option>
                                     <option value="up">{{ __('Up') }}</option>
                                     <option value="down">{{ __('Down') }}</option>
@@ -598,8 +613,8 @@ class extends Component
                                 @error('roundingMode') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">{{ __('Locale Hint') }}</label>
-                                <input type="text" class="form-control @error('localeHint') is-invalid @enderror" wire:model.defer="localeHint" placeholder="{{ __('en_US') }}">
+                                <label class="form-label" for="admin-field-adm-payments-currencies-10">{{ __('Locale Hint') }}</label>
+                                <input type="text" class="form-control @error('localeHint') is-invalid @enderror" wire:model.defer="localeHint" placeholder="{{ __('en_US') }}" id="admin-field-adm-payments-currencies-10">
                                 @error('localeHint') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
@@ -614,7 +629,7 @@ class extends Component
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetForm">{{ __('Cancel') }}</button>
                         <button type="submit" class="btn btn-primary">{{ $editingCurrencyCode ? __('Save Changes') : __('Create Rate') }}</button>
                     </div>
-                </form>
+                </fieldset></form>
             </div>
         </div>
     </div>

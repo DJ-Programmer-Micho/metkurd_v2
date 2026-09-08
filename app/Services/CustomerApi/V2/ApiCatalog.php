@@ -10,6 +10,48 @@ class ApiCatalog
 {
     public const SERVICES = ['speech', 'voice-clone', 'transcriptions', 'captions', 'ocr', 'stem'];
 
+    /** Project the web catalog through the same API definition used for submissions. */
+    public function variants(): array
+    {
+        $variants = [];
+        foreach (app(\App\Support\MetKurdV2ToolCatalog::class)->services() as $webService => $family) {
+            foreach ($family['tools'] ?? [] as $slug => $tool) {
+                if ($tool['coming_soon'] ?? false) {
+                    continue;
+                }
+                $input = ['model' => ($tool['provider_model'] ?? '') === 'model_1' ? '1.5' : '2.0'];
+                if (isset($tool['stems'])) {
+                    $input['mode'] = (string) $tool['stems'];
+                }
+                foreach (self::SERVICES as $service) {
+                    try {
+                        $definition = $this->definition($service, $input);
+                    } catch (ApiProblem) {
+                        continue;
+                    }
+                    if ($definition[0] === $webService && $definition[1] === $slug) {
+                        $variants[] = ['service' => $service, 'scope' => 'v2:'.$service,
+                            'web_service' => $webService, 'slug' => $slug, 'action' => $definition[2],
+                            'input' => $input, 'tool' => $tool];
+                    }
+                }
+            }
+        }
+
+        return $variants;
+    }
+
+    public function scopeForAction(string $action): ?string
+    {
+        foreach ($this->variants() as $variant) {
+            if ($variant['action'] === $action) {
+                return $variant['scope'];
+            }
+        }
+
+        return null;
+    }
+
     public function definition(string $service, array $input): array
     {
         if (isset($input['model']) && ! is_scalar($input['model']) || isset($input['mode']) && ! is_scalar($input['mode'])) {
@@ -47,7 +89,12 @@ class ApiCatalog
         if (! $this->hasAccess($customer)) {
             return [];
         }
-        $configured = app(CustomerApiAccessService::class)->allowedTools($customer);
+
+        return $this->scopesForConfiguration(app(CustomerApiAccessService::class)->allowedTools($customer));
+    }
+
+    public function scopesForConfiguration(array $configured): array
+    {
         $scopes = [];
         foreach (self::SERVICES as $service) {
             $family = match ($service) {

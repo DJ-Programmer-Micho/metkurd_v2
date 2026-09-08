@@ -19,6 +19,7 @@ class extends Component
 <x-slot:title>{{ __('Payment Methods') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
@@ -29,7 +30,7 @@ class extends Component
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
-                    <button type="button" class="btn btn-primary" wire:click="openCreateMethodModal">{{ __('New Payment Method') }}</button>
+                    <button type="button" class="btn btn-primary" wire:click="openCreateMethodModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('New Payment Method') }}</button>
                 </div>
             </div>
         </div>
@@ -82,15 +83,15 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-7">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-methods-1">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.300ms="search" placeholder="{{ __('Search method code, name, or driver...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.300ms="search" placeholder="{{ __('Search method code, name, or driver...') }}" id="admin-field-adm-payments-methods-1">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-5">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Status') }}</label>
-                    <select class="form-select" wire:model.live="statusFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-methods-2">{{ __('Status') }}</label>
+                    <select class="form-select" wire:model.live="statusFilter" id="admin-field-adm-payments-methods-2">
                         <option value="all">{{ __('All') }}</option>
                         <option value="active">{{ __('Active') }}</option>
                         <option value="inactive">{{ __('Inactive') }}</option>
@@ -196,8 +197,8 @@ class extends Component
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openEditMethodModal({{ $method->id }})">{{ __('Edit') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmDeleteMethod({{ $method->id }})">{{ __('Delete') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openEditMethodModal({{ $method->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmDeleteMethod({{ $method->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                                     </div>
                                 </td>
                             </tr>
@@ -225,18 +226,19 @@ class extends Component
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetMethodForm"></button>
                 </div>
-                <form wire:submit="saveMethod">
+                <form data-admin-method="saveMethod" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.catalog_effect') }}">
+<fieldset @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                     @csrf
                     <div class="modal-body">
                         <div class="row g-3">
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Code') }}</label>
-                                <input type="text" class="form-control @error('code') is-invalid @enderror" wire:model.defer="code" @disabled($editingMethodId !== null) placeholder="{{ __('fib') }}">
+                                <label class="form-label" for="admin-field-adm-payments-methods-3">{{ __('Code') }}</label>
+                                <input type="text" class="form-control @error('code') is-invalid @enderror" wire:model.defer="code" @disabled($editingMethodId !== null) placeholder="{{ __('fib') }}" data-admin-review id="admin-field-adm-payments-methods-3">
                                 @error('code') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Driver') }}</label>
-                                <select class="form-select @error('driver') is-invalid @enderror" wire:model.defer="driver" @disabled($editingMethodId !== null)>
+                                <label class="form-label" for="admin-field-adm-payments-methods-4">{{ __('Driver') }}</label>
+                                <select class="form-select @error('driver') is-invalid @enderror" wire:model.defer="driver" @disabled($editingMethodId !== null) id="admin-field-adm-payments-methods-4">
                                     @foreach ($this->driverOptions as $driverCode => $driverLabel)
                                         <option value="{{ $driverCode }}">{{ $driverLabel }}</option>
                                     @endforeach
@@ -244,28 +246,28 @@ class extends Component
                                 @error('driver') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Sort Order') }}</label>
-                                <input type="number" min="0" class="form-control @error('sortOrder') is-invalid @enderror" wire:model.defer="sortOrder">
+                                <label class="form-label" for="admin-field-adm-payments-methods-5">{{ __('Sort Order') }}</label>
+                                <input type="number" min="0" class="form-control @error('sortOrder') is-invalid @enderror" wire:model.defer="sortOrder" id="admin-field-adm-payments-methods-5">
                                 @error('sortOrder') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">{{ __('Name') }}</label>
-                                <input type="text" class="form-control @error('name') is-invalid @enderror" wire:model.defer="name">
+                                <label class="form-label" for="admin-field-adm-payments-methods-6">{{ __('Name') }}</label>
+                                <input type="text" class="form-control @error('name') is-invalid @enderror" wire:model.defer="name" data-admin-review id="admin-field-adm-payments-methods-6">
                                 @error('name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">{{ __('Icon') }}</label>
-                                <input type="text" class="form-control @error('icon') is-invalid @enderror" wire:model.defer="icon" placeholder="{{ __('ri-bank-card-line') }}">
+                                <label class="form-label" for="admin-field-adm-payments-methods-7">{{ __('Icon') }}</label>
+                                <input type="text" class="form-control @error('icon') is-invalid @enderror" wire:model.defer="icon" placeholder="{{ __('ri-bank-card-line') }}" id="admin-field-adm-payments-methods-7">
                                 @error('icon') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
-                                <label class="form-label">{{ __('Description') }}</label>
-                                <textarea class="form-control @error('description') is-invalid @enderror" rows="2" wire:model.defer="description"></textarea>
+                                <label class="form-label" for="admin-field-adm-payments-methods-8">{{ __('Description') }}</label>
+                                <textarea class="form-control @error('description') is-invalid @enderror" rows="2" wire:model.defer="description" id="admin-field-adm-payments-methods-8" dir="auto"></textarea>
                                 @error('description') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">{{ __('Supported Currencies') }}</label>
-                                <input type="text" class="form-control @error('supportedCurrenciesText') is-invalid @enderror" wire:model.defer="supportedCurrenciesText" placeholder="{{ __('IQD, USD') }}">
+                                <label class="form-label" for="admin-field-adm-payments-methods-9">{{ __('Supported Currencies') }}</label>
+                                <input type="text" class="form-control @error('supportedCurrenciesText') is-invalid @enderror" wire:model.defer="supportedCurrenciesText" placeholder="{{ __('IQD, USD') }}" id="admin-field-adm-payments-methods-9">
                                 @error('supportedCurrenciesText') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                 <div class="form-text">{{ __('Comma-separated ISO currency codes. Leave empty to allow all.') }}</div>
                             </div>
@@ -294,17 +296,17 @@ class extends Component
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">{{ __('Settings JSON') }}</label>
-                                <textarea class="form-control font-monospace @error('settingsJson') is-invalid @enderror" rows="6" wire:model.defer="settingsJson"></textarea>
+                                <details><summary>{{ __('admin_p3.advanced') }}</summary><textarea class="form-control font-monospace @error('settingsJson') is-invalid @enderror" rows="6" wire:model.defer="settingsJson" dir="ltr"></textarea></details>
                                 @error('settingsJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">{{ __('Fee Config JSON') }}</label>
-                                <textarea class="form-control font-monospace @error('feeConfigJson') is-invalid @enderror" rows="6" wire:model.defer="feeConfigJson"></textarea>
+                                <details><summary>{{ __('admin_p3.advanced') }}</summary><textarea class="form-control font-monospace @error('feeConfigJson') is-invalid @enderror" rows="6" wire:model.defer="feeConfigJson" dir="ltr"></textarea></details>
                                 @error('feeConfigJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">{{ __('Meta JSON') }}</label>
-                                <textarea class="form-control font-monospace @error('metaJson') is-invalid @enderror" rows="6" wire:model.defer="metaJson"></textarea>
+                                <details><summary>{{ __('admin_p3.advanced') }}</summary><textarea class="form-control font-monospace @error('metaJson') is-invalid @enderror" rows="6" wire:model.defer="metaJson" dir="ltr"></textarea></details>
                                 @error('metaJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                         </div>
@@ -313,7 +315,7 @@ class extends Component
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetMethodForm">{{ __('Cancel') }}</button>
                         <button type="submit" class="btn btn-primary">{{ $editingMethodId ? __('Save Changes') : __('Create Method') }}</button>
                     </div>
-                </form>
+                </fieldset></form>
             </div>
         </div>
     </div>
@@ -330,7 +332,7 @@ class extends Component
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetDeleteState">{{ __('Cancel') }}</button>
-                    <button type="button" class="btn btn-danger" wire:click="deleteMethod">{{ __('Delete') }}</button>
+                    <button type="button" class="btn btn-danger" data-admin-target="{{ $deleteMethodLabel }}" data-admin-method="deleteMethod" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.delete_effect') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                 </div>
             </div>
         </div>

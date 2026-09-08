@@ -122,17 +122,7 @@ class AreaJsonTranslations
 
     protected static function detectArea(): string
     {
-        $path = request()?->getPathInfo() ?? '/';
-
-        if (preg_match('#^/(en|ar|ku)/super-admin(?:/|$)#', $path)) {
-            return 'admin';
-        }
-
-        if (preg_match('#^/(en|ar|ku)/app(?:-v2)?(?:/|$)#', $path)) {
-            return 'app';
-        }
-
-        return 'landing';
+        return request()->attributes->get('translation_area') ?: TranslationArea::forRequest(request());
     }
 
     protected static function normalize(mixed $value): mixed

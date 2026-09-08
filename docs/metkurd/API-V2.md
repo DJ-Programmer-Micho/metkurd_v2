@@ -1,7 +1,31 @@
 # MetKurd API V2 engineering contract
 
+## Admin P2 visibility — 2026-09-06
+
+The Admin Operations/customer detail view shows effective plan scopes and per-action
+customer access, RPM/concurrency, active claims, metadata-only keys, ApiJob/MlJob
+links, separate API wallet balances, reservations and result-retention metadata.
+Reserved, settled and released amounts remain distinct; available wallet credits
+already exclude holds. These are pure persisted reads: they deliberately do not
+invoke API status serializers that can settle/release a reservation. No API gate,
+key provisioning, secret display or reservation mutation was added. See ADMIN-AUDIT.md.
+
 Implemented in the 2026-09-06 API phase. This supersedes the earlier API deferral.
 Repository evidence is not live deployment acceptance. No secrets belong here.
+
+## Admin P1 scope configuration — 2026-09-06
+
+ApiCatalog exposes web variants through its existing runtime definition and the
+same configured-scope expansion used for customer access. Admin derives six family
+scopes from complete API/all entitlement state, preserving sibling models/modes.
+`service_plans.meta.admin_api_scopes` records explicit/derived ownership;
+`api_allowed_tools` remains their compatible union. Before ownership exists, every
+stored scope is explicit. The Plan editor edits explicit grants; only tracked
+derived grants are removed automatically. Entitlement moves update both plans in
+one transaction. V1 parsing/aliases/endpoints remain; no gate or scope backfill runs
+just by deploying or reading. The read panel reuses runtime plan configuration,
+scope and action checks and states remaining customer/key/credit/capacity checks.
+No secret keys or reservations are shown. See [Admin P1 policy](ADMIN-AUDIT.md).
 
 ## Activation runbook
 

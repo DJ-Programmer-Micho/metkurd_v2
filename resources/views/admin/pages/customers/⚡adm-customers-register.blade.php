@@ -19,10 +19,12 @@ class extends Component
 <x-slot:title>{{ __('Customers Register') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
+    <x-admin-customer-context :customer-id="(int) $customerFilter" :name="$this->selectedCustomer?->username" />
     <div class="mb-3">
-        <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="startNewCorrection">{{ __('admin_p0.new_correction') }}</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="startNewCorrection" @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance') && ! \App\Support\Admin\AdminUiAccess::can('admin.reconcile')) disabled @endif>{{ __('admin_p0.new_correction') }}</button>
         <label class="form-label ms-2" for="admin-credit-reason">{{ __('admin_p0.sync_reason') }}</label>
-        <input id="admin-credit-reason" class="form-control" wire:model="creditSyncReason" maxlength="500">
+        <input id="admin-credit-reason" class="form-control" wire:model="creditSyncReason" maxlength="500" dir="auto">
         @error('creditSyncReason') <div class="text-danger">{{ $message }}</div> @enderror
         @foreach (['operation', 'providerReference', 'classification', 'paymentId', 'billingCycle', 'delete'] as $errorKey)
             @error($errorKey) <div class="text-danger">{{ $message }}</div> @enderror
@@ -89,23 +91,23 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-register-1">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search customer, plan, location, or profile...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search customer, plan, location, or profile...') }}" id="admin-field-adm-customers-register-1">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Status') }}</label>
-                    <select class="form-select" wire:model.live="statusFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-register-2">{{ __('Status') }}</label>
+                    <select class="form-select" wire:model.live="statusFilter" id="admin-field-adm-customers-register-2">
                         <option value="all">{{ __('All statuses') }}</option>
                         <option value="active">{{ __('Active') }}</option>
                         <option value="suspended">{{ __('Suspended') }}</option>
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Plan') }}</label>
-                    <select class="form-select" wire:model.live="planFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-register-3">{{ __('Plan') }}</label>
+                    <select class="form-select" wire:model.live="planFilter" id="admin-field-adm-customers-register-3">
                         <option value="all">{{ __('All plans') }}</option>
                         <option value="none">{{ __('No active plan') }}</option>
                         @foreach ($this->customerPlanOptions as $plan)
@@ -114,8 +116,8 @@ class extends Component
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Country') }}</label>
-                    <select class="form-select" wire:model.live="countryFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-register-4">{{ __('Country') }}</label>
+                    <select class="form-select" wire:model.live="countryFilter" id="admin-field-adm-customers-register-4">
                         <option value="all">{{ __('All countries') }}</option>
                         @foreach ($this->customerCountryOptions as $country)
                             <option value="{{ $country }}">{{ $country }}</option>
@@ -123,8 +125,8 @@ class extends Component
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Joined') }}</label>
-                    <select class="form-select" wire:model.live="joinedFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-register-5">{{ __('Joined') }}</label>
+                    <select class="form-select" wire:model.live="joinedFilter" id="admin-field-adm-customers-register-5">
                         <option value="all">{{ __('All time') }}</option>
                         <option value="7">{{ __('Last 7 days') }}</option>
                         <option value="30">{{ __('Last 30 days') }}</option>
@@ -181,8 +183,8 @@ class extends Component
                             <button
                                 type="button"
                                 class="btn btn-soft-primary w-100"
-                                onclick="if (confirm(@js(__('This will sync the customer\'s subscription credits with their current plan. It will add missing plan credits only when the current subscription balance is lower than the plan allowance. It will not subtract existing credits or remove add-on credits.')))) { @this.call('syncCustomerCreditsToPlan', {{ $focusedCustomer->id }}); }"
-                            >
+                                data-admin-target="{{ $focusedCustomer->username }}" data-admin-method="syncCustomerCreditsToPlan" data-admin-args="{{ json_encode([$focusedCustomer->id]) }}" data-admin-impact="{{ __('This will sync the customer\'s subscription credits with their current plan. It will add missing plan credits only when the current subscription balance is lower than the plan allowance. It will not subtract existing credits or remove add-on credits.') }}"
+                             @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>
                                 {{ __('Sync Credits To Plan') }}
                             </button>
                         </div>
@@ -231,12 +233,12 @@ class extends Component
                             </div>
                             <div class="fw-semibold mb-3">{{ __('Manual Grant — No Revenue / No Provider Subscription') }}</div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Customer') }}</label>
-                                <input type="text" class="form-control" value="{{ $this->customerIdentityLabel($focusedCustomer) }}" readonly>
+                                <label class="form-label" for="admin-field-adm-customers-register-6">{{ __('Customer') }}</label>
+                                <input type="text" class="form-control" value="{{ $this->customerIdentityLabel($focusedCustomer) }}" readonly id="admin-field-adm-customers-register-6">
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Service Plan') }}</label>
-                                <select class="form-select" wire:model="servicePlanAdjustmentId">
+                                <label class="form-label" for="admin-field-adm-customers-register-7">{{ __('Service Plan') }}</label>
+                                <select class="form-select" wire:model="servicePlanAdjustmentId" data-admin-review id="admin-field-adm-customers-register-7">
                                     <option value="">{{ __('Select plan') }}</option>
                                     @foreach ($this->registerServicePlanOptions as $plan)
                                         <option value="{{ $plan->id }}">
@@ -249,8 +251,8 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Reason') }}</label>
-                                <select class="form-select" wire:model="servicePlanGrantReason">
+                                <label class="form-label" for="admin-field-adm-customers-register-8">{{ __('Reason') }}</label>
+                                <select class="form-select" wire:model="servicePlanGrantReason" id="admin-field-adm-customers-register-8">
                                     <option value="">{{ __('Select reason') }}</option>
                                     <option value="internal_team_account">{{ __('Internal team account') }}</option>
                                     <option value="company_account">{{ __('Company account') }}</option>
@@ -265,16 +267,16 @@ class extends Component
                             </div>
                             @if ($servicePlanGrantReason === 'other')
                                 <div class="mb-3">
-                                    <label class="form-label">{{ __('Other reason explanation') }}</label>
-                                    <textarea class="form-control" rows="3" wire:model.defer="servicePlanGrantReasonOther" placeholder="{{ __('Required explanation for Other...') }}"></textarea>
+                                    <label class="form-label" for="admin-field-adm-customers-register-9">{{ __('Other reason explanation') }}</label>
+                                    <textarea class="form-control" rows="3" wire:model.defer="servicePlanGrantReasonOther" placeholder="{{ __('Required explanation for Other...') }}" id="admin-field-adm-customers-register-9" dir="auto"></textarea>
                                     @error('servicePlanGrantReasonOther')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
                                     @enderror
                                 </div>
                             @endif
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Credit Sync Policy') }}</label>
-                                <select class="form-select" wire:model="servicePlanCreditSyncPolicy">
+                                <label class="form-label" for="admin-field-adm-customers-register-10">{{ __('Credit Sync Policy') }}</label>
+                                <select class="form-select" wire:model="servicePlanCreditSyncPolicy" id="admin-field-adm-customers-register-10">
                                     <option value="safe_top_up_only">{{ __('Safe top-up only — never subtract') }}</option>
                                 </select>
                                 @error('servicePlanCreditSyncPolicy')
@@ -282,8 +284,8 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Billing Cycle') }}</label>
-                                <select class="form-select" wire:model="servicePlanBillingCycle">
+                                <label class="form-label" for="admin-field-adm-customers-register-11">{{ __('Billing Cycle') }}</label>
+                                <select class="form-select" wire:model="servicePlanBillingCycle" data-admin-review id="admin-field-adm-customers-register-11">
                                     <option value="monthly">{{ __('Monthly') }}</option>
                                     <option value="yearly">{{ __('Yearly') }}</option>
                                 </select>
@@ -292,8 +294,8 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Additional note (optional)') }}</label>
-                                <textarea class="form-control" rows="3" wire:model.defer="servicePlanAdjustmentNote" placeholder="{{ __('Optional internal context for audit history...') }}"></textarea>
+                                <label class="form-label" for="admin-field-adm-customers-register-12">{{ __('Additional note (optional)') }}</label>
+                                <textarea class="form-control" rows="3" wire:model.defer="servicePlanAdjustmentNote" placeholder="{{ __('Optional internal context for audit history...') }}" id="admin-field-adm-customers-register-12" dir="auto"></textarea>
                                 @error('servicePlanAdjustmentNote')
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
@@ -302,8 +304,8 @@ class extends Component
                             <button
                                 type="button"
                                 class="btn btn-primary w-100"
-                                onclick="if (confirm(@js(__('You are about to grant this customer a plan without revenue and without a provider subscription. No FIB payment will be created. No fib_subscription_id will be attached. Continue?')))) { @this.call('applyServicePlanAdjustment'); }"
-                            >
+                                data-admin-target="{{ $focusedCustomer?->username }}" data-admin-method="applyServicePlanAdjustment" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('You are about to grant this customer a plan without revenue and without a provider subscription. No FIB payment will be created. No fib_subscription_id will be attached. Continue?') }}"
+                             @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>
                                 {{ __('Apply Manual Grant') }}
                             </button>
                         </div>
@@ -318,12 +320,12 @@ class extends Component
                                 <div>{{ __('Be careful not to duplicate credits.') }}</div>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Customer') }}</label>
-                                <input type="text" class="form-control" value="{{ $this->customerIdentityLabel($focusedCustomer) }}" readonly>
+                                <label class="form-label" for="admin-field-adm-customers-register-13">{{ __('Customer') }}</label>
+                                <input type="text" class="form-control" value="{{ $this->customerIdentityLabel($focusedCustomer) }}" readonly id="admin-field-adm-customers-register-13">
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Local Payment ID') }}</label>
-                                <input type="number" min="1" class="form-control" wire:model.defer="paidReconciliationPaymentId" placeholder="{{ __('Existing payment id') }}">
+                                <label class="form-label" for="admin-field-adm-customers-register-14">{{ __('Local Payment ID') }}</label>
+                                <input type="number" min="1" class="form-control" wire:model.defer="paidReconciliationPaymentId" placeholder="{{ __('Existing payment id') }}" id="admin-field-adm-customers-register-14">
                                 @error('paidReconciliationPaymentId')
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
@@ -351,15 +353,15 @@ class extends Component
                                 <div class="alert alert-danger small mb-3">{{ __('The selected payment could not be found for preview.') }}</div>
                             @endif
                             <div class="mb-3">
-                                <label class="form-label">{{ __('FIB Subscription ID') }}</label>
-                                <input type="text" class="form-control" wire:model.defer="paidReconciliationFibSubscriptionId" placeholder="{{ __('Real fib_subscription_id') }}">
+                                <label class="form-label" for="admin-field-adm-customers-register-15">{{ __('FIB Subscription ID') }}</label>
+                                <input type="text" class="form-control" wire:model.defer="paidReconciliationFibSubscriptionId" placeholder="{{ __('Real fib_subscription_id') }}" id="admin-field-adm-customers-register-15" dir="ltr">
                                 @error('paidReconciliationFibSubscriptionId')
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Reconciliation Mode') }}</label>
-                                <select class="form-select" wire:model="paidReconciliationMode">
+                                <label class="form-label" for="admin-field-adm-customers-register-16">{{ __('Reconciliation Mode') }}</label>
+                                <select class="form-select" wire:model="paidReconciliationMode" data-admin-review id="admin-field-adm-customers-register-16">
                                     <option value="manual_correction_already_applied">{{ __('Manual correction already applied — no credit refill') }}</option>
                                     <option value="apply_fulfillment_once">{{ __('Apply fulfillment and credits once') }}</option>
                                 </select>
@@ -379,8 +381,8 @@ class extends Component
                                 @enderror
                             @endif
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Reason') }}</label>
-                                <textarea class="form-control" rows="3" wire:model.defer="paidReconciliationReason" placeholder="{{ __('Required reason for this paid reconciliation...') }}"></textarea>
+                                <label class="form-label" for="admin-field-adm-customers-register-17">{{ __('Reason') }}</label>
+                                <textarea class="form-control" rows="3" wire:model.defer="paidReconciliationReason" placeholder="{{ __('Required reason for this paid reconciliation...') }}" id="admin-field-adm-customers-register-17" dir="auto"></textarea>
                                 @error('paidReconciliationReason')
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
@@ -389,8 +391,8 @@ class extends Component
                             <button
                                 type="button"
                                 class="btn btn-warning w-100"
-                                onclick="if (confirm(@js($paidConfirmMessage))) { @this.call('applyPaidSubscriptionReconciliation'); }"
-                            >
+                                data-admin-target="{{ $focusedCustomer?->username }}" data-admin-method="applyPaidSubscriptionReconciliation" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ $paidConfirmMessage }}"
+                             @if(! \App\Support\Admin\AdminUiAccess::can('admin.reconcile')) disabled @endif>
                                 {{ __('Reconcile Paid FIB Subscription') }}
                             </button>
                         </div>
@@ -399,8 +401,8 @@ class extends Component
                         <div class="border rounded p-3 h-100">
                             <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Storage Subscription (Recurring)') }}</h6>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Storage Plan') }}</label>
-                                <select class="form-select" wire:model="storagePlanAdjustmentId">
+                                <label class="form-label" for="admin-field-adm-customers-register-18">{{ __('Storage Plan') }}</label>
+                                <select class="form-select" wire:model="storagePlanAdjustmentId" data-admin-review id="admin-field-adm-customers-register-18">
                                     <option value="">{{ __('Select storage plan') }}</option>
                                     @foreach ($this->registerStoragePlanOptions as $plan)
                                         <option value="{{ $plan->id }}">
@@ -413,8 +415,8 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Billing Cycle') }}</label>
-                                <select class="form-select" wire:model="storagePlanBillingCycle">
+                                <label class="form-label" for="admin-field-adm-customers-register-19">{{ __('Billing Cycle') }}</label>
+                                <select class="form-select" wire:model="storagePlanBillingCycle" data-admin-review id="admin-field-adm-customers-register-19">
                                     <option value="monthly">{{ __('Monthly') }}</option>
                                     <option value="yearly">{{ __('Yearly') }}</option>
                                 </select>
@@ -423,30 +425,30 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('admin_p0.classification') }}</label>
-                                <select class="form-select" wire:model="storageClassification">
+                                <label class="form-label" for="admin-field-adm-customers-register-20">{{ __('admin_p0.classification') }}</label>
+                                <select class="form-select" wire:model="storageClassification" id="admin-field-adm-customers-register-20">
                                     <option value="no_revenue">{{ __('admin_p0.no_revenue') }}</option>
                                     <option value="verified_paid">{{ __('admin_p0.verified_paid') }}</option>
                                 </select>
-                                <label class="form-label">{{ __('admin_p0.payment_evidence') }}</label>
-                                <input type="number" min="1" class="form-control" wire:model="storagePaymentId">
+                                <label class="form-label" for="admin-field-adm-customers-register-21">{{ __('admin_p0.payment_evidence') }}</label>
+                                <input type="number" min="1" class="form-control" wire:model="storagePaymentId" id="admin-field-adm-customers-register-21">
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Admin Note') }}</label>
-                                <textarea class="form-control" rows="3" wire:model.defer="storagePlanAdjustmentNote" placeholder="{{ __('Why this correction is being applied...') }}"></textarea>
+                                <label class="form-label" for="admin-field-adm-customers-register-22">{{ __('Admin Note') }}</label>
+                                <textarea class="form-control" rows="3" wire:model.defer="storagePlanAdjustmentNote" placeholder="{{ __('Why this correction is being applied...') }}" id="admin-field-adm-customers-register-22" dir="auto"></textarea>
                                 @error('storagePlanAdjustmentNote')
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
                             </div>
-                            <button type="button" class="btn btn-primary w-100" wire:click="applyStoragePlanAdjustment">{{ __('Apply Storage Correction') }}</button>
+                            <button type="button" class="btn btn-primary w-100" data-admin-target="{{ $focusedCustomer?->username }}" data-admin-method="applyStoragePlanAdjustment" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.financial') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>{{ __('Apply Storage Correction') }}</button>
                         </div>
                     </div>
                     <div class="col-xl-3">
                         <div class="border rounded p-3 h-100">
                             <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Addon Credits (One-Time)') }}</h6>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Addon Package') }}</label>
-                                <select class="form-select" wire:model="addonProductAdjustmentId">
+                                <label class="form-label" for="admin-field-adm-customers-register-23">{{ __('Addon Package') }}</label>
+                                <select class="form-select" wire:model="addonProductAdjustmentId" data-admin-review id="admin-field-adm-customers-register-23">
                                     <option value="">{{ __('Select addon pack') }}</option>
                                     @foreach ($this->registerAddonOptions as $product)
                                         <option value="{{ $product->id }}">
@@ -459,22 +461,22 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('admin_p0.classification') }}</label>
-                                <select class="form-select" wire:model="addonClassification">
+                                <label class="form-label" for="admin-field-adm-customers-register-24">{{ __('admin_p0.classification') }}</label>
+                                <select class="form-select" wire:model="addonClassification" id="admin-field-adm-customers-register-24">
                                     <option value="no_revenue">{{ __('admin_p0.no_revenue') }}</option>
                                     <option value="verified_paid">{{ __('admin_p0.verified_paid') }}</option>
                                 </select>
-                                <label class="form-label">{{ __('admin_p0.payment_evidence') }}</label>
-                                <input type="number" min="1" class="form-control" wire:model="addonPaymentId">
+                                <label class="form-label" for="admin-field-adm-customers-register-25">{{ __('admin_p0.payment_evidence') }}</label>
+                                <input type="number" min="1" class="form-control" wire:model="addonPaymentId" id="admin-field-adm-customers-register-25">
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">{{ __('Admin Note') }}</label>
-                                <textarea class="form-control" rows="3" wire:model.defer="addonAdjustmentNote" placeholder="{{ __('Why this correction is being applied...') }}"></textarea>
+                                <label class="form-label" for="admin-field-adm-customers-register-26">{{ __('Admin Note') }}</label>
+                                <textarea class="form-control" rows="3" wire:model.defer="addonAdjustmentNote" placeholder="{{ __('Why this correction is being applied...') }}" id="admin-field-adm-customers-register-26" dir="auto"></textarea>
                                 @error('addonAdjustmentNote')
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
                             </div>
-                            <button type="button" class="btn btn-primary w-100" wire:click="applyAddonAdjustment">{{ __('Apply Addon Correction') }}</button>
+                            <button type="button" class="btn btn-primary w-100" data-admin-target="{{ $focusedCustomer?->username }}" data-admin-method="applyAddonAdjustment" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.financial') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>{{ __('Apply Addon Correction') }}</button>
                         </div>
                     </div>
                 </div>
@@ -692,8 +694,8 @@ class extends Component
                                         <div class="small mb-0">{{ $reviewSelection['reason'] }}</div>
                                     </div>
                                     <div class="mb-3">
-                                        <label class="form-label">{{ __('Operator Reason') }}</label>
-                                        <textarea class="form-control" rows="4" wire:model.defer="reviewResolutionReason" placeholder="{{ __('Explain what you verified, which FIB reference you matched, or why the record should be closed/reclassified.') }}"></textarea>
+                                        <label class="form-label" for="admin-field-adm-customers-register-27">{{ __('Operator Reason') }}</label>
+                                        <textarea class="form-control" rows="4" wire:model.defer="reviewResolutionReason" placeholder="{{ __('Explain what you verified, which FIB reference you matched, or why the record should be closed/reclassified.') }}" id="admin-field-adm-customers-register-27" dir="auto"></textarea>
                                         @error('reviewResolutionReason')
                                             <div class="text-danger small mt-1">{{ $message }}</div>
                                         @enderror
@@ -710,22 +712,22 @@ class extends Component
                                 <div class="border rounded p-3 h-100">
                                     <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Attach Correct FIB Reference') }}</h6>
                                     <div class="mb-3">
-                                        <label class="form-label">{{ __('Correct FIB Subscription ID') }}</label>
-                                        <input type="text" class="form-control" wire:model.defer="reviewCorrectFibSubscriptionId" placeholder="{{ __('For recurring subscription rows') }}">
+                                        <label class="form-label" for="admin-field-adm-customers-register-28">{{ __('Correct FIB Subscription ID') }}</label>
+                                        <input type="text" class="form-control" wire:model.defer="reviewCorrectFibSubscriptionId" placeholder="{{ __('For recurring subscription rows') }}" id="admin-field-adm-customers-register-28" dir="ltr">
                                         @error('reviewCorrectFibSubscriptionId')
                                             <div class="text-danger small mt-1">{{ $message }}</div>
                                         @enderror
                                     </div>
                                     <div class="mb-3">
-                                        <label class="form-label">{{ __('Correct FIB Payment ID') }}</label>
-                                        <input type="text" class="form-control" wire:model.defer="reviewCorrectFibPaymentId" placeholder="{{ __('For one-time payment rows or additional provider proof') }}">
+                                        <label class="form-label" for="admin-field-adm-customers-register-29">{{ __('Correct FIB Payment ID') }}</label>
+                                        <input type="text" class="form-control" wire:model.defer="reviewCorrectFibPaymentId" placeholder="{{ __('For one-time payment rows or additional provider proof') }}" id="admin-field-adm-customers-register-29" dir="ltr">
                                         @error('reviewCorrectFibPaymentId')
                                             <div class="text-danger small mt-1">{{ $message }}</div>
                                         @enderror
                                     </div>
                                     <div class="mb-3">
-                                        <label class="form-label">{{ __('Reconnect Mode') }}</label>
-                                        <select class="form-select" wire:model="reviewReconnectMode">
+                                        <label class="form-label" for="admin-field-adm-customers-register-30">{{ __('Reconnect Mode') }}</label>
+                                        <select class="form-select" wire:model="reviewReconnectMode" data-admin-review id="admin-field-adm-customers-register-30">
                                             <option value="manual_correction_already_applied">{{ __('Reconnect only, no credit refill') }}</option>
                                             <option value="apply_fulfillment_once">{{ __('Reconnect and fulfill once') }}</option>
                                         </select>
@@ -733,8 +735,8 @@ class extends Component
                                     <button
                                         type="button"
                                         class="btn btn-warning"
-                                        onclick="if (confirm(@js(__('This will attach the corrected FIB reference and continue using the selected reconnect mode. It will not refund, it will not delete audit history, and it will only fulfill if you selected the one-time fulfillment mode. Continue?')))) { @this.call('attachCorrectReviewProviderReference'); }"
-                                    >
+                                        data-admin-target="{{ $reviewSelection['customer'].' · '.__('Payment ID:').' '.$reviewSelection['payment_id'] }}" data-admin-method="attachCorrectReviewProviderReference" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('This will attach the corrected FIB reference and continue using the selected reconnect mode. It will not refund, it will not delete audit history, and it will only fulfill if you selected the one-time fulfillment mode. Continue?') }}"
+                                     @if(! \App\Support\Admin\AdminUiAccess::can('admin.reconcile')) disabled @endif>
                                         {{ __('Attach Correct FIB Reference') }}
                                     </button>
                                 </div>
@@ -746,15 +748,15 @@ class extends Component
                                         <button
                                             type="button"
                                             class="btn btn-soft-secondary me-2 mb-2"
-                                            onclick="if (confirm(@js(__('This will mark the payment as invalid/expired, remove it from actionable review processing, and keep full audit history. It will not fulfill or refill credits. Continue?')))) { @this.call('markReviewPaymentInvalid'); }"
-                                        >
+                                            data-admin-target="{{ $reviewSelection['customer'].' · '.__('Payment ID:').' '.$reviewSelection['payment_id'] }}" data-admin-method="markReviewPaymentInvalid" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('This will mark the payment as invalid/expired, remove it from actionable review processing, and keep full audit history. It will not fulfill or refill credits. Continue?') }}"
+                                         @if(! \App\Support\Admin\AdminUiAccess::can('admin.reconcile')) disabled @endif>
                                             {{ __('Mark Invalid / Expired') }}
                                         </button>
                                         <button
                                             type="button"
                                             class="btn btn-soft-dark mb-2"
-                                            onclick="if (confirm(@js(__('This will exclude this record from revenue totals and mark it as an internal/manual grant. It will not call FIB. It will not refund. It will not delete audit history. Continue?')))) { @this.call('markReviewPaymentNonRevenue'); }"
-                                        >
+                                            data-admin-target="{{ $reviewSelection['customer'].' · '.__('Payment ID:').' '.$reviewSelection['payment_id'] }}" data-admin-method="markReviewPaymentNonRevenue" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('This will exclude this record from revenue totals and mark it as an internal/manual grant. It will not call FIB. It will not refund. It will not delete audit history. Continue?') }}"
+                                         @if(! \App\Support\Admin\AdminUiAccess::can('admin.reconcile')) disabled @endif>
                                             {{ __('Reclassify as No-Revenue Manual Grant') }}
                                         </button>
                                     </div>
@@ -763,12 +765,12 @@ class extends Component
                                     </div>
                                     <div class="row g-3">
                                         <div class="col-12">
-                                            <label class="form-label">{{ __('Callback Payload') }}</label>
-                                            <textarea class="form-control font-monospace" rows="6" readonly>{{ $reviewSelection['callback_payload'] }}</textarea>
+                                            <label class="form-label" for="admin-field-adm-customers-register-31">{{ __('Callback Payload') }}</label>
+                                            <textarea class="form-control font-monospace" rows="6" readonly id="admin-field-adm-customers-register-31" dir="ltr">{{ $reviewSelection['callback_payload'] }}</textarea>
                                         </div>
                                         <div class="col-12">
-                                            <label class="form-label">{{ __('Status Response') }}</label>
-                                            <textarea class="form-control font-monospace" rows="6" readonly>{{ $reviewSelection['status_response'] }}</textarea>
+                                            <label class="form-label" for="admin-field-adm-customers-register-32">{{ __('Status Response') }}</label>
+                                            <textarea class="form-control font-monospace" rows="6" readonly id="admin-field-adm-customers-register-32" dir="ltr">{{ $reviewSelection['status_response'] }}</textarea>
                                         </div>
                                     </div>
                                 </div>
@@ -888,10 +890,11 @@ class extends Component
                                         <button
                                             type="button"
                                             class="btn btn-sm btn-soft-primary"
-                                            onclick="if (confirm(@js(__('This will sync the customer\'s subscription credits with their current plan. It will add missing plan credits only when the current subscription balance is lower than the plan allowance. It will not subtract existing credits or remove add-on credits.')))) { @this.call('syncCustomerCreditsToPlan', {{ $customer->id }}); }"
-                                        >
+                                            data-admin-method="syncCustomerCreditsToPlan" data-admin-args="{{ json_encode([$customer->id]) }}" data-admin-impact="{{ __('This will sync the customer\'s subscription credits with their current plan. It will add missing plan credits only when the current subscription balance is lower than the plan allowance. It will not subtract existing credits or remove add-on credits.') }}"
+                                         @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>
                                             {{ __('Sync Credits To Plan') }}
                                         </button>
+                                        <a wire:navigate class="btn btn-sm btn-soft-info" href="{{ route('admin.customers.detail', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}">{{ __('admin_p2.operations') }}</a>
                                         <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-secondary">{{ __('Usage') }}</a>
                                         <a wire:navigate href="{{ route('admin.customers.list', ['locale' => app()->getLocale(), 'q' => $customer->username]) }}" class="btn btn-sm btn-soft-primary">{{ __('Locate') }}</a>
                                     </div>

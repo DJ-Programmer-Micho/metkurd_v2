@@ -1,5 +1,9 @@
 # Admin routing and boot integrity review — 2026-09-06
 
+This is the pre-P1 review record. The subsequent [P1 implementation](ADMIN-AUDIT.md)
+fixes the Admin translation-area mismatch described below; the route inventory
+and P0 authentication/dependency findings remain useful historical evidence.
+
 ## Result
 
 **Route definitions: PASS. Authentication redirect: FIXED. Application database:

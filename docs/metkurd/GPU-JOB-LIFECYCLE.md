@@ -1,5 +1,15 @@
 # GPU job lifecycle
 
+## Admin P2 operational inspection — 2026-09-06
+
+Admin histories read local MlJob and owned-file evidence only. Local lifecycle,
+provider evidence, App charges/refunds and API reservations have separate labels.
+Provider completion alone is not successful local persistence. Provider terminal
+status is not universally retained; the review view detects recorded
+output.provider_success where present and otherwise reports missing evidence.
+Active age over two hours is a review filter, not an SLA or state transition.
+No Admin read triggers polling, finalization, refund, replay or other recovery.
+
 ## API V2 lifecycle — 2026-09-06
 
 Paid POST claims a unique customer + hashed Idempotency-Key before dispatch.

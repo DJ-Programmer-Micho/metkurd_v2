@@ -16,6 +16,7 @@ trait ManagesPaymentPlansPage
 {
     use InteractsWithPaymentAdmin;
     use SecureAdminComponent;
+    use ShowsV2Catalog;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -299,14 +300,14 @@ trait ManagesPaymentPlansPage
         $this->apiEnabled = (bool) ($plan->api_enabled ?? false);
         $this->apiRequestsPerMinute = (int) ($plan->api_requests_per_minute ?? 0);
         $this->apiConcurrentJobs = (int) ($plan->api_concurrent_jobs ?? 0);
-        $this->apiAllowedToolsText = implode(PHP_EOL, (array) ($plan->api_allowed_tools ?? []));
+        $this->apiAllowedToolsText = implode(PHP_EOL, app(\App\Services\Admin\AdminEntitlementScopes::class)->explicit($plan));
         $this->priceIqdMonthly = (string) ((int) $plan->priceIqdForCycle('monthly'));
         $this->priceIqdYearly = (string) ((int) $plan->priceIqdForCycle('yearly'));
         $this->isFree = (bool) $plan->is_free;
         $this->isActive = (bool) $plan->is_active;
         $this->sortOrder = (int) ($plan->sort_order ?? 0);
         $this->uiFeaturesJson = $this->encodeJsonTextarea($plan->ui_features);
-        $this->metaJson = $this->encodeJsonTextarea($plan->meta);
+        $this->metaJson = $this->encodeJsonTextarea(\Illuminate\Support\Arr::except($plan->meta ?? [], [\App\Services\Admin\AdminEntitlementScopes::META_KEY]));
         $this->resetErrorBag();
         $this->resetValidation();
 
@@ -334,67 +335,74 @@ trait ManagesPaymentPlansPage
         $priceIqdMonthly = (int) (($validated['priceIqdMonthly'] !== '' && $validated['priceIqdMonthly'] !== null) ? $validated['priceIqdMonthly'] : 0);
         $priceIqdYearly = (int) (($validated['priceIqdYearly'] !== '' && $validated['priceIqdYearly'] !== null) ? $validated['priceIqdYearly'] : 0);
 
-        $plan = $this->editingPlanId
-            ? ServicePlan::query()->findOrFail($this->editingPlanId)
-            : new ServicePlan;
-        $originalMode = $plan->checkoutPaymentMode();
-        $appMonthlyCredits = (int) ($validated['appMonthlyCredits'] ?? $validated['monthlyCredits']);
-        $payload = [
-            'code' => $validated['code'],
-            'name' => $validated['name'],
-            'billing_interval' => $primaryBillingInterval,
-            'monthly_credits' => $appMonthlyCredits,
-            'app_monthly_credits' => $appMonthlyCredits,
-            'api_monthly_credits' => (int) $validated['apiMonthlyCredits'],
-            'concurrent_jobs_limit' => (int) $validated['concurrentJobsLimit'],
-            'api_enabled' => (bool) $validated['apiEnabled'],
-            'api_requests_per_minute' => (int) $validated['apiRequestsPerMinute'],
-            'api_concurrent_jobs' => (int) $validated['apiConcurrentJobs'],
-            'api_allowed_tools' => $apiAllowedTools,
-            'price_usd_monthly' => $this->usdReferenceAmount($priceIqdMonthly),
-            'price_usd_yearly' => $this->usdReferenceAmount($priceIqdYearly),
-            'is_free' => (bool) $this->isFree,
-            'is_active' => (bool) $this->isActive,
-            'sort_order' => (int) ($validated['sortOrder'] ?? 0),
-            'ui_features' => $uiFeatures,
-            'meta' => $meta,
-        ];
+        [$plan, $originalMode] = \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $billingIntervals, $primaryBillingInterval, $uiFeatures, $meta, $apiAllowedTools, $priceIqdMonthly, $priceIqdYearly) {
+            $plan = $this->editingPlanId
+                ? ServicePlan::query()->lockForUpdate()->findOrFail($this->editingPlanId)
+                : new ServicePlan;
+            $originalMode = $plan->checkoutPaymentMode();
+            unset($meta[\App\Services\Admin\AdminEntitlementScopes::META_KEY]);
+            $meta[\App\Services\Admin\AdminEntitlementScopes::META_KEY] = data_get($plan->meta, \App\Services\Admin\AdminEntitlementScopes::META_KEY, []);
+            $appMonthlyCredits = (int) ($validated['appMonthlyCredits'] ?? $validated['monthlyCredits']);
+            $payload = [
+                'code' => $validated['code'],
+                'name' => $validated['name'],
+                'billing_interval' => $primaryBillingInterval,
+                'monthly_credits' => $appMonthlyCredits,
+                'app_monthly_credits' => $appMonthlyCredits,
+                'api_monthly_credits' => (int) $validated['apiMonthlyCredits'],
+                'concurrent_jobs_limit' => (int) $validated['concurrentJobsLimit'],
+                'api_enabled' => (bool) $validated['apiEnabled'],
+                'api_requests_per_minute' => (int) $validated['apiRequestsPerMinute'],
+                'api_concurrent_jobs' => (int) $validated['apiConcurrentJobs'],
+                'api_allowed_tools' => $apiAllowedTools,
+                'price_usd_monthly' => $this->usdReferenceAmount($priceIqdMonthly),
+                'price_usd_yearly' => $this->usdReferenceAmount($priceIqdYearly),
+                'is_free' => (bool) $this->isFree,
+                'is_active' => (bool) $this->isActive,
+                'sort_order' => (int) ($validated['sortOrder'] ?? 0),
+                'ui_features' => $uiFeatures,
+                'meta' => $meta,
+            ];
 
-        if ($this->tableHasColumn('service_plans', 'payment_mode')) {
-            $payload['payment_mode'] = PaymentMode::fromValue(
-                $validated['paymentMode'] ?? null,
-                PaymentMode::RECURRING
-            )->value;
-        }
+            if ($this->tableHasColumn('service_plans', 'payment_mode')) {
+                $payload['payment_mode'] = PaymentMode::fromValue(
+                    $validated['paymentMode'] ?? null,
+                    PaymentMode::RECURRING
+                )->value;
+            }
 
-        if ($this->tableHasColumn('service_plans', 'billing_intervals')) {
-            $payload['billing_intervals'] = $billingIntervals;
-        }
+            if ($this->tableHasColumn('service_plans', 'billing_intervals')) {
+                $payload['billing_intervals'] = $billingIntervals;
+            }
 
-        if ($this->tableHasColumn('service_plans', 'price_iqd_monthly')) {
-            $payload['price_iqd_monthly'] = $priceIqdMonthly;
-        }
-
-        if ($this->tableHasColumn('service_plans', 'price_iqd_yearly')) {
-            $payload['price_iqd_yearly'] = $priceIqdYearly;
-        }
-
-        $plan->fill($payload);
-
-        if ($plan->is_free) {
             if ($this->tableHasColumn('service_plans', 'price_iqd_monthly')) {
-                $plan->price_iqd_monthly = 0;
+                $payload['price_iqd_monthly'] = $priceIqdMonthly;
             }
 
             if ($this->tableHasColumn('service_plans', 'price_iqd_yearly')) {
-                $plan->price_iqd_yearly = 0;
+                $payload['price_iqd_yearly'] = $priceIqdYearly;
             }
 
-            $plan->price_usd_monthly = 0;
-            $plan->price_usd_yearly = 0;
-        }
+            $plan->fill($payload);
 
-        $plan->save();
+            if ($plan->is_free) {
+                if ($this->tableHasColumn('service_plans', 'price_iqd_monthly')) {
+                    $plan->price_iqd_monthly = 0;
+                }
+
+                if ($this->tableHasColumn('service_plans', 'price_iqd_yearly')) {
+                    $plan->price_iqd_yearly = 0;
+                }
+
+                $plan->price_usd_monthly = 0;
+                $plan->price_usd_yearly = 0;
+            }
+
+            $plan->save();
+            app(\App\Services\Admin\AdminEntitlementScopes::class)->synchronize($plan, $apiAllowedTools);
+
+            return [$plan, $originalMode];
+        });
         unset($this->plans, $this->topStats);
         $updatedMode = $plan->checkoutPaymentMode();
 

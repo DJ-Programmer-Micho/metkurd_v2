@@ -19,6 +19,7 @@ class extends Component
 <x-slot:title>{{ __('Customers List') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
@@ -78,23 +79,23 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-5">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-list-1">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search username, email, plan, location, or profile...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search username, email, plan, location, or profile...') }}" id="admin-field-adm-customers-list-1">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Status') }}</label>
-                    <select class="form-select" wire:model.live="statusFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-list-2">{{ __('Status') }}</label>
+                    <select class="form-select" wire:model.live="statusFilter" id="admin-field-adm-customers-list-2">
                         <option value="all">{{ __('All statuses') }}</option>
                         <option value="active">{{ __('Active') }}</option>
                         <option value="suspended">{{ __('Suspended') }}</option>
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Plan') }}</label>
-                    <select class="form-select" wire:model.live="planFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-list-3">{{ __('Plan') }}</label>
+                    <select class="form-select" wire:model.live="planFilter" id="admin-field-adm-customers-list-3">
                         <option value="all">{{ __('All plans') }}</option>
                         <option value="none">{{ __('No active plan') }}</option>
                         @foreach ($this->customerPlanOptions as $plan)
@@ -103,8 +104,8 @@ class extends Component
                     </select>
                 </div>
                 <div class="col-xl-3 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Verification') }}</label>
-                    <select class="form-select" wire:model.live="verificationFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-list-4">{{ __('Verification') }}</label>
+                    <select class="form-select" wire:model.live="verificationFilter" id="admin-field-adm-customers-list-4">
                         <option value="all">{{ __('Any verification state') }}</option>
                         <option value="verified">{{ __('Fully verified') }}</option>
                         <option value="needs_attention">{{ __('Needs attention') }}</option>
@@ -218,12 +219,13 @@ class extends Component
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
                                         <button type="button" class="btn btn-sm btn-soft-info" wire:click="openCustomerView({{ $customer->id }})">{{ __('View') }}</button>
+                                        <a wire:navigate class="btn btn-sm btn-soft-info" href="{{ route('admin.customers.detail', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}">{{ __('admin_p2.operations') }}</a>
                                         <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Billing Register') }}</a>
                                         <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-secondary">{{ __('Usage') }}</a>
                                         @if (!$customer->email_verify || !$customer->phone_verify)
-                                            <button type="button" class="btn btn-sm btn-soft-warning" wire:click="sendVerificationSupportEmail({{ $customer->id }})">{{ __('Verification Help Email') }}</button>
+                                            <button type="button" class="btn btn-sm btn-soft-warning" data-admin-method="sendVerificationSupportEmail" data-admin-args="{{ json_encode([$customer->id]) }}" data-admin-impact="{{ __('admin_p3.customer_effect') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.customers')) disabled @endif>{{ __('Verification Help Email') }}</button>
                                         @endif
-                                        <button type="button" class="btn btn-sm {{ (int) $customer->status === 0 ? 'btn-soft-success' : 'btn-soft-danger' }}" wire:click="toggleCustomerStatus({{ $customer->id }})">
+                                        <button type="button" class="btn btn-sm {{ (int) $customer->status === 0 ? 'btn-soft-success' : 'btn-soft-danger' }}" data-admin-method="toggleCustomerStatus" data-admin-args="{{ json_encode([$customer->id]) }}" data-admin-impact="{{ __('admin_p3.customer_effect') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.customers')) disabled @endif>
                                             {{ (int) $customer->status === 0 ? __('Restore') : __('Suspend') }}
                                         </button>
                                     </div>

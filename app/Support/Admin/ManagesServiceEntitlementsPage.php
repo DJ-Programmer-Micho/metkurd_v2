@@ -5,9 +5,8 @@ namespace App\Support\Admin;
 use App\Models\PlanEntitlement;
 use App\Models\ServicePlan;
 use App\Models\ToolAction;
-use App\Services\CustomerApi\CustomerApiAccessService;
+use App\Services\Admin\AdminEntitlementScopes;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
@@ -16,6 +15,7 @@ use Livewire\Attributes\Url;
 trait ManagesServiceEntitlementsPage
 {
     use SecureAdminComponent;
+    use ShowsV2Catalog;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -200,7 +200,7 @@ trait ManagesServiceEntitlementsPage
         $this->validate([
             'entitlementServicePlanId' => ['required', 'integer', Rule::exists('service_plans', 'id')],
             'entitlementToolActionId' => ['required', 'integer', Rule::exists('tool_actions', 'id')],
-            'entitlementChannel' => ['required', Rule::in(PlanEntitlement::channels())],
+            'entitlementChannel' => ['required', Rule::in(PlanEntitlement::channels(true))],
             'entitlementAllowed' => ['required', Rule::in(['allowed', 'blocked'])],
             'entitlementLimitsJson' => ['nullable', 'string'],
         ]);
@@ -220,20 +220,13 @@ trait ManagesServiceEntitlementsPage
 
         $limits = $this->decodeJsonField($this->entitlementLimitsJson, 'entitlementLimitsJson');
 
-        $entitlement = $this->editingEntitlementId
-            ? PlanEntitlement::query()->findOrFail($this->editingEntitlementId)
-            : new PlanEntitlement;
-
-        $entitlement->fill([
+        app(AdminEntitlementScopes::class)->mutate($this->editingEntitlementId, [
             'service_plan_id' => $this->entitlementServicePlanId,
             'tool_action_id' => $this->entitlementToolActionId,
-            'entitlement_channel' => PlanEntitlement::normalizeChannel($this->entitlementChannel),
+            'entitlement_channel' => PlanEntitlement::normalizeChannel($this->entitlementChannel, 'app', true),
             'allowed' => $this->entitlementAllowed === 'allowed',
             'limits' => $limits ?: null,
         ]);
-
-        $entitlement->save();
-        $this->syncApiScopeForEntitlement($entitlement, $entitlement->allowed);
 
         $this->dispatch('alert', type: 'success', message: $this->editingEntitlementId ? __('Plan entitlement updated successfully.') : __('Plan entitlement created successfully.'));
         $this->dispatch('services-entitlements:modal-hide', id: 'serviceEntitlementModal');
@@ -244,9 +237,7 @@ trait ManagesServiceEntitlementsPage
     {
         $this->authorizeAdminChange('admin.pricing');
 
-        $entitlement = PlanEntitlement::query()->findOrFail($entitlementId);
-        $entitlement->update(['allowed' => ! $entitlement->allowed]);
-        $this->syncApiScopeForEntitlement($entitlement->fresh(), (bool) $entitlement->fresh()?->allowed);
+        $entitlement = app(AdminEntitlementScopes::class)->mutate($entitlementId, operation: 'toggle');
 
         $this->dispatch('alert', type: 'success', message: $entitlement->allowed ? __('Entitlement marked as allowed.') : __('Entitlement blocked.'));
     }
@@ -268,11 +259,7 @@ trait ManagesServiceEntitlementsPage
         $this->authorizeAdminChange('admin.pricing');
 
         if ($this->entitlementIdPendingDelete) {
-            $entitlement = PlanEntitlement::query()->findOrFail($this->entitlementIdPendingDelete);
-            DB::transaction(function () use ($entitlement) {
-                app(\App\Services\Admin\AdminCatalogDeletion::class)->delete($entitlement);
-                $this->syncApiScopeForEntitlement($entitlement, false);
-            });
+            app(AdminEntitlementScopes::class)->mutate($this->entitlementIdPendingDelete, operation: 'delete');
             $this->dispatch('alert', type: 'success', message: __('Plan entitlement deleted successfully.'));
         }
 
@@ -328,43 +315,5 @@ trait ManagesServiceEntitlementsPage
         }
 
         return $decoded;
-    }
-
-    protected function syncApiScopeForEntitlement(PlanEntitlement $entitlement, bool $allowed): void
-    {
-        $channel = PlanEntitlement::normalizeChannel((string) ($entitlement->entitlement_channel ?? PlanEntitlement::CHANNEL_APP), PlanEntitlement::CHANNEL_APP, true);
-
-        if ($channel !== PlanEntitlement::CHANNEL_API) {
-            return;
-        }
-
-        $entitlement->loadMissing(['servicePlan:id,api_allowed_tools', 'toolAction:id,full_code']);
-
-        $plan = $entitlement->servicePlan;
-        $actionCode = (string) ($entitlement->toolAction?->full_code ?? '');
-
-        if (! $plan instanceof ServicePlan || $actionCode === '') {
-            return;
-        }
-
-        $scope = app(CustomerApiAccessService::class)->scopeForActionCode($actionCode);
-
-        if ($scope === null) {
-            return;
-        }
-
-        $scopes = collect((array) ($plan->api_allowed_tools ?? []))
-            ->map(fn (mixed $value): string => strtolower(trim((string) $value)))
-            ->filter()
-            ->reject(fn (string $value): bool => $value === $scope)
-            ->values();
-
-        if ($allowed) {
-            $scopes->push($scope);
-        }
-
-        $plan->forceFill([
-            'api_allowed_tools' => $scopes->unique()->values()->all(),
-        ])->save();
     }
 }

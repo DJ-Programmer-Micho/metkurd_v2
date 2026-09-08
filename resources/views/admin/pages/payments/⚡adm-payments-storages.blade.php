@@ -19,6 +19,7 @@ class extends Component
 <x-slot:title>{{ __('Payment Storage Plans') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
@@ -34,7 +35,7 @@ class extends Component
                         @endforeach
                     </select>
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
-                    <button type="button" class="btn btn-primary" wire:click="openCreateStorageModal">{{ __('New Storage Plan') }}</button>
+                    <button type="button" class="btn btn-primary" wire:click="openCreateStorageModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('New Storage Plan') }}</button>
                 </div>
             </div>
         </div>
@@ -83,15 +84,15 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-7">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-storages-1">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search storage name or code...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search storage name or code...') }}" id="admin-field-adm-payments-storages-1">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Status') }}</label>
-                    <select class="form-select" wire:model.live="statusFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-storages-2">{{ __('Status') }}</label>
+                    <select class="form-select" wire:model.live="statusFilter" id="admin-field-adm-payments-storages-2">
                         <option value="all">{{ __('All statuses') }}</option>
                         <option value="active">{{ __('Active') }}</option>
                         <option value="inactive">{{ __('Inactive') }}</option>
@@ -204,8 +205,8 @@ class extends Component
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openEditStorageModal({{ $plan->id }})">{{ __('Edit') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmDeleteStorage({{ $plan->id }})">{{ __('Delete') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openEditStorageModal({{ $plan->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmDeleteStorage({{ $plan->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                                     </div>
                                 </td>
                             </tr>
@@ -233,23 +234,24 @@ class extends Component
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetStorageForm"></button>
                 </div>
-                <form wire:submit="saveStoragePlan">
+                <form data-admin-method="saveStoragePlan" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.catalog_effect') }}">
+<fieldset @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                     @csrf
                     <div class="modal-body">
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label class="form-label">{{ __('Code') }}</label>
-                                <input type="text" class="form-control @error('code') is-invalid @enderror" wire:model.defer="code" placeholder="{{ __('pro-5120') }}">
+                                <label class="form-label" for="admin-field-adm-payments-storages-3">{{ __('Code') }}</label>
+                                <input type="text" class="form-control @error('code') is-invalid @enderror" wire:model.defer="code" placeholder="{{ __('pro-5120') }}" data-admin-review id="admin-field-adm-payments-storages-3">
                                 @error('code') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">{{ __('Name') }}</label>
-                                <input type="text" class="form-control @error('name') is-invalid @enderror" wire:model.defer="name" placeholder="{{ __('Pro (5GB)') }}">
+                                <label class="form-label" for="admin-field-adm-payments-storages-4">{{ __('Name') }}</label>
+                                <input type="text" class="form-control @error('name') is-invalid @enderror" wire:model.defer="name" placeholder="{{ __('Pro (5GB)') }}" data-admin-review id="admin-field-adm-payments-storages-4">
                                 @error('name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Payment Mode') }}</label>
-                                <select class="form-select @error('paymentMode') is-invalid @enderror" wire:model.defer="paymentMode">
+                                <label class="form-label" for="admin-field-adm-payments-storages-5">{{ __('Payment Mode') }}</label>
+                                <select class="form-select @error('paymentMode') is-invalid @enderror" wire:model.defer="paymentMode" id="admin-field-adm-payments-storages-5">
                                     <option value="one_time">{{ __('Manual Payment') }}</option>
                                     <option value="recurring">{{ __('Auto Renewal') }}</option>
                                 </select>
@@ -273,18 +275,18 @@ class extends Component
                                 @endif
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Quota (MB)') }}</label>
-                                <input type="number" min="1" class="form-control @error('quotaMb') is-invalid @enderror" wire:model.defer="quotaMb">
+                                <label class="form-label" for="admin-field-adm-payments-storages-6">{{ __('Quota (MB)') }}</label>
+                                <input type="number" min="1" class="form-control @error('quotaMb') is-invalid @enderror" wire:model.defer="quotaMb" id="admin-field-adm-payments-storages-6">
                                 @error('quotaMb') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Price (IQD)') }}</label>
-                                <input type="number" min="0" step="250" class="form-control @error('priceIqd') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqd">
+                                <label class="form-label" for="admin-field-adm-payments-storages-7">{{ __('Price (IQD)') }}</label>
+                                <input type="number" min="0" step="250" class="form-control @error('priceIqd') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqd" id="admin-field-adm-payments-storages-7">
                                 @error('priceIqd') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Sort Order') }}</label>
-                                <input type="number" min="0" class="form-control @error('sortOrder') is-invalid @enderror" wire:model.defer="sortOrder">
+                                <label class="form-label" for="admin-field-adm-payments-storages-8">{{ __('Sort Order') }}</label>
+                                <input type="number" min="0" class="form-control @error('sortOrder') is-invalid @enderror" wire:model.defer="sortOrder" id="admin-field-adm-payments-storages-8">
                                 @error('sortOrder') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
@@ -311,7 +313,7 @@ class extends Component
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetStorageForm">{{ __('Cancel') }}</button>
                         <button type="submit" class="btn btn-primary">{{ $editingStorageId ? __('Save Changes') : __('Create Storage Plan') }}</button>
                     </div>
-                </form>
+                </fieldset></form>
             </div>
         </div>
     </div>
@@ -328,7 +330,7 @@ class extends Component
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetDeleteState">{{ __('Cancel') }}</button>
-                    <button type="button" class="btn btn-danger" wire:click="deleteStoragePlan">{{ __('Delete') }}</button>
+                    <button type="button" class="btn btn-danger" data-admin-target="{{ $deleteStorageLabel }}" data-admin-method="deleteStoragePlan" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.delete_effect') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                 </div>
             </div>
         </div>

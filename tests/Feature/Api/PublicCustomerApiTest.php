@@ -242,6 +242,48 @@ function ensurePublicApiPricingRule(string $actionCode, string $metricCode, int 
     );
 }
 
+it('retains Apollo submissions and aliases with an explicitly provisioned catalog', function (string $endpoint, string $engine, string $tool, string $action, string $scope) {
+    expect(config('database.default'))->toBe('sqlite')
+        ->and(config('database.connections.sqlite.database'))->toBe(':memory:');
+    // The legacy suite's default seed predates Omni; provision only this isolated fixture.
+    $this->seed(\Database\Seeders\OmniToolSeeder::class);
+    \Illuminate\Support\Facades\Http::preventStrayRequests();
+    Storage::fake('s3');
+    $customer = publicApiCustomer();
+    $plan = assignPublicPlan($customer);
+    $plan->update(['api_allowed_tools' => ['*']]);
+    $toolAction = ToolAction::where('full_code', $action)->firstOrFail();
+    \App\Models\PlanEntitlement::updateOrCreate([
+        'service_plan_id' => $plan->id,
+        'tool_action_id' => $toolAction->id,
+        'entitlement_channel' => 'api',
+    ], ['allowed' => true]);
+    ensurePublicApiPricingRule($action, 'character');
+    ensurePublicVoice($plan, $engine, 'compatibility-voice', 'Compatibility voice', ['ref_audio' => 'voices/fixture.wav']);
+    seedPublicWallet($customer, 20000);
+    $appBalance = CreditWallet::where('customer_id', $customer->id)->where('wallet_type', 'app')->value('balance_credits');
+    $key = issuePublicApiKey($customer->fresh(), [$scope])['plain_text_key'];
+    fakePublicRunpodSubmission(['compatibility-provider-job']);
+    $this->withToken($key)->getJson($endpoint.'/voices')->assertOk()->assertJsonFragment(['speaker_id' => 'compatibility-voice']);
+    $headers = ['Idempotency-Key' => 'compatibility-intent'];
+    $payload = ['text' => 'Compatibility request.', 'speaker_id' => 'compatibility-voice', 'language' => 'ar'];
+    $response = $this->withToken($key)->postJson($endpoint, $payload, $headers)->assertAccepted();
+    $job = ApiJob::findOrFail($response->json('job_id'));
+    expect($job->tool_code)->toBe($tool)->and($job->tool_action)->toBe($action)
+        ->and($job->engine)->toBe($engine)->and($job->mlJob->job_kind)->toBe($tool);
+    $chargedBalance = CreditWallet::where('customer_id', $customer->id)->where('wallet_type', 'api')->value('balance_credits');
+    expect((int) $chargedBalance)->toBeLessThan(20000);
+    $this->withToken($key)->postJson($endpoint, $payload, $headers)->assertOk()->assertJsonPath('job_id', $job->id);
+    expect(ApiJob::count())->toBe(1)
+        ->and(CreditWallet::where('customer_id', $customer->id)->where('wallet_type', 'api')->value('balance_credits'))->toBe($chargedBalance)
+        ->and(CreditWallet::where('customer_id', $customer->id)->where('wallet_type', 'app')->value('balance_credits'))->toBe($appBalance);
+})->with([
+    'Apollo 1.0' => ['/api/v1/tts/apollo-1-0v', 'xtts', 'tts', 'tts.standard', 'tts:apollo-1-0v'],
+    'XTTS alias' => ['/api/v1/tts/xtts', 'xtts', 'tts', 'tts.standard', 'tts:xtts'],
+    'Apollo 1.5' => ['/api/v1/tts/apollo-1-5v', 'xomni', 'xomni', 'xomni.generate', 'tts:apollo-1-5v'],
+    'XOMNI alias' => ['/api/v1/tts/xomni', 'xomni', 'xomni', 'xomni.generate', 'tts:xomni'],
+]);
+
 it('blocks free plan customers from the public api', function () {
     $customer = publicApiCustomer('public-free@example.com', 'public_free_user');
     seedPublicWallet($customer, 1000);

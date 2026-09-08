@@ -1,5 +1,27 @@
 # Localization
 
+## Admin P2 operational copy — 2026-09-06
+
+New Operational/customer detail labels use matching EN/AR/KU admin_p2.php catalogs.
+They retain the P1 Admin-area loader and EN/LTR, AR/KU/RTL document direction.
+Customer names, filenames and reasons use automatic direction; technical identities
+remain LTR. Operational lifecycle values have translated labels when known, with
+persisted technical codes retained where appropriate. Full Admin localization and
+visual RTL redesign remain P3; Landing catalogs are unchanged.
+
+## Admin P1 area correction — 2026-09-06
+
+TranslationArea recognizes Admin route names and the configured `aurl` prefix
+(currently `adm`), shared by middleware and AreaJsonTranslations. Cached area JSON
+is replaced so prior Landing messages cannot leak into Admin; common JSON and PHP
+catalogs remain. Livewire persistent middleware applies the verified original
+route's locale/area, without trusting referrers. Direct and signed-snapshot updates
+are tested for EN/AR/KU, with Landing separation and a configurable-prefix test.
+Admin document direction is EN/LTR and AR/KU/RTL. New identifiers/JSON and edited
+technical fields stay LTR. New `resources/lang/{en,ar,ku}/admin_p1.php` catalogs
+cover the diagnostics and configuration guidance. Landing content/catalogs were
+not edited. P3 full translation/RTL UX and real browser acceptance remain open.
+
 ## Workspace status follow-up — 2026-09-06
 
 OCR distinguishes `Current job` and `Previous result` through app EN/AR/KU JSON
@@ -45,7 +67,7 @@ English/Arabic/Kurdish PHP and JSON files, including newly added catalogs.
 
 `LocalizationMainMiddleware` resolves route locale, then session `applocale`, then
 app default, and adds the area's JSON path to Laravel Lang. Both `/app` and
-`/app-v2` use app catalogs; `/super-admin` uses admin; other routes use landing.
+`/app-v2` use app catalogs; the configured Admin prefix uses admin; other routes use landing.
 `AppServiceProvider` registers locale middleware for Livewire updates and as
 persistent middleware. Verify locale/area on update requests as well as page GETs.
 
@@ -135,3 +157,25 @@ Deletion states have EN/AR/KU catalog labels. STEM persistent script reads messa
 from the current page after navigation; upload feedback uses the shared SweetAlert
 bridge and generic translated errors. OCR correction has an explicit accessible
 label. Actual mobile/RTL/browser locale-switch acceptance remains outstanding.
+
+## Admin P3 — 2026-09-07
+
+Scoped Admin layouts/navigation, Services, Customers, Operations, Billing and shared
+components use `resources/lang/admin/{en,ar,ku}.json` plus the existing P0/P1/P2 and
+new `admin_p3.php` catalogs. Landing CMS catalogs were not changed. Admin-only JSON
+overrides also localize shared pagination text and previous/next labels. Dashboard
+chart labels are serialized with each page's chart data and read again after navigation;
+the persistent chart script does not capture the first page's translated labels.
+
+The Admin Vite entry reads dialog messages from the current shell's `data-admin-ui`
+settings and document direction. It is the single high-impact confirmation bridge;
+Toastr remains for escaped lightweight notifications and validation remains inline.
+The shared template uses EN/LTR and AR/KU/RTL with scoped Bootstrap direction fixes,
+LTR technical fields and automatic direction for customer content. Native/provider
+identities are retained; UI copy must not reinterpret a provider completion as locally
+persisted output or a reservation as final spend.
+
+P3 tests render 19 routes per locale, check catalog replacement tokens, form labels,
+pagination, chart label data and mixed-direction output. Node tests cover current-locale
+dialog settings and navigation deduplication. This does not establish native-speaker
+quality or interactive desktop/mobile RTL acceptance; both remain explicit follow-ups.

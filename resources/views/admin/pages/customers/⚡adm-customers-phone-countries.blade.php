@@ -163,6 +163,7 @@ class extends Component
 <x-slot:title>{{ __('Phone Registration Countries') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
@@ -174,7 +175,7 @@ class extends Component
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <a wire:navigate href="{{ route('admin.customers.list', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-secondary">{{ __('Back to Customers') }}</a>
                     <button type="button" class="btn btn-soft-warning" wire:click="enableDefaults">{{ __('Restore Defaults') }}</button>
-                    <button type="button" class="btn btn-primary" wire:click="save">{{ __('Save Changes') }}</button>
+                    <button type="button" class="btn btn-primary" data-admin-method="save" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.customer_effect') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.customers')) disabled @endif>{{ __('Save Changes') }}</button>
                 </div>
             </div>
         </div>
@@ -223,9 +224,9 @@ class extends Component
             <div class="card-header border-0">
                 <div class="row g-3 align-items-end">
                     <div class="col-xl-6">
-                        <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                        <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-phone-countries-1">{{ __('Search') }}</label>
                         <div class="search-box">
-                            <input type="text" class="form-control" wire:model.live.debounce.300ms="search" placeholder="{{ __('Search country name or ISO2 code...') }}">
+                            <input type="text" class="form-control" wire:model.live.debounce.300ms="search" placeholder="{{ __('Search country name or ISO2 code...') }}" id="admin-field-adm-customers-phone-countries-1">
                             <i class="ri-search-line search-icon"></i>
                         </div>
                     </div>
@@ -240,7 +241,8 @@ class extends Component
             </div>
         </div>
 
-        <form wire:submit.prevent="save">
+        <form data-admin-method="save" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.customer_effect') }}">
+<fieldset @if(! \App\Support\Admin\AdminUiAccess::can('admin.customers')) disabled @endif>
             <div class="card">
                 <div class="card-header border-0">
                     <div>
@@ -284,6 +286,6 @@ class extends Component
                     <button type="submit" class="btn btn-primary">{{ __('Save Changes') }}</button>
                 </div>
             </div>
-        </form>
+        </fieldset></form>
     @endif
 </div>

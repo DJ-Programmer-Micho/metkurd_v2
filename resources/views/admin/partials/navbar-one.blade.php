@@ -30,7 +30,7 @@
                 </div>
             </span>
         </a>
-        <button type="button" class="btn btn-sm p-0 fs-20 header-item float-end btn-vertical-sm-hover" id="vertical-hover">
+        <button type="button" class="btn btn-sm p-0 fs-20 header-item float-end btn-vertical-sm-hover" id="vertical-hover" aria-label="{{ __('admin_p3.navigation') }}">
             <i class="ri-record-circle-line"></i>
         </button>
     </div>
@@ -41,13 +41,14 @@
             <div id="two-column-menu">
             </div>
             <ul class="navbar-nav" id="navbar-nav">
-                <li class="menu-title"><span data-key="t-menu">{{__('Side Bar')}}</span></li>
+                <li class="menu-title"><span data-key="t-menu">{{ __('admin_p3.workspace') }}</span></li>
                                  
                 <livewire:partials.components.nav-feature-link
                     :route="'admin.home'"
                     icon="bx bx-home"
-                    :label="__('Home')"
+                    :label="__('admin_p3.dashboard')"
                 />
+                <livewire:partials.components.nav-feature-link :route="'admin.operations'" icon="bx bx-search" :label="__('admin_p2.operations')" />
                 {{-- </x-app.auth.nav-multi-feature-link> --}}
                 <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Services') }}</span></li>
 
@@ -83,40 +84,6 @@
                     />
                 </livewire:partials.components.nav-multi-feature-link>
 
-                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Landing CMS') }}</span></li>
-
-                <livewire:partials.components.nav-multi-feature-link
-                    id="sidebarLandingCms"
-                    icon="bx bx-globe"
-                    :label="__('Landing CMS')"
-                    :features="null"
-                    >
-
-                    <livewire:partials.components.nav-feature-link
-                        route="admin.landing.translations"
-                        icon="bx bx-translate"
-                        :label="__('Translations')"
-                    />
-
-                    <livewire:partials.components.nav-feature-link
-                        route="admin.landing.tools"
-                        icon="bx bx-grid-alt"
-                        :label="__('Tools Pages')"
-                    />
-
-                    <livewire:partials.components.nav-feature-link
-                        route="admin.landing.contact"
-                        icon="bx bx-mail-send"
-                        :label="__('Contact & Social')"
-                    />
-
-                    <livewire:partials.components.nav-feature-link
-                        route="admin.landing.meta"
-                        icon="bx bx-palette"
-                        :label="__('Meta & Icons')"
-                    />
-                </livewire:partials.components.nav-multi-feature-link>
-
                 <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Customers') }}</span></li>
 
                 <livewire:partials.components.nav-multi-feature-link
@@ -141,7 +108,7 @@
                     <livewire:partials.components.nav-feature-link
                         route="admin.customers.register"
                         icon="bx bxs-microphone-alt"
-                        :label="__('Register')"
+                        :label="__('Billing Register')"
                     />
 
                     <livewire:partials.components.nav-feature-link
@@ -164,12 +131,12 @@
 
                 </livewire:partials.components.nav-multi-feature-link>
 
-                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Payments') }}</span></li>
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('admin_p3.billing') }}</span></li>
 
                 <livewire:partials.components.nav-multi-feature-link
                     id="sidebarPayments"
                     icon="bx bx-microphone"
-                    :label="__('Packs')"
+                    :label="__('admin_p3.billing')"
                     :features="null"
                     >
 
@@ -211,29 +178,38 @@
 
                 </livewire:partials.components.nav-multi-feature-link>
 
+
+                <li class="menu-title mt-1"><i class="ri-more-fill"></i> <span data-key="t-pages">{{ __('Landing CMS') }}</span></li>
+
                 <livewire:partials.components.nav-multi-feature-link
-                    id="sidebarPaymentMethod"
-                    icon="bx bx-microphone"
-                    :label="__('Payment Method')"
+                    id="sidebarLandingCms"
+                    icon="bx bx-globe"
+                    :label="__('Landing CMS')"
                     :features="null"
                     >
 
                     <livewire:partials.components.nav-feature-link
-                        :route="'admin.payments.methods'"
-                        icon="bx bxs-microphone-alt"
-                        :label="__('Manage Methods')"
+                        route="admin.landing.translations"
+                        icon="bx bx-translate"
+                        :label="__('Translations')"
                     />
 
                     <livewire:partials.components.nav-feature-link
-                        route="admin.payments.currencies"
-                        icon="bx bxs-microphone-alt"
-                        :label="__('Currencies')"
+                        route="admin.landing.tools"
+                        icon="bx bx-grid-alt"
+                        :label="__('Tools Pages')"
                     />
 
                     <livewire:partials.components.nav-feature-link
-                        route="admin.payments.plans"
-                        icon="bx bxs-microphone-alt"
-                        :label="__('Catalog')"
+                        route="admin.landing.contact"
+                        icon="bx bx-mail-send"
+                        :label="__('Contact & Social')"
+                    />
+
+                    <livewire:partials.components.nav-feature-link
+                        route="admin.landing.meta"
+                        icon="bx bx-palette"
+                        :label="__('Meta & Icons')"
                     />
                 </livewire:partials.components.nav-multi-feature-link>
             </ul>

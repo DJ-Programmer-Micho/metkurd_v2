@@ -19,6 +19,7 @@ class extends Component
 <x-slot:title>{{ __('Payment Coupons') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
@@ -34,7 +35,7 @@ class extends Component
                         @endforeach
                     </select>
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
-                    <button type="button" class="btn btn-primary" wire:click="openCreateCouponModal">{{ __('New Coupon') }}</button>
+                    <button type="button" class="btn btn-primary" wire:click="openCreateCouponModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('New Coupon') }}</button>
                 </div>
             </div>
         </div>
@@ -89,23 +90,23 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-5">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-coupons-1">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search coupon code, name, or notes...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search coupon code, name, or notes...') }}" id="admin-field-adm-payments-coupons-1">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Status') }}</label>
-                    <select class="form-select" wire:model.live="statusFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-coupons-2">{{ __('Status') }}</label>
+                    <select class="form-select" wire:model.live="statusFilter" id="admin-field-adm-payments-coupons-2">
                         <option value="all">{{ __('All statuses') }}</option>
                         <option value="active">{{ __('Active') }}</option>
                         <option value="inactive">{{ __('Inactive') }}</option>
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Target') }}</label>
-                    <select class="form-select" wire:model.live="targetFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-coupons-3">{{ __('Target') }}</label>
+                    <select class="form-select" wire:model.live="targetFilter" id="admin-field-adm-payments-coupons-3">
                         @foreach ($this->targetFilterOptions() as $targetCode => $targetLabel)
                             <option value="{{ $targetCode }}">{{ $targetLabel }}</option>
                         @endforeach
@@ -231,8 +232,8 @@ class extends Component
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openEditCouponModal({{ $coupon->id }})">{{ __('Edit') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmDeleteCoupon({{ $coupon->id }})">{{ __('Delete') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openEditCouponModal({{ $coupon->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmDeleteCoupon({{ $coupon->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                                     </div>
                                 </td>
                             </tr>
@@ -338,7 +339,8 @@ class extends Component
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetCouponForm"></button>
                 </div>
-                <form wire:submit="saveCoupon">
+                <form data-admin-method="saveCoupon" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.catalog_effect') }}">
+<fieldset @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                     @csrf
                     <div class="modal-body" style="max-height: calc(100vh - 210px); overflow-y: auto;">
                         <div class="row g-4">
@@ -351,18 +353,18 @@ class extends Component
                                     <div class="card-body">
                                         <div class="row g-3">
                                             <div class="col-md-4">
-                                                <label class="form-label">{{ __('Coupon Code') }}</label>
-                                                <input type="text" class="form-control @error('code') is-invalid @enderror" wire:model.defer="code" placeholder="{{ __('WELCOME50') }}">
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-4">{{ __('Coupon Code') }}</label>
+                                                <input type="text" class="form-control @error('code') is-invalid @enderror" wire:model.defer="code" placeholder="{{ __('WELCOME50') }}" data-admin-review id="admin-field-adm-payments-coupons-4">
                                                 @error('code') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                             </div>
                                             <div class="col-md-4">
-                                                <label class="form-label">{{ __('Name') }}</label>
-                                                <input type="text" class="form-control @error('name') is-invalid @enderror" wire:model.defer="name" placeholder="{{ __('Welcome Offer') }}">
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-5">{{ __('Name') }}</label>
+                                                <input type="text" class="form-control @error('name') is-invalid @enderror" wire:model.defer="name" placeholder="{{ __('Welcome Offer') }}" data-admin-review id="admin-field-adm-payments-coupons-5">
                                                 @error('name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                             </div>
                                             <div class="col-md-4">
-                                                <label class="form-label">{{ __('Target Type') }}</label>
-                                                <select class="form-select @error('targetType') is-invalid @enderror" wire:model.live="targetType">
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-6">{{ __('Target Type') }}</label>
+                                                <select class="form-select @error('targetType') is-invalid @enderror" wire:model.live="targetType" id="admin-field-adm-payments-coupons-6">
                                                     @foreach ($this->targetOptions() as $targetCode => $targetLabel)
                                                         <option value="{{ $targetCode }}">{{ $targetLabel }}</option>
                                                     @endforeach
@@ -371,8 +373,8 @@ class extends Component
                                             </div>
 
                                             <div class="col-12">
-                                                <label class="form-label">{{ __('Description') }}</label>
-                                                <textarea class="form-control @error('description') is-invalid @enderror" rows="2" wire:model.defer="description" placeholder="{{ __('Optional internal or customer-facing description') }}"></textarea>
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-7">{{ __('Description') }}</label>
+                                                <textarea class="form-control @error('description') is-invalid @enderror" rows="2" wire:model.defer="description" placeholder="{{ __('Optional internal or customer-facing description') }}" id="admin-field-adm-payments-coupons-7" dir="auto"></textarea>
                                                 @error('description') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                             </div>
 
@@ -431,7 +433,7 @@ class extends Component
                                                     @foreach ($this->servicePlanChoices as $plan)
                                                         <div class="col-md-6">
                                                             <label class="border rounded-3 p-3 d-flex gap-2 align-items-start h-100 cursor-pointer">
-                                                                <input class="form-check-input mt-1" type="checkbox" value="{{ $plan['code'] }}" wire:model.defer="selectedServicePlanCodes">
+                                                                <input class="form-check-input mt-1" type="checkbox" value="{{ $plan['code'] }}" wire:model.defer="selectedServicePlanCodes" dir="ltr">
                                                                 <span>
                                                                     <span class="fw-semibold d-block">{{ $plan['name'] }}</span>
                                                                     <span class="text-muted small d-block">{{ strtoupper($plan['code']) }} · {{ __(':credits credits/month', ['credits' => number_format($plan['credits'])]) }}</span>
@@ -452,7 +454,7 @@ class extends Component
                                                     @foreach ($this->storagePlanChoices as $plan)
                                                         <div class="col-md-6">
                                                             <label class="border rounded-3 p-3 d-flex gap-2 align-items-start h-100 cursor-pointer">
-                                                                <input class="form-check-input mt-1" type="checkbox" value="{{ $plan['code'] }}" wire:model.defer="selectedStoragePlanCodes">
+                                                                <input class="form-check-input mt-1" type="checkbox" value="{{ $plan['code'] }}" wire:model.defer="selectedStoragePlanCodes" dir="ltr">
                                                                 <span>
                                                                     <span class="fw-semibold d-block">{{ $plan['name'] }}</span>
                                                                     <span class="text-muted small d-block">{{ strtoupper($plan['code']) }} · {{ $plan['quota'] }}</span>
@@ -473,7 +475,7 @@ class extends Component
                                                     @foreach ($this->addonChoices as $addon)
                                                         <div class="col-md-6">
                                                             <label class="border rounded-3 p-3 d-flex gap-2 align-items-start h-100 cursor-pointer">
-                                                                <input class="form-check-input mt-1" type="checkbox" value="{{ $addon['code'] }}" wire:model.defer="selectedAddonCodes">
+                                                                <input class="form-check-input mt-1" type="checkbox" value="{{ $addon['code'] }}" wire:model.defer="selectedAddonCodes" dir="ltr">
                                                                 <span>
                                                                     <span class="fw-semibold d-block">{{ $addon['name'] }}</span>
                                                                     <span class="text-muted small d-block">{{ strtoupper($addon['code']) }} · {{ __(':credits credits', ['credits' => $addon['credits']]) }}</span>
@@ -523,8 +525,8 @@ class extends Component
                                     <div class="card-body">
                                         <div class="row g-3">
                                             <div class="col-md-6">
-                                                <label class="form-label">{{ __('Discount Type') }}</label>
-                                                <select class="form-select @error('discountType') is-invalid @enderror" wire:model.defer="discountType">
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-8">{{ __('Discount Type') }}</label>
+                                                <select class="form-select @error('discountType') is-invalid @enderror" wire:model.defer="discountType" id="admin-field-adm-payments-coupons-8">
                                                     @foreach ($this->discountTypeOptions() as $discountCode => $discountLabel)
                                                         <option value="{{ $discountCode }}">{{ $discountLabel }}</option>
                                                     @endforeach
@@ -532,13 +534,13 @@ class extends Component
                                                 @error('discountType') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                             </div>
                                             <div class="col-md-6">
-                                                <label class="form-label">{{ __('Discount Value') }}</label>
-                                                <input type="number" min="0.01" step="0.01" class="form-control @error('discountValue') is-invalid @enderror" wire:model.defer="discountValue">
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-9">{{ __('Discount Value') }}</label>
+                                                <input type="number" min="0.01" step="0.01" class="form-control @error('discountValue') is-invalid @enderror" wire:model.defer="discountValue" id="admin-field-adm-payments-coupons-9">
                                                 @error('discountValue') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                             </div>
                                             <div class="col-md-6">
-                                                <label class="form-label">{{ __('Minimum Amount (IQD)') }}</label>
-                                                <input type="number" min="1" step="250" class="form-control @error('minimumAmountIqd') is-invalid @enderror" wire:model.defer="minimumAmountIqd">
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-10">{{ __('Minimum Amount (IQD)') }}</label>
+                                                <input type="number" min="1" step="250" class="form-control @error('minimumAmountIqd') is-invalid @enderror" wire:model.defer="minimumAmountIqd" id="admin-field-adm-payments-coupons-10">
                                                 @error('minimumAmountIqd') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                             </div>
                                             <div class="col-md-6">
@@ -560,13 +562,13 @@ class extends Component
                                     <div class="card-body">
                                         <div class="row g-3">
                                             <div class="col-md-6">
-                                                <label class="form-label">{{ __('Max Total Uses') }}</label>
-                                                <input type="number" min="1" class="form-control @error('maxTotalUses') is-invalid @enderror" wire:model.defer="maxTotalUses">
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-11">{{ __('Max Total Uses') }}</label>
+                                                <input type="number" min="1" class="form-control @error('maxTotalUses') is-invalid @enderror" wire:model.defer="maxTotalUses" id="admin-field-adm-payments-coupons-11">
                                                 @error('maxTotalUses') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                             </div>
                                             <div class="col-md-6">
-                                                <label class="form-label">{{ __('Max Uses Per Customer') }}</label>
-                                                <input type="number" min="1" class="form-control @error('maxUsesPerCustomer') is-invalid @enderror" wire:model.defer="maxUsesPerCustomer">
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-12">{{ __('Max Uses Per Customer') }}</label>
+                                                <input type="number" min="1" class="form-control @error('maxUsesPerCustomer') is-invalid @enderror" wire:model.defer="maxUsesPerCustomer" id="admin-field-adm-payments-coupons-12">
                                                 @error('maxUsesPerCustomer') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                             </div>
 
@@ -593,13 +595,13 @@ class extends Component
                                     <div class="card-body">
                                         <div class="row g-3">
                                             <div class="col-md-6">
-                                                <label class="form-label">{{ __('Starts At') }}</label>
-                                                <input type="datetime-local" class="form-control @error('startsAtLocal') is-invalid @enderror" wire:model.defer="startsAtLocal">
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-13">{{ __('Starts At') }}</label>
+                                                <input type="datetime-local" class="form-control @error('startsAtLocal') is-invalid @enderror" wire:model.defer="startsAtLocal" id="admin-field-adm-payments-coupons-13">
                                                 @error('startsAtLocal') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                             </div>
                                             <div class="col-md-6">
-                                                <label class="form-label">{{ __('Ends At') }}</label>
-                                                <input type="datetime-local" class="form-control @error('endsAtLocal') is-invalid @enderror" wire:model.defer="endsAtLocal">
+                                                <label class="form-label" for="admin-field-adm-payments-coupons-14">{{ __('Ends At') }}</label>
+                                                <input type="datetime-local" class="form-control @error('endsAtLocal') is-invalid @enderror" wire:model.defer="endsAtLocal" id="admin-field-adm-payments-coupons-14">
                                                 @error('endsAtLocal') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                             </div>
                                         </div>
@@ -644,12 +646,12 @@ class extends Component
 
                                             @if ($durationType === 'first_n_cycles')
                                                 <div class="mt-3">
-                                                    <label class="form-label">{{ __('Discounted Cycles Count') }}</label>
+                                                    <label class="form-label" for="admin-field-adm-payments-coupons-15">{{ __('Discounted Cycles Count') }}</label>
                                                     <input type="number"
                                                            min="1"
                                                            max="365"
                                                            class="form-control @error('durationCycles') is-invalid @enderror"
-                                                           wire:model.defer="durationCycles">
+                                                           wire:model.defer="durationCycles" id="admin-field-adm-payments-coupons-15">
                                                     @error('durationCycles') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                                 </div>
                                             @endif
@@ -678,7 +680,7 @@ class extends Component
                                     </div>
                                     <div class="card-body">
                                         <label class="form-label">{{ __('Metadata JSON') }}</label>
-                                        <textarea class="form-control @error('metadataJson') is-invalid @enderror" rows="4" wire:model.defer="metadataJson" placeholder='{"notes":"Internal campaign"}'></textarea>
+                                        <details><summary>{{ __('admin_p3.advanced') }}</summary><textarea class="form-control @error('metadataJson') is-invalid @enderror" rows="4" wire:model.defer="metadataJson" placeholder='{"notes":"Internal campaign"}' dir="ltr"></textarea></details>
                                         @error('metadataJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
                                 </div>
@@ -689,7 +691,7 @@ class extends Component
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetCouponForm">{{ __('Cancel') }}</button>
                         <button type="submit" class="btn btn-primary">{{ $editingCouponId ? __('Save Changes') : __('Create Coupon') }}</button>
                     </div>
-                </form>
+                </fieldset></form>
             </div>
         </div>
     </div>
@@ -706,7 +708,7 @@ class extends Component
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">{{ __('Cancel') }}</button>
-                    <button type="button" class="btn btn-danger" wire:click="deleteCoupon">{{ __('Delete') }}</button>
+                    <button type="button" class="btn btn-danger" data-admin-target="{{ $deleteCouponLabel }}" data-admin-method="deleteCoupon" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.delete_effect') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                 </div>
             </div>
         </div>

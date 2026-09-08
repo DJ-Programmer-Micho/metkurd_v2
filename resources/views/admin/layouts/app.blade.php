@@ -1,6 +1,6 @@
 {{-- resources/views/app/layouts/app.blade.php --}}
 <!DOCTYPE html>
-<html lang="{{ app()->getLocale() }}"
+<html lang="{{ app()->getLocale() }}" dir="{{ in_array(app()->getLocale(), ['ar', 'ku'], true) ? 'rtl' : 'ltr' }}"
       data-layout="vertical"
       data-topbar="light"
       data-sidebar-size="lg"
@@ -34,8 +34,9 @@
 
     <title>{{ $title ?? __('APP | METKURD') }}</title>
 
+    <link href="{{ asset('admin/libs/sweetalert2/sweetalert2.min.css') }}" rel="stylesheet">
     @stack('styles')
-    @vite('resources/js/app.js')
+    @vite(['resources/js/app.js', 'resources/js/admin.js'])
     @livewireStyles
 
     <style>.ar-shift{direction:rtl;text-align:right;}</style>
@@ -49,7 +50,9 @@
             crossorigin="anonymous" referrerpolicy="no-referrer"></script> --}}
 </head>
 
-<body>
+<body class="admin-shell">
+    <a class="admin-skip btn btn-primary" href="#admin-main">{{ __('admin_p3.skip') }}</a>
+    <span hidden data-admin-ui data-pagination="{{ __('Pagination Navigation') }}" data-confirm="{{ __('admin_p3.confirm') }}" data-cancel="{{ __('Cancel') }}" data-close="{{ __('Close') }}" data-failed="{{ __('admin_p0.request_failed') }}"></span>
     @include('admin.partials.header-one')
 
     @if (view()->exists('admin.partials.navbar-one'))
@@ -59,9 +62,9 @@
     <div class="vertical-overlay"></div>
 
     <div class="main-content">
-        <div class="page-content">
+        <main id="admin-main" class="page-content" tabindex="-1">
         {{ $slot }}
-        </div>
+        </main>
         @if (view()->exists('admin.partials.footer-one'))
             @include('admin.partials.footer-one')
         @endif
@@ -82,8 +85,9 @@
 
     {{-- Toastr --}}
     <script data-navigate-once src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script data-navigate-once src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 
+    <script data-navigate-once src="{{ asset('admin/libs/sweetalert2/sweetalert2.min.js') }}"></script>
     @livewireScripts
 
     {{-- Put stack after Livewire so page scripts can hook into events safely --}}
@@ -101,75 +105,6 @@
         <input type="hidden" name="locale" id="selectedLocale" value="{{ app()->getLocale() }}">
     </form>
 
-<script>
-    // Language switch
-    function changeLanguage(locale) {
-        document.getElementById('selectedLocale').value = locale;
-        document.getElementById('languageForm').submit();
-    }
 
-    // Toastr from Livewire
-    const dispatchToast = (payload) => {
-        if (typeof toastr === 'undefined') return;
-
-        toastr.options = { closeButton: true, progressBar: true };
-
-        const detail = Array.isArray(payload)
-            ? (payload[0] || {})
-            : ((payload && typeof payload === 'object' && 'detail' in payload)
-                ? (payload.detail || {})
-                : (payload || {}));
-
-        const type = detail.type || 'info';
-        const message = detail.message || '';
-        const title = detail.title || '';
-
-        if (typeof toastr[type] === 'function') {
-            toastr[type](message, title);
-        } else {
-            toastr.info(message, title);
-        }
-    };
-
-    // Livewire dispatch() already reaches the browser as a DOM event.
-    // Listening in both places causes duplicate toasts.
-    window.addEventListener('alert', dispatchToast);
-
-    function initBootstrap() {
-        // Dropdowns
-        document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach((el) => {
-            const existing = bootstrap.Dropdown.getInstance(el);
-            if (existing) existing.dispose();
-            new bootstrap.Dropdown(el);
-        });
-
-        // Tooltips
-        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
-            const existing = bootstrap.Tooltip.getInstance(el);
-            if (existing) existing.dispose();
-            new bootstrap.Tooltip(el);
-        });
-
-        // Feather icons
-        if (typeof feather !== 'undefined') feather.replace();
-
-        // Waves
-        if (typeof Waves !== 'undefined') Waves.init();
-    }
-
-    // Full page load
-    document.addEventListener('DOMContentLoaded', initBootstrap);
-
-    // wire:navigate page swap — dispose first, then reinit after DOM settles
-    document.addEventListener('livewire:navigating', () => {
-        document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach((el) => {
-            bootstrap.Dropdown.getInstance(el)?.dispose();
-        });
-    });
-
-    document.addEventListener('livewire:navigated', () => {
-        requestAnimationFrame(() => initBootstrap());
-    });
-</script>
 </body>
 </html>

@@ -31,7 +31,25 @@ a requirement to modernize it or preserve obsolete behavior.
   changes still need interactive browser acceptance. See the dated follow-up in
   [PRODUCTION-AUDIT.md](docs/metkurd/PRODUCTION-AUDIT.md) for verification scope.
 
+## Admin P2 operational reads (2026-09-06)
+
+Operations and customer detail now read persisted local evidence through
+AdminOperations. Preserve fresh admin.read and deeper finance/reconcile evidence
+gates, App/API wallet separation, bounded tables and secret/content exclusion.
+Never call GPU polling, API serializers that settle reservations, storage probes,
+billing repair or recovery mutations from Admin history. Provider completion is
+not local persistence; absent provider evidence remains unknown. Read the current
+P2 section in docs/metkurd/ADMIN-AUDIT.md. P3/P4 and deployment acceptance remain open.
+
 ## Product scope (2026-09-06)
+
+Admin P1 V2 correctness is implemented in source. Read the current P1 section in
+[ADMIN-AUDIT.md](docs/metkurd/ADMIN-AUDIT.md) before changing catalog, entitlement,
+pricing or plan controls. Derive variants/scopes from MetKurdV2ToolCatalog and
+ApiCatalog. Preserve P0 invariants and `meta.admin_api_scopes` explicit/derived
+ownership; pre-existing scopes are explicit, sibling grants and plan moves sync
+transactionally. Use runtime resolvers for access/quote previews. P3/P4,
+business pricing decisions, MySQL and browser acceptance remain separate.
 
 For the designated final V1 database snapshot `eu-metkurd-v1-260906.sql`, follow
 the [local import plan](docs/metkurd/PRODUCTION-DB-IMPORT.md). It has eight pending
@@ -42,7 +60,7 @@ customer-column query is fixed in source: use the plan's unfiltered subscription
 and previous-subscription relationships, never `customers.service_plan_id`.
 Native MySQL acceptance remains separate from SQLite regression coverage. Read the
 [routing review](docs/metkurd/ADMIN-ROUTING-REVIEW.md) before attributing missing
-P0 schema or the deferred Admin localization mismatch to route damage.
+P0 schema to route damage; the subsequent P1 phase fixed the localization mismatch.
 
 - Current core: Apollo, Vector, Leo, Caption, OCR, STEM 2 and STEM 4, plus V2
   Storage and shared infrastructure those services need. Report any additional
@@ -117,7 +135,15 @@ issues and the limits of verification; it is not deployment approval.
    financial intent identity, locked payment transitions, final dependency guards
    and sanitized audit/display boundaries. Read [Admin implementation status](docs/metkurd/ADMIN-AUDIT.md)
    before changing these paths. Never automatically provision privileges, bypass
-   provider evidence or backfill historical financial rows. P1–P4 remain separate.
+   provider evidence or backfill historical financial rows. P2 reads must not invoke
+   these mutations. P4 legacy cleanup remains a separate phase.
+8. Admin P3 high-impact controls use `resources/js/admin.js` with explicit
+   `data-admin-method` / JSON arguments and translated impact text. Keep one
+   navigation-safe SweetAlert bridge; do not add native dialogs or replace P0
+   intent IDs during confirmation/retry. `AdminUiAccess` is a request-local display
+   hint, never final authorization. Preserve customer-context bookmarks, bounded
+   P2 queries, separate operational statuses and EN/AR/KU direction/copy. Run the
+   Admin Node tests as well as relevant PHP tests when changing this bridge.
 
 ## Verification and documentation maintenance
 

@@ -1,5 +1,38 @@
 # Infrastructure relationships
 
+## Current local upgrade scope — 2026-09-07
+
+The operator cancelled R2A's separate Docker environment. Use the existing local
+application database for the V2 migration rehearsal; do not replace MariaDB,
+create another environment or import another snapshot. The prepared Docker tooling
+was removed; no container was created. Normal migration remains operator-controlled
+after a local export backup. Status/preview and before evidence are recorded in
+[the current import/upgrade task](PRODUCTION-DB-IMPORT.md). Earlier environment
+decisions below are historical and no longer instructions for this task.
+
+## R2A environment separation — 2026-09-07
+
+The operator's current decision is to retain Laravel → existing MariaDB for
+development, add Laravel → separate native MySQL for release acceptance, and
+target Laravel → Amazon RDS for MySQL in production. Do not replace XAMPP/MariaDB
+or copy its mutated database as the acceptance baseline. The designated original
+snapshot has been located and hash-verified. Operator-provided server-version
+evidence is 8.4.8; the prepared Docker image is pinned accordingly, with a separate
+loopback port 3307, schema, credentials and volume. No container/import/migration
+was executed. Docker Desktop is installed but was stopped. See
+[R2A procedure and remaining runtime checks](RELEASE-R2A-MYSQL.md).
+
+## Intended database platform and detected local engine — 2026-09-07
+
+The operator identifies **MySQL for local development and Amazon RDS for MySQL
+for production** as the intended platform. Production engine/version has not
+been independently queried. A direct local `SELECT VERSION()` through Laravel's
+active connection returned `10.4.28-MariaDB` during R2, despite the connection
+name and driver being `mysql`. Neither phpMyAdmin nor the driver name establishes
+the server engine. R2 native MySQL migration acceptance is stopped until the
+operator resolves this mismatch; historical MariaDB observations are not RDS
+MySQL acceptance. See [R2 prerequisite evidence](PRODUCTION-DB-IMPORT.md).
+
 ## Admin P0 rollout — 2026-09-06
 
 This is a deployment runbook, not evidence of deployment. No application DB
@@ -116,7 +149,7 @@ Browser -> Laravel/Livewire web application -> relational database
 | Layer | Responsibility and source |
 |---|---|
 | Web application | Auth, locale, entitlement, pricing, input validation, submission, polling, result ownership, preview/download. `routes/web.php`, `app/Http/`, view-based Livewire pages. |
-| Relational database | Customers, wallets/ledgers, subscriptions, tool actions, jobs, file metadata, quotas and payment/API state. `config/database.php`, `database/migrations/`, `app/Models/`. Default source driver is SQLite; MySQL/MariaDB/PostgreSQL/SQL Server connections are also defined. Deployment choice is not proven. |
+| Relational database | Customers, wallets/ledgers, subscriptions, tool actions, jobs, file metadata, quotas and payment/API state. `config/database.php`, `database/migrations/`, `app/Models/`. Default source driver is SQLite; MySQL/MariaDB/PostgreSQL/SQL Server connections are also defined. Intended platform is MySQL / Amazon RDS for MySQL (operator-confirmed); actual production engine/version remains independently unverified. The local R2 query detected MariaDB and blocked native MySQL acceptance. |
 | Redis (when configured) | Cache/session/queue backend, not customer result authority. `config/database.php` defines default/cache Redis connections and phpredis default client; cache and queue configs select their connection. Do not assert Redis is enabled from its presence in config. |
 | Cache/session | `config/cache.php` defaults cache to database, `config/session.php` defaults session to database. Shared state/locks are needed when multiple app nodes serve requests. |
 | Laravel queue | Background application jobs, including payment processing and YouTube download orchestration. `config/queue.php` defaults to database, also supports Redis; default retry_after is 10800 seconds for these connections. Match worker timeout to visibility/retry time before deployment changes. Submissions remain synchronous; ReconcileMlJob queues server-side status checks and finalization. |

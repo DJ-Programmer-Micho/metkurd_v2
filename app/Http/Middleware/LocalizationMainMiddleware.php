@@ -32,13 +32,20 @@ class LocalizationMainMiddleware
             $request->session()->put('applocale', $locale);
         }
 
-        // 2) Select area and add JSON paths
-        $area = $this->detectArea($request);
-        // dd($area);
-        // Optional: keep top-level resources/lang/{locale}.json as "common"
-        // Lang::addJsonPath(resource_path('lang'));
-        // Area-specific JSON (resources/lang/{area}/{locale}.json)
+        // 2) Select the current route's translation area.
+        $area = \App\Support\TranslationArea::forRequest($request);
         Lang::addJsonPath(resource_path("lang/{$area}"));
+
+        // Persistent Livewire middleware runs against the verified original route.
+        // Replace cached JSON messages so an earlier area cannot leak into this one.
+        $messages = [];
+        foreach (array_unique([$locale, config('app.fallback_locale', 'en')]) as $language) {
+            $commonPath = resource_path('lang/'.$language.'.json');
+            $common = is_file($commonPath) ? (json_decode(file_get_contents($commonPath), true) ?: []) : [];
+            $messages[$language] = array_merge($common, \App\Support\AreaJsonTranslations::all($area, $language));
+        }
+        Lang::setLoaded(['*' => ['*' => $messages]]);
+        request()->attributes->set('translation_area', $area);
 
         return $next($request);
     }
@@ -65,23 +72,6 @@ class LocalizationMainMiddleware
         $prev = $request->headers->get('referer') ?: url()->current();
 
         return redirect()->to($this->replaceLocaleInUrl($prev, $selected));
-    }
-
-    private function detectArea(Request $request): string
-    {
-        // Admin URLs look like: /{locale}/super-admin/...
-        if (preg_match('#^/(en|ar|ku)/super-admin(?:/|$)#', $request->getPathInfo())) {
-            return 'admin';
-        }
-
-        // App areas share the same customer-facing translation catalogue. V2 keeps
-        // its own routes, but it must not fall through to the landing catalogue.
-        if (preg_match('#^/(en|ar|ku)/app(?:-v2)?(?:/|$)#', $request->getPathInfo())) {
-            return 'app';
-        }
-
-        // Everything else (home, marketing, etc.)
-        return 'landing';
     }
 
     private function replaceLocaleInUrl(string $url, string $newLocale): string

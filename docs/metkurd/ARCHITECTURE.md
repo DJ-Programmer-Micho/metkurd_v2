@@ -1,5 +1,27 @@
 # MetKurd architecture
 
+## Admin P2 local operational reads — 2026-09-06
+
+AdminOperations supplies allowlisted local read projections to one shared
+view-based Operations/customer-detail component. Reads require fresh admin.read;
+finance/reconcile gates the deeper payment evidence. Job/payment trace filters
+use persisted relationships. No serializer that settles API reservations, billing
+repair, remote polling, object probe or result download runs from these pages.
+Existing P0/P1 mutation boundaries and runtime domain resolution remain unchanged.
+See ADMIN-AUDIT.md for sections, performance limits and verification.
+
+## Admin P1 V2 projection and configuration — 2026-09-06
+
+AdminV2Catalog joins MetKurdV2ToolCatalog, ApiCatalog and persisted records for nine
+model/mode views without merging identities. AdminEntitlementScopes atomically
+maintains explicit/derived scope provenance in existing plan metadata and a
+compatible `api_allowed_tools` union, including sibling and plan-move handling.
+Existing scopes default to explicit ownership; no import/read backfill runs.
+Grouped channel pricing writes are transactional. Read-only previews reuse
+Customer's runtime rule selector/calculator and CustomerApiAccessService's plan
+configuration. P0 authorization/audit/dependency boundaries remain intact.
+See [Admin P1 implementation](ADMIN-AUDIT.md). P2/P3/P4 remain separate.
+
 ## Admin P0 safety boundary — 2026-09-06
 
 Admin retains `auth:admin` and adds fresh active-user capability Gates on final
@@ -129,6 +151,20 @@ its established worker options. Translation remains a V1 workspace, absent from
 the V2 service route allowlist. Placeholder products are not implemented tools.
 
 ## Evidence and limitations
+
+### Admin P3 presentation boundary
+
+Admin continues to use namespaced Livewire view-based components and Bootstrap.
+`resources/js/admin.js` owns a once-installed, navigation-safe SweetAlert/notification
+bridge, with scoped styles in `resources/css/admin.css`. High-impact controls declare
+an existing method and JSON arguments; confirmation calls that method without changing
+P0 financial intent identity. Browser hints use request-local `AdminUiAccess`; server
+capability, transaction and dependency checks remain authoritative. Customer-context
+bookmarks reuse existing routes. Status badges keep provider/local/persistence and
+financial evidence separate. P2 read bounds and content redaction are unchanged.
+Dashboard analytics cache identity includes locale as well as environment/database
+identity because cached display labels are localized. See ADMIN-AUDIT.md for tests
+and the outstanding interactive browser and native MySQL acceptance boundary.
 
 Primary references: `routes/web.php`, `routes/api.php`, `config/metkurd_v2.php`,
 `config/livewire.php`, `app/Models/{Customer,MlJob,CustomerFile,CreditWallet}.php`,

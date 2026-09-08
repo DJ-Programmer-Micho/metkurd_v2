@@ -36,8 +36,8 @@ class extends Component
                         </div>
                         <div class="col-xl-4">
                             <div class="analysis-panel p-3 rounded-4">
-                                <label class="form-label text-uppercase fs-12 text-white-50 mb-2">{{ __('Analysis Window') }}</label>
-                                <select class="form-select bg-white border-0" wire:model.live="periodFilter">
+                                <label class="form-label text-uppercase fs-12 text-white-50 mb-2" for="admin-field-app-home-1">{{ __('Analysis Window') }}</label>
+                                <select class="form-select bg-white border-0" wire:model.live="periodFilter" id="admin-field-app-home-1">
                                     <option value="7">{{ __('Last 7 days') }}</option>
                                     <option value="30">{{ __('Last 30 days') }}</option>
                                     <option value="90">{{ __('Last 90 days') }}</option>
@@ -76,8 +76,9 @@ class extends Component
         <div class="col-xxl-2 col-xl-4 col-md-6">
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Customers') }}</p>
+                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Total Customers') }}</p>
                     <h3 class="mb-1">{{ number_format($stats['customers_total']) }}</h3>
+                    <div class="text-muted small">{{ __(':active active · :suspended suspended', ['active' => number_format($stats['active_customers']), 'suspended' => number_format($stats['suspended_customers'])]) }}</div>
                     <div class="text-muted small">{{ __(':count registered in :period', ['count' => number_format($stats['period_new_customers']), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
             </div>
@@ -430,6 +431,15 @@ class extends Component
         </div>
     </div>
 
+    @php
+        $charts['ui'] = [
+            'jobs' => __('Jobs'), 'customers' => __('New Customers'),
+            'revenue' => __('Revenue'), 'credits' => __('Credits'),
+            'orders' => __('Orders'), 'subscribers' => __('Subscribers'),
+            'activeSubscribers' => __('Active Subscribers'),
+            'counts' => __('Jobs').' / '.__('New Customers'),
+        ];
+    @endphp
     <script type="application/json" id="admin-home-chart-data">@json($charts)</script>
 
     <style>
@@ -516,8 +526,7 @@ class extends Component
                     };
 
                     const rootSelector = '[data-admin-home-dashboard]';
-                    const numberFormatter = new Intl.NumberFormat('en-US');
-                    const buildMoneyFormatter = (currencyMeta = {}) => new Intl.NumberFormat('en-US', {
+                    const buildMoneyFormatter = (currencyMeta = {}) => new Intl.NumberFormat(document.documentElement.lang || 'en', {
                         style: 'currency',
                         currency: currencyMeta.code || 'USD',
                         minimumFractionDigits: currencyMeta.fraction_digits ?? 2,
@@ -644,6 +653,13 @@ class extends Component
                             return;
                         }
 
+                        const ui = payload.ui;
+                        const numberFormatter = new Intl.NumberFormat(document.documentElement.lang || 'en');
+                        const rtl = document.documentElement.dir === 'rtl';
+                        sharedPlugins.legend.rtl = rtl;
+                        sharedPlugins.tooltip.rtl = rtl;
+                        sharedPlugins.tooltip.textDirection = rtl ? 'rtl' : 'ltr';
+
                         destroyCharts();
 
                         const activityCanvas = document.getElementById('adminHomeActivityChart');
@@ -656,7 +672,7 @@ class extends Component
                                     datasets: [
                                         {
                                             type: 'bar',
-                                            label: 'Jobs',
+                                            label: ui.jobs,
                                             data: payload.activity.jobs,
                                             backgroundColor: colorSet.tealSoft,
                                             borderColor: colorSet.teal,
@@ -666,7 +682,7 @@ class extends Component
                                         },
                                         {
                                             type: 'line',
-                                            label: 'New Customers',
+                                            label: ui.customers,
                                             data: payload.activity.customers,
                                             borderColor: colorSet.indigo,
                                             backgroundColor: colorSet.indigoSoft,
@@ -680,7 +696,7 @@ class extends Component
                                         },
                                         {
                                             type: 'line',
-                                            label: 'Revenue',
+                                            label: ui.revenue,
                                             data: payload.activity.revenue,
                                             borderColor: colorSet.amber,
                                             backgroundColor: colorSet.amberSoft,
@@ -708,7 +724,7 @@ class extends Component
                                             ...sharedScales.y,
                                             title: {
                                                 display: true,
-                                                text: 'Jobs / Customers',
+                                                text: ui.counts,
                                                 color: '#64748b',
                                                 font: {
                                                     family: defaultFontFamily(),
@@ -718,7 +734,7 @@ class extends Component
                                         },
                                         money: {
                                             beginAtZero: true,
-                                            position: 'right',
+                                            position: rtl ? 'left' : 'right',
                                             grid: {
                                                 drawOnChartArea: false,
                                             },
@@ -731,7 +747,7 @@ class extends Component
                                             },
                                             title: {
                                                 display: true,
-                                                text: `Revenue (${payload.currency?.code || 'USD'})`,
+                                                text: `${ui.revenue} (${payload.currency?.code || 'USD'})`,
                                                 color: '#64748b',
                                                 font: {
                                                     family: defaultFontFamily(),
@@ -776,8 +792,8 @@ class extends Component
 
                                                     return [
                                                         `${context.label}: ${moneyFormatter.format(context.parsed || 0)}`,
-                                                        `${numberFormatter.format(orders)} orders`,
-                                                        `${numberFormatter.format(credits)} credits`,
+                                                        `${ui.orders}: ${numberFormatter.format(orders)}`,
+                                                        `${ui.credits}: ${numberFormatter.format(credits)}`,
                                                     ];
                                                 },
                                             },
@@ -796,7 +812,7 @@ class extends Component
                                     labels: payload.top_tools.labels,
                                     datasets: [
                                         {
-                                            label: 'Credits',
+                                            label: ui.credits,
                                             data: payload.top_tools.credits,
                                             backgroundColor: 'rgba(2, 132, 199, 0.78)',
                                             borderRadius: 12,
@@ -823,8 +839,8 @@ class extends Component
                                                     const jobs = payload.top_tools.jobs[context.dataIndex] ?? 0;
 
                                                     return [
-                                                        `Credits: ${numberFormatter.format(context.parsed.x || 0)}`,
-                                                        `Jobs: ${numberFormatter.format(jobs)}`,
+                                                        `${ui.credits}: ${numberFormatter.format(context.parsed.x || 0)}`,
+                                                        `${ui.jobs}: ${numberFormatter.format(jobs)}`,
                                                     ];
                                                 },
                                             },
@@ -865,7 +881,7 @@ class extends Component
                                     labels: payload.plan_mix.labels,
                                     datasets: [
                                         {
-                                            label: 'Active Subscribers',
+                                            label: ui.activeSubscribers,
                                             data: payload.plan_mix.subscribers,
                                             backgroundColor: seriesColors(payload.plan_mix.labels.length, 0.82),
                                             borderRadius: 12,
@@ -891,8 +907,8 @@ class extends Component
                                                     const revenue = payload.plan_mix.revenue[context.dataIndex] ?? 0;
 
                                                     return [
-                                                        `Subscribers: ${numberFormatter.format(context.parsed.y || 0)}`,
-                                                        `Revenue: ${moneyFormatter.format(revenue)}`,
+                                                        `${ui.subscribers}: ${numberFormatter.format(context.parsed.y || 0)}`,
+                                                        `${ui.revenue}: ${moneyFormatter.format(revenue)}`,
                                                     ];
                                                 },
                                             },

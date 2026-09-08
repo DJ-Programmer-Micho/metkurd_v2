@@ -238,20 +238,22 @@ it('syncs current plan credits with the customer button logic and skips duplicat
         ->count())->toBe($ledgerCount);
 });
 
-it('renders the customer sync credits button behind a native confirmation without escaped entities', function () {
+it('renders the customer sync credits action through the Admin SweetAlert bridge', function () {
     $admin = billingAdmin();
     $customer = billingCustomer();
     assignBillingPlan($customer, 'student');
-
     $this->actingAs($admin, 'admin');
-
-    Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
-        ->assertSee('Sync Credits To Plan')
-        ->assertSee('confirm(', false)
-        ->assertSee('customer\u0027s subscription credits with their current plan', false)
-        ->assertDontSee('customer&#039;s subscription credits with their current plan', false)
-        ->assertSee("call('syncCustomerCreditsToPlan', {$customer->id})", false)
-        ->assertDontSee("wire:click=\"syncCustomerCreditsToPlan({$customer->id})\"", false);
+    $component = Livewire::test('admin::pages.customers.adm-customers-register')
+        ->assertSee('Sync Credits To Plan')->assertSee('data-admin-method="syncCustomerCreditsToPlan"', false)
+        ->assertDontSee('confirm(', false)->assertDontSee('wire:click="syncCustomerCreditsToPlan', false);
+    $dom = new DOMDocument;
+    @$dom->loadHTML($component->html());
+    $buttons = (new DOMXPath($dom))->query('//*[@data-admin-method="syncCustomerCreditsToPlan"]');
+    expect($buttons->length)->toBeGreaterThan(0);
+    foreach ($buttons as $button) {
+        expect(json_decode($button->getAttribute('data-admin-args'), true))->toBe([$customer->id])
+            ->and($button->getAttribute('data-admin-impact'))->toContain("customer's subscription credits");
+    }
 });
 
 it('renders manual billing customer labels with real values and never with literal blade syntax', function () {
@@ -991,7 +993,7 @@ it('lets an admin edit grouped pricing rules across app mobile and api', functio
 it('keeps api entitlements aligned with api allowed plan scopes', function () {
     $admin = billingAdmin();
     $plan = ServicePlan::query()->where('code', 'free')->firstOrFail();
-    $action = ToolAction::query()->where('full_code', 'tts.standard')->firstOrFail();
+    $action = ToolAction::query()->where('full_code', 'xomni-v2.generate')->firstOrFail();
 
     $this->actingAs($admin, 'admin');
 
@@ -1009,10 +1011,10 @@ it('keeps api entitlements aligned with api allowed plan scopes', function () {
         ->where('entitlement_channel', 'api')
         ->firstOrFail();
 
-    expect((array) $plan->fresh()->api_allowed_tools)->toContain('tts:apollo-1-0v');
+    expect((array) $plan->fresh()->api_allowed_tools)->toContain('v2:speech');
 
     $component->call('toggleEntitlementAllowed', (int) $entitlement->id);
 
     expect((bool) $entitlement->fresh()->allowed)->toBeFalse()
-        ->and((array) $plan->fresh()->api_allowed_tools)->not->toContain('tts:apollo-1-0v');
+        ->and((array) $plan->fresh()->api_allowed_tools)->not->toContain('v2:speech');
 });

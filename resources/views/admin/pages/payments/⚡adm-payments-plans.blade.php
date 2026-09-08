@@ -19,7 +19,9 @@ class extends Component
 <x-slot:title>{{ __('Payment Plans') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-change-reason />
+    <x-admin-v2-catalog />
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -34,7 +36,7 @@ class extends Component
                         @endforeach
                     </select>
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
-                    <button type="button" class="btn btn-primary" wire:click="openCreatePlanModal">{{ __('New Plan') }}</button>
+                    <button type="button" class="btn btn-primary" wire:click="openCreatePlanModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('New Plan') }}</button>
                 </div>
             </div>
         </div>
@@ -83,23 +85,23 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-5">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-plans-1">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search plan name, code, or billing cycle...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search plan name, code, or billing cycle...') }}" id="admin-field-adm-payments-plans-1">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Status') }}</label>
-                    <select class="form-select" wire:model.live="statusFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-plans-2">{{ __('Status') }}</label>
+                    <select class="form-select" wire:model.live="statusFilter" id="admin-field-adm-payments-plans-2">
                         <option value="all">{{ __('All statuses') }}</option>
                         <option value="active">{{ __('Active') }}</option>
                         <option value="inactive">{{ __('Inactive') }}</option>
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Type') }}</label>
-                    <select class="form-select" wire:model.live="typeFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-payments-plans-3">{{ __('Type') }}</label>
+                    <select class="form-select" wire:model.live="typeFilter" id="admin-field-adm-payments-plans-3">
                         <option value="all">{{ __('All plans') }}</option>
                         <option value="paid">{{ __('Paid') }}</option>
                         <option value="free">{{ __('Free') }}</option>
@@ -249,8 +251,8 @@ class extends Component
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openEditPlanModal({{ $plan->id }})">{{ __('Edit') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmDeletePlan({{ $plan->id }})">{{ __('Delete') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openEditPlanModal({{ $plan->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmDeletePlan({{ $plan->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('Delete') }}</button>
                                     </div>
                                 </td>
                             </tr>
@@ -278,18 +280,19 @@ class extends Component
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetPlanForm"></button>
                 </div>
-                <form wire:submit="savePlan">
+                <form data-admin-method="savePlan" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.pricing') }}">
+<fieldset @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>
                     @csrf
                     <div class="modal-body">
                         <div class="row g-3">
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Code') }}</label>
-                                <input type="text" class="form-control @error('code') is-invalid @enderror" wire:model.defer="code" placeholder="{{ __('pro') }}">
+                                <label class="form-label" for="admin-field-adm-payments-plans-4">{{ __('Code') }}</label>
+                                <input type="text" class="form-control @error('code') is-invalid @enderror" wire:model.defer="code" placeholder="{{ __('pro') }}" data-admin-review id="admin-field-adm-payments-plans-4">
                                 @error('code') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Name') }}</label>
-                                <input type="text" class="form-control @error('name') is-invalid @enderror" wire:model.defer="name" placeholder="{{ __('Pro') }}">
+                                <label class="form-label" for="admin-field-adm-payments-plans-5">{{ __('Name') }}</label>
+                                <input type="text" class="form-control @error('name') is-invalid @enderror" wire:model.defer="name" placeholder="{{ __('Pro') }}" data-admin-review id="admin-field-adm-payments-plans-5">
                                 @error('name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
@@ -313,8 +316,8 @@ class extends Component
                                 @endif
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Payment Mode') }}</label>
-                                <select class="form-select @error('paymentMode') is-invalid @enderror" wire:model.defer="paymentMode">
+                                <label class="form-label" for="admin-field-adm-payments-plans-6">{{ __('Payment Mode') }}</label>
+                                <select class="form-select @error('paymentMode') is-invalid @enderror" wire:model.defer="paymentMode" id="admin-field-adm-payments-plans-6">
                                     <option value="one_time">{{ __('Manual Payment') }}</option>
                                     <option value="recurring">{{ __('Auto Renewal') }}</option>
                                 </select>
@@ -322,19 +325,19 @@ class extends Component
                                 @error('paymentMode') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('App Monthly Credits') }}</label>
-                                <input type="number" min="0" class="form-control @error('appMonthlyCredits') is-invalid @enderror" wire:model.defer="appMonthlyCredits">
+                                <label class="form-label" for="admin-field-adm-payments-plans-7">{{ __('App Monthly Credits') }}</label>
+                                <input type="number" min="0" class="form-control @error('appMonthlyCredits') is-invalid @enderror" wire:model.defer="appMonthlyCredits" id="admin-field-adm-payments-plans-7">
                                 <div class="form-text">{{ __('Keeps the legacy `monthly_credits` column synchronized for existing runtime paths.') }}</div>
                                 @error('appMonthlyCredits') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('API Monthly Credits') }}</label>
-                                <input type="number" min="0" class="form-control @error('apiMonthlyCredits') is-invalid @enderror" wire:model.defer="apiMonthlyCredits">
+                                <label class="form-label" for="admin-field-adm-payments-plans-8">{{ __('API Monthly Credits') }}</label>
+                                <input type="number" min="0" class="form-control @error('apiMonthlyCredits') is-invalid @enderror" wire:model.defer="apiMonthlyCredits" id="admin-field-adm-payments-plans-8">
                                 @error('apiMonthlyCredits') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('App Concurrent Jobs') }}</label>
-                                <input type="number" min="1" class="form-control @error('concurrentJobsLimit') is-invalid @enderror" wire:model.defer="concurrentJobsLimit">
+                                <label class="form-label" for="admin-field-adm-payments-plans-9">{{ __('App Concurrent Jobs') }}</label>
+                                <input type="number" min="1" class="form-control @error('concurrentJobsLimit') is-invalid @enderror" wire:model.defer="concurrentJobsLimit" id="admin-field-adm-payments-plans-9">
                                 <div class="form-text">{{ __('Dashboard + `/api/mobile` concurrency limit.') }}</div>
                                 @error('concurrentJobsLimit') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
@@ -345,30 +348,30 @@ class extends Component
                                 </div>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('API Requests / Minute') }}</label>
-                                <input type="number" min="0" class="form-control @error('apiRequestsPerMinute') is-invalid @enderror" wire:model.defer="apiRequestsPerMinute">
+                                <label class="form-label" for="admin-field-adm-payments-plans-10">{{ __('API Requests / Minute') }}</label>
+                                <input type="number" min="0" class="form-control @error('apiRequestsPerMinute') is-invalid @enderror" wire:model.defer="apiRequestsPerMinute" id="admin-field-adm-payments-plans-10">
                                 @error('apiRequestsPerMinute') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('API Concurrent Jobs') }}</label>
-                                <input type="number" min="0" class="form-control @error('apiConcurrentJobs') is-invalid @enderror" wire:model.defer="apiConcurrentJobs">
+                                <label class="form-label" for="admin-field-adm-payments-plans-11">{{ __('API Concurrent Jobs') }}</label>
+                                <input type="number" min="0" class="form-control @error('apiConcurrentJobs') is-invalid @enderror" wire:model.defer="apiConcurrentJobs" id="admin-field-adm-payments-plans-11">
                                 <div class="form-text">{{ __('Public `/api/v1` concurrency limit.') }}</div>
                                 @error('apiConcurrentJobs') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
-                                <label class="form-label">{{ __('API Allowed Tools / Scopes') }}</label>
-                                <textarea class="form-control font-monospace @error('apiAllowedToolsText') is-invalid @enderror" rows="4" wire:model.defer="apiAllowedToolsText" placeholder="tts:apollo-1-0v&#10;tts:apollo-1-5v&#10;translation:generate&#10;usage:read"></textarea>
-                                <div class="form-text">{{ __('Enter one scope per line or use commas. Example: `tts:apollo-1-0v`, `tts:apollo-1-5v`, `translation:generate`, `usage:read`. Legacy scope aliases are accepted and saved as the new canonical scope names.') }}</div>
+                                <label class="form-label" for="admin-field-adm-payments-plans-12">{{ __('API Allowed Tools / Scopes') }}</label>
+                                <textarea class="form-control font-monospace @error('apiAllowedToolsText') is-invalid @enderror" rows="4" wire:model.defer="apiAllowedToolsText" dir="ltr" placeholder="v2:*" id="admin-field-adm-payments-plans-12"></textarea>
+                                <div class="form-text">{{ __('admin_p1.scope_help') }} <bdi dir="ltr">{{ collect(\App\Services\CustomerApi\V2\ApiCatalog::SERVICES)->map(fn ($service) => 'v2:'.$service)->join(', ') }}</bdi></div>
                                 @error('apiAllowedToolsText') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Monthly Price (IQD)') }}</label>
-                                <input type="number" min="0" step="250" class="form-control @error('priceIqdMonthly') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqdMonthly">
+                                <label class="form-label" for="admin-field-adm-payments-plans-13">{{ __('Monthly Price (IQD)') }}</label>
+                                <input type="number" min="0" step="250" class="form-control @error('priceIqdMonthly') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqdMonthly" id="admin-field-adm-payments-plans-13">
                                 @error('priceIqdMonthly') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Yearly Price (IQD)') }}</label>
-                                <input type="number" min="0" step="250" class="form-control @error('priceIqdYearly') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqdYearly">
+                                <label class="form-label" for="admin-field-adm-payments-plans-14">{{ __('Yearly Price (IQD)') }}</label>
+                                <input type="number" min="0" step="250" class="form-control @error('priceIqdYearly') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqdYearly" id="admin-field-adm-payments-plans-14">
                                 @error('priceIqdYearly') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
@@ -396,8 +399,8 @@ class extends Component
                                 </div>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">{{ __('Sort Order') }}</label>
-                                <input type="number" min="0" class="form-control @error('sortOrder') is-invalid @enderror" wire:model.defer="sortOrder">
+                                <label class="form-label" for="admin-field-adm-payments-plans-15">{{ __('Sort Order') }}</label>
+                                <input type="number" min="0" class="form-control @error('sortOrder') is-invalid @enderror" wire:model.defer="sortOrder" id="admin-field-adm-payments-plans-15">
                                 @error('sortOrder') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4 d-flex align-items-center">
@@ -414,12 +417,12 @@ class extends Component
                             </div>
                             <div class="col-12">
                                 <label class="form-label">{{ __('UI Features JSON') }}</label>
-                                <textarea class="form-control font-monospace @error('uiFeaturesJson') is-invalid @enderror" rows="5" wire:model.defer="uiFeaturesJson" placeholder='{{ __("{\"badge\":\"PRO\",\"highlight\":true}") }}'></textarea>
+                                <details><summary>{{ __('admin_p3.advanced') }}</summary><textarea dir="ltr" class="form-control font-monospace @error('uiFeaturesJson') is-invalid @enderror" rows="5" wire:model.defer="uiFeaturesJson" placeholder='{{ __("{\"badge\":\"PRO\",\"highlight\":true}") }}'></textarea></details>
                                 @error('uiFeaturesJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
                                 <label class="form-label">{{ __('Meta JSON') }}</label>
-                                <textarea class="form-control font-monospace @error('metaJson') is-invalid @enderror" rows="5" wire:model.defer="metaJson" placeholder='{{ __("{\"theme\":\"default\"}") }}'></textarea>
+                                <details><summary>{{ __('admin_p3.advanced') }}</summary><textarea dir="ltr" class="form-control font-monospace @error('metaJson') is-invalid @enderror" rows="5" wire:model.defer="metaJson" placeholder='{{ __("{\"theme\":\"default\"}") }}'></textarea></details>
                                 @error('metaJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                         </div>
@@ -428,7 +431,7 @@ class extends Component
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetPlanForm">{{ __('Cancel') }}</button>
                         <button type="submit" class="btn btn-primary">{{ $editingPlanId ? __('Save Changes') : __('Create Plan') }}</button>
                     </div>
-                </form>
+                </fieldset></form>
             </div>
         </div>
     </div>
@@ -445,7 +448,7 @@ class extends Component
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetDeleteState">{{ __('Cancel') }}</button>
-                    <button type="button" class="btn btn-danger" wire:click="deletePlan">{{ __('Delete') }}</button>
+                    <button type="button" class="btn btn-danger" data-admin-target="{{ $deletePlanLabel }}" data-admin-method="deletePlan" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.delete_effect') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('Delete') }}</button>
                 </div>
             </div>
         </div>

@@ -16,6 +16,7 @@ use Livewire\Attributes\Url;
 trait ManagesServicePricingPage
 {
     use SecureAdminComponent;
+    use ShowsV2Catalog;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -235,22 +236,39 @@ trait ManagesServicePricingPage
     #[Computed]
     public function groupedPricingRules(): LengthAwarePaginator
     {
-        $rules = $this->pricingRulesBaseQuery(applyStatusFilter: false, applyChannelFilter: false)
-            ->get();
+        // Canonical JSON grouping is a PHP domain contract. Stream a compact index;
+        // hydrate relations and display models only for the selected page.
+        $index = [];
+        foreach ($this->pricingRulesBaseQuery(false, false)->withoutEagerLoads()->lazy(250) as $rule) {
+            $signature = $rule->groupingSignature();
+            $channel = PricingRule::normalizeChannel($rule->pricing_channel);
+            $index[$signature]['channels'][$channel] = ['id' => $rule->id, 'active' => (bool) $rule->is_active];
+            $index[$signature]['priority'] = $rule->priority;
+        }
+        $groups = collect($index)->map(function ($group) {
+            $channels = $group['channels'];
+            $primary = array_intersect_key($channels, array_flip(PricingRule::primaryChannels()));
+            $active = count(array_filter($primary, fn ($row) => $row['active']));
+            $state = $primary ? ($active === 0 ? 'inactive' : ($active === count($primary) ? 'active' : 'mixed'))
+                : (($channels['all']['active'] ?? false) ? 'active' : 'inactive');
+            $seed = null;
+            foreach (PricingRule::primaryChannels() as $channel) {
+                $seed ??= $channels[$channel]['id'] ?? null;
+            }
 
-        $groups = $rules
-            ->groupBy(fn (PricingRule $rule) => $rule->groupingSignature())
-            ->map(fn (Collection $group) => $this->makeGroupedPricingRuleRow($group))
-            ->filter()
-            ->filter(fn (array $group) => $this->groupMatchesStatusFilter($group))
-            ->filter(fn (array $group) => $this->groupMatchesChannelFilter($group))
-            ->sort(function (array $left, array $right): int {
-                return [$right['status_sort'], $right['priority'], $right['seed_rule_id']]
-                    <=> [$left['status_sort'], $left['priority'], $left['seed_rule_id']];
-            })
-            ->values();
+            return $group + ['state' => $state, 'seed' => $seed ?? $channels['all']['id'],
+                'sort' => ['active' => 2, 'mixed' => 1, 'inactive' => 0][$state]];
+        })->filter(fn ($group) => ! in_array($this->statusFilter, ['active', 'inactive'], true) || $group['state'] === $this->statusFilter)
+            ->filter(fn ($group) => $this->channelFilter === 'all' || isset($group['channels'][$this->channelFilter]) || isset($group['channels']['all']))
+            ->sort(fn ($a, $b) => [$b['sort'], $b['priority'], $b['seed']] <=> [$a['sort'], $a['priority'], $a['seed']])->values();
+        $perPage = max(1, min(100, $this->perPage));
+        $page = $this->getPage();
+        $selected = $groups->forPage($page, $perPage);
+        $ids = $selected->flatMap(fn ($g) => array_column($g['channels'], 'id'))->all();
+        $models = PricingRule::with(['toolAction.tool:id,code,name', 'servicePlan:id,code,name'])->whereIn('id', $ids)->get()->keyBy('id');
+        $rows = $selected->map(fn ($g) => $this->makeGroupedPricingRuleRow(collect($g['channels'])->map(fn ($row) => $models->get($row['id']))->filter()))->values();
 
-        return $this->paginateGroupedPricingRules($groups);
+        return new LengthAwarePaginator($rows, $groups->count(), $perPage, $page, ['path' => request()->url(), 'pageName' => 'page']);
     }
 
     public function openPricingRuleCreateModal(): void
@@ -328,34 +346,38 @@ trait ManagesServicePricingPage
         $conditions = $this->decodeJsonField($this->ruleConditionsJson, 'ruleConditionsJson');
         $config = $this->decodeJsonField($this->ruleConfigJson, 'ruleConfigJson');
         $matchAttributes = $this->ruleMatchAttributes();
-        $savedChannelIds = [];
+        $savedChannelIds = \Illuminate\Support\Facades\DB::transaction(function () use ($conditions, $config, $matchAttributes) {
+            $savedChannelIds = [];
 
-        foreach ($this->channelCreditsPayload() as $channel => $creditsPerUnit) {
-            $rule = $this->resolveRuleForChannel($channel, $matchAttributes, $conditions, $config);
+            foreach ($this->channelCreditsPayload() as $channel => $creditsPerUnit) {
+                $rule = $this->resolveRuleForChannel($channel, $matchAttributes, $conditions, $config);
 
-            $rule->fill([
-                'tool_action_id' => $this->ruleToolActionId,
-                'service_plan_id' => $this->ruleServicePlanId ?: null,
-                'pricing_channel' => $channel,
-                'rule_scope' => $this->ruleServicePlanId ? 'plan' : 'global',
-                'rule_type' => $this->ruleType,
-                'priority' => $this->rulePriority,
-                'metric_code' => trim($this->ruleMetricCode),
-                'unit_size' => (float) $this->ruleUnitSize,
-                'credits_per_unit' => $creditsPerUnit,
-                'rounding_mode' => $this->ruleRoundingMode,
-                'rounding_step' => (float) $this->ruleRoundingStep,
-                'minimum_credits' => $this->ruleMinimumCredits,
-                'conditions' => $conditions ?: null,
-                'config' => $config ?: null,
-                'is_active' => $this->ruleStatus === 'active',
-                'starts_at' => $this->ruleStartsAt !== '' ? $this->ruleStartsAt : null,
-                'ends_at' => $this->ruleEndsAt !== '' ? $this->ruleEndsAt : null,
-            ]);
+                $rule->fill([
+                    'tool_action_id' => $this->ruleToolActionId,
+                    'service_plan_id' => $this->ruleServicePlanId ?: null,
+                    'pricing_channel' => $channel,
+                    'rule_scope' => $this->ruleServicePlanId ? 'plan' : 'global',
+                    'rule_type' => $this->ruleType,
+                    'priority' => $this->rulePriority,
+                    'metric_code' => trim($this->ruleMetricCode),
+                    'unit_size' => (float) $this->ruleUnitSize,
+                    'credits_per_unit' => $creditsPerUnit,
+                    'rounding_mode' => $this->ruleRoundingMode,
+                    'rounding_step' => (float) $this->ruleRoundingStep,
+                    'minimum_credits' => $this->ruleMinimumCredits,
+                    'conditions' => $conditions ?: null,
+                    'config' => $config ?: null,
+                    'is_active' => $this->ruleStatus === 'active',
+                    'starts_at' => $this->ruleStartsAt !== '' ? $this->ruleStartsAt : null,
+                    'ends_at' => $this->ruleEndsAt !== '' ? $this->ruleEndsAt : null,
+                ]);
 
-            $rule->save();
-            $savedChannelIds[$channel] = (int) $rule->id;
-        }
+                $rule->save();
+                $savedChannelIds[$channel] = (int) $rule->id;
+            }
+
+            return $savedChannelIds;
+        });
 
         $this->dispatch(
             'alert',

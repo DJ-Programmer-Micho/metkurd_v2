@@ -16,6 +16,7 @@ use Livewire\Attributes\Url;
 trait ManagesServiceToolsPage
 {
     use SecureAdminComponent;
+    use ShowsV2Catalog;
 
     #[Url(as: 'q', keep: true)]
     public string $search = '';
@@ -315,6 +316,11 @@ trait ManagesServiceToolsPage
             default => 'tools.sort_order',
         };
 
+        $currentCodes = array_unique(array_column(array_column(app(\App\Services\CustomerApi\V2\ApiCatalog::class)->variants(), 'tool'), 'legacy_tool'));
+        if ($currentCodes !== []) {
+            $query->orderByRaw('CASE WHEN tools.code IN ('.implode(',', array_fill(0, count($currentCodes), '?')).') THEN 0 ELSE 1 END', array_values($currentCodes));
+        }
+
         return $query
             ->orderBy($sortColumn, $this->sortDirection)
             ->orderBy('tools.name');
@@ -382,11 +388,11 @@ trait ManagesServiceToolsPage
         ];
 
         if (! $this->editingToolId) {
-            $rules['toolCode'] = ['required', 'string', 'max:60', 'regex:/^[a-z0-9_]+$/', Rule::unique('tools', 'code')];
+            $rules['toolCode'] = ['required', 'string', 'max:60', 'regex:/^[a-z0-9_][a-z0-9_-]*$/', Rule::unique('tools', 'code')];
         }
 
         $this->validate($rules, [
-            'toolCode.regex' => __('Tool code must use lowercase letters, numbers, and underscores only.'),
+            'toolCode.regex' => __('admin_p1.tool_code'),
         ]);
 
         $meta = $this->decodeJsonField($this->toolMetaJson, 'toolMetaJson');

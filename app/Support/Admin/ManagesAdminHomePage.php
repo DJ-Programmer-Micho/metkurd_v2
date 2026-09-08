@@ -39,7 +39,15 @@ trait ManagesAdminHomePage
 
     protected function analyticsCacheKey(string $section): string
     {
-        return 'admin-dashboard:'.$section.':'.$this->periodFilter;
+        $connection = (new Customer)->getConnection();
+        // Opaque identity: never put connection names, database names or credentials in keys.
+        $identity = hash('sha256', json_encode([
+            base_path(), app()->environment(), app()->getLocale(), $connection->getConfig('driver'),
+            $connection->getConfig('host'), $connection->getConfig('port'),
+            $connection->getDatabaseName(),
+        ], JSON_THROW_ON_ERROR));
+
+        return 'admin-dashboard:v2:'.$identity.':'.$section.':'.$this->periodFilter;
     }
 
     protected function analyticsCacheTtl(): CarbonInterface
@@ -111,21 +119,8 @@ trait ManagesAdminHomePage
     #[Computed]
     public function overviewStats(): array
     {
-        return Cache::remember($this->analyticsCacheKey('overview'), $this->analyticsCacheTtl(), function () {
+        $stats = Cache::remember($this->analyticsCacheKey('overview'), $this->analyticsCacheTtl(), function () {
             $windowStart = $this->analyticsWindowStart();
-
-            $customerSummary = Customer::query()
-                ->selectRaw('COUNT(*) as total_customers')
-                ->selectRaw('SUM(CASE WHEN status != 0 THEN 1 ELSE 0 END) as active_customers')
-                ->selectRaw('SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) as suspended_customers');
-
-            if ($windowStart) {
-                $customerSummary->selectRaw('SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as period_new_customers', [$windowStart]);
-            } else {
-                $customerSummary->selectRaw('COUNT(*) as period_new_customers');
-            }
-
-            $customerSummary = $customerSummary->first();
 
             $subscriptionSummary = CustomerServiceSubscription::query()
                 ->join('service_plans', 'service_plans.id', '=', 'customer_service_subscriptions.service_plan_id')
@@ -188,7 +183,6 @@ trait ManagesAdminHomePage
                 ? ((int) ($jobSummary->done_jobs_period ?? 0) / $periodTerminalJobs) * 100
                 : 0;
 
-            $activeCustomers = max(1, (int) ($customerSummary->active_customers ?? 0));
             $paymentSourceStats = collect(['service_plan', 'storage_plan', 'credit_product'])->mapWithKeys(function (string $key) use ($allTimePaymentSources, $periodPaymentSources) {
                 $totalRow = $allTimePaymentSources->get($key);
                 $periodRow = $periodPaymentSources->get($key);
@@ -207,13 +201,8 @@ trait ManagesAdminHomePage
             })->all();
 
             return [
-                'customers_total' => (int) ($customerSummary->total_customers ?? 0),
-                'active_customers' => (int) ($customerSummary->active_customers ?? 0),
-                'suspended_customers' => (int) ($customerSummary->suspended_customers ?? 0),
-                'period_new_customers' => (int) ($customerSummary->period_new_customers ?? 0),
                 'paid_subscribers' => (int) ($subscriptionSummary->paid_subscribers ?? 0),
                 'free_subscribers' => (int) ($subscriptionSummary->free_subscribers ?? 0),
-                'paid_subscriber_share' => ((int) ($subscriptionSummary->paid_subscribers ?? 0) / $activeCustomers) * 100,
                 'revenue_total' => (float) ($orderSummary->revenue_total ?? 0),
                 'revenue_period' => (float) ($orderSummary->revenue_period ?? 0),
                 'credits_sold_total' => (int) ($orderSummary->credits_sold_total ?? 0),
@@ -229,6 +218,30 @@ trait ManagesAdminHomePage
                 'revenue_sources' => $paymentSourceStats,
             ];
         });
+
+        // Account population is authoritative on each Livewire request, including SQL imports
+        // and bulk changes that bypass Eloquent observers. Other analytics retain their TTL.
+        $windowStart = $this->analyticsWindowStart();
+        $customerSummary = Customer::query()
+            ->selectRaw('COUNT(*) as total_customers')
+            ->selectRaw('SUM(CASE WHEN status != 0 THEN 1 ELSE 0 END) as active_customers')
+            ->selectRaw('SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) as suspended_customers');
+
+        if ($windowStart) {
+            $customerSummary->selectRaw('SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as period_new_customers', [$windowStart]);
+        } else {
+            $customerSummary->selectRaw('COUNT(*) as period_new_customers');
+        }
+
+        $customerSummary = $customerSummary->first();
+
+        return array_replace($stats, [
+            'customers_total' => (int) ($customerSummary->total_customers ?? 0),
+            'active_customers' => (int) ($customerSummary->active_customers ?? 0),
+            'suspended_customers' => (int) ($customerSummary->suspended_customers ?? 0),
+            'period_new_customers' => (int) ($customerSummary->period_new_customers ?? 0),
+            'paid_subscriber_share' => ((int) ($stats['paid_subscribers'] ?? 0) / max(1, (int) ($customerSummary->active_customers ?? 0))) * 100,
+        ]);
     }
 
     #[Computed]

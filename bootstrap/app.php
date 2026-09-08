@@ -80,7 +80,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 if ($exception instanceof \Illuminate\Auth\Access\AuthorizationException) {
                     $status = 403;
                 }
-                $message = __('admin_p0.request_failed');
+                $message = $status === 403 ? __('admin_p3.forbidden') : __('admin_p0.request_failed');
 
                 return $request->expectsJson() || $request->is('livewire/*')
                     ? response()->json(['message' => $message], $status)->header('Cache-Control', 'private, no-store')

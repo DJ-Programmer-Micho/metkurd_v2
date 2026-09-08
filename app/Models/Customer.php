@@ -624,47 +624,40 @@ class Customer extends Authenticatable
     ): int {
         $channel = PricingRule::normalizeChannel(data_get($context, 'channel', $channel), PricingRule::CHANNEL_APP);
         $context['channel'] = $channel;
-        $action = $this->resolveToolAction($toolActionFullCode);
-
-        if (! $action) {
+        $rule = $this->resolvedPricingRuleFor($toolActionFullCode, $context, $channel);
+        if (! $rule) {
             return 0;
         }
 
-        // 1) customer overrides first
-        $customerRules = $this->resolveCustomerPricingRules((int) $action->id, $channel);
+        return $this->calculateMeteredCredits(
+            metricCode: (string) $rule->metric_code,
+            unitSize: (float) $rule->unit_size,
+            creditsPerUnit: (float) $rule->credits_per_unit,
+            roundingMode: (string) ($rule->rounding_mode ?? 'ceil'),
+            roundingStep: (float) ($rule->rounding_step ?? 1),
+            minimumCredits: (int) ($rule->minimum_credits ?? 0),
+            context: $context
+        );
+    }
 
-        foreach ($customerRules as $rule) {
-            if ($this->ruleMatches($rule->conditions, $context)) {
-                return $this->calculateMeteredCredits(
-                    metricCode: (string) $rule->metric_code,
-                    unitSize: (float) $rule->unit_size,
-                    creditsPerUnit: (float) $rule->credits_per_unit,
-                    roundingMode: (string) ($rule->rounding_mode ?? 'ceil'),
-                    roundingStep: (float) ($rule->rounding_step ?? 1),
-                    minimumCredits: (int) ($rule->minimum_credits ?? 0),
-                    context: $context
-                );
+    /** The runtime-selected rule, exposed for read-only Admin quote explanations. */
+    public function resolvedPricingRuleFor(string $actionCode, array $context = [], string $channel = PricingRule::CHANNEL_APP): PricingRule|CustomerPricingRule|null
+    {
+        $channel = PricingRule::normalizeChannel(data_get($context, 'channel', $channel), PricingRule::CHANNEL_APP);
+        $context['channel'] = $channel;
+        $action = $this->resolveToolAction($actionCode);
+        if (! $action) {
+            return null;
+        }
+        foreach ([$this->resolveCustomerPricingRules((int) $action->id, $channel), $this->resolvePricingRules((int) $action->id, $channel)] as $rules) {
+            foreach ($rules as $rule) {
+                if ($this->ruleMatches($rule->conditions, $context)) {
+                    return $rule;
+                }
             }
         }
 
-        // 2) default pricing rules
-        $rules = $this->resolvePricingRules((int) $action->id, $channel);
-
-        foreach ($rules as $rule) {
-            if ($this->ruleMatches($rule->conditions, $context)) {
-                return $this->calculateMeteredCredits(
-                    metricCode: (string) $rule->metric_code,
-                    unitSize: (float) $rule->unit_size,
-                    creditsPerUnit: (float) $rule->credits_per_unit,
-                    roundingMode: (string) ($rule->rounding_mode ?? 'ceil'),
-                    roundingStep: (float) ($rule->rounding_step ?? 1),
-                    minimumCredits: (int) ($rule->minimum_credits ?? 0),
-                    context: $context
-                );
-            }
-        }
-
-        return 0;
+        return null;
     }
 
     protected function ruleMatches($conditions, array $context): bool

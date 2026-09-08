@@ -19,6 +19,7 @@ class extends Component
 <x-slot:title>{{ __('Customers Suspended') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
@@ -78,15 +79,15 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-5">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-suspended-1">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search suspended customer, plan, or location...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search suspended customer, plan, or location...') }}" id="admin-field-adm-customers-suspended-1">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-3 col-md-6">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Plan') }}</label>
-                    <select class="form-select" wire:model.live="planFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-suspended-2">{{ __('Plan') }}</label>
+                    <select class="form-select" wire:model.live="planFilter" id="admin-field-adm-customers-suspended-2">
                         <option value="all">{{ __('All plans') }}</option>
                         <option value="none">{{ __('No active plan') }}</option>
                         @foreach ($this->customerPlanOptions as $plan)
@@ -95,8 +96,8 @@ class extends Component
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-3">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Country') }}</label>
-                    <select class="form-select" wire:model.live="countryFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-suspended-3">{{ __('Country') }}</label>
+                    <select class="form-select" wire:model.live="countryFilter" id="admin-field-adm-customers-suspended-3">
                         <option value="all">{{ __('All countries') }}</option>
                         @foreach ($this->customerCountryOptions as $country)
                             <option value="{{ $country }}">{{ $country }}</option>
@@ -170,7 +171,7 @@ class extends Component
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-success" wire:click="restoreCustomer({{ $customer->id }})">{{ __('Restore') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-success" data-admin-method="restoreCustomer" data-admin-args="{{ json_encode([$customer->id]) }}" data-admin-impact="{{ __('admin_p3.customer_effect') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.customers')) disabled @endif>{{ __('Restore') }}</button>
                                         <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Register') }}</a>
                                         <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-secondary">{{ __('Usage') }}</a>
                                     </div>

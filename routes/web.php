@@ -84,6 +84,9 @@ Route::prefix('{locale}/'.app('aurl'))
     ->middleware(['auth:admin', \App\Http\Middleware\EnsureAdminIsActive::class, LocalizationMainMiddleware::class])
     ->group(function () {
         Route::livewire('/home', 'admin::pages.home.app-home')->name('admin.home');
+        Route::livewire('/operations/jobs', 'admin::pages.operations.adm-operations')->name('admin.operations');
+        Route::livewire('/customers/detail/{customer}', 'admin::pages.operations.adm-operations')->whereNumber('customer')->name('admin.customers.detail');
+
         Route::livewire('/services/tools', 'admin::pages.services.adm-services-tools')->name('admin.services.tools');
         Route::get('/services/rules', fn (string $locale) => redirect()->route('admin.services.voices', ['locale' => $locale]))
             ->name('admin.services.rules');

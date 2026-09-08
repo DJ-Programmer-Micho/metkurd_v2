@@ -19,6 +19,8 @@ class extends Component
 <x-slot:title>{{ __('Customers Usage') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
+    <x-admin-customer-context :customer-id="(int) $customerFilter" :name="$this->selectedCustomer?->username" />
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -78,14 +80,15 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-usage-1">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search customer username, email, or profile...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search customer username, email, or profile...') }}" id="admin-field-adm-customers-usage-1">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-3 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Focused Customer') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-usage-2">{{ __('Focused Customer') }}</label>
+                    <input class="form-control mb-2" wire:model.live.debounce.400ms="customerDirectorySearch" maxlength="100" dir="auto" aria-label="{{ __('admin_p2.customer_search') }}" placeholder="{{ __('admin_p2.customer_search') }}" id="admin-field-adm-customers-usage-2">
                     <select class="form-select" wire:model.live="customerFilter">
                         <option value="all">{{ __('All customers') }}</option>
                         @foreach ($this->customerDirectoryOptions as $customerOption)
@@ -94,8 +97,8 @@ class extends Component
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Period') }}</label>
-                    <select class="form-select" wire:model.live="periodFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-usage-3">{{ __('Period') }}</label>
+                    <select class="form-select" wire:model.live="periodFilter" id="admin-field-adm-customers-usage-3">
                         <option value="7">{{ __('Last 7 days') }}</option>
                         <option value="30">{{ __('Last 30 days') }}</option>
                         <option value="90">{{ __('Last 90 days') }}</option>
@@ -104,8 +107,8 @@ class extends Component
                     </select>
                 </div>
                 <div class="col-xl-3 col-md-4">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Job Status') }}</label>
-                    <select class="form-select" wire:model.live="jobStatusFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-usage-4">{{ __('Job Status') }}</label>
+                    <select class="form-select" wire:model.live="jobStatusFilter" id="admin-field-adm-customers-usage-4">
                         <option value="all">{{ __('All non-deleted jobs') }}</option>
                         <option value="done">{{ __('Completed only') }}</option>
                         <option value="failed">{{ __('Failed only') }}</option>
@@ -180,6 +183,7 @@ class extends Component
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
                                         <button type="button" class="btn btn-sm btn-soft-info" wire:click="focusCustomer({{ $customer->id }})">{{ __('Focus') }}</button>
+                                        <a wire:navigate class="btn btn-sm btn-soft-info" href="{{ route('admin.customers.detail', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}">{{ __('admin_p2.operations') }}</a>
                                         <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-primary">{{ __('Register') }}</a>
                                     </div>
                                 </td>

@@ -1,6 +1,474 @@
 # MetKurd Admin engineering audit
 
-Date: 2026-09-06. Status: **audit baseline retained; Admin P0 implementation added below. Deployment acceptance remains open.**
+## R2 native MySQL acceptance prerequisite — 2026-09-07
+
+The intended platform is local MySQL and Amazon RDS for MySQL. A fresh
+`SELECT VERSION()` through Laravel's active `mysql` connection returned
+`10.4.28-MariaDB`; the local server therefore does not satisfy that prerequisite.
+R2 native-engine acceptance is stopped. Historical MariaDB reads are not native
+MySQL authentication, rendering, mutation or RDS acceptance. No Admin application
+code or database state was changed for this check. See
+[engine identity evidence and next step](PRODUCTION-DB-IMPORT.md).
+
+## R1 approved launch pricing correction — 2026-09-07
+
+Implemented only source/tests/documentation for the approved new-variant launch
+parity policy. No evidence proves the original three registration migrations
+never ran in another maintained environment, so their source remains unchanged.
+The new `2026_09_07_000001_normalize_v2_launch_pricing` runs after registrations.
+
+| Global channel | Apollo 2 / character | Vector 2 / character | Leo / minute |
+|---|---:|---:|---:|
+| all | 20 | 24 | 1,100 |
+| app | 20 | 24 | 1,100 |
+| mobile | 20 | 24 | 1,100 |
+| api | 15 | 18 | 825 |
+
+Minimums remain 1 / 1 / 1,100, unit size 1, ceil/step 1. Explicit constants replace
+the old arbitrary QASR copy as the final policy. A stable smallest global row ID
+is reused for identity only; competing global rules for those actions are retained
+inactive, so old placeholder rates cannot remain active fallbacks. Existing
+plan/customer overrides are preserved with normal runtime precedence. The whole
+correction rolls back if any expected Tool/action binding is absent. Repeating
+it preserves counts and timestamps; rollback does not restore unapproved economics.
+Its data-dependent body is skipped in pretend mode because preview cannot load
+the preceding registrations; normal execution still rejects missing registrations.
+
+The correction writes only pricing_rules. Registration plan grants, P1 scope
+ownership and API allowlists remain unchanged. API access retains the existing
+plan/key/scope/entitlement and runtime wallet/rate/concurrency intersection. Legacy
+Apollo/Vector/QASR/Caption rates remain untouched. No UI/resolver change was needed;
+the existing Admin pricing-review diagnostic still calls for checking actual
+post-migration configuration, not inferring deployment from this approval.
+
+Verification: the combined migration/P1/grouping/P0/Admin-billing run passed
+**110 tests (643 assertions)**. After additional access/checklist/pretend coverage,
+the final focused migration suite passed **12 tests (206 assertions)**. Those
+runs overlap; they are not 122 distinct tests. Three QASR insertion orders converge;
+Admin preview and real Customer quotes agree for App/API; Mobile/all/unknown-channel
+fallbacks use approved values. Nonempty wallet/ledger fingerprints and customer,
+subscription, purchase, job/file and plan snapshots remain unchanged in fixtures;
+legacy prices and grants are preserved. A superseded global placeholder is inactive,
+while a scoped override survives. Paid-plan/key/entitlement/action access is tested
+through ApiCatalog without enabling either feature gate. The full HTTP ApiV2Test
+suite was not rerun because its setup enables the API gate; no such change was
+added to this task's tests. Existing P4B native API test evidence remains historical.
+
+In total **112 distinct tests passed**: 12 final migration tests, 24 P1 correctness,
+7 grouped pricing, 48 P0 safety and 21 Admin billing controls. Tests used isolated
+SQLite `:memory:` plus the existing P0 race test's disposable SQLite fixture copy,
+array cache/session and fake external services; no application database was read
+or changed. Both gates
+remained disabled in the test process; the actual `.env` and cached files were
+unchanged. Syntax, focused Pint and `git diff --check` passed. Native migration
+execution, post-migration native MySQL acceptance and rollout remain unverified.
+
+Relative to R1's observed 66 recorded migrations, the added source implies eight
+pending / 74 recorded after success if the target has not changed. It was not
+requeried here. Against that four-plan baseline expect 66 pricing rows after the
+12 explicit new-action rules; active policy checks supersede universal count
+assumptions. See [import runbook](PRODUCTION-DB-IMPORT.md) and
+[read-only checks](RELEASE-R1-CHECKS.md). Approved source pricing removes the prior
+economics/nondeterminism blockers. Operator backup, maintenance, disabling gates
+and the complete manual migration run remain required; no execution is marked done.
+
+## Admin P4B — four proven source removals — 2026-09-07
+
+P4B is complete in source. Removed only the unused AdminController, unused
+CustomerApiTtsService and the shadowed Admin nav-feature-link / nav-multi-feature-link
+copies. Each deletion was verified before the next. The active Admin auth/logout
+controller, Livewire routes, API V1 submission service, API V2 and App navigation
+components remain unchanged. No routes, V1/mobile contracts, shared backend,
+catalog identities, translation/assets, account/checkout flows or database records
+were removed. The application database was not accessed during P4B.
+
+Verification used isolated SQLite `:memory:` with fake/mocked external services:
+D1 **155 passed (1,929 assertions)**; D2 **55 passed / 5 failed (386 assertions)**,
+including all **30 API V2 cases passing**; four additional provisioned Apollo
+1.0/1.5 and XTTS/XOMNI alias cases **passed (64 assertions)**. The five failures
+were reproduced with the exact deleted service temporarily restored, proving
+they predate removal: three legacy API catalog-fixture failures and the two P3
+API-credit display failures. Original failing tests/seeders were not repaired.
+
+D3 finished with **58 distinct passing tests** after correcting a new test that
+incorrectly expected the old App shell to have Admin's HTML `dir` attribute.
+D4 repeated all four relevant suites: **58 passed (1,242 assertions)**. Installed
+Livewire Finder still resolves both bare navigation tags to the surviving App
+copies. Tests render nested Services/Customers/Payments/Landing links, retained
+Profile/Billing pages and hidden feature links across EN/AR/KU. P3 also checks
+Admin direction and all 19 scoped pages in each language. Component-location
+order and namespaces were not changed.
+
+The route snapshot remains identical: **218 routes, zero duplicate names,
+26 API V1 and 19 mobile endpoints**. Syntax, focused Pint and `git diff --check`
+passed. No asset reference changed and no frontend build was needed. No browser,
+native MySQL, external-client or production acceptance is claimed. The full
+step-by-step evidence and five exact failures are in
+[LEGACY-RETIREMENT.md](LEGACY-RETIREMENT.md#p4b-verification--2026-09-07).
+
+Only four source deletions, two supporting test files and three documentation
+files belong to P4B; earlier working-tree changes were preserved. AGENTS.md did
+not require a new rule. V2 compatibility aliases, assets, V1 UI/account replacement,
+historical database retirement, API V1/mobile retirement (not approved), financial
+reconciliation and pricing decisions remain separate, unstarted work.
+
+## Admin P4A — legacy dependency inventory — 2026-09-07
+
+The audit/classification phase is complete in documentation. The authoritative
+[LEGACY-RETIREMENT.md](LEGACY-RETIREMENT.md) inventories current V2 identities,
+every V1 workspace, shared backend/result routes, API V1/mobile, Admin source,
+assets/translations and historical database relationships. **P4B was not executed
+during this inventory; the subsequent bounded removal is recorded above.**
+No application code, routes, identities, migrations, prices, balances or historical
+records were changed. P0–P3 behavior remains an invariant.
+
+Nine current V2 actions are A; the inspected local catalog contains 18 actions /
+13 tools and lacks the source's Apollo 2.0, Vector 2.0 and Leo registrations.
+Those missing A records are deployment/import prerequisites, not obsolete entries.
+All 21 V1 workspaces still have routes; V2 processing pages do not include the old
+processing UIs, but Profile/Billing and the shared account/checkout journey remain
+required. Shared controller inheritance, storage, synchronizers and file/code
+bindings must survive any later V1 UI retirement.
+
+Four narrow source-only D candidates were proven: the unused AdminController,
+unused CustomerApiTtsService, and two shadowed Admin nav components. Installed
+Livewire runtime resolution selects the App nav copies for the actual bare tags;
+the App copies must remain. No persisted identity, public route, translation key
+or public asset was declared safe to delete. Public demo asset references need
+separate deployed/runtime evidence. The inventory includes a per-candidate test
+impact map and an ordered P4B proposal, with no test deletion.
+
+Read-only direct PDO transactions against the effective loopback target observed
+MariaDB 10.4.28: 2,187 jobs, 2,464 files, 6,499 ledger rows, 1,078 service subscription
+rows including 29 previous-plan references, 54 prices and 72 entitlements. Pending
+payment and file/ledger/string/JSON dependencies remain blockers. Empty API tables
+do not authorize removing the intentionally retained API V1/mobile contracts.
+No provider/content/object read or SQL write was performed. This is local aggregate
+evidence, not native MySQL application/mutation or production acceptance.
+
+An isolated SQLite/array-cache bootstrap registered 218 routes with zero duplicate
+names, including 26 API V1 and 19 mobile endpoints, and resolved component paths.
+These are audit probes, not a fresh full P0–P3 regression or browser acceptance run.
+The prior P3 test results and broader API visibility failures below remain separate.
+Historical financial reconciliation, business pricing decisions, external-client/
+traffic verification, native MySQL and browser/production acceptance remain open.
+
+## Admin P3 — UI/UX and localization implementation — 2026-09-07
+
+P3 is implemented in source within the existing Livewire view-based components,
+Bootstrap layout and route contract. Interactive browser, native MySQL and production
+acceptance remain separate. P4 has not started. This work ran no application database
+migrations, balance adjustments, price changes or historical repairs; pre-existing
+P1/P2/backend changes in the working tree were preserved.
+
+- Navigation separates Dashboard, Services, Customers, Operations and Billing /
+  Payments. The duplicated payment-method/currency/catalog navigation group is gone;
+  existing route names and Landing CMS functionality are retained.
+- Customer detail, Usage and Billing Register share bookmarked Overview, Usage,
+  Billing, Jobs, API and Audit links and selected-customer identity. Operational
+  trace links preserve the selected customer; resetting operational filters preserves
+  the customer and selected section.
+- V2 catalog previews separate configured/effective access and limits. Current V2,
+  active/inactive and existing classification/diagnostic badges remain visible;
+  technical identities, routes and JSON are expandable. Runtime quote, entitlement
+  and plan resolution are unchanged. The corrected Total Customers population remains
+  intact. Dashboard cache identity now also includes locale because cached analytics
+  contain translated labels; charts read current-page translated labels after navigation.
+- Operations shows local lifecycle, provider evidence, persistence and fulfillment
+  separately from financial amounts and reservation evidence. A recorded provider
+  success is never promoted to a confirmed persisted result. Existing read-model
+  privacy/redaction and 25-row pagination remain intact.
+- `resources/js/admin.js` is the once-installed Admin SweetAlert bridge, bundled
+  with scoped `resources/css/admin.css` through Vite. Explicit `data-admin-method`
+  and JSON arguments invoke the existing Livewire methods after confirmation.
+  Summaries use target identity, allowlisted review fields and translated impact;
+  arbitrary component state is not serialized into a dialog. Cancel and navigation
+  perform no call; a pending-component guard suppresses duplicate clicks. Existing
+  P0 intent IDs are never created/replaced by the bridge. Validation stays inline,
+  lightweight notifications use escaped Toastr messages, blocking errors use
+  SweetAlert and the P0 sanitized boundary.
+- Permission hints disable mutation controls for read-only operators and reuse
+  request-local capability results through `AdminUiAccess`; final server mutations
+  still perform fresh P0 authorization, dependency and state checks.
+- Scoped EN/AR/KU JSON and PHP messages cover the reviewed pages, pagination,
+  confirmations and dashboard chart labels. One layout supports LTR/RTL, logical
+  spacing and horizontally scrolling tables. Technical codes use LTR isolation,
+  customer content uses automatic direction. Skip navigation, explicit form labels,
+  icon labels, visible keyboard focus and loading announcements were added. The
+  confirmation bridge suspends/restores Bootstrap modal focus trapping and prevents
+  stale navigation callbacks from refocusing departed pages.
+
+Verification uses isolated SQLite `:memory:`, array cache/session and fake external
+services. Across the regression run and focused corrective reruns, **all 214 Admin
+tests passed**, including P0 safety/dependency/race, P1, P2, routes, Billing controls,
+dashboard, grouped pricing and eight P3 tests. P3 renders 19 scoped routes in each
+of EN/AR/KU (57 HTTP responses), checks customer context, read-only/server permissions,
+separate statuses, capability query reuse and financial identity through validation,
+correction, refresh and replay. Twelve Node tests pass for bridge/navigation behavior,
+cancel/single call/double-click/failure handling and scoped catalog/token coverage.
+Focused PHP/Pint checks and the Vite production build passed.
+
+The broader selected Billing suites have **35 passing and two failing tests**.
+Both failures were independently reproduced in `SeparateCreditWalletArchitectureTest`:
+the legacy API access component's expected `creditBalance`, and the V2 shell's API
+credit row visibility. No API implementation or business policy was changed to make
+those tests pass. This is **249 distinct passing tests and two remaining failures
+across runs**, not a claim that the entire regression command was green.
+
+Browser accessibility-tree inspection of isolated rendered Arabic fixtures identified
+pagination and label-association gaps, now covered by rendered regression checks.
+These script-stripped fixtures do not verify Livewire interaction or chart rendering.
+Full desktop/mobile EN/AR/KU visual, keyboard/modal, Back/Forward and repeated-navigation
+acceptance remains open, along with native-speaker review, native MySQL execution,
+production acceptance, historical financial reconciliation, business pricing decisions
+and P4 legacy cleanup. No legacy deletion or historical repair is authorized by P3.
+
+## Dashboard customer population follow-up — 2026-09-07
+
+The generic Customers card was already an all-record `COUNT(*)` over Customer,
+not active/verified/paid/V2-only accounts. There are no customer global scopes,
+soft deletes, joins, job filters or subscription filters in that aggregate.
+Status is used only for the separate active (`status != 0`) and suspended
+(`status = 0`) sums. The period affects the registrations subtitle, not the total.
+Directory defaults use the same Customer population; pagination changes page
+size, not the total. P0 `users.status` is unrelated to customer account status.
+
+Read-only PDO transactions against both confirmed loopback MySQL targets showed
+that cached Laravel configuration and the current environment configuration
+selected different databases. The old displayed count matched the cached-config
+DB's exact population. Its file-backed `admin-dashboard:overview:30` aggregate
+held the same count but was already expired when inspected. Thus the observed
+mismatch was stale **configuration**, not a hidden customer subset. The intended
+environment target also lacks P0 users.status. No config activation, migration or
+application data mutation was executed. Use PRODUCTION-DB-IMPORT.md to activate
+the confirmed local target and review its pending migrations before Admin use.
+
+The card is now explicitly Total Customers, with active/suspended counts in its
+existing card and EN/AR/KU copy. overviewStats performs one live customer aggregate
+per Livewire request, replacing any cached population fields and refreshing the
+paid-share denominator. This covers Eloquent changes and direct imports/bulk SQL
+that observers cannot see. No new observer, count cache or customer repair exists.
+Expensive job/order/subscription analytics retain their five-minute TTL. All six
+dashboard cache sections now use `admin-dashboard:v2:<opaque digest>:<section>:<period>`.
+The digest uses application path/environment and the effective database endpoint
+identity; keys expose no database names, connection credentials or secrets. Old
+unscoped keys are bypassed, without flushing unrelated caches. Cached config must
+still be refreshed when changing the intended connection; cache namespacing cannot
+select a different database than Laravel is configured to use.
+
+Verification: **10 focused dashboard tests / 47 assertions passed**, covering
+population without jobs/subscriptions, historical-only jobs, suspension and legacy
+nonzero active status, directory/pagination consistency, stale-cache poisoning,
+model/bulk changes, database/environment key isolation, EN/AR/KU rendering and
+existing revenue/display regressions. Tests use isolated SQLite, array cache and
+session, fake HTTP/mail/storage. Native MySQL was used only for the read-only count
+and schema diagnostics; application rendering/migration acceptance on the intended
+MySQL schema remains unverified. P3 was not started.
+
+Read-only comparison on the chosen local database:
+
+```sql
+SELECT COUNT(*) AS total_customers,
+       COALESCE(SUM(CASE WHEN status <> 0 THEN 1 ELSE 0 END), 0) AS active_customers,
+       COALESCE(SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END), 0) AS suspended_customers,
+       COALESCE(SUM(CASE WHEN email_verify = 1 AND phone_verify = 1 THEN 1 ELSE 0 END), 0) AS verified_customers
+FROM customers;
+```
+
+The former card uses total_customers in this result, not verified_customers or
+any subscription/activity subset. To reproduce the default registrations subtitle,
+add `SUM(CASE WHEN created_at >= :window_start THEN 1 ELSE 0 END)` using the
+application's current time minus 30 days, rounded to local start-of-day.
+
+## Admin P2 — operational visibility implemented in source (2026-09-06)
+
+`admin.operations` (`/{locale}/adm/operations/jobs`) and `admin.customers.detail`
+(`/{locale}/adm/customers/detail/{customer}`) share a view-based Livewire component,
+`ReadsOperations`, and the local-only `AdminOperations` read model. Customer List,
+Billing Register and Usage link to the new detail; the existing list and correction
+controls remain unchanged. The Admin navigation has one Operations entry.
+
+- Customer context uses the real effective plan/subscription and storage resolvers,
+  including previous plan, cycle/renewal dates, verification, usage/quota and
+  customer-aware action access. App Credits and API Credits are distinct cards.
+  API holds are already deducted from available wallet balance; holds are not
+  labeled final spend. Missing records are not created by these reads.
+- Database-paginated sections cover jobs, needs-review queues, API jobs, payments,
+  wallet ledger, reservations, files, service/storage subscriptions, orders, API key
+  metadata, audit and plan entitlements. Page size is fixed at 25. Filters include
+  customer, identity/reference, date, status, channel, action, failure stage,
+  provider and debit/credit where relevant. Job/payment traces narrow related
+  sections through persisted foreign keys and references, with customer scoping.
+- Job metadata derives all nine native family/model mappings from ApiCatalog.
+  Local lifecycle is separate from recorded provider evidence and persisted-result
+  evidence. API jobs show reservations rather than App debit/refund fields. Job
+  history selects presence flags instead of hydrating generated input/output.
+- Read-only queues cover ambiguous submission, refund pending, deletion failure,
+  active age over two hours, recorded provider success without local finalization,
+  stale/terminal/orphan API holds and open payment review. Two hours is a support
+  review threshold, not a service SLA or automatic failure classification. Current
+  synchronizers do not retain a universal provider terminal status: the terminal
+  evidence queue can detect only the persisted `output.provider_success` marker.
+  Missing evidence displays as not recorded. No GPU or storage HTTP runs on read.
+- Files show metadata, retention, expiry, quota classification and API result
+  linkage. Object presence is explicitly not checked; metadata availability is
+  separate from physical existence. No signed URLs, object keys, generated text,
+  voice-reference content or content preview is sent to the operational UI.
+- All reads require fresh active `admin.read`. Payment provider references and
+  allowlisted evidence additionally require `admin.finance` or `admin.reconcile`.
+  P0 AdminData redaction remains the boundary; audit summaries expose selected
+  fields and omit masked values. Historical event outcome is separate from the
+  current operation status, so a later successful retry does not relabel a failed event. No new capability or automatic grant was added.
+- Customer lookup runs only for at least two search characters (20 results plus
+  an explicitly selected customer). Pricing uses 250-row streaming batches to
+  build a compact canonical group index, then hydrates at most four channel rows
+  per displayed group. The matching-rule scan and group-index memory remain;
+  this is not database-native canonical JSON grouping. Existing grouping, ordering,
+  fallback, priorities and pricing resolution are preserved. Currency rendering
+  reuses one current-rate context and request-local schema capability checks;
+  it introduces no persistent financial cache.
+- New UI strings are in EN/AR/KU `admin_p2.php`, with existing Admin direction and
+  automatic direction for customer text. No P3 redesign or translation backlog work.
+
+Verification: **34 focused P2 tests / 631 assertions passed** on the final source.
+The disjoint regression selection also passed all **152 tests**: 48 P0 safety,
+21 plan deletion, 24 P1 correctness, 31 route integrity, 7 grouped pricing and
+21 Admin billing controls. Total: **186 distinct passing cases across focused
+runs**. The P2 performance test caught remaining direct template schema checks;
+these now use the same request-local column list as the renderer. Focused Pint
+(9 PHP files), PHP/Blade syntax (16 files), and whitespace checks pass. Tests use
+isolated SQLite :memory:, array cache/session and fake HTTP/mail/storage. Actual
+HTTP rendering covers all new sections and customer detail; generated text and
+secrets are excluded. No JS/CSS/bundled asset change requires an asset build.
+Native MySQL, interactive browser and production acceptance remain separate. No application DB,
+migration, seed, price, balance, provider state or historical financial record was
+changed. P3, P4, historical financial reconciliation and business pricing decisions
+remain open. No retry, refund, force-complete, provider-ID attachment or deletion
+mutation was added to P2.
+
+Date: 2026-09-06. Status: **audit baseline retained; Admin P0, P1 and P2 implemented in source. Deployment acceptance remains open.**
+
+## Admin P1 — V2 correctness implemented in source (2026-09-06)
+
+This section supersedes the older P1 implementation status below. P0 safeguards
+remain architectural invariants. P2 operational visibility is implemented above; P3 full UX/localization
+and P4 cleanup remain open. No application database, migration, seeder, business
+price, balance, feature flag or historical financial record changed.
+
+### Catalog and Services
+
+`AdminV2Catalog` joins MetKurdV2ToolCatalog, ApiCatalog and actual Tool/ToolAction
+records. `ApiCatalog::variants()` projects the web catalog through the existing
+API definition; no second manually maintained action config or DB merge exists.
+
+| Product | Tool | Persisted action | API scope |
+| --- | --- | --- | --- |
+| Apollo 1.5 | `xomni` | `xomni.generate` | `v2:speech` |
+| Apollo 2.0 | `xomni-v2` | `xomni-v2.generate` | `v2:speech` |
+| Vector 1.5 | `clone_xomni` | `clone_xomni.generate` | `v2:voice-clone` |
+| Vector 2.0 | `vector-v2` | `vector-v2.generate` | `v2:voice-clone` |
+| Leo | `leo` | `leo.transcribe` | `v2:transcriptions` |
+| Caption | `caption` | `caption.standard` | `v2:captions` |
+| OCR | `ocr` | `ocr.standard` | `v2:ocr` |
+| STEM 2 | `stem` | `stem.sep2` | `v2:stem` |
+| STEM 4 | `stem` | `stem.sep4` | `v2:stem` |
+
+Services prioritizes Current V2 tools while retaining all other rows. Non-current
+job/file references classify as Shared/Historical; recognized V1 API actions as
+Legacy; other records as Unmapped. Labels are not deletion permission. Generic
+Tool validation accepts hyphens while preserving uniqueness and immutable edit
+identities. Missing native records display migration guidance, not automatic repair.
+
+The shared panel on Tools, Pricing, Entitlements and Plans shows family/model,
+codes/IDs, metric, web route/path, API service/scope, active state, entitlement and
+matching-price coverage. Diagnostics include missing/inactive rows, mismatched
+action binding and pricing-review notices for Apollo 2, Vector 2 and Leo.
+Migration defaults and Leo's ambiguous copied rate still require business review.
+
+### Scope ownership and mutation consistency
+
+`AdminEntitlementScopes` maintains a runtime-compatible union in
+`service_plans.api_allowed_tools`; existing `meta.admin_api_scopes` stores version 1
+and `explicit`/`derived` lists. No schema migration is needed. Before ownership
+metadata exists, **every configured scope is explicit**. Unknown historical
+provenance is never guessed or destructively backfilled.
+
+- The Plan editor edits explicit scopes only; wildcard, exact and legacy grants
+  remain until deliberately edited. Derived scopes are displayed separately.
+  Generic metadata editing cannot replace the reserved ownership key.
+- Derived family scopes come from ApiCatalog and the complete entitlement set.
+  API rows override `all` fallback for an action; an API denial blocks that
+  action's derived grant. Other allowed siblings retain the family scope.
+  Tool/action activation remains a separate runtime access check.
+- Create/update/toggle/move/channel-change/permitted-delete operations lock plans
+  in ID order and refetch the entitlement under lock. Old and new plan scopes
+  update in the same transaction; detected concurrent moves fail safely. Scope
+  persistence failure rolls back entitlement and audit writes.
+- Only tracked derived scopes are removed automatically. To remove a derived
+  grant, change the contributing API/all entitlements; editing explicit scopes
+  alone does not override another grant source. Old legacy scopes without known
+  provenance remain explicit. V1 parsers/aliases/endpoints remain supported.
+- Plan saves lock and atomically save explicit configuration, reserved ownership
+  and the derived union. Import, deployment and read-only views perform no backfill.
+
+### Effective configuration, pricing and limits
+
+`CustomerApiAccessService::configForPlan()` is extracted from the runtime customer
+configuration method. The panel shows configured/effective API state, RPM and
+concurrency, including free-plan denial. Plan-level eligibility combines these
+with ApiCatalog scopes and `Customer::isAllowed(action, api)` in an unsaved
+plan-only customer context. No customer/key records are created or exposed.
+Customer overrides/status, key scopes, balance, rollout and occupied capacity
+remain submission-time checks, explicitly stated in the panel.
+
+Grouped App/Mobile/API pricing saves are transactional: validation precedes writes
+and a later channel failure rolls back earlier channel/audit writes. Group matching,
+fallback rows, conditions, priorities and history remain unchanged.
+`Customer::resolvedPricingRuleFor()` exposes the selection previously internal to
+`priceCreditsFor()`, which delegates to it. The read preview calls the same runtime
+selection/calculation and displays rule ID, channel, plan/global source, priority
+and sample credits. Customer override precedence, plan/global fallback, dates,
+conditions, channel ordering and rounding remain intact. Plan-only previews do
+not include actual customer overrides. STEM forces its mode/output count while
+supplying sample seconds/rounded-up minutes; OCR uses selected pages. Zero sample
+credits is not submission approval and raw `stem_output` pricing is not a complete
+unconditional charge. No business prices were chosen or changed.
+
+The panel documents actual native limits: speech/clone use a 400-character fallback
+because Customer lacks `entitlementLimitFor`; arbitrary entitlement JSON does not
+change it. Clone references allow 20 MiB with a 20-second worker reference cap.
+Leo/Caption/STEM audio and OCR files allow 100 MiB; PDF verification caps at 3,888
+pages. Plan fields own API RPM/concurrency and App concurrency. Deployment config
+`customer_api.temporary_file_ttl_days` owns retention; proxy/worker limits may be
+stricter. P1 invents no new entitlement enforcement fields.
+
+### Localization and verification
+
+`TranslationArea` uses configured `aurl` and Admin route names; the shared helper
+and middleware agree. Cached area JSON is replaced, with common JSON/PHP catalogs
+preserved, so earlier Landing loads do not supply Admin messages. Existing Livewire
+persistent middleware resolves the verified original route, never an untrusted
+referrer. Direct GET and real signed-snapshot updates pass in EN/AR/KU, including
+Landing separation and configurable prefix checks. Document direction is EN/LTR
+and AR/KU/RTL; technical inputs and identifiers are isolated LTR. No Landing
+catalog/content or full RTL CSS redesign changed. P1 PHP text catalogs have matching
+EN/AR/KU keys.
+
+- Admin/P0/plan/route selection: **167 passed / 1,077 assertions**, including 24
+  P1 cases, all 48 P0 safety cases, final deletion and route integrity regressions.
+- API V2, V2 localization/core and upload lifecycle selection: **60 passed /
+  11,143 assertions**. Tests use isolated SQLite, array cache/session, fake storage,
+  mail and HTTP (an isolated bootstrap supplies missing fakes for older tests).
+- Shared channel pricing/fallback regressions: **2 passed / 5 assertions**.
+  Total across these disjoint selections: **229 passed / 12,225 assertions**.
+  Focused Pint (19 files), PHP/Blade syntax (25 files) and whitespace checks pass.
+  Fresh isolated route boot lists 216 routes with zero duplicate names. Blade response rendering
+  is covered; no JavaScript or bundled stylesheet changes required an asset build.
+- Earlier legacy-only scope assertions now verify explicit preservation plus the
+  derived V2 union. This is an intentional contract update, not a weakened check.
+- Native MySQL, real browser layout/navigation and deployment acceptance remain
+  unverified. Historical financial findings and the earlier unrelated legacy API
+  voice-listing 403 are not repaired or cleared by P1.
 
 ## Routing and production-snapshot follow-up — 2026-09-06
 

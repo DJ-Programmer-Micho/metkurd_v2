@@ -139,7 +139,9 @@ it('updates app and api plan controls independently from the admin page', functi
         ->and((bool) $plan->api_enabled)->toBeTrue()
         ->and((int) $plan->api_requests_per_minute)->toBe(55)
         ->and((int) $plan->api_concurrent_jobs)->toBe(6)
-        ->and((array) $plan->api_allowed_tools)->toBe(['tts:apollo-1-0v', 'usage:read']);
+        ->and(app(\App\Services\Admin\AdminEntitlementScopes::class)->explicit($plan))->toBe(['tts:apollo-1-0v', 'usage:read'])
+        ->and((array) $plan->api_allowed_tools)->toContain('tts:apollo-1-0v', 'usage:read')
+        ->and(data_get($plan->meta, 'admin_api_scopes.derived'))->toContain('v2:ocr');
 });
 
 it('hydrates the payment plans edit modal from effective app credits when legacy monthly credits lag behind', function () {

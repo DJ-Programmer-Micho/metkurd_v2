@@ -15,6 +15,7 @@ class extends Component
 <x-slot:title>{{ __('Customers Ranking') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -74,15 +75,15 @@ class extends Component
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
                 <div class="col-xl-5">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Search') }}</label>
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-ranking-1">{{ __('Search') }}</label>
                     <div class="search-box">
-                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search customer, plan, location, or profile...') }}">
+                        <input type="text" class="form-control" wire:model.live.debounce.350ms="search" placeholder="{{ __('Search customer, plan, location, or profile...') }}" id="admin-field-adm-customers-ranking-1">
                         <i class="ri-search-line search-icon"></i>
                     </div>
                 </div>
                 <div class="col-xl-3 col-md-6">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Plan') }}</label>
-                    <select class="form-select" wire:model.live="planFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-ranking-2">{{ __('Plan') }}</label>
+                    <select class="form-select" wire:model.live="planFilter" id="admin-field-adm-customers-ranking-2">
                         <option value="all">{{ __('All plans') }}</option>
                         <option value="none">{{ __('No active plan') }}</option>
                         @foreach ($this->customerPlanOptions as $plan)
@@ -91,8 +92,8 @@ class extends Component
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-3">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Period') }}</label>
-                    <select class="form-select" wire:model.live="periodFilter">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-ranking-3">{{ __('Period') }}</label>
+                    <select class="form-select" wire:model.live="periodFilter" id="admin-field-adm-customers-ranking-3">
                         <option value="7">{{ __('Last 7 days') }}</option>
                         <option value="30">{{ __('Last 30 days') }}</option>
                         <option value="90">{{ __('Last 90 days') }}</option>
@@ -101,8 +102,8 @@ class extends Component
                     </select>
                 </div>
                 <div class="col-xl-2 col-md-3">
-                    <label class="form-label text-muted text-uppercase fs-12">{{ __('Leaderboard Size') }}</label>
-                    <select class="form-select" wire:model.live="rankingLimit">
+                    <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-ranking-4">{{ __('Leaderboard Size') }}</label>
+                    <select class="form-select" wire:model.live="rankingLimit" id="admin-field-adm-customers-ranking-4">
                         <option value="8">{{ __('Top 8') }}</option>
                         <option value="12">{{ __('Top 12') }}</option>
                         <option value="20">{{ __('Top 20') }}</option>

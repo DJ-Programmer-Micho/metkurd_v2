@@ -12,6 +12,8 @@ use Livewire\Attributes\Computed;
 
 trait InteractsWithCustomerAdmin
 {
+    public string $customerDirectorySearch = '';
+
     #[Computed]
     public function customerPlanOptions()
     {
@@ -45,9 +47,8 @@ trait InteractsWithCustomerAdmin
     #[Computed]
     public function customerDirectoryOptions()
     {
-        return Customer::query()
-            ->orderBy('username')
-            ->get(['id', 'username', 'email']);
+        return app(\App\Services\Admin\AdminOperations::class)->customerLookup(
+            $this->customerDirectorySearch, (int) ($this->customerFilter ?? 0) ?: null);
     }
 
     protected function baseCustomerRelations(): array
