@@ -43,6 +43,9 @@ class extends Component
 @endphp
 
 <div class="container-fluid">
+    <x-admin-capability-notice :capabilities="['admin.catalog']" />
+    <x-admin-change-reason />
+    <p class="text-muted small">{{ __('admin_ux.meta_help') }}</p>
     <form wire:submit.prevent="saveMetaSettings">
         <div class="row mb-3">
             <div class="col-12 d-flex justify-content-between align-items-center">
@@ -50,7 +53,7 @@ class extends Component
                     <h4 class="mb-1">{{ __('Global Meta & Identity') }}</h4>
                     <p class="text-muted mb-0">{{ __('Manage favicon, app icons, OG/Twitter images, and site-level meta defaults.') }}</p>
                 </div>
-                <button type="submit" class="btn btn-primary">
+                <button type="submit" class="btn btn-primary" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                     <i class="ri-save-line align-bottom me-1"></i>{{ __('Save Meta Settings') }}
                 </button>
             </div>

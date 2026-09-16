@@ -30,6 +30,31 @@ function dashboardPopulationFixture(int $status = 1, string $created = '2020-01-
         'password' => 'isolated-fixture', 'status' => $status, 'email_verify' => false, 'phone_verify' => false, 'created_at' => $created, 'updated_at' => $created]);
 }
 
+it('updates the complete activity window while preserving lifetime totals and independent currency state', function () {
+    $this->travelTo(now()->setDate(2026, 9, 8)->startOfDay());
+    dashboardPopulationFixture(1, '2026-09-02 00:00:00');
+    dashboardPopulationFixture(1, '2026-09-01 23:59:59');
+    dashboardPopulationFixture(1, '2025-01-01 00:00:00');
+    $this->actingAs(adminDashboardAdmin(), 'admin');
+    $home = Livewire::withQueryParams(['period' => '7', 'currency' => 'IQD'])->test('admin::pages.home.app-home');
+    expect($home->instance()->recentActivity['rows'])->toHaveCount(7)
+        ->and($home->instance()->overviewStats['period_new_customers'])->toBe(1)
+        ->and($home->instance()->overviewStats['customers_total'])->toBe(3);
+    $home->set('periodFilter', '30')->set('displayCurrencyCode', 'USD')->assertSet('periodFilter', '30');
+    expect($home->instance()->chartPayload['activity']['labels'])->toHaveCount(30)
+        ->and(array_sum($home->instance()->chartPayload['activity']['customers']))->toBe(2)
+        ->and($home->instance()->chartPayload['currency']['code'])->toBe('USD')
+        ->and($home->instance()->overviewStats['customers_total'])->toBe(3);
+    $home->set('periodFilter', '90')->assertSet('displayCurrencyCode', 'USD');
+    expect($home->instance()->recentActivity['rows'])->toHaveCount(90);
+    $home->set('periodFilter', '365');
+    expect(count($home->instance()->recentActivity['rows']))->toBeLessThanOrEqual(13);
+    $home->set('periodFilter', 'all');
+    expect(array_sum($home->instance()->chartPayload['activity']['customers']))->toBe(3);
+    $home->set('periodFilter', 'invalid')->assertSet('periodFilter', '30');
+    Http::assertNothingSent();
+});
+
 it('counts the full directory population including no jobs no subscriptions historical and suspended customers', function () {
     dashboardPopulationFixture();
     $historical = dashboardPopulationFixture();
@@ -93,7 +118,7 @@ it('separates database and environment cache identities without exposing connect
         // Metadata-only identity simulation; no connection to another database is opened.
         $connection->setDatabaseName('isolated-other-database');
         $other = $key();
-        expect($other)->not->toBe($original)->not->toContain('isolated-other-database')->toMatch('/^admin-dashboard:v2:[a-f0-9]{64}:overview:30$/');
+        expect($other)->not->toBe($original)->not->toContain('isolated-other-database')->toMatch('/^admin-dashboard:v4:[a-f0-9]{64}:overview:30$/');
         Cache::put($original, ['customers_total' => 449], 300);
         expect(Cache::get($other))->toBeNull();
         app()->instance('env', 'dashboard-other-fixture');

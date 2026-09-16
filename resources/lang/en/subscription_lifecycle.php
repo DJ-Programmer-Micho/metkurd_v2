@@ -1,0 +1,31 @@
+<?php
+
+return [
+    'issue' => 'Renewal payment issue',
+    'pending' => 'Cancellation pending', 'requested' => 'Cancellation requested', 'confirmed' => 'Cancelled',
+    'renewal_off' => 'Auto-renew off.',
+    'awaiting_provider' => 'Your request is saved. We are waiting for FIB to confirm cancellation of future renewals.',
+    'access_until' => 'Access available until :date', 'renews' => 'Renews :date',
+    'changing' => 'Changing to :plan. Complete payment to activate the new plan.',
+    'old_pending' => 'Previous :plan renewal cancellation pending.', 'ended' => 'Previous :plan subscription ended.',
+    'cancel_success' => 'Cancellation request recorded. Your paid access is retained. See your subscription for the current cancellation status.',
+    'off' => 'Auto-renew off',
+    'renewing' => 'Auto-renew on',
+    'labels' => [
+        'provider_cancellation' => 'Provider cancellation',
+        'state' => 'Cancellation state',
+        'reason_code' => 'Reason',
+        'requested_at' => 'Request recorded',
+        'provider_cancel_requested_at' => 'Provider request accepted',
+        'provider_cancel_confirmed_at' => 'Provider cancellation confirmed',
+        'provider_cancel_pending' => 'Remote cancellation pending',
+        'effective_access_until' => 'Paid access until',
+        'replacement_subscription_id' => 'Replacement subscription',
+        'replacement_payment_id' => 'Replacement payment',
+        'retry_after' => 'Next cancellation check',
+        'access_status' => 'Access state',
+        'renewal_status' => 'Renewal state',
+        'superseded_at' => 'Superseded at',
+        'renewal_payment_missing' => 'No newer verified collection at expiry',
+    ],
+];

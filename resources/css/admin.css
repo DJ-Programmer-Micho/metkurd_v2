@@ -1,5 +1,9 @@
 /* Scoped Bootstrap Admin refinements. Technical fields opt into LTR. */
 body.admin-shell { text-align: start; }
+.admin-shell .admin-reference > summary { padding: .85rem 1rem; font-size: .9rem; }
+.admin-shell .admin-reference:not([open]) { box-shadow: none; }
+.admin-shell .admin-job-details { min-width: min(32rem, 80vw); max-width: 42rem; }
+.admin-shell .analysis-chart-wrap { max-width: 100%; }
 .admin-shell .page-content { padding-inline: 1.25rem; }
 .admin-shell .table-responsive { border-radius: .5rem; overscroll-behavior-inline: contain; }
 .admin-shell .table { margin-bottom: 0; }
@@ -78,3 +82,5 @@ body.admin-shell { text-align: start; }
  [dir="rtl"][data-sidebar-size="sm"] .admin-shell .main-content { margin-right:0; }
  [dir="rtl"][data-sidebar-size="sm"] .admin-shell #page-topbar, [dir="rtl"][data-sidebar-size="sm"] .admin-shell .footer { right:0; }
 }
+
+.admin-chart-empty { position: absolute; inset: 45% 1rem auto; text-align: center; }

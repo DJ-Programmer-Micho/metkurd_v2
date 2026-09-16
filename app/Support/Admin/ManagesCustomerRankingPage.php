@@ -57,7 +57,7 @@ trait ManagesCustomerRankingPage
                 $this->applyPlanFilter($customerQuery, $this->planFilter);
             });
 
-        $orders = CreditOrder::query()
+        $orders = CreditOrder::query()->revenueIncluded()->currentBillingPeriod()
             ->where('status', 'paid')
             ->whereHas('customer', function (Builder $customerQuery) {
                 $this->applyCustomerSearch($customerQuery, $this->search);

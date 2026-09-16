@@ -1051,6 +1051,7 @@ new class extends Component
     $toolTitle = (string) data_get($tool, 'title', __('Tool'));
 @endphp
 
+<div>
 @if($demoType !== '')
     <section class="section pt-0">
         <div class="container">
@@ -1106,3 +1107,4 @@ new class extends Component
         @endpush
     @endonce
 @endif
+</div>

@@ -15,6 +15,8 @@ class extends Component
 <x-slot:title>{{ __('Landing Translations') }} | {{ __('MetKurd AI') }}</x-slot:title>
 
 <div class="container-fluid">
+    <x-admin-capability-notice :capabilities="['admin.catalog']" />
+    <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -27,7 +29,7 @@ class extends Component
                         <i class="ri-filter-off-line align-bottom me-1"></i>
                         {{ __('Clear Filters') }}
                     </button>
-                    <button type="button" class="btn btn-primary" wire:click="saveTranslations">
+                    <button type="button" class="btn btn-primary" wire:click="saveTranslations" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                         <i class="ri-save-line align-bottom me-1"></i>
                         {{ __('Save Translations') }}
                     </button>
@@ -90,7 +92,7 @@ class extends Component
                     <h5 class="card-title mb-1">{{ __('Landing Keys') }}</h5>
                     <p class="text-muted mb-0">{{ __('Rows: :count', ['count' => number_format(count($filteredRows))]) }}</p>
                 </div>
-                <button type="button" class="btn btn-primary" wire:click="saveTranslations">
+                <button type="button" class="btn btn-primary" wire:click="saveTranslations" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                     <i class="ri-save-line align-bottom me-1"></i>
                     {{ __('Save All') }}
                 </button>

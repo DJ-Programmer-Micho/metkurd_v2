@@ -92,6 +92,8 @@ function fibRecurringPayment(Customer $customer, PurchaseType $purchaseType, int
         'payment_mode' => PaymentMode::RECURRING,
         'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION,
         'status' => PaymentStatus::PAID,
+        'internal_status' => 'applied',
+        'fulfilled_at' => now(), // This fixture represents an already applied recurring plan.
         'local_reference' => 'TEST-'.strtoupper(Str::random(10)),
         'idempotency_key' => (string) Str::uuid(),
         'fib_subscription_id' => $subscriptionId,
@@ -103,6 +105,8 @@ function fibRecurringPayment(Customer $customer, PurchaseType $purchaseType, int
         'purchasable_type' => $purchaseType === PurchaseType::PLAN_SUBSCRIPTION ? ServicePlan::class : StoragePlan::class,
         'purchasable_id' => $purchasableId,
         'paid_at' => now(),
+        'active_until' => now()->addMonth(), // Persisted paid-through fixture, not a guessed anniversary.
+        'last_payment_at' => now(),
     ]);
 }
 

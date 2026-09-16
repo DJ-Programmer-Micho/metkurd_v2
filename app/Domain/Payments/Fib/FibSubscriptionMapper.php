@@ -51,7 +51,8 @@ class FibSubscriptionMapper
         return $status === '' ? null : strtoupper($status);
     }
 
-    public function hasConfirmedPaymentEvidence(FibSubscriptionStatusData $status, ?array ...$payloads): bool
+    // Only authenticated GET data is evidence; callback claims never enter this mapper.
+    public function hasConfirmedPaymentEvidence(FibSubscriptionStatusData $status): bool
     {
         if ($status->lastPaymentAt !== null) {
             return true;
@@ -65,41 +66,15 @@ class FibSubscriptionMapper
             return true;
         }
 
-        foreach ($payloads as $payload) {
-            if (! is_array($payload) || $payload === []) {
-                continue;
-            }
-
-            if ($this->paidStatusFromPayload($payload) !== null) {
-                return true;
-            }
-
-            if ($this->hasPositivePaidFlagFromPayload($payload)) {
-                return true;
-            }
-        }
-
         return false;
     }
 
-    public function explicitPaidStatusFromPayloads(FibSubscriptionStatusData $status, ?array ...$payloads): ?string
+    public function explicitPaidStatusFromPayloads(FibSubscriptionStatusData $status): ?string
     {
         $statusValue = $this->paidStatusFromPayload($status->raw);
 
         if ($statusValue !== null) {
             return $statusValue;
-        }
-
-        foreach ($payloads as $payload) {
-            if (! is_array($payload) || $payload === []) {
-                continue;
-            }
-
-            $statusValue = $this->paidStatusFromPayload($payload);
-
-            if ($statusValue !== null) {
-                return $statusValue;
-            }
         }
 
         return null;

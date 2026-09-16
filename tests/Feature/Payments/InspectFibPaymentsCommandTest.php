@@ -245,7 +245,7 @@ it('finds an existing row by provider reference and refreshes status without ful
             'expires_in' => 60,
         ], 200),
         inspectFibStageUrl('/protected/v1/subscriptions/fib-existing-sub-123') => Http::response(
-            inspectFibSubscriptionStatusResponse('fib-existing-sub-123', 'PAID'),
+            inspectFibSubscriptionStatusResponse('fib-existing-sub-123', 'PAID', ['monetaryValue' => ['amount' => $payment->amount, 'currency' => $payment->currency]]),
             200
         ),
     ]);

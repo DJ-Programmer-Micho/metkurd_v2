@@ -12,12 +12,13 @@ class FibOneTimeWebhookValidator
     public function validate(Request $request): array
     {
         $issues = [];
-        $paymentId = trim((string) ($request->input('id') ?: $request->input('paymentId') ?: ''));
+        $paymentId = \App\Domain\Payments\Support\FibCallbackNotification::identifier($request, 'paymentId');
 
-        if ($paymentId === '') {
+        if ($paymentId === null) {
             $issues[] = 'Missing payment identifier.';
         }
 
+        // Optional operator delivery filter; never sufficient payment evidence.
         $configuredSecret = trim((string) config('fib.callback_secret'));
         $configuredHeader = trim((string) config('fib.callback_secret_header', 'x-callback-secret'));
 
@@ -31,7 +32,7 @@ class FibOneTimeWebhookValidator
 
         return [
             'valid' => $issues === [],
-            'payment_id' => $paymentId !== '' ? $paymentId : null,
+            'payment_id' => $paymentId,
             'issues' => $issues,
         ];
     }

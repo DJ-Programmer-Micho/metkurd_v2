@@ -93,6 +93,15 @@ class ApiCatalog
         return $this->scopesForConfiguration(app(CustomerApiAccessService::class)->allowedTools($customer));
     }
 
+    public function keyAccessMessage(Customer $customer): ?string
+    {
+        if (! $this->hasAccess($customer)) {
+            return __('API access is not available on your current plan.');
+        }
+
+        return $this->scopes($customer) === [] ? __('account_v2.api_scopes_missing') : null;
+    }
+
     public function scopesForConfiguration(array $configured): array
     {
         $scopes = [];

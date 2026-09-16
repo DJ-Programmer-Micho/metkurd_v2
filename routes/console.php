@@ -35,6 +35,9 @@ $applySchedulerGuards(
     9
 );
 
+// Local dated agreements do not depend on FIB reconciliation being enabled.
+$applySchedulerGuards(Schedule::command('billing:process-service-agreements')->everyMinute(), 'billing:service-agreements', 5);
+
 // Monthly refill is idempotent and safe to run daily.
 $applySchedulerGuards(
     Schedule::command('credits:refill-monthly')->dailyAt('00:15'),
@@ -43,6 +46,7 @@ $applySchedulerGuards(
 );
 
 if ((bool) config('fib.reconciliation.enabled', true)) {
+    $applySchedulerGuards(Schedule::command('payments:reconcile-fib-cancellations --limit=100')->everyFiveMinutes(), 'fib:subscription-cancellations', 4);
     $chunkSize = max(10, (int) config('fib.reconciliation.chunk_size', 100));
     $staleMinutes = max(0, (int) config('fib.reconciliation.stale_minutes', 5));
     $graceMinutes = max(0, (int) config('fib.reconciliation.local_expiry_grace_minutes', 0));

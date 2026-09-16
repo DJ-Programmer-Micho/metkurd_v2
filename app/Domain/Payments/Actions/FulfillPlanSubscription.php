@@ -4,12 +4,10 @@ namespace App\Domain\Payments\Actions;
 
 use App\Domain\Payments\Contracts\RecurringPaymentHandler;
 use App\Domain\Payments\Enums\PaymentInternalStatus;
-use App\Domain\Payments\Enums\PaymentMode;
 use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Enums\PurchaseType;
-use App\Domain\Payments\Fib\FibSubscriptionCancellationService;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Enums\PaymentRecurringStrategy;
@@ -18,9 +16,7 @@ use App\Services\Coupons\CouponRedemptionService;
 use App\Services\Payments\PaymentApplicationService;
 use App\Support\CustomerEmailNotifier;
 use App\Support\TelegramPaymentNotifier;
-use App\Support\TelegramSubscriptionLifecycleNotifier;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class FulfillPlanSubscription implements RecurringPaymentHandler
 {
@@ -29,8 +25,6 @@ class FulfillPlanSubscription implements RecurringPaymentHandler
         protected PlanSwitcher $switcher,
         protected CouponRedemptionService $redemptions,
         protected PaymentApplicationService $application,
-        protected FibSubscriptionCancellationService $subscriptionCancellation,
-        protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
     ) {}
 
     public function supports(PurchaseType $purchaseType): bool
@@ -41,10 +35,11 @@ class FulfillPlanSubscription implements RecurringPaymentHandler
     public function handle(Payment $payment): void
     {
         DB::transaction(function () use ($payment) {
+            \App\Models\Customer::whereKey($payment->customer_id)->lockForUpdate()->firstOrFail();
             /** @var Payment $locked */
             $locked = Payment::query()->lockForUpdate()->with(['customer.profile', 'purchasable'])->findOrFail($payment->id);
 
-            if ($locked->fulfilled_at !== null || $locked->status !== PaymentStatus::PAID) {
+            if (! $locked->isCurrentBillingPeriod() || $locked->fulfilled_at !== null || $locked->status !== PaymentStatus::PAID) {
                 return;
             }
 
@@ -149,114 +144,25 @@ class FulfillPlanSubscription implements RecurringPaymentHandler
 
     protected function supersedeOlderFibPlanSubscriptions(Payment $payment, int $subscriptionId): void
     {
-        $olderPayments = Payment::query()
-            ->where('customer_id', $payment->customer_id)
-            ->where('id', '!=', $payment->id)
-            ->where('provider', PaymentProvider::FIB)
-            ->where('purchase_type', PurchaseType::PLAN_SUBSCRIPTION)
-            ->where('payment_mode', PaymentMode::RECURRING)
-            ->where('provider_object_type', PaymentProviderObjectType::SUBSCRIPTION)
-            ->whereNotNull('fib_subscription_id')
-            ->where(function ($query) {
-                $query
-                    ->whereNotNull('fulfilled_at')
-                    ->orWhere('internal_status', PaymentInternalStatus::APPLIED);
-            })
-            ->where(function ($query) {
-                $query
-                    ->whereIn('provider_subscription_status', ['ACTIVE', 'SUBSCRIBED', 'PAID'])
-                    ->orWhere(function ($activeUntil) {
-                        $activeUntil
-                            ->whereNotNull('active_until')
-                            ->where('active_until', '>=', now());
-                    });
-            })
-            ->orderByDesc('id')
-            ->lockForUpdate()
-            ->get();
-
-        foreach ($olderPayments as $olderPayment) {
-            $supersessionMeta = [
-                'superseded_by_payment_id' => (int) $payment->id,
-                'superseded_by_subscription_id' => $subscriptionId,
-                'superseded_by_fib_subscription_id' => $payment->fib_subscription_id,
-                'superseded_at' => now()->toIso8601String(),
-            ];
-
-            $providerCancellation = $this->subscriptionCancellation->cancel($olderPayment);
-            $olderMeta = array_merge((array) ($olderPayment->meta ?? []), [
-                'supersession' => array_merge($supersessionMeta, [
-                    'provider_ref' => $olderPayment->providerReference(),
-                    'provider_cancel_result' => $providerCancellation['result'] ?? null,
-                    'provider_status' => $providerCancellation['provider_status'] ?? null,
-                    'trace_id' => $providerCancellation['trace_id'] ?? null,
-                    'error_codes' => $providerCancellation['error_codes'] ?? [],
-                ]),
-            ]);
-
-            $olderPayment->forceFill([
-                'meta' => $olderMeta,
-            ])->save();
-
-            $eventType = ($providerCancellation['result'] ?? null) === 'provider_error'
-                ? 'provider_cancel_failed'
-                : 'provider_cancel_requested';
-
-            $this->events->record($olderPayment, [
-                'event_type' => $eventType,
-                'source' => 'superseded_plan_fulfillment',
-                'event_key' => sprintf(
-                    'superseded-plan:%d:%d:%s',
-                    (int) $olderPayment->id,
-                    (int) $payment->id,
-                    (string) ($providerCancellation['result'] ?? 'unknown'),
-                ),
-                'before_status' => $olderPayment->status->value,
-                'after_status' => $olderPayment->status->value,
-                'meta' => array_merge($supersessionMeta, [
-                    'provider_ref' => $olderPayment->providerReference(),
-                    'provider_cancel_result' => $providerCancellation['result'] ?? null,
-                    'provider_status' => $providerCancellation['provider_status'] ?? null,
-                    'trace_id' => $providerCancellation['trace_id'] ?? null,
-                    'error_codes' => $providerCancellation['error_codes'] ?? [],
-                ]),
-            ]);
-
-            $this->events->record($olderPayment, [
-                'event_type' => 'payment_superseded',
-                'source' => 'superseded_plan_fulfillment',
-                'event_key' => sprintf('payment-superseded:%d:%d', (int) $olderPayment->id, (int) $payment->id),
-                'before_status' => $olderPayment->status->value,
-                'after_status' => $olderPayment->status->value,
-                'meta' => array_merge($supersessionMeta, [
-                    'provider_cancel_result' => $providerCancellation['result'] ?? null,
-                ]),
-            ]);
-
-            if (($providerCancellation['result'] ?? null) === 'provider_error') {
-                Log::warning('Failed to cancel superseded FIB plan subscription.', [
-                    'new_payment_id' => (int) $payment->id,
-                    'old_payment_id' => (int) $olderPayment->id,
-                    'customer_id' => (int) $payment->customer_id,
-                    'new_provider_ref' => $payment->providerReference(),
-                    'old_provider_ref' => $olderPayment->providerReference(),
-                    'trace_id' => $providerCancellation['trace_id'] ?? null,
-                    'error_codes' => $providerCancellation['error_codes'] ?? [],
-                ]);
-
-                $this->telegramLifecycleNotifier->send(
-                    __('Failed to cancel superseded FIB service subscription'),
-                    [
-                        'Customer ID' => (int) $payment->customer_id,
-                        'New provider ref' => $payment->providerReference(),
-                        'Old provider ref' => $olderPayment->providerReference(),
-                        'Old payment ID' => (int) $olderPayment->id,
-                        'Trace ID' => $providerCancellation['trace_id'] ?? null,
-                        'Error codes' => implode(', ', $providerCancellation['error_codes'] ?? []),
-                    ],
-                    'FIB plan supersession'
-                );
+        $olderPayments = Payment::currentBillingPeriod()->where('customer_id', $payment->customer_id)->where('id', '<>', $payment->id)
+            ->where('provider', PaymentProvider::FIB)->where('purchase_type', PurchaseType::PLAN_SUBSCRIPTION)
+            ->where('provider_object_type', PaymentProviderObjectType::SUBSCRIPTION)->whereNotNull('fib_subscription_id')
+            ->whereHas('serviceSubscriptions', fn ($q) => $q->where('meta->superseded_by_payment_id', $payment->id))
+            ->whereNotNull('fulfilled_at')->orderBy('id')->lockForUpdate()->get();
+        foreach ($olderPayments as $older) {
+            $meta = (array) $older->meta;
+            if (data_get($meta, 'supersession.superseded_at')) {
+                continue;
             }
+            $meta['supersession'] = ['superseded_by_payment_id' => $payment->id,
+                'superseded_by_subscription_id' => $subscriptionId, 'superseded_at' => now()->toIso8601String()];
+            $older->update(['meta' => $meta]);
+            app(\App\Services\Billing\ProviderSubscriptionCancellation::class)->request($older, 'plan_switch', null,
+                ['subscription_id' => $subscriptionId, 'payment_id' => $payment->id]);
+            $this->events->record($older, ['event_type' => 'payment_superseded', 'source' => 'superseded_plan_fulfillment',
+                'event_key' => 'payment-superseded:'.$older->id.':'.$payment->id,
+                'before_status' => $older->status->value, 'after_status' => $older->status->value,
+                'meta' => $meta['supersession']]);
         }
     }
 }

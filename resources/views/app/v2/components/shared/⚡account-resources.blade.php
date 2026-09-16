@@ -36,7 +36,7 @@ new class extends Component
                 __('App Credits'),
                 $appCredits,
                 'app',
-                route('app.billing', ['locale' => $locale]),
+                route('app.v2.billing', ['locale' => $locale]),
             ),
         ];
 

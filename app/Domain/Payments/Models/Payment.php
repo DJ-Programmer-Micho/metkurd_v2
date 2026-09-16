@@ -20,6 +20,18 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Payment extends Model
 {
+    public function scopeCurrentBillingPeriod(Builder $query): Builder
+    {
+        return app(\App\Services\Billing\BillingReportingBoundary::class)->apply($query, 'payments');
+    }
+
+    public function isCurrentBillingPeriod(): bool
+    {
+        $boundary = app(\App\Services\Billing\BillingReportingBoundary::class)->current();
+
+        return ! $boundary || ($this->created_at && $this->created_at->gte($boundary['starts_at']) && $this->id > $boundary['payment_id']);
+    }
+
     protected $fillable = [
         'uuid',
         'customer_id',
@@ -240,9 +252,6 @@ class Payment extends Model
             data_get($this->status_response, 'payment.status'),
             data_get($this->status_response, 'latestPayment.status'),
             data_get($this->status_response, 'latestPayment.paymentStatus'),
-            data_get($this->callback_payload, 'paymentStatus'),
-            data_get($this->callback_payload, 'payment.status'),
-            data_get($this->callback_payload, 'latestPayment.status'),
         ];
 
         foreach ($candidates as $candidate) {
@@ -304,10 +313,6 @@ class Payment extends Model
             data_get($this->status_response, 'paid'),
             data_get($this->status_response, 'paymentCompleted'),
             data_get($this->status_response, 'isPaymentCompleted'),
-            data_get($this->callback_payload, 'isPaid'),
-            data_get($this->callback_payload, 'paid'),
-            data_get($this->callback_payload, 'paymentCompleted'),
-            data_get($this->callback_payload, 'isPaymentCompleted'),
         ] as $flag) {
             if (is_bool($flag) && $flag) {
                 return true;

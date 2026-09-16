@@ -46,6 +46,7 @@ use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 
 beforeEach(function () {
+    expect(config('database.default'))->toBe('sqlite')->and(config('database.connections.sqlite.database'))->toBe(':memory:');
     $this->seed();
     Http::preventStrayRequests();
     Http::fake();
@@ -618,3 +619,154 @@ it('applies one financial intent once when two independent processes replay it c
         }
     }
 });
+
+it('closes abandoned checkout through the Admin bridge and permits a fresh purchase for every kind', function (string $kind) {
+    config(['metkurd_v2.enabled' => true, 'payments.providers.fib.enabled' => true, 'fib.enabled' => true,
+        'fib.callback_base_url' => 'https://metkurd.test', 'fib.profiles.payment.base_url' => 'https://fib-stage.fib.iq',
+        'fib.profiles.payment.client_id' => 'fixture', 'fib.profiles.payment.client_secret' => 'fixture']);
+    $customer = p0Customer();
+    $target = match ($kind) {
+        'service' => ServicePlan::where('code', 'pro')->firstOrFail(),
+        'storage' => StoragePlan::create(['code' => 'abandoned-storage', 'name' => 'Storage fixture', 'quota_mb' => 1024,
+            'price_iqd' => 5000, 'payment_mode' => 'one_time', 'billing_intervals' => ['monthly'], 'is_active' => true]),
+        default => CreditProduct::where('is_active', true)->firstOrFail(),
+    };
+    if ($kind === 'service') {
+        $target->update(['payment_mode' => 'one_time', 'billing_intervals' => ['monthly']]);
+    }
+    $payment = p0Payment($customer, $target, ['created_at' => now()->subMonths(4), 'provider_status' => 'DRAFT',
+        'provider_object_type' => 'subscription', 'fib_subscription_id' => Str::uuid(), 'provider_subscription_status' => 'DRAFT',
+        'create_response' => ['validUntil' => 'unparseable-provider-deadline']]);
+    $event = app(\App\Domain\Payments\Support\PaymentEventRecorder::class)->record($payment,
+        ['event_type' => 'checkout_created', 'source' => 'fixture', 'payload' => ['status' => 'DRAFT']]);
+    $history = $event->fresh()->getAttributes();
+    $provider = $payment->fresh()->only(['provider_status', 'provider_subscription_status', 'provider_payment_status', 'create_response', 'fib_subscription_id']);
+    $balances = \App\Models\CreditWallet::orderBy('id')->get()->toArray();
+    $ledger = CreditLedger::orderBy('id')->get()->toArray();
+    $orders = CreditOrder::count();
+    $policy = app(\App\Domain\Payments\Support\PaymentCheckoutState::class);
+    expect($policy->blocks($payment))->toBeTrue()->and($policy->blocker($customer, $target::class)->id)->toBe($payment->id);
+    $this->actingAs($customer, 'app');
+    Livewire::test('app::v2.pages.account.fib-payment', ['payment' => $payment])
+        ->assertSee(__('payment_v2.review'))->assertDontSee('markReviewPaymentInvalid', false);
+    $this->actingAs(p0Admin(), 'admin');
+    $page = Livewire::test('admin::pages.customers.adm-customers-register')->call('openReviewPayment', $payment->id)
+        ->assertSee(__('admin_p0.close_checkout'))->assertSee('data-admin-method="markReviewPaymentInvalid"', false)
+        ->assertSee(__('admin_p0.close_checkout_impact'));
+    $operation = $page->get('adminIntentIds')['invalidate'];
+    $page->set('reviewResolutionReason', 'Operator reviewed the abandoned unpaid checkout.')
+        ->call('markReviewPaymentInvalid')->assertHasNoErrors()->assertDontSee('data-admin-method="markReviewPaymentInvalid"', false)
+        ->call('markReviewPaymentInvalid')->assertHasNoErrors();
+    expect($payment->fresh()->status)->toBe(PaymentStatus::EXPIRED)
+        ->and($payment->fresh()->internal_status)->toBe(PaymentInternalStatus::EXPIRED)
+        ->and($payment->fresh()->review_required_at)->toBeNull()
+        ->and($policy->blocks($payment->fresh()))->toBeFalse()
+        ->and($policy->blocker($customer, $target::class))->toBeNull()
+        ->and($payment->fresh()->only(array_keys($provider)))->toBe($provider)
+        ->and($event->fresh()->getAttributes())->toBe($history)
+        ->and(Payment::whereKey($payment->id)->exists())->toBeTrue()
+        ->and(PaymentEvent::where('event_key', 'admin-invalidate:'.$operation)->count())->toBe(1)
+        ->and(AdminOperation::findOrFail($operation)->status)->toBe('completed')
+        ->and(AdminAuditEvent::where('operation_id', $operation)->where('action', 'payment.invalidate')->count())->toBe(1)
+        ->and(\App\Models\CreditWallet::orderBy('id')->get()->toArray())->toBe($balances)
+        ->and(CreditLedger::orderBy('id')->get()->toArray())->toBe($ledger)
+        ->and(CreditOrder::count())->toBe($orders);
+    $this->actingAs($customer, 'app');
+    $destination = match ($kind) {
+        'service' => 'subscription-plans', 'storage' => 'storage-plans', default => 'addon-credits'
+    };
+    Livewire::test('app::v2.pages.account.fib-payment', ['payment' => $payment->fresh()])
+        ->call('refreshStatus')->assertSee(__('payment_v2.expired'))->assertSee(__('payment_v2.start_new'))
+        ->assertSee('/app-v2/'.$destination, false)->assertDontSee('markReviewPaymentInvalid', false);
+    Http::assertNothingSent();
+    $client = Mockery::mock(\App\Domain\Payments\Fib\FibOneTimePaymentClient::class);
+    $client->shouldReceive('createPayment')->once()->andReturn(\App\Domain\Payments\Data\FibCreatePaymentResponseData::fromArray([
+        'paymentId' => Str::uuid(), 'validUntil' => now()->addHour()->utc()->toIso8601String()]));
+    app()->instance(\App\Domain\Payments\Fib\FibOneTimePaymentClient::class, $client);
+    $new = app(\App\Services\Payments\CustomerPurchaseCheckout::class)->start($customer, $kind, $target->id, 'monthly', 'one_time', 'fib', null);
+    expect($new->id)->not->toBe($payment->id)->and($policy->state($new))->toBe('awaiting')->and(Payment::count())->toBe(2);
+    Http::assertNothingSent();
+})->with(['service', 'storage', 'addon']);
+
+it('requires both fresh active Admin capabilities even when replaying closure', function (array $capabilities, int $status) {
+    $customer = p0Customer();
+    $payment = p0Payment($customer);
+    $admin = p0Admin();
+    $this->actingAs($admin, 'admin');
+    $operation = (string) Str::uuid();
+    app(InvalidateAdminReviewPayment::class)->handle($operation, $customer->id, $payment->id, 'Confirmed abandoned local checkout.');
+    User::whereKey($admin->id)->update(['admin_capabilities' => json_encode($capabilities), 'status' => $status]);
+    expect(fn () => app(InvalidateAdminReviewPayment::class)->handle($operation, $customer->id, $payment->id,
+        'Confirmed abandoned local checkout.'))->toThrow(\Illuminate\Auth\Access\AuthorizationException::class);
+    $other = p0Payment($customer);
+    expect(fn () => app(InvalidateAdminReviewPayment::class)->handle((string) Str::uuid(), $customer->id, $other->id,
+        'Confirmed abandoned local checkout.'))->toThrow(\Illuminate\Auth\Access\AuthorizationException::class);
+    expect($other->fresh()->requiresReview())->toBeTrue();
+    Http::assertNothingSent();
+})->with([[['admin.read', 'admin.finance'], 1], [['admin.read', 'admin.reconcile'], 1], [AdminAccess::CAPABILITIES, 0]]);
+
+it('requires a substantive reason and hides closure from an operator lacking finance', function () {
+    $customer = p0Customer();
+    $payment = p0Payment($customer);
+    $this->actingAs(p0Admin(['admin.read', 'admin.reconcile']), 'admin');
+    Livewire::test('admin::pages.customers.adm-customers-register')->call('openReviewPayment', $payment->id)
+        ->assertDontSee('data-admin-method="markReviewPaymentInvalid"', false)->call('markReviewPaymentInvalid')->assertForbidden();
+    $this->actingAs(p0Admin(), 'admin');
+    expect(fn () => app(InvalidateAdminReviewPayment::class)->handle((string) Str::uuid(), $customer->id, $payment->id, '           '))
+        ->toThrow(ValidationException::class);
+    expect($payment->fresh()->requiresReview())->toBeTrue();
+    Http::assertNothingSent();
+});
+
+it('rejects retained paid evidence and current obligations despite a review marker', function (string $evidence) {
+    $customer = p0Customer();
+    $payment = p0Payment($customer, attributes: ['provider_status' => 'DRAFT']);
+    $this->actingAs(p0Admin(), 'admin');
+    match ($evidence) {
+        'refunded' => $payment->update(['status' => PaymentStatus::REFUNDED]),
+        'refund requested' => $payment->update(['internal_status' => PaymentInternalStatus::REFUND_REQUESTED]),
+        'coverage' => $payment->update(['active_until' => now()->addMonth()]),
+        'active' => $payment->update(['provider_subscription_status' => 'ACTIVE']),
+        'collection' => $payment->update(['provider_payment_status' => 'COMPLETED']),
+        'conflicting payload' => $payment->update(['provider_payment_status' => 'UNPAID', 'status_response' => ['latestPayment' => ['status' => 'PAID']]]),
+        'paid flag' => $payment->update(['status_response' => ['isPaid' => true]]),
+        'cancel response' => $payment->update(['cancel_response' => ['paymentStatus' => 'PAID']]),
+        'allocation' => \App\Models\SubscriptionCreditAllocation::create(['customer_id' => $customer->id,
+            'subscription_id' => $customer->activeServiceSubscription()->firstOrFail()->id, 'payment_id' => $payment->id,
+            'cycle_key' => 'retained-fixture', 'allocation_type' => 'initial', 'cycle_started_at' => now()]),
+        'future checkout' => $payment->update(['valid_until' => now()->addHour()]),
+        'event' => app(\App\Domain\Payments\Support\PaymentEventRecorder::class)->record($payment,
+            ['event_type' => 'status_synced', 'source' => 'fixture', 'payload' => ['paymentStatus' => 'PAID']]),
+        'linked subscription' => $customer->activeServiceSubscription()->firstOrFail()->update(['payment_id' => $payment->id]),
+    };
+    expect(app(InvalidateAdminReviewPayment::class)->eligible($payment->fresh()))->toBeFalse();
+    expect(fn () => app(InvalidateAdminReviewPayment::class)->handle((string) Str::uuid(), $customer->id, $payment->id,
+        'Operator cannot close protected evidence.'))->toThrow(ValidationException::class);
+    expect($payment->fresh()->status)->not->toBe(PaymentStatus::EXPIRED);
+    Http::assertNothingSent();
+})->with(['refunded', 'refund requested', 'coverage', 'active', 'collection', 'conflicting payload', 'paid flag', 'cancel response', 'allocation', 'future checkout', 'event', 'linked subscription']);
+
+it('releases only unused coupon reservations once when closing abandoned checkout', function (string $status) {
+    $customer = p0Customer();
+    $payment = p0Payment($customer);
+    $coupon = \App\Models\Coupon::create(['code' => 'ABANDONED', 'name' => 'Fixture', 'discount_type' => 'percent', 'discount_value' => 10, 'used_count' => 1]);
+    $redemption = \App\Models\CouponRedemption::create(['coupon_id' => $coupon->id, 'customer_id' => $customer->id,
+        'payment_id' => $payment->id, 'purchase_type' => 'plan_subscription', 'redemption_type' => 'checkout',
+        'status' => $status, 'coupon_code' => $coupon->code, 'original_amount_iqd' => 10000, 'final_amount_iqd' => 9000]);
+    $this->actingAs(p0Admin(), 'admin');
+    $operation = (string) Str::uuid();
+    if ($status === 'consumed') {
+        expect(fn () => app(InvalidateAdminReviewPayment::class)->handle($operation, $customer->id, $payment->id,
+            'Operator confirmed abandoned checkout.'))->toThrow(ValidationException::class);
+        expect($redemption->fresh()->status->value)->toBe('consumed')->and((int) $coupon->fresh()->used_count)->toBe(1);
+        Http::assertNothingSent();
+
+        return;
+    }
+    foreach ([1, 2] as $replay) {
+        app(InvalidateAdminReviewPayment::class)->handle($operation, $customer->id, $payment->id, 'Operator confirmed abandoned checkout.');
+    }
+    expect($redemption->fresh()->status->value)->toBe($status === 'consumed' ? 'consumed' : 'released')
+        ->and((int) $coupon->fresh()->used_count)->toBe($status === 'consumed' ? 1 : 0);
+    Http::assertNothingSent();
+})->with(['reserved', 'consumed']);

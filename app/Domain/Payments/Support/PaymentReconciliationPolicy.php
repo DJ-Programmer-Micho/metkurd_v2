@@ -30,6 +30,13 @@ class PaymentReconciliationPolicy
 
     public function canScheduledCheckoutPoll(Payment $payment): bool
     {
+        if (! $payment->isCurrentBillingPeriod()) {
+            return false;
+        }
+        if (in_array(app(PaymentCheckoutState::class)->state($payment), ['expired', 'canceled', 'failed', 'refunded'], true)) {
+            return false;
+        }
+
         if ($this->isApplied($payment) || $this->requiresReview($payment) || $this->hasTerminalCheckoutState($payment)) {
             return false;
         }
@@ -43,6 +50,13 @@ class PaymentReconciliationPolicy
 
     public function canScheduledRenewalPoll(Payment $payment): bool
     {
+        if (! $payment->isCurrentBillingPeriod()) {
+            return false;
+        }
+        if (in_array(strtoupper((string) $payment->provider_subscription_status), ['CANCELLED', 'CANCELED'], true)
+            || data_get($payment->meta, 'provider_cancellation.requested_at') || data_get($payment->meta, 'supersession.superseded_at')) {
+            return false;
+        }
         if (! $this->isFibRecurringSubscription($payment)) {
             return false;
         }
@@ -83,11 +97,11 @@ class PaymentReconciliationPolicy
 
         if ($eventType === 'provider_renewal_sync_failed'
             || (! $this->canScheduledCheckoutPoll($payment) && $this->canScheduledRenewalPoll($payment))) {
-            return 'scheduled_subscription_renewal_reconciliation';
+            return 'scheduled_sub_renewal';
         }
 
         return $payment->isProviderSubscriptionObject()
-            ? 'scheduled_subscription_checkout_reconciliation'
+            ? 'scheduled_sub_checkout'
             : 'scheduled_payment_reconciliation';
     }
 
@@ -96,13 +110,13 @@ class PaymentReconciliationPolicy
         return in_array(trim($source), [
             'scheduled_reconciliation',
             'scheduled_payment_reconciliation',
-            'scheduled_subscription_checkout_reconciliation',
+            'scheduled_sub_checkout',
         ], true);
     }
 
     public function isScheduledRenewalSource(string $source): bool
     {
-        return trim($source) === 'scheduled_subscription_renewal_reconciliation';
+        return trim($source) === 'scheduled_sub_renewal';
     }
 
     protected function isApplied(Payment $payment): bool

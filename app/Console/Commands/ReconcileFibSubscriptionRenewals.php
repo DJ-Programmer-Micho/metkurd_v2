@@ -35,12 +35,15 @@ class ReconcileFibSubscriptionRenewals extends Command
         $customerId = (int) $this->option('customer-id');
         $dryRun = (bool) $this->option('dry-run');
 
-        $query = Payment::query()
+        $query = Payment::query()->currentBillingPeriod()
             ->where('provider', PaymentProvider::FIB->value)
             ->where('payment_mode', PaymentMode::RECURRING->value)
             ->where('provider_object_type', PaymentProviderObjectType::SUBSCRIPTION->value)
             ->where('status', PaymentStatus::PAID->value)
             ->whereNotNull('fib_subscription_id')
+            ->whereNull('meta->provider_cancellation->requested_at')
+            ->whereNull('meta->supersession->superseded_at')
+            ->where(fn ($q) => $q->whereNull('provider_subscription_status')->orWhereNotIn('provider_subscription_status', ['CANCELLED', 'CANCELED']))
             ->where(function ($builder) {
                 $builder
                     ->whereNotNull('fulfilled_at')
@@ -129,12 +132,12 @@ class ReconcileFibSubscriptionRenewals extends Command
 
                     try {
                         $refreshed = $sync
-                            ->handle($payment, 'scheduled_subscription_renewal_reconciliation', null, false, true)
+                            ->handle($payment, 'scheduled_sub_renewal', null, false, true)
                             ->fresh() ?? $payment->fresh() ?? $payment;
                     } catch (\Throwable $exception) {
                         $failed++;
 
-                        $failures->captureRenewalFailure($payment, $exception, 'scheduled_subscription_renewal_reconciliation');
+                        $failures->captureRenewalFailure($payment, $exception, 'scheduled_sub_renewal');
 
                         if ($this->fingerprint($payment->fresh() ?? $payment) !== $before) {
                             $updated++;

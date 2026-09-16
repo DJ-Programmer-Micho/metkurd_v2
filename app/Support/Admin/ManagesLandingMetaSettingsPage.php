@@ -7,6 +7,8 @@ use Illuminate\Validation\ValidationException;
 
 trait ManagesLandingMetaSettingsPage
 {
+    use SecureAdminComponent;
+
     public string $defaultMetaTitle = '';
 
     public string $defaultMetaDescription = '';
@@ -50,6 +52,8 @@ trait ManagesLandingMetaSettingsPage
 
     public function saveMetaSettings(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $this->validate([
             'defaultMetaTitle' => ['nullable', 'string', 'max:180'],
             'defaultMetaDescription' => ['nullable', 'string', 'max:320'],

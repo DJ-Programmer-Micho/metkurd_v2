@@ -47,7 +47,7 @@ trait ManagesCustomerRegisterPage
 
     protected function newCorrectionIdentities(): void
     {
-        foreach (['plan', 'addon', 'storage', 'credits', 'invalidate', 'reference', 'reconcile', 'non_revenue'] as $action) {
+        foreach (['plan', 'addon', 'storage', 'credits', 'invalidate', 'reference', 'reconcile', 'non_revenue', 'agreement', 'agreement_retry'] as $action) {
             $this->adminIntentIds[$action] = (string) \Illuminate\Support\Str::uuid();
         }
     }
@@ -119,6 +119,68 @@ trait ManagesCustomerRegisterPage
     public string $addonProviderRef = '';
 
     public string $addonAdjustmentNote = '';
+
+    public string $agreementPlanId = '';
+
+    public string $agreementStart = '';
+
+    public string $agreementExpiry = '';
+
+    public string $agreementAmount = '';
+
+    public string $agreementReference = '';
+
+    public string $agreementReason = '';
+
+    #[Computed]
+    public function agreementSchemaReady(): bool
+    {
+        return \Illuminate\Support\Facades\Schema::hasTable('service_plan_agreements');
+    }
+
+    #[Computed]
+    public function serviceAgreements()
+    {
+        AdminAccess::authorize('admin.read');
+        if (! $this->agreementSchemaReady || $this->customerFilter === 'all') {
+            return collect();
+        }
+
+        return \App\Models\ServicePlanAgreement::where('customer_id', (int) $this->customerFilter)
+            ->with('servicePlan:id,name')->latest('id')->limit(12)->get();
+    }
+
+    public function recordServiceAgreement(): void
+    {
+        AdminAccess::authorize('admin.finance');
+        $customer = $this->resolveFocusedCustomer();
+        if (! $customer) {
+            return;
+        }
+        $this->validate(['agreementPlanId' => 'required|integer', 'agreementStart' => 'required|date_format:Y-m-d',
+            'agreementExpiry' => 'required|date_format:Y-m-d|after_or_equal:agreementStart',
+            'agreementAmount' => 'nullable|integer|min:0|max:1000000000000', 'agreementReference' => 'required|string|max:190',
+            'agreementReason' => 'required|string|min:10|max:1000']);
+        $result = app(\App\Services\Admin\AdminServiceAgreements::class)->record($this->adminIntentIds['agreement'], $customer->id,
+            (int) $this->agreementPlanId, $this->agreementStart, $this->agreementExpiry,
+            $this->agreementAmount === '' ? null : (int) $this->agreementAmount, trim($this->agreementReference), trim($this->agreementReason));
+        unset($this->selectedCustomer, $this->serviceAgreements);
+        $this->dispatch('alert', type: $result['status'] === 'requires_review' ? 'warning' : 'success', message: __('agreement.'.$result['status']));
+    }
+
+    public function retryServiceAgreement(int $agreementId): void
+    {
+        AdminAccess::authorize('admin.finance');
+        $customer = $this->resolveFocusedCustomer();
+        if (! $customer) {
+            return;
+        }
+        $this->validate(['agreementReason' => 'required|string|min:10|max:1000']);
+        $result = app(\App\Services\Admin\AdminServiceAgreements::class)->retry($this->adminIntentIds['agreement_retry'], $customer->id,
+            $agreementId, trim($this->agreementReason));
+        unset($this->selectedCustomer, $this->serviceAgreements);
+        $this->dispatch('alert', type: $result['status'] === 'requires_review' ? 'warning' : 'success', message: __('agreement.'.$result['status']));
+    }
 
     public function mount(): void
     {
@@ -213,6 +275,8 @@ trait ManagesCustomerRegisterPage
                 'code',
                 'name',
                 'monthly_credits',
+                'app_monthly_credits',
+                'api_monthly_credits',
                 'price_iqd_monthly',
                 'price_iqd_yearly',
             ]);
@@ -232,6 +296,25 @@ trait ManagesCustomerRegisterPage
                 'quota_mb',
                 'price_iqd',
             ]);
+    }
+
+    #[Computed]
+    public function complimentaryCreditPreview(): array
+    {
+        $customer = $this->resolveFocusedCustomer();
+        $plan = $this->registerServicePlanOptions->firstWhere('id', (int) $this->servicePlanAdjustmentId);
+        if (! $customer || ! $plan) {
+            return [];
+        }
+        $current = $customer->currentServicePlan();
+        $preview = [];
+        foreach (['app' => ['wallet', $plan->appMonthlyCredits(), $current?->appMonthlyCredits() ?? 0],
+            'api' => ['apiWallet', $plan->apiMonthlyCredits(), $current?->apiMonthlyCredits() ?? 0]] as $channel => [$relation, $target, $old]) {
+            $balance = (int) ($customer->{$relation}?->subscription_balance_credits ?? 0);
+            $preview[$channel] = $target > $old ? $target : max(0, $target - $balance);
+        }
+
+        return $preview;
     }
 
     #[Computed]
@@ -281,7 +364,7 @@ trait ManagesCustomerRegisterPage
                 'activeStorageSubscription.storagePlan:id,code,name,quota_mb',
                 'storageSubscriptions' => fn ($subscriptionQuery) => $subscriptionQuery->with(['storagePlan:id,code,name,quota_mb'])->latest()->limit(6),
                 'mlJobs' => fn ($jobQuery) => $this->scopeJobs($jobQuery)->with(['tool:id,code,name', 'toolAction:id,tool_code,action_code,full_code,name'])->latest()->limit(5),
-                'payments' => fn ($paymentQuery) => $paymentQuery
+                'payments' => fn ($paymentQuery) => $paymentQuery->currentBillingPeriod()
                     ->select([
                         'id',
                         'uuid',
@@ -346,7 +429,7 @@ trait ManagesCustomerRegisterPage
         $validated = $this->validate([
             'servicePlanAdjustmentId' => 'required|integer',
             'servicePlanBillingCycle' => 'required|string|in:monthly,yearly',
-            'servicePlanGrantReason' => 'required|string|in:internal_team_account,company_account,testing_account,partner_access,founder_admin_access,other',
+            'servicePlanGrantReason' => 'required|string|in:internal_team_account,company_account,testing_account,partner_access,founder_admin_access,support_compensation,promotional,other',
             'servicePlanGrantReasonOther' => 'nullable|string|max:500',
             'servicePlanCreditSyncPolicy' => 'required|string|in:safe_top_up_only',
             'servicePlanAdjustmentNote' => 'nullable|string|max:500',
@@ -387,7 +470,7 @@ trait ManagesCustomerRegisterPage
             trim((string) ($validated['servicePlanAdjustmentNote'] ?? ''))
         );
         $syncResult = app(\App\Services\Admin\AdminFinancialCorrections::class)->plan(
-            $this->adminIntentIds['plan'], $customer->id, $plan->id, $billingCycle, $adminNote
+            $this->adminIntentIds['plan'], $customer->id, $plan->id, $billingCycle, $adminNote, $validated['servicePlanGrantReason']
         );
         $this->dispatch('alert', type: 'success', message: $this->creditSyncStatusMessage(
             $syncResult, __('Manual plan grant applied successfully without creating a revenue/provider record.')
@@ -622,6 +705,7 @@ trait ManagesCustomerRegisterPage
 
     public function markReviewPaymentInvalid(): void
     {
+        \App\Support\Admin\AdminAccess::authorize('admin.finance');
         \App\Support\Admin\AdminAccess::authorize('admin.reconcile');
         $customer = $this->resolveFocusedCustomer();
         if (! $customer) {
@@ -632,7 +716,7 @@ trait ManagesCustomerRegisterPage
             $this->adminIntentIds['invalidate'], $customer->id, (int) $this->reviewPaymentId, trim($this->reviewResolutionReason)
         );
         unset($this->selectedReviewPayment, $this->selectedCustomer);
-        $this->dispatch('alert', type: 'success', message: __('The review payment was marked invalid/expired and removed from actionable review processing.'));
+        $this->dispatch('alert', type: 'success', message: __('admin_p0.checkout_closed'));
     }
 
     public function markReviewPaymentNonRevenue(): void
@@ -780,6 +864,8 @@ trait ManagesCustomerRegisterPage
 
     protected function resetManualAdjustmentForms(): void
     {
+        $this->reset('agreementPlanId', 'agreementStart', 'agreementExpiry', 'agreementAmount', 'agreementReference', 'agreementReason');
+        unset($this->serviceAgreements);
         $this->servicePlanAdjustmentId = '';
         $this->servicePlanBillingCycle = 'monthly';
         $this->servicePlanProviderRef = '';
@@ -960,6 +1046,7 @@ trait ManagesCustomerRegisterPage
             'fulfilled_at' => $payment->fulfilled_at?->format('M d, Y H:i') ?? __('n/a'),
             'reason' => \App\Support\Admin\AdminData::redact($payment->reviewMessage() ?? __('n/a')),
             'requires_open_review' => $payment->requiresOpenReview(),
+            'can_close_checkout' => app(\App\Domain\Payments\Actions\InvalidateAdminReviewPayment::class)->eligible($payment),
         ];
     }
 
@@ -971,6 +1058,8 @@ trait ManagesCustomerRegisterPage
             'testing_account' => __('Testing account'),
             'partner_access' => __('Partner access'),
             'founder_admin_access' => __('Founder/admin access'),
+            'support_compensation' => __('admin_ux.grant_support'),
+            'promotional' => __('admin_ux.grant_promotional'),
             'other' => __('Other'),
         ];
     }

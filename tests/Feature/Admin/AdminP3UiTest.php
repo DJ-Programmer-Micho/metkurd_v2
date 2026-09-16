@@ -41,6 +41,8 @@ it('renders every scoped Admin surface in its own locale and direction', functio
             ->toContain('data-admin-ui')->not->toContain('admin_p3.');
         expect(substr_count($html, 'data-admin-ui'))->toBe(1);
         if ($page === 'home') {
+            expect(html_entity_decode($html))->toContain(route('admin.customers.register', ['locale' => $locale]));
+            expect($html)->toContain(__('Customer Register'));
             preg_match('/id="admin-home-chart-data">(.*?)<\/script>/s', $html, $chart);
             $payload = json_decode($chart[1], true, flags: JSON_THROW_ON_ERROR);
             expect($payload['ui']['revenue'])->toBe(__('Revenue'));
@@ -75,6 +77,7 @@ it('keeps customer bookmarks and trace links scoped and clears only view filters
             expect(html_entity_decode($html))->toContain(route('admin.'.$target, ['locale' => 'en', 'customer' => $this->customer->id]));
         }
         expect($html)->toContain('customer-context', 'dir="auto"');
+        expect($html)->toContain(__('admin_p2.customer').' #'.$this->customer->id);
     }
     $component = Livewire::test('admin::pages.operations.adm-operations', ['customer' => $this->customer->id])
         ->set('section', 'api')->set('search', 'fixture')->set('status', 'failed')->call('resetFilters');
@@ -125,4 +128,17 @@ it('reuses capability hints within a single table render', function () {
         expect(\App\Support\Admin\AdminUiAccess::can('admin.pricing'))->toBeFalse();
     }
     expect(collect($queries)->filter(fn ($sql) => str_contains($sql, 'from "users"'))->count())->toBe(1);
+});
+
+it('keeps the Admin UX PHP catalogs complete with matching placeholders', function () {
+    $english = require resource_path('lang/en/admin_ux.php');
+    foreach (['ar', 'ku'] as $locale) {
+        $translated = require resource_path('lang/'.$locale.'/admin_ux.php');
+        expect(array_keys($translated))->toBe(array_keys($english));
+        foreach ($english as $key => $value) {
+            preg_match_all('/:[A-Za-z_]+/', $value, $expected);
+            preg_match_all('/:[A-Za-z_]+/', $translated[$key], $actual);
+            expect($translated[$key])->not->toBeEmpty()->and($actual[0])->toBe($expected[0]);
+        }
+    }
 });

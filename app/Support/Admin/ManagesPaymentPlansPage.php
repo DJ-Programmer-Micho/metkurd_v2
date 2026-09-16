@@ -167,7 +167,7 @@ trait ManagesPaymentPlansPage
             ->count();
 
         $orderSummary = CreditOrder::query()
-            ->revenueIncluded()
+            ->revenueIncluded()->currentBillingPeriod()
             ->where('status', 'paid')
             ->whereNotNull('service_plan_id')
             ->selectRaw('COUNT(*) as orders')
@@ -198,7 +198,7 @@ trait ManagesPaymentPlansPage
             ->selectRaw('COUNT(*) as active_subscribers');
 
         $planRevenue = CreditOrder::query()
-            ->revenueIncluded()
+            ->revenueIncluded()->currentBillingPeriod()
             ->where('status', 'paid')
             ->whereNotNull('service_plan_id')
             ->groupBy('service_plan_id')
@@ -312,6 +312,17 @@ trait ManagesPaymentPlansPage
         $this->resetValidation();
 
         $this->dispatch('payments-plans:modal-show', id: 'paymentPlanModal');
+    }
+
+    public function saveApiScopes(): void
+    {
+        $this->authorizeAdminChange('admin.pricing');
+        $this->validate(['editingPlanId' => 'required|integer', 'apiAllowedToolsText' => 'nullable|string|max:10000']);
+        app(\App\Services\Admin\AdminEntitlementScopes::class)->updateExplicit(
+            (int) $this->editingPlanId, $this->normalizeApiAllowedToolsText($this->apiAllowedToolsText ?? '')
+        );
+        unset($this->plans);
+        $this->dispatch('alert', type: 'success', message: __('admin_p1.scopes_saved'));
     }
 
     public function savePlan(): void

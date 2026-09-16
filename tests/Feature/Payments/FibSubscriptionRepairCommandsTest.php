@@ -77,7 +77,7 @@ function fibRepairSubscriptionStatusResponse(string $subscriptionId, string $sta
         'title' => 'MET KURD Subscription',
         'description' => 'Recurring checkout',
         'monetaryValue' => [
-            'amount' => '25000',
+            'amount' => (string) Payment::where('fib_subscription_id', $subscriptionId)->value('amount'),
             'currency' => 'IQD',
         ],
         'interval' => 'P1M',
@@ -371,7 +371,7 @@ it('reconciles a provider-paid premium subscription without duplicate credits an
     expect($targetPayment->status)->toBe(PaymentStatus::PAID)
         ->and($targetPayment->internal_status)->toBe(PaymentInternalStatus::APPLIED)
         ->and($targetPayment->fulfilled_at)->not->toBeNull()
-        ->and($targetPayment->paid_at?->copy()->utc()->toIso8601String())->toBe('2026-06-16T08:55:00+00:00')
+        ->and($targetPayment->paid_at?->copy()->utc()->toIso8601String())->toBe('2026-06-16T11:55:00+00:00')
         ->and(data_get($targetPayment->meta, 'manual_reconciliation'))->toBeTrue()
         ->and(data_get($targetPayment->meta, 'manual_correction_already_applied'))->toBeTrue()
         ->and(data_get($targetPayment->meta, 'no_credit_refill'))->toBeTrue()

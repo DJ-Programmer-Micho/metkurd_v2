@@ -124,6 +124,11 @@ class CreditOrder extends Model
             || in_array(data_get($this->meta, 'billing_source'), ['admin_manual_grant', 'internal_non_revenue'], true);
     }
 
+    public function scopeCurrentBillingPeriod(Builder $query): Builder
+    {
+        return app(\App\Services\Billing\BillingReportingBoundary::class)->apply($query);
+    }
+
     public function scopeRevenueIncluded(Builder $query): Builder
     {
         return $query

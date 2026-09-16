@@ -49,6 +49,19 @@ class CreateStorageSubscriptionPayment
         string $billingCycle = 'monthly',
         ?string $couponCode = null,
         ?string $paymentMethodCode = null,
+        bool $v2Checkout = false,
+    ): Payment {
+        return app(\App\Domain\Payments\Support\CheckoutCreationGuard::class)->run($customer, StoragePlan::class,
+            fn () => $this->createCheckout($customer, $planId, $billingCycle, $couponCode, $paymentMethodCode, $v2Checkout));
+    }
+
+    protected function createCheckout(
+        Customer $customer,
+        int $planId,
+        string $billingCycle = 'monthly',
+        ?string $couponCode = null,
+        ?string $paymentMethodCode = null,
+        bool $v2Checkout = false,
     ): Payment {
         $plan = StoragePlan::query()->where('is_active', true)->findOrFail($planId);
         $paymentMode = $plan->checkoutPaymentMode();
@@ -123,7 +136,7 @@ class CreateStorageSubscriptionPayment
         $providerObjectType = $paymentMode->isRecurring()
             ? PaymentProviderObjectType::SUBSCRIPTION
             : PaymentProviderObjectType::PAYMENT;
-        $payment = DB::transaction(function () use ($customer, $plan, $provider, $paymentMethod, $paymentMode, $providerObjectType, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay, $currentPlan, $currentPlanId) {
+        $payment = DB::transaction(function () use ($v2Checkout, $customer, $plan, $provider, $paymentMethod, $paymentMode, $providerObjectType, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay, $currentPlan, $currentPlanId) {
             $payment = Payment::create([
                 'uuid' => (string) Str::uuid(),
                 'customer_id' => $customer->id,
@@ -182,6 +195,7 @@ class CreateStorageSubscriptionPayment
                 ],
                 'meta' => [
                     'locale' => app()->getLocale(),
+                    'checkout_ui' => $v2Checkout ? 'v2' : 'v1',
                     'fee_quote' => $feeQuote,
                     'payment_method_code' => (string) $paymentMethod->code,
                     'payment_driver' => (string) $paymentMethod->driver,
@@ -309,7 +323,7 @@ class CreateStorageSubscriptionPayment
         try {
             $result = $this->oneTimeFib->createPayment(
                 $payment,
-                route('payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $payment])
+                route(data_get($payment->meta, 'checkout_ui') === 'v2' ? 'app.v2.payments.fib.show' : 'payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $payment])
             );
 
             /** @var \App\Domain\Payments\Data\FibCreatePaymentRequestData $request */

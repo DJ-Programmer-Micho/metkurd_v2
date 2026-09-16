@@ -231,16 +231,18 @@
     @endif
 
     <link rel="canonical" href="{{ $canonicalUrl }}">
-    <link rel="icon" href="{{ $defaultFaviconIco }}" sizes="any">
-    <link rel="shortcut icon" href="{{ $defaultFaviconIco }}">
-    <link rel="icon" type="image/svg+xml" href="{{ $defaultFaviconSvg }}">
+    <link rel="icon" href="{{ $favicon }}" sizes="any">
+    <link rel="shortcut icon" href="{{ $favicon }}">
+    @if(!$configuredFavicon)
+        <link rel="icon" type="image/svg+xml" href="{{ $defaultFaviconSvg }}">
+    @endif
     @if($appIcon192)
         <link rel="icon" type="image/png" sizes="192x192" href="{{ $appIcon192 }}">
     @endif
     @if($appIcon512)
         <link rel="icon" type="image/png" sizes="512x512" href="{{ $appIcon512 }}">
     @endif
-    <link rel="apple-touch-icon" href="{{ $defaultAppleTouchIcon }}">
+    <link rel="apple-touch-icon" href="{{ $appleTouchIcon }}">
 
     {{-- Route-aware canonical and hreflang tags help search engines index the right localized page. --}}
     @foreach($alternateUrls as $alternateLocale => $alternateUrl)

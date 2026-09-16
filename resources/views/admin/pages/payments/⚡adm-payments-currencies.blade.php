@@ -280,7 +280,10 @@ class extends Component
                 ->where('quote_currency_code', $quoteCurrencyCode)
                 ->update(['is_current' => false]);
 
-            if (! $rateRow) {
+            if ($rateRow) {
+                // The bulk deactivation above changed this row outside its model instance.
+                $rateRow->refresh();
+            } else {
                 $rateRow = new CurrencyExchangeRate();
             }
 
@@ -300,6 +303,7 @@ class extends Component
                 $before, $validated, ['currency' => $currency->getAttributes(), 'rate' => $rateRow->getAttributes()]);
         });
 
+        app(BillingCurrencyService::class)->flushConfigurationCache();
         unset($this->currencyRows, $this->topStats, $this->editableCurrencies);
 
         $this->dispatch('alert', type: 'success', message: __('Currency rate and rounding settings saved successfully.'));
@@ -331,6 +335,7 @@ class extends Component
                 $before, ['is_active' => false], ['currency' => $currency->getAttributes(), 'rates' => CurrencyExchangeRate::where('quote_currency_code', $currencyCode)->get()->toArray()]);
         });
 
+        app(BillingCurrencyService::class)->flushConfigurationCache();
         unset($this->currencyRows, $this->topStats, $this->editableCurrencies);
 
         $this->dispatch('alert', type: 'success', message: __('Currency display and current rate were deactivated.'));
@@ -360,6 +365,7 @@ class extends Component
 
 <div class="container-fluid">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
+    <x-admin-capability-notice :capabilities="['admin.pricing']" />
     <x-admin-change-reason />
     <div class="row">
         <div class="col-12">

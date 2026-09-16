@@ -25,15 +25,24 @@ trait ManagesAdminHomePage
     #[Url(as: 'period', keep: true)]
     public string $periodFilter = '30';
 
+    public function updatedPeriodFilter(): void
+    {
+        if (! in_array($this->periodFilter, ['7', '30', '90', '365', 'all'], true)) {
+            $this->periodFilter = '30';
+        }
+        unset($this->overviewStats, $this->recentActivity, $this->chartPayload,
+            $this->planMix, $this->purchaseMix, $this->topTools, $this->topCountries);
+    }
+
     protected function analyticsWindowStart(): ?CarbonInterface
     {
         return match ($this->periodFilter) {
-            '7' => now()->subDays(7)->startOfDay(),
-            '30' => now()->subDays(30)->startOfDay(),
-            '90' => now()->subDays(90)->startOfDay(),
-            '365' => now()->subDays(365)->startOfDay(),
+            '7' => now()->subDays(6)->startOfDay(),
+            '30' => now()->subDays(29)->startOfDay(),
+            '90' => now()->subDays(89)->startOfDay(),
+            '365' => now()->subDays(364)->startOfDay(),
             'all' => null,
-            default => now()->subDays(30)->startOfDay(),
+            default => now()->subDays(29)->startOfDay(),
         };
     }
 
@@ -44,10 +53,10 @@ trait ManagesAdminHomePage
         $identity = hash('sha256', json_encode([
             base_path(), app()->environment(), app()->getLocale(), $connection->getConfig('driver'),
             $connection->getConfig('host'), $connection->getConfig('port'),
-            $connection->getDatabaseName(),
+            $connection->getDatabaseName(), app(\App\Services\Billing\BillingReportingBoundary::class)->current(),
         ], JSON_THROW_ON_ERROR));
 
-        return 'admin-dashboard:v2:'.$identity.':'.$section.':'.$this->periodFilter;
+        return 'admin-dashboard:v4:'.$identity.':'.$section.':'.$this->periodFilter;
     }
 
     protected function analyticsCacheTtl(): CarbonInterface
@@ -78,7 +87,7 @@ trait ManagesAdminHomePage
     protected function paymentSourceSummary(?CarbonInterface $windowStart = null)
     {
         $canonicalRevenueSql = $this->paymentCanonicalAmountSql('credit_orders');
-        $classifiedOrders = DB::table('credit_orders')
+        $classifiedOrders = app(\App\Services\Billing\BillingReportingBoundary::class)->apply(DB::table('credit_orders'))
             ->where('status', 'paid')
             ->where(function ($query) {
                 $query
@@ -122,16 +131,18 @@ trait ManagesAdminHomePage
         $stats = Cache::remember($this->analyticsCacheKey('overview'), $this->analyticsCacheTtl(), function () {
             $windowStart = $this->analyticsWindowStart();
 
-            $subscriptionSummary = CustomerServiceSubscription::query()
+            $subscriptionSummary = CustomerServiceSubscription::query()->effectiveAt()
                 ->join('service_plans', 'service_plans.id', '=', 'customer_service_subscriptions.service_plan_id')
                 ->where('customer_service_subscriptions.status', 'active')
                 ->selectRaw('COUNT(*) as active_subscriptions')
-                ->selectRaw('SUM(CASE WHEN service_plans.is_free = 0 THEN 1 ELSE 0 END) as paid_subscribers')
                 ->selectRaw('SUM(CASE WHEN service_plans.is_free = 1 THEN 1 ELSE 0 END) as free_subscribers')
                 ->first();
 
+            $paidSubscribers = CustomerServiceSubscription::query()->effectiveAt()->where('status', 'active')
+                ->excludingComplimentary()->whereHas('servicePlan', fn ($q) => $q->where('is_free', false))->count();
+
             $orderSummary = CreditOrder::query()
-                ->revenueIncluded()
+                ->revenueIncluded()->currentBillingPeriod()
                 ->where('status', 'paid')
                 ->selectRaw('COUNT(*) as paid_orders')
                 ->selectRaw('COUNT(DISTINCT customer_id) as purchasing_customers')
@@ -201,7 +212,7 @@ trait ManagesAdminHomePage
             })->all();
 
             return [
-                'paid_subscribers' => (int) ($subscriptionSummary->paid_subscribers ?? 0),
+                'paid_subscribers' => $paidSubscribers,
                 'free_subscribers' => (int) ($subscriptionSummary->free_subscribers ?? 0),
                 'revenue_total' => (float) ($orderSummary->revenue_total ?? 0),
                 'revenue_period' => (float) ($orderSummary->revenue_period ?? 0),
@@ -250,14 +261,14 @@ trait ManagesAdminHomePage
         return Cache::remember($this->analyticsCacheKey('plan-mix'), $this->analyticsCacheTtl(), function () {
             $windowStart = $this->analyticsWindowStart();
 
-            $activeSubscribers = CustomerServiceSubscription::query()
+            $activeSubscribers = CustomerServiceSubscription::query()->effectiveAt()
                 ->where('status', 'active')
                 ->groupBy('service_plan_id')
                 ->selectRaw('service_plan_id')
                 ->selectRaw('COUNT(*) as active_subscribers');
 
             $planRevenue = CreditOrder::query()
-                ->revenueIncluded()
+                ->revenueIncluded()->currentBillingPeriod()
                 ->where('status', 'paid')
                 ->whereNotNull('service_plan_id')
                 ->when($windowStart, fn ($query) => $query->where('created_at', '>=', $windowStart))
@@ -331,7 +342,7 @@ trait ManagesAdminHomePage
             $windowStart = $this->analyticsWindowStart();
 
             $customerRevenue = CreditOrder::query()
-                ->revenueIncluded()
+                ->revenueIncluded()->currentBillingPeriod()
                 ->where('status', 'paid')
                 ->when($windowStart, fn ($query) => $query->where('created_at', '>=', $windowStart))
                 ->groupBy('customer_id')
@@ -358,17 +369,24 @@ trait ManagesAdminHomePage
     public function recentActivity(): array
     {
         return Cache::remember($this->analyticsCacheKey('recent-activity'), $this->analyticsCacheTtl(), function () {
-            $timelineStart = now()->subDays(13)->startOfDay();
-            $dateExpression = DB::raw('DATE(created_at)');
+            $timelineStart = $this->analyticsWindowStart();
+            if (! $timelineStart) {
+                $earliest = collect(['customers', 'credit_orders', 'ml_jobs'])
+                    ->map(fn ($table) => DB::table($table)->min('created_at'))->filter()->min();
+                $timelineStart = $earliest ? \Carbon\Carbon::parse($earliest)->startOfDay() : now()->startOfDay();
+            }
+            $monthly = in_array($this->periodFilter, ['365', 'all'], true);
+            $dateSql = $monthly ? 'SUBSTR(created_at, 1, 7)' : 'DATE(created_at)';
+            $dateExpression = DB::raw($dateSql);
 
             $customerRows = DB::table('customers')
                 ->where('created_at', '>=', $timelineStart)
-                ->selectRaw('DATE(created_at) as day')
+                ->selectRaw($dateSql.' as day')
                 ->selectRaw('COUNT(*) as customers')
                 ->groupBy($dateExpression)
                 ->pluck('customers', 'day');
 
-            $orderRows = DB::table('credit_orders')
+            $orderRows = app(\App\Services\Billing\BillingReportingBoundary::class)->apply(DB::table('credit_orders'))
                 ->where('status', 'paid')
                 ->where(function ($query) {
                     $query
@@ -379,7 +397,7 @@ trait ManagesAdminHomePage
                         ->orWhere('meta->revenue_excluded', 'false');
                 })
                 ->where('created_at', '>=', $timelineStart)
-                ->selectRaw('DATE(created_at) as day')
+                ->selectRaw($dateSql.' as day')
                 ->selectRaw('COALESCE(SUM('.$this->paymentCanonicalAmountSql('credit_orders').'), 0) as revenue')
                 ->groupBy($dateExpression)
                 ->pluck('revenue', 'day');
@@ -387,7 +405,7 @@ trait ManagesAdminHomePage
             $jobRows = DB::table('ml_jobs')
                 ->where('status', '!=', 'deleted')
                 ->where('created_at', '>=', $timelineStart)
-                ->selectRaw('DATE(created_at) as day')
+                ->selectRaw($dateSql.' as day')
                 ->selectRaw('COUNT(*) as jobs')
                 ->selectRaw('COALESCE(SUM(credits_charged), 0) as credits')
                 ->groupBy($dateExpression)
@@ -397,20 +415,25 @@ trait ManagesAdminHomePage
             $rows = [];
             $maxCredits = 1;
 
-            for ($offset = 13; $offset >= 0; $offset--) {
-                $day = now()->subDays($offset)->toDateString();
+            $cursor = $timelineStart->copy();
+            if ($monthly) {
+                $cursor = $cursor->startOfMonth();
+            }
+            while ($cursor->lte(now())) {
+                $day = $cursor->format($monthly ? 'Y-m' : 'Y-m-d');
                 $jobRow = $jobRows->get($day);
                 $credits = (int) ($jobRow->credits ?? 0);
                 $maxCredits = max($maxCredits, $credits);
 
                 $rows[] = [
                     'day' => $day,
-                    'label' => now()->subDays($offset)->format('M d'),
+                    'label' => $cursor->copy()->locale(app()->getLocale())->translatedFormat($monthly ? 'M Y' : 'M d'),
                     'customers' => (int) ($customerRows[$day] ?? 0),
                     'revenue' => (float) ($orderRows[$day] ?? 0),
                     'jobs' => (int) ($jobRow->jobs ?? 0),
                     'credits' => $credits,
                 ];
+                $cursor = $monthly ? $cursor->addMonth() : $cursor->addDay();
             }
 
             return [
@@ -491,6 +514,7 @@ trait ManagesAdminHomePage
         $this->displayCurrencyCode = array_key_exists($value, $this->dashboardCurrencyOptions())
             ? $value
             : 'IQD';
+        unset($this->chartPayload);
     }
 
     public function formatMoney($value): string

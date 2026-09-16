@@ -8,6 +8,7 @@ use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Models\PaymentEvent;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Models\Coupon;
+use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
 use App\Services\Coupons\CouponLifecycleService;
@@ -31,7 +32,7 @@ class SyncProviderSubscriptionLifecycle
     {
         $payment = $payment->fresh() ?? $payment;
 
-        if (! $payment->isProviderSubscriptionObject() || ! $payment->isFulfilled()) {
+        if (! $payment->isCurrentBillingPeriod() || ! $payment->isProviderSubscriptionObject() || ! $payment->isFulfilled()) {
             return;
         }
 
@@ -45,10 +46,13 @@ class SyncProviderSubscriptionLifecycle
     protected function syncServiceSubscription(Payment $payment, string $source): void
     {
         DB::transaction(function () use ($payment, $source) {
+            Customer::whereKey($payment->customer_id)->lockForUpdate()->firstOrFail();
+            $payment = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
             /** @var CustomerServiceSubscription|null $subscription */
             $subscription = CustomerServiceSubscription::query()
                 ->lockForUpdate()
                 ->where('payment_id', $payment->id)
+                ->where('customer_id', $payment->customer_id)
                 ->latest('id')
                 ->first();
 
@@ -56,6 +60,7 @@ class SyncProviderSubscriptionLifecycle
                 return;
             }
 
+            $subscription->setRelation('payment', $payment);
             $this->applyLifecycleState($subscription, $payment, 'service_subscription', $source);
         }, 3);
     }
@@ -63,10 +68,13 @@ class SyncProviderSubscriptionLifecycle
     protected function syncStorageSubscription(Payment $payment, string $source): void
     {
         DB::transaction(function () use ($payment, $source) {
+            Customer::whereKey($payment->customer_id)->lockForUpdate()->firstOrFail();
+            $payment = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
             /** @var CustomerStorageSubscription|null $subscription */
             $subscription = CustomerStorageSubscription::query()
                 ->lockForUpdate()
                 ->where('payment_id', $payment->id)
+                ->where('customer_id', $payment->customer_id)
                 ->latest('id')
                 ->first();
 
@@ -74,6 +82,7 @@ class SyncProviderSubscriptionLifecycle
                 return;
             }
 
+            $subscription->setRelation('payment', $payment);
             $this->applyLifecycleState($subscription, $payment, 'storage_subscription', $source);
         }, 3);
     }
@@ -84,6 +93,15 @@ class SyncProviderSubscriptionLifecycle
         string $eventPrefix,
         string $source,
     ): void {
+        $policy = app(SubscriptionCyclePolicy::class);
+        if (! $policy->isCurrent($subscription)) {
+            return;
+        }
+        if ($subscription->status === 'ended') {
+            app(ExpireSubscription::class)->handle($subscription);
+
+            return;
+        }
         $providerStatus = $this->fibSubscriptions->normalizeProviderStatus(
             $payment->provider_subscription_status ?: $payment->provider_status
         );
@@ -94,24 +112,51 @@ class SyncProviderSubscriptionLifecycle
             'billing_cycle',
             data_get($subscription->meta, 'billing_cycle', 'monthly')
         ));
-        $periodEndsAt = $this->resolvePeriodEnd($payment, (array) ($subscription->meta ?? []), $billingCycle);
-        $renewalDetected = $this->renewalDetected($subscription, $payment);
+        $periodEndsAt = $policy->boundary($subscription);
+        $previousPaymentAt = data_get($subscription->meta, 'observed_provider_last_payment_at')
+            ?? data_get($subscription->meta, 'provider_last_payment_at');
+        $staleCycle = $previousPaymentAt && $payment->last_payment_at
+            && $payment->last_payment_at->lt(Carbon::parse($previousPaymentAt));
+        if ($staleCycle && ! $this->fibSubscriptions->isClosedProviderStatus($providerStatus)) {
+            return;
+        }
+        $renewalDetected = ! $staleCycle && $policy->verifiedCollection($payment)
+            && $this->renewalDetected($subscription, $payment);
         $renewalCycleKey = $this->renewalCycleKey($payment);
-        $shouldAutoRenew = $this->shouldAutoRenew($providerStatus);
+        $cancelRequested = $subscription->canceled_at !== null
+            || data_get($subscription->meta, 'provider_cancellation.requested_at')
+            || data_get($subscription->meta, 'cancel_requested_at')
+            || data_get($subscription->meta, 'scheduled_change');
+        $providerClosed = $this->fibSubscriptions->isClosedProviderStatus($providerStatus);
+        $renewalDetected = $renewalDetected && ! $cancelRequested && ! $providerClosed;
+        $shouldAutoRenew = ! $cancelRequested && ($this->shouldAutoRenew($providerStatus)
+            || (! $providerClosed && (bool) $subscription->auto_renew));
         $shouldEndNow = $this->shouldEndNow($providerStatus, $periodEndsAt);
         $wasAutoRenewing = (bool) ($subscription->auto_renew ?? false);
         $previousStatus = (string) ($subscription->status ?? 'active');
-        $effectiveEndsAt = $shouldAutoRenew ? null : $periodEndsAt;
+        $effectiveEndsAt = $periodEndsAt;
         $discountCyclesConsumed = $this->nextDiscountCycleCount(
             $subscription,
             (int) ($subscription->discount_cycles_consumed ?? 0),
-            $renewalDetected,
+            $renewalDetected && $subscription instanceof CustomerStorageSubscription,
         );
         $meta = (array) ($subscription->meta ?? []);
         $meta['billing_cycle'] = $billingCycle;
         $meta['provider_active_until'] = $periodEndsAt?->toIso8601String();
         $meta['period_ends_at'] = $periodEndsAt?->toIso8601String();
-        $meta['provider_last_payment_at'] = $payment->last_payment_at?->toIso8601String();
+        if (! $staleCycle && $payment->last_payment_at) {
+            $meta['observed_provider_last_payment_at'] = $payment->last_payment_at->toIso8601String();
+        }
+        if ($policy->verifiedCollection($payment)) {
+            $meta['verified_paid_through'] = $periodEndsAt?->toIso8601String();
+        }
+        if (! $periodEndsAt) {
+            $meta['renewal_metadata_missing'] = true;
+            $meta['renewal_metadata_missing_reason'] = 'missing_verified_paid_through';
+        }
+        if ($subscription instanceof CustomerStorageSubscription && $renewalDetected) {
+            $meta['provider_last_payment_at'] = $payment->last_payment_at->toIso8601String();
+        }
         $meta['provider_status'] = $providerStatus;
         $meta['provider_lifecycle_synced_at'] = now()->toIso8601String();
         $meta['provider_lifecycle_sync_source'] = $source;
@@ -135,22 +180,21 @@ class SyncProviderSubscriptionLifecycle
         }
 
         $subscription->forceFill([
-            'status' => $shouldEndNow ? 'ended' : 'active',
+            'status' => 'active',
             'cycle_ends_on' => $periodEndsAt?->toDateString(),
             'next_renewal_on' => $periodEndsAt?->toDateString(),
             'auto_renew' => $shouldAutoRenew,
             'ends_at' => $effectiveEndsAt,
             'discount_cycles_consumed' => $discountCyclesConsumed,
-            'canceled_at' => $shouldAutoRenew
-                ? null
-                : ($subscription->canceled_at ?? now()),
+            'canceled_at' => ($cancelRequested || $providerClosed || $shouldEndNow)
+                ? ($subscription->canceled_at ?? now()) : $subscription->canceled_at,
             'meta' => $meta,
         ])->save();
 
         $paymentMeta = (array) ($payment->meta ?? []);
         $paymentMeta['subscription_lifecycle'] = array_filter([
-            'status' => $subscription->status,
-            'auto_renew' => (bool) $subscription->auto_renew,
+            'status' => $shouldEndNow ? 'ended' : $subscription->status,
+            'auto_renew' => ! $shouldEndNow && (bool) $subscription->auto_renew,
             'period_ends_at' => $periodEndsAt?->toIso8601String(),
             'provider_status' => $providerStatus,
             'provider_last_payment_at' => $payment->last_payment_at?->toIso8601String(),
@@ -161,7 +205,7 @@ class SyncProviderSubscriptionLifecycle
         ], static fn (mixed $value): bool => $value !== null && $value !== '');
         $payment->forceFill(['meta' => $paymentMeta])->save();
 
-        if ($renewalDetected
+        if ($renewalDetected && ! $shouldEndNow
             && $subscription instanceof CustomerServiceSubscription
             && $payment->last_payment_at instanceof CarbonInterface
             && $renewalCycleKey !== null) {
@@ -180,6 +224,11 @@ class SyncProviderSubscriptionLifecycle
             $renewalApplied = (bool) ($renewalResult['applied'] ?? false);
             $renewalAlreadyApplied = (bool) ($renewalResult['already_applied'] ?? false);
             $subscription = $subscription->fresh() ?? $subscription;
+            if ($renewalApplied) {
+                $subscription->update(['discount_cycles_consumed' => $this->nextDiscountCycleCount(
+                    $subscription, (int) $subscription->discount_cycles_consumed, true,
+                )]);
+            }
         }
 
         if ($renewalDetected) {
@@ -262,6 +311,10 @@ class SyncProviderSubscriptionLifecycle
             );
         }
 
+        if ($shouldEndNow) {
+            app(ExpireSubscription::class)->handle($subscription);
+        }
+
         if ($previousStatus !== 'ended' && $shouldEndNow) {
             $endedEvent = $this->events->record($payment, [
                 'event_type' => $eventPrefix.'_ended',
@@ -306,7 +359,8 @@ class SyncProviderSubscriptionLifecycle
             return false;
         }
 
-        $lastSyncedPaymentAt = data_get($subscription->meta, 'provider_last_payment_at');
+        $lastSyncedPaymentAt = data_get($subscription->meta, 'last_allocated_payment_at')
+            ?? data_get($subscription->meta, 'provider_last_payment_at');
 
         if (! is_scalar($lastSyncedPaymentAt) || trim((string) $lastSyncedPaymentAt) === '') {
             return true;
@@ -324,39 +378,6 @@ class SyncProviderSubscriptionLifecycle
         return $payment->providerRecurringCycleKey();
     }
 
-    protected function resolvePeriodEnd(Payment $payment, array $subscriptionMeta, string $billingCycle): ?CarbonInterface
-    {
-        if ($payment->active_until instanceof CarbonInterface) {
-            return Carbon::instance($payment->active_until);
-        }
-
-        foreach (['period_ends_at', 'provider_active_until'] as $key) {
-            $value = data_get($subscriptionMeta, $key);
-
-            if (! is_scalar($value) || trim((string) $value) === '') {
-                continue;
-            }
-
-            try {
-                return Carbon::parse((string) $value);
-            } catch (\Throwable) {
-                continue;
-            }
-        }
-
-        if (! $payment->last_payment_at instanceof CarbonInterface) {
-            return null;
-        }
-
-        $startAt = Carbon::instance($payment->last_payment_at);
-
-        return match ($billingCycle) {
-            'yearly' => $startAt->copy()->addYear(),
-            'hourly' => $startAt->copy()->addHour(),
-            default => $startAt->copy()->addMonth(),
-        };
-    }
-
     protected function shouldAutoRenew(?string $providerStatus): bool
     {
         return in_array($providerStatus, ['ACTIVE', 'PAID', 'SUBSCRIBED'], true);
@@ -364,19 +385,7 @@ class SyncProviderSubscriptionLifecycle
 
     protected function shouldEndNow(?string $providerStatus, ?CarbonInterface $periodEndsAt): bool
     {
-        if ($providerStatus === null) {
-            return false;
-        }
-
-        if ($this->fibSubscriptions->isClosedProviderStatus($providerStatus)) {
-            return ! $periodEndsAt instanceof CarbonInterface || ! $periodEndsAt->isFuture();
-        }
-
-        if (in_array($providerStatus, ['UNPAID', 'PENDING', 'CREATED', 'INITIATED'], true)) {
-            return ! $periodEndsAt instanceof CarbonInterface || ! $periodEndsAt->isFuture();
-        }
-
-        return false;
+        return $periodEndsAt instanceof CarbonInterface && ! $periodEndsAt->isFuture();
     }
 
     protected function nextDiscountCycleCount(

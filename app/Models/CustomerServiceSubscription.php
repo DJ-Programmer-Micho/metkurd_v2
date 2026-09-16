@@ -11,6 +11,31 @@ class CustomerServiceSubscription extends Model
 {
     use HasFactory;
 
+    /** Eligibility shared by current-plan reads; historical relationships stay unfiltered. */
+    public function scopeEffectiveAt(\Illuminate\Database\Eloquent\Builder $query, ?\Carbon\CarbonInterface $at = null): \Illuminate\Database\Eloquent\Builder
+    {
+        $at ??= now();
+        $table = $query->getModel()->getTable();
+        app(\App\Services\Billing\BillingSubscriptionAuthority::class)->apply($query, $at);
+
+        return $query->where($table.'.status', 'active')
+            ->whereNull($table.'.meta->superseded_at')
+            ->where(fn ($q) => $q->whereNull($table.'.starts_at')->orWhere($table.'.starts_at', '<=', $at))
+            ->where(fn ($q) => $q->whereNull($table.'.ends_at')->orWhere($table.'.ends_at', '>=', $at))
+            ->where(fn ($q) => $q->whereNull($table.'.source')
+                ->orWhere($table.'.source', '!=', \App\Services\Billing\ServiceAgreementLifecycle::SOURCE)
+                ->orWhere($table.'.ends_at', '>', $at));
+    }
+
+    public function scopeExcludingComplimentary(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query
+            ->where(fn ($q) => $q->whereNull('source')->orWhereNotIn('source', ['admin_manual', 'admin_manual_grant', 'internal_non_revenue']))
+            ->where(fn ($q) => $q->whereNull('meta->revenue_excluded')->orWhereNotIn('meta->revenue_excluded', [true, 1, '1', 'true']))
+            ->where(fn ($q) => $q->whereNull('meta->revenue_record')->orWhereNotIn('meta->revenue_record', [false, 0, '0', 'false']))
+            ->where(fn ($q) => $q->whereNull('meta->billing_source')->orWhereNotIn('meta->billing_source', ['admin_manual_grant', 'internal_non_revenue']));
+    }
+
     protected $table = 'customer_service_subscriptions';
 
     protected $fillable = [

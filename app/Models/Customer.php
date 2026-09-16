@@ -31,8 +31,6 @@ class Customer extends Authenticatable
 
     protected array $pricingRulesCache = [];
 
-    protected bool $resolvedServicePlanLoaded = false;
-
     protected mixed $resolvedServicePlan = null;
 
     protected bool $resolvedStoragePlanLoaded = false;
@@ -201,18 +199,7 @@ class Customer extends Authenticatable
     public function activeServiceSubscription(): HasOne
     {
         return $this->hasOne(CustomerServiceSubscription::class)
-            ->where('customer_service_subscriptions.status', 'active')
-            ->where(function ($query) {
-                $query
-                    ->whereNull('customer_service_subscriptions.starts_at')
-                    ->orWhere('customer_service_subscriptions.starts_at', '<=', now());
-            })
-            ->where(function ($query) {
-                $query
-                    ->whereNull('customer_service_subscriptions.ends_at')
-                    ->orWhere('customer_service_subscriptions.ends_at', '>=', now());
-            })
-            ->latestOfMany();
+            ->ofMany(['id' => 'max'], fn ($query) => $query->effectiveAt());
     }
 
     public function servicePlan(): HasOneThrough
@@ -224,18 +211,8 @@ class Customer extends Authenticatable
             'id',
             'id',
             'service_plan_id'
-        )
-            ->where('customer_service_subscriptions.status', 'active')
-            ->where(function ($query) {
-                $query
-                    ->whereNull('customer_service_subscriptions.starts_at')
-                    ->orWhere('customer_service_subscriptions.starts_at', '<=', now());
-            })
-            ->where(function ($query) {
-                $query
-                    ->whereNull('customer_service_subscriptions.ends_at')
-                    ->orWhere('customer_service_subscriptions.ends_at', '>=', now());
-            });
+        )->whereIn('customer_service_subscriptions.id', CustomerServiceSubscription::query()
+            ->effectiveAt()->selectRaw('MAX(customer_service_subscriptions.id)')->groupBy('customer_id'));
     }
 
     public function serviceCode(): string
@@ -252,78 +229,13 @@ class Customer extends Authenticatable
 
     public function currentServicePlan(): ?ServicePlan
     {
-        if ($this->resolvedServicePlanLoaded) {
-            return $this->resolvedServicePlan;
-        }
+        $billing = app(CustomerBillingStateService::class);
 
-        $plan = null;
-
-        if ($this->relationLoaded('servicePlan')) {
-            $plan = $this->getRelation('servicePlan');
-        }
-
-        if (! $plan && $this->relationLoaded('activeServiceSubscription')) {
-            $subscription = $this->getRelation('activeServiceSubscription');
-
-            if ($subscription) {
-                $subscription->loadMissing('servicePlan');
-                $plan = $subscription->servicePlan;
-            }
-        }
-
-        $planId = (int) ($this->getAttribute('service_plan_id') ?? 0);
-
-        if (! $plan && $planId > 0) {
-            $plan = ServicePlan::query()
-                ->select([
-                    'id',
-                    'code',
-                    'name',
-                    'monthly_credits',
-                    'app_monthly_credits',
-                    'api_monthly_credits',
-                    'concurrent_jobs_limit',
-                    'api_enabled',
-                    'api_requests_per_minute',
-                    'api_concurrent_jobs',
-                    'api_allowed_tools',
-                    'is_free',
-                ])
-                ->find($planId);
-        }
-
-        if (! $plan) {
-            $subscription = $this->activeServiceSubscription()
-                ->with('servicePlan')
-                ->first();
-
-            if ($subscription) {
-                $this->setRelation('activeServiceSubscription', $subscription);
-                $plan = $subscription->servicePlan;
-            }
-        }
-
-        if (! $plan) {
-            $plan = app(CustomerBillingStateService::class)->defaultServicePlan();
-        }
-
-        if ($plan) {
-            $this->setRelation('servicePlan', $plan);
-        }
-
-        $this->resolvedServicePlanLoaded = true;
-
-        return $this->resolvedServicePlan = $plan ?: null;
+        return $billing->resolveActiveServiceSubscription($this)?->servicePlan ?? $billing->defaultServicePlan();
     }
 
     public function currentServicePlanId(): ?int
     {
-        $planId = (int) ($this->getAttribute('service_plan_id') ?? 0);
-
-        if ($planId > 0) {
-            return $planId;
-        }
-
         return (int) ($this->currentServicePlan()?->id ?: 0) ?: null;
     }
 
@@ -339,41 +251,15 @@ class Customer extends Authenticatable
     public function activeStorageSubscription(): HasOne
     {
         return $this->hasOne(CustomerStorageSubscription::class)
-            ->where('customer_storage_subscriptions.status', 'active')
-            ->where(function ($query) {
-                $query
-                    ->whereNull('customer_storage_subscriptions.starts_at')
-                    ->orWhere('customer_storage_subscriptions.starts_at', '<=', now());
-            })
-            ->where(function ($query) {
-                $query
-                    ->whereNull('customer_storage_subscriptions.ends_at')
-                    ->orWhere('customer_storage_subscriptions.ends_at', '>=', now());
-            })
-            ->latestOfMany();
+            ->ofMany(['id' => 'max'], fn ($query) => $query->effectiveAt());
     }
 
     public function storagePlan(): HasOneThrough
     {
-        return $this->hasOneThrough(
-            StoragePlan::class,
-            CustomerStorageSubscription::class,
-            'customer_id',
-            'id',
-            'id',
-            'storage_plan_id'
-        )
-            ->where('customer_storage_subscriptions.status', 'active')
-            ->where(function ($query) {
-                $query
-                    ->whereNull('customer_storage_subscriptions.starts_at')
-                    ->orWhere('customer_storage_subscriptions.starts_at', '<=', now());
-            })
-            ->where(function ($query) {
-                $query
-                    ->whereNull('customer_storage_subscriptions.ends_at')
-                    ->orWhere('customer_storage_subscriptions.ends_at', '>=', now());
-            });
+        return $this->hasOneThrough(StoragePlan::class, CustomerStorageSubscription::class,
+            'customer_id', 'id', 'id', 'storage_plan_id')
+            ->whereIn('customer_storage_subscriptions.id', CustomerStorageSubscription::query()->effectiveAt()
+                ->selectRaw('MAX(customer_storage_subscriptions.id)')->groupBy('customer_storage_subscriptions.customer_id'));
     }
 
     public function storageQuotaMb(int $default = 512): int
@@ -388,61 +274,12 @@ class Customer extends Authenticatable
 
     public function currentStoragePlan(): ?StoragePlan
     {
-        if ($this->resolvedStoragePlanLoaded) {
-            return $this->resolvedStoragePlan;
-        }
-
-        $plan = null;
-
-        if ($this->relationLoaded('storagePlan')) {
-            $plan = $this->getRelation('storagePlan');
-        }
-
-        if (! $plan && $this->relationLoaded('activeStorageSubscription')) {
-            $subscription = $this->getRelation('activeStorageSubscription');
-
-            if ($subscription) {
-                $subscription->loadMissing('storagePlan');
-                $plan = $subscription->storagePlan;
-            }
-        }
-
-        $planId = (int) ($this->getAttribute('storage_plan_id') ?? 0);
-
-        if (! $plan && $planId > 0) {
-            $plan = StoragePlan::query()
-                ->select(['id', 'code', 'name', 'quota_mb'])
-                ->find($planId);
-        }
-
-        if (! $plan) {
-            $subscription = $this->activeStorageSubscription()
-                ->with('storagePlan')
-                ->first();
-
-            if ($subscription) {
-                $this->setRelation('activeStorageSubscription', $subscription);
-                $plan = $subscription->storagePlan;
-            }
-        }
-
-        if (! $plan) {
-            $plan = app(CustomerBillingStateService::class)->defaultStoragePlan();
-        }
-
-        if ($plan) {
-            $this->setRelation('storagePlan', $plan);
-        }
-
-        $this->resolvedStoragePlanLoaded = true;
-
-        return $this->resolvedStoragePlan = $plan ?: null;
+        return app(CustomerBillingStateService::class)->resolveActiveStorageSubscription($this)?->storagePlan
+            ?? app(CustomerBillingStateService::class)->defaultStoragePlan();
     }
 
     public function syncResolvedServicePlan(?CustomerServiceSubscription $subscription = null): static
     {
-        $this->resolvedServicePlanLoaded = false;
-        $this->resolvedServicePlan = null;
         $this->toolActionAllowanceCache = [];
         $this->toolAccessCache = [];
         $this->customerEntitlementCache = [];
@@ -512,7 +349,8 @@ class Customer extends Authenticatable
             return false;
         }
 
-        $cacheKey = $toolActionFullCode.'|'.$channel;
+        $planId = $this->currentServicePlanId();
+        $cacheKey = $planId.'|'.$toolActionFullCode.'|'.$channel;
 
         if (array_key_exists($cacheKey, $this->toolActionAllowanceCache)) {
             return $this->toolActionAllowanceCache[$cacheKey];
@@ -529,8 +367,6 @@ class Customer extends Authenticatable
         if ($override && $override->allowed !== null) {
             return $this->toolActionAllowanceCache[$cacheKey] = (bool) $override->allowed;
         }
-
-        $planId = $this->currentServicePlanId();
 
         if (! $planId) {
             return $this->toolActionAllowanceCache[$cacheKey] = false;
@@ -554,7 +390,7 @@ class Customer extends Authenticatable
         }
 
         $requestedActionCodes = $this->normalizeCodeList($toolActionFullCodes);
-        $cacheKey = $toolCode.'|'.$channel.'|'.implode(',', $requestedActionCodes);
+        $cacheKey = $this->currentServicePlanId().'|'.$toolCode.'|'.$channel.'|'.implode(',', $requestedActionCodes);
 
         if (array_key_exists($cacheKey, $this->toolAccessCache)) {
             return $this->toolAccessCache[$cacheKey];

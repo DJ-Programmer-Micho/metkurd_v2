@@ -162,6 +162,7 @@ it('keeps dashboard and api concurrency limits separate', function () {
 });
 
 it('shows app credits in the shell and api credits on the api access page', function () {
+    config(['metkurd_v2.enabled' => false]); // Exercise the retained V1 component instead of its V2 redirect.
     $customer = separateWalletCustomer('wallet-shell-ui@example.com', 'wallet_shell_ui_user');
     assignSeparateWalletPlan($customer, 'pro');
     seedSeparateWallet($customer, CreditWallet::TYPE_APP, 1111, 0);
@@ -323,7 +324,8 @@ it('shows api credits in the header only for api enabled plans', function () {
 
 it('renders the V2 resource meter from the canonical shell data without clipping over-limit balances', function () {
     $customer = separateWalletCustomer('wallet-v2-meter@example.com', 'wallet_v2_meter_user');
-    assignSeparateWalletPlan($customer, 'pro');
+    $plan = assignSeparateWalletPlan($customer, 'pro');
+    $plan->update(['api_allowed_tools' => [...$plan->api_allowed_tools, 'v2:speech']]);
     seedSeparateWallet($customer, CreditWallet::TYPE_APP, 300001, 0);
     seedSeparateWallet($customer, CreditWallet::TYPE_API, 2222, 0);
     \App\Models\CustomerUsage::query()->updateOrCreate(
@@ -348,6 +350,10 @@ it('refills both app and api wallets from the service plan allowances', function
 
     $customer = separateWalletCustomer('wallet-refill@example.com', 'wallet_refill_user');
     assignSeparateWalletPlan($customer, 'pro');
+    $customer->activeServiceSubscription()->firstOrFail()->update([
+        'source' => 'admin_manual_grant',
+        'meta' => ['billing_cycle' => 'yearly', 'period_ends_at' => '2027-04-10T10:00:00+03:00'],
+    ]);
 
     seedSeparateWallet($customer, CreditWallet::TYPE_APP, 150, 25);
     seedSeparateWallet($customer, CreditWallet::TYPE_API, 275, 0);

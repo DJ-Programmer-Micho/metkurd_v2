@@ -15,6 +15,8 @@ use Livewire\Attributes\Url;
 
 trait ManagesLandingToolsPage
 {
+    use SecureAdminComponent;
+
     #[Url(as: 'q', keep: true)]
     public string $search = '';
 
@@ -305,6 +307,8 @@ trait ManagesLandingToolsPage
 
     public function importDefaultTools(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $count = $this->toolCatalog()->importFallbackDefaults();
 
         $this->dispatch('alert', type: 'success', message: __('Imported :count default tool page(s).', ['count' => $count]));
@@ -432,6 +436,8 @@ trait ManagesLandingToolsPage
 
     public function saveToolPage(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $toolPage = $this->editingToolPageId
             ? LandingToolPage::query()->findOrFail($this->editingToolPageId)
             : new LandingToolPage;
@@ -656,6 +662,8 @@ trait ManagesLandingToolsPage
 
     public function toggleToolPageStatus(int $toolPageId): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $toolPage = LandingToolPage::query()->findOrFail($toolPageId);
         $toolPage->update(['is_active' => ! $toolPage->is_active]);
 
@@ -675,6 +683,8 @@ trait ManagesLandingToolsPage
 
     public function performToolPageDelete(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         if (! $this->toolPageIdPendingDelete) {
             return;
         }

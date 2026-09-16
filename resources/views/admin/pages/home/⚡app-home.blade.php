@@ -31,8 +31,9 @@ class extends Component
                             <span class="badge text-bg-light text-uppercase fw-semibold mb-3">{{ __('Admin Analysis') }}</span>
                             <h2 class="text-white mb-2">{{ __('Live operating snapshot for plans, customers, purchase flow, and tool consumption.') }}</h2>
                             <p class="text-white-50 mb-0 analysis-hero-copy">
-                                {{ __('This dashboard uses grouped database aggregates and short-lived caching to keep the admin overview fast as orders, subscriptions, and `MlJob` history grow.') }}
+                                {{ __('admin_ux.dashboard_help') }}
                             </p>
+                            <a wire:navigate class="btn btn-outline-light mt-3" href="{{ route('admin.customers.register', ['locale' => app()->getLocale()]) }}">{{ __('Customer Register') }}</a>
                         </div>
                         <div class="col-xl-4">
                             <div class="analysis-panel p-3 rounded-4">
@@ -78,6 +79,7 @@ class extends Component
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Total Customers') }}</p>
                     <h3 class="mb-1">{{ number_format($stats['customers_total']) }}</h3>
+                    <span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
                     <div class="text-muted small">{{ __(':active active · :suspended suspended', ['active' => number_format($stats['active_customers']), 'suspended' => number_format($stats['suspended_customers'])]) }}</div>
                     <div class="text-muted small">{{ __(':count registered in :period', ['count' => number_format($stats['period_new_customers']), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
@@ -97,6 +99,7 @@ class extends Component
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Revenue') }}</p>
                     <h3 class="mb-1">{{ $this->formatMoney($stats['revenue_total']) }}</h3>
+                    <span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
                     <div class="text-muted small">{{ __(':amount in :period', ['amount' => $this->formatMoney($stats['revenue_period']), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
             </div>
@@ -106,6 +109,7 @@ class extends Component
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Credits Sold') }}</p>
                     <h3 class="mb-1">{{ $this->formatCredits($stats['credits_sold_total']) }}</h3>
+                    <span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
                     <div class="text-muted small">{{ __(':credits sold in this window', ['credits' => $this->formatCredits($stats['credits_sold_period'])]) }}</div>
                 </div>
             </div>
@@ -115,6 +119,7 @@ class extends Component
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Consumption') }}</p>
                     <h3 class="mb-1">{{ $this->formatCredits($stats['consumed_total']) }}</h3>
+                    <span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
                     <div class="text-muted small">{{ __(':credits consumed in this window', ['credits' => $this->formatCredits($stats['consumed_period'])]) }}</div>
                 </div>
             </div>
@@ -124,7 +129,8 @@ class extends Component
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Jobs') }}</p>
                     <h3 class="mb-1">{{ number_format($stats['jobs_total']) }}</h3>
-                    <div class="text-muted small">{{ __(':rate success rate, :count live', ['rate' => $this->formatPercent($stats['success_rate']), 'count' => number_format($stats['active_jobs'])]) }}</div>
+                    <span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
+                    <div class="text-muted small">{{ __('admin_ux.job_window', ['period' => $this->periodLabel($periodFilter), 'rate' => $this->formatPercent($stats['success_rate']), 'count' => number_format($stats['active_jobs'])]) }}</div>
                 </div>
             </div>
         </div>
@@ -135,7 +141,7 @@ class extends Component
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Service Plans Revenue') }}</p>
-                    <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'service_plan.revenue_total', 0)) }}</h3>
+                    <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'service_plan.revenue_total', 0)) }}</h3><span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
                     <div class="text-muted small">{{ __(':orders orders and :amount in :period', ['orders' => number_format((int) data_get($revenueSources, 'service_plan.orders_period', 0)), 'amount' => $this->formatMoney(data_get($revenueSources, 'service_plan.revenue_period', 0)), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
             </div>
@@ -144,7 +150,7 @@ class extends Component
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Storage Plans Revenue') }}</p>
-                    <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'storage_plan.revenue_total', 0)) }}</h3>
+                    <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'storage_plan.revenue_total', 0)) }}</h3><span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
                     <div class="text-muted small">{{ __(':orders orders and :amount in :period', ['orders' => number_format((int) data_get($revenueSources, 'storage_plan.orders_period', 0)), 'amount' => $this->formatMoney(data_get($revenueSources, 'storage_plan.revenue_period', 0)), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
             </div>
@@ -153,7 +159,7 @@ class extends Component
             <div class="card h-100 analysis-stat-card">
                 <div class="card-body">
                     <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Credit Products Revenue') }}</p>
-                    <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'credit_product.revenue_total', 0)) }}</h3>
+                    <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'credit_product.revenue_total', 0)) }}</h3><span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
                     <div class="text-muted small">{{ __(':orders orders and :amount in :period', ['orders' => number_format((int) data_get($revenueSources, 'credit_product.orders_period', 0)), 'amount' => $this->formatMoney(data_get($revenueSources, 'credit_product.revenue_period', 0)), 'period' => $this->periodLabel($periodFilter)]) }}</div>
                 </div>
             </div>
@@ -165,11 +171,12 @@ class extends Component
             <div class="card h-100 analysis-chart-card">
                 <div class="card-header border-0">
                     <h5 class="card-title mb-1">{{ __('Operational Trend') }}</h5>
-                    <p class="text-muted mb-0">{{ __('A compact 14-day view of job flow, registrations, and paid revenue in :currency.', ['currency' => $displayCurrencyCode]) }}</p>
+                    <p class="text-muted mb-0">{{ __('admin_ux.trend_help', ['period' => $this->periodLabel($periodFilter), 'currency' => $displayCurrencyCode]) }}</p>
                 </div>
                 <div class="card-body">
                     <div class="analysis-chart-wrap analysis-chart-wrap-lg">
                         <canvas id="adminHomeActivityChart" wire:ignore></canvas>
+                        @if (!array_sum($charts['activity']['jobs']) && !array_sum($charts['activity']['customers']) && !array_sum($charts['activity']['revenue']))<p class="text-muted text-center">{{ __('admin_ux.empty_chart') }}</p>@endif
                     </div>
                 </div>
             </div>
@@ -184,6 +191,7 @@ class extends Component
                 <div class="card-body">
                     <div class="analysis-chart-wrap analysis-chart-wrap-md">
                         <canvas id="adminHomePurchaseMixChart" wire:ignore></canvas>
+                        @if (!array_sum(data_get($charts, 'purchase_mix.revenue', [])))<p class="admin-chart-empty text-muted">{{ __('admin_ux.empty_chart') }}</p>@endif
                     </div>
                 </div>
             </div>
@@ -200,6 +208,7 @@ class extends Component
                 <div class="card-body">
                     <div class="analysis-chart-wrap">
                         <canvas id="adminHomePlanMixChart" wire:ignore></canvas>
+                        @if (!array_sum(data_get($charts, 'plan_mix.subscribers', [])))<p class="admin-chart-empty text-muted">{{ __('admin_ux.empty_chart') }}</p>@endif
                     </div>
                 </div>
             </div>
@@ -214,6 +223,7 @@ class extends Component
                 <div class="card-body">
                     <div class="analysis-chart-wrap">
                         <canvas id="adminHomeToolsChart" wire:ignore></canvas>
+                        @if (!array_sum(data_get($charts, 'top_tools.jobs', [])))<p class="admin-chart-empty text-muted">{{ __('admin_ux.empty_chart') }}</p>@endif
                     </div>
                 </div>
             </div>
@@ -388,8 +398,8 @@ class extends Component
 
     <div class="card">
         <div class="card-header border-0">
-            <h5 class="card-title mb-1">{{ __('Recent 14-Day Activity') }}</h5>
-            <p class="text-muted mb-0">{{ __('Compact daily timeline for registrations, paid revenue, jobs, and credit consumption.') }}</p>
+            <h5 class="card-title mb-1">{{ __('admin_ux.activity_title') }}</h5>
+            <p class="text-muted mb-0">{{ __('admin_ux.activity_help', ['period' => $this->periodLabel($periodFilter)]) }}</p>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -440,7 +450,7 @@ class extends Component
             'counts' => __('Jobs').' / '.__('New Customers'),
         ];
     @endphp
-    <script type="application/json" id="admin-home-chart-data">@json($charts)</script>
+    <script type="application/json" wire:key="dashboard-data-{{ $periodFilter }}-{{ $displayCurrencyCode }}" id="admin-home-chart-data">@json($charts)</script>
 
     <style>
         .analysis-dashboard .analysis-hero{
@@ -494,15 +504,15 @@ class extends Component
 
         .analysis-dashboard .analysis-chart-wrap{
             position: relative;
-            min-height: 300px;
+            height: 300px;
         }
 
         .analysis-dashboard .analysis-chart-wrap-lg{
-            min-height: 340px;
+            height: 340px;
         }
 
         .analysis-dashboard .analysis-chart-wrap-md{
-            min-height: 340px;
+            height: 340px;
         }
 
         .analysis-dashboard .analysis-metric-row{
@@ -534,13 +544,13 @@ class extends Component
                     });
 
                     const colorSet = {
-                        teal: '#0f766e',
-                        tealSoft: 'rgba(15, 118, 110, 0.18)',
+                        teal: '#14b8a6',
+                        tealSoft: 'rgba(20, 184, 166, 0.65)',
                         sky: '#0284c7',
                         skySoft: 'rgba(2, 132, 199, 0.14)',
                         amber: '#d97706',
                         amberSoft: 'rgba(217, 119, 6, 0.16)',
-                        indigo: '#4f46e5',
+                        indigo: '#818cf8',
                         indigoSoft: 'rgba(79, 70, 229, 0.16)',
                         rose: '#e11d48',
                         slate: '#334155',
@@ -560,6 +570,7 @@ class extends Component
                         return `rgba(${seed}, ${alpha})`;
                     });
 
+                    const chartTextColor = () => getComputedStyle(document.body).color || '#64748b';
                     const defaultFontFamily = () => getComputedStyle(document.body).fontFamily || 'system-ui';
 
                     const destroyCharts = () => {
@@ -592,6 +603,7 @@ class extends Component
                     const sharedPlugins = {
                         legend: {
                             labels: {
+                                color: chartTextColor(),
                                 boxWidth: 10,
                                 boxHeight: 10,
                                 usePointStyle: true,
@@ -621,7 +633,9 @@ class extends Component
                                 display: false,
                             },
                             ticks: {
-                                color: '#64748b',
+                                maxTicksLimit: 8,
+                                maxRotation: 0,
+                                color: chartTextColor(),
                                 font: {
                                     family: defaultFontFamily(),
                                 },
@@ -633,7 +647,9 @@ class extends Component
                                 color: 'rgba(148, 163, 184, 0.18)',
                             },
                             ticks: {
-                                color: '#64748b',
+                                maxTicksLimit: 8,
+                                maxRotation: 0,
+                                color: chartTextColor(),
                                 font: {
                                     family: defaultFontFamily(),
                                 },
@@ -725,7 +741,7 @@ class extends Component
                                             title: {
                                                 display: true,
                                                 text: ui.counts,
-                                                color: '#64748b',
+                                                color: chartTextColor(),
                                                 font: {
                                                     family: defaultFontFamily(),
                                                     weight: '600',
@@ -733,13 +749,15 @@ class extends Component
                                             },
                                         },
                                         money: {
+                                            display: payload.activity.revenue.some(value => value > 0),
                                             beginAtZero: true,
                                             position: rtl ? 'left' : 'right',
                                             grid: {
                                                 drawOnChartArea: false,
                                             },
                                             ticks: {
-                                                color: '#64748b',
+                                                maxTicksLimit: 5,
+                                                color: chartTextColor(),
                                                 callback: (value) => moneyFormatter.format(value),
                                                 font: {
                                                     family: defaultFontFamily(),
@@ -748,7 +766,7 @@ class extends Component
                                             title: {
                                                 display: true,
                                                 text: `${ui.revenue} (${payload.currency?.code || 'USD'})`,
-                                                color: '#64748b',
+                                                color: chartTextColor(),
                                                 font: {
                                                     family: defaultFontFamily(),
                                                     weight: '600',
@@ -850,7 +868,8 @@ class extends Component
                                         x: {
                                             ...sharedScales.y,
                                             ticks: {
-                                                color: '#64748b',
+                                                maxTicksLimit: 5,
+                                                color: chartTextColor(),
                                                 callback: (value) => numberFormatter.format(value),
                                                 font: {
                                                     family: defaultFontFamily(),
@@ -928,10 +947,8 @@ class extends Component
                         if (!state.commitHooked && window.Livewire && typeof Livewire.hook === 'function') {
                             state.commitHooked = true;
 
-                            Livewire.hook('commit', ({ succeed }) => {
-                                succeed(() => {
-                                    requestAnimationFrame(renderCharts);
-                                });
+                            Livewire.hook('morphed', ({ el }) => {
+                                if (el.matches?.(rootSelector) || el.querySelector?.(rootSelector)) requestAnimationFrame(renderCharts);
                             });
                         }
 

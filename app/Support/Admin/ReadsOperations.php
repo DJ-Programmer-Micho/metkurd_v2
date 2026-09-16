@@ -21,6 +21,9 @@ trait ReadsOperations
     public string $section = 'jobs';
 
     #[Url]
+    public string $financialEra = 'current';
+
+    #[Url]
     public string $customerFilter = '';
 
     public string $customerSearch = '';
@@ -30,6 +33,9 @@ trait ReadsOperations
 
     #[Url]
     public string $status = '';
+
+    #[Url]
+    public string $group = '';
 
     #[Url]
     public string $channel = '';
@@ -77,9 +83,9 @@ trait ReadsOperations
     public function resetFilters(): void
     {
         // Keep the selected customer and section when clearing a scoped view.
-        $this->reset('search', 'status', 'channel', 'service', 'failure', 'from', 'until', 'direction', 'method', 'job', 'payment', 'queue');
+        $this->reset('search', 'status', 'group', 'channel', 'service', 'failure', 'from', 'until', 'direction', 'method', 'job', 'payment', 'queue');
         $this->resetPage();
-        unset($this->rows, $this->context);
+        unset($this->rows, $this->context, $this->jobSummary);
     }
 
     public function updated($property): void
@@ -88,7 +94,7 @@ trait ReadsOperations
         if ($property === 'section') {
             $this->search = $this->status = $this->channel = $this->service = $this->failure = $this->direction = $this->method = '';
         }
-        unset($this->rows, $this->overview, $this->context, $this->customerOptions);
+        unset($this->rows, $this->overview, $this->context, $this->customerOptions, $this->jobSummary);
     }
 
     #[Computed]
@@ -106,14 +112,25 @@ trait ReadsOperations
     }
 
     #[Computed]
+    public function jobSummary(): array
+    {
+        return app(AdminOperations::class)->jobSummary([
+            'customer' => $this->customer ?: (int) $this->customerFilter,
+            'from' => $this->from, 'until' => $this->until, 'service' => $this->service,
+            'channel' => $this->channel, 'search' => $this->search, 'failure' => $this->failure,
+        ]);
+    }
+
+    #[Computed]
     public function rows()
     {
         $reader = app(AdminOperations::class);
         $f = ['customer' => $this->customer ?: (int) $this->customerFilter];
-        foreach (['search', 'status', 'channel', 'service', 'failure', 'from', 'until', 'direction', 'method', 'job', 'payment'] as $key) {
+        foreach (['financialEra', 'search', 'status', 'channel', 'service', 'failure', 'from', 'until', 'direction', 'method', 'job', 'payment'] as $key) {
             $f[$key] = $this->$key;
         }
         $f['queue'] = $this->section === 'review' ? $this->queue : '';
+        $f['group'] = $this->section === 'jobs' ? $this->group : '';
 
         return $reader->query($this->section, $f)->paginate(AdminOperations::PAGE_SIZE)->through(fn ($row) => $reader->row($row));
     }
@@ -126,7 +143,7 @@ trait ReadsOperations
         if (! $type) {
             return [];
         }
-        $row = $reader->query($type, ['customer' => $this->customer ?: (int) $this->customerFilter, 'job' => $this->job, 'payment' => $this->payment])->firstOrFail();
+        $row = $reader->query($type, ['customer' => $this->customer ?: (int) $this->customerFilter, 'job' => $this->job, 'payment' => $this->payment, 'financialEra' => $this->financialEra])->firstOrFail();
 
         return $reader->row($row);
     }

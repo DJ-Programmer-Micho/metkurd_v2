@@ -35,7 +35,13 @@ class CreateAddonPayment
         protected TelegramSubscriptionLifecycleNotifier $telegramLifecycleNotifier,
     ) {}
 
-    public function handle(Customer $customer, int $productId, ?string $couponCode = null): Payment
+    public function handle(Customer $customer, int $productId, ?string $couponCode = null, bool $v2Checkout = false): Payment
+    {
+        return app(\App\Domain\Payments\Support\CheckoutCreationGuard::class)->run($customer, CreditProduct::class,
+            fn () => $this->createCheckout($customer, $productId, $couponCode, $v2Checkout));
+    }
+
+    protected function createCheckout(Customer $customer, int $productId, ?string $couponCode = null, bool $v2Checkout = false): Payment
     {
         $this->authorization->assertAddonPurchaseAllowed($customer);
 
@@ -62,7 +68,7 @@ class CreateAddonPayment
         $discountDisplay = $discountAmountIqd > 0
             ? $this->currency->priceDataForBaseAmountIqd($discountAmountIqd, $customer)
             : null;
-        $payment = DB::transaction(function () use ($customer, $product, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay) {
+        $payment = DB::transaction(function () use ($v2Checkout, $customer, $product, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay) {
             $payment = Payment::create([
                 'uuid' => (string) Str::uuid(),
                 'customer_id' => $customer->id,
@@ -102,6 +108,7 @@ class CreateAddonPayment
                 ],
                 'meta' => [
                     'locale' => app()->getLocale(),
+                    'checkout_ui' => $v2Checkout ? 'v2' : 'v1',
                     'fee_quote' => $feeQuote,
                     'coupon' => $couponPricing,
                 ],
@@ -131,7 +138,7 @@ class CreateAddonPayment
         try {
             $result = $this->fib->createPayment(
                 $payment,
-                route('payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $payment])
+                route(data_get($payment->meta, 'checkout_ui') === 'v2' ? 'app.v2.payments.fib.show' : 'payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $payment])
             );
 
             /** @var \App\Domain\Payments\Data\FibCreatePaymentRequestData $request */

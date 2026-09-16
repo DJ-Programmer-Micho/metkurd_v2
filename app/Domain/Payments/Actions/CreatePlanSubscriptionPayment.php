@@ -49,6 +49,19 @@ class CreatePlanSubscriptionPayment
         string $billingCycle = 'monthly',
         ?string $couponCode = null,
         ?string $paymentMethodCode = null,
+        bool $v2Checkout = false,
+    ): Payment {
+        return app(\App\Domain\Payments\Support\CheckoutCreationGuard::class)->run($customer, ServicePlan::class,
+            fn () => $this->createCheckout($customer, $planId, $billingCycle, $couponCode, $paymentMethodCode, $v2Checkout));
+    }
+
+    protected function createCheckout(
+        Customer $customer,
+        int $planId,
+        string $billingCycle = 'monthly',
+        ?string $couponCode = null,
+        ?string $paymentMethodCode = null,
+        bool $v2Checkout = false,
     ): Payment {
         $plan = ServicePlan::query()->where('is_active', true)->findOrFail($planId);
         $paymentMode = $plan->checkoutPaymentMode();
@@ -96,6 +109,19 @@ class CreatePlanSubscriptionPayment
         }
 
         $billingCycle = $this->resolveBillingCycle($billingCycle, $plan, $paymentMode);
+        if ($v2Checkout && $paymentMode->isRecurring()) {
+            // Configuration errors must not create failed checkout history or reserve coupons.
+            $callbacks = app(\App\Domain\Payments\Fib\FibCallbackUrlService::class);
+            try {
+                $callbacks->ensurePublicUrl($callbacks->absoluteRoute('payments.fib.subscription.callback'), 'subscription');
+            } catch (\RuntimeException $exception) {
+                Log::warning('V2 subscription checkout callback configuration is invalid.', [
+                    'customer_id' => (int) $customer->id,
+                    'message' => $exception->getMessage(),
+                ]);
+                throw ValidationException::withMessages(['checkout' => __('purchase_v2.callback_unavailable')]);
+            }
+        }
         $originalBaseAmountIqd = $plan->priceIqdForCycle($billingCycle === 'yearly' ? 'yearly' : 'monthly');
         $couponContext = new CouponContext(
             customer: $customer,
@@ -123,7 +149,7 @@ class CreatePlanSubscriptionPayment
         $providerObjectType = $paymentMode->isRecurring()
             ? PaymentProviderObjectType::SUBSCRIPTION
             : PaymentProviderObjectType::PAYMENT;
-        $payment = DB::transaction(function () use ($customer, $plan, $provider, $paymentMethod, $paymentMode, $providerObjectType, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay, $currentPlan, $currentPlanId) {
+        $payment = DB::transaction(function () use ($v2Checkout, $customer, $plan, $provider, $paymentMethod, $paymentMode, $providerObjectType, $billingCycle, $couponContext, $resolvedCoupon, $couponPricing, $originalBaseAmountIqd, $baseAmountIqd, $discountAmountIqd, $grossAmountIqd, $feeQuote, $display, $baseDisplay, $originalDisplay, $discountDisplay, $currentPlan, $currentPlanId) {
             $payment = Payment::create([
                 'uuid' => (string) Str::uuid(),
                 'customer_id' => $customer->id,
@@ -182,6 +208,7 @@ class CreatePlanSubscriptionPayment
                 ],
                 'meta' => [
                     'locale' => app()->getLocale(),
+                    'checkout_ui' => $v2Checkout ? 'v2' : 'v1',
                     'fee_quote' => $feeQuote,
                     'payment_method_code' => (string) $paymentMethod->code,
                     'payment_driver' => (string) $paymentMethod->driver,
@@ -309,7 +336,7 @@ class CreatePlanSubscriptionPayment
         try {
             $result = $this->oneTimeFib->createPayment(
                 $payment,
-                route('payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $payment])
+                route(data_get($payment->meta, 'checkout_ui') === 'v2' ? 'app.v2.payments.fib.show' : 'payments.fib.show', ['locale' => app()->getLocale(), 'payment' => $payment])
             );
 
             /** @var \App\Domain\Payments\Data\FibCreatePaymentRequestData $request */

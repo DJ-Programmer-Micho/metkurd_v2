@@ -41,14 +41,13 @@ class ManualServicePlanGrantService
                     'superseded_at' => now()->toIso8601String(),
                     'superseded_by_service_plan_id' => (int) $plan->id,
                     'superseded_by_service_plan_code' => (string) $plan->code,
-                    'billing_source' => 'admin_manual_grant',
-                    'revenue_record' => false,
-                    'reason' => (string) ($meta['reason'] ?? ''),
-                    'admin_id' => $meta['admin_id'] ?? null,
+                    'superseded_by_admin_id' => $meta['admin_id'] ?? null,
+                    'supersession_reason' => (string) ($meta['reason'] ?? ''),
                 ]);
 
                 $currentSubscription->forceFill([
                     'status' => 'ended',
+                    'auto_renew' => false,
                     'ends_at' => $currentSubscription->ends_at ?? now(),
                     'canceled_at' => $currentSubscription->canceled_at ?? now(),
                     'meta' => $currentMeta,
@@ -58,6 +57,9 @@ class ManualServicePlanGrantService
             $subscriptionMeta = array_filter([
                 'billing_source' => 'admin_manual_grant',
                 'revenue_record' => false,
+                'revenue_excluded' => true,
+                'grant_type' => 'complimentary_internal',
+                'grant_reason_code' => $meta['grant_reason_code'] ?? 'other',
                 'provider' => null,
                 'fib_subscription_id' => null,
                 'reason' => (string) ($meta['reason'] ?? ''),
@@ -65,6 +67,7 @@ class ManualServicePlanGrantService
                 'granted_at' => now()->toIso8601String(),
                 'operation_id' => $meta['operation_id'] ?? null,
                 'billing_cycle' => $billingCycle,
+                'period_ends_at' => $periodEndsAt->toIso8601String(),
             ], static fn (mixed $value): bool => $value !== null);
 
             $subscription = CustomerServiceSubscription::query()->create([
@@ -77,7 +80,7 @@ class ManualServicePlanGrantService
                 'source' => 'admin_manual_grant',
                 'provider_ref' => null,
                 'starts_at' => $startsAt,
-                'ends_at' => null,
+                'ends_at' => $periodEndsAt,
                 'canceled_at' => null,
                 'upgraded_at' => $previousPlanId ? now() : null,
                 'cycle_started_on' => $startsAt->toDateString(),

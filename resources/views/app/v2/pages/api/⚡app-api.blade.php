@@ -21,14 +21,17 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     #[Computed]
     public function access(): array { return app(CustomerApiAccessService::class)->configForCustomer(auth('app')->user()); }
 
+    #[Computed]
+    public function keyAccessMessage(): ?string { return app(ApiCatalog::class)->keyAccessMessage(auth('app')->user()); }
+
     public function createKey(): void
     {
         $this->validate(['keyName' => 'required|string|max:100']);
         $issued = DB::transaction(function () {
             $customer = Customer::lockForUpdate()->findOrFail(auth('app')->id());
             $service = app(CustomerApiKeyService::class);
-            if (app(ApiCatalog::class)->scopes($customer) === []) {
-                $this->addError('keyName', __('API access is not available on your current plan.'));
+            if ($message = app(ApiCatalog::class)->keyAccessMessage($customer)) {
+                $this->addError('keyName', $message);
                 return null;
             }
             if ($service->activeKeysCount($customer) >= (int) config('customer_api.max_keys', 5)) {
@@ -71,6 +74,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             <section x-show="section === 'overview'"><h2>{{ __('Overview') }}</h2><p>{{ __('Build with speech, text and audio services through one asynchronous API.') }}</p><div class="api-service-grid">@foreach($services as $id => $service)<button class="api-service" @click="section = @js($id)"><strong>{{ $service['name'] }}</strong><span>{{ __($service['description']) }}</span></button>@endforeach</div><p class="mt-4">{{ __('Submit a request, keep the job ID, then check its status. Processing continues without an open connection.') }}</p><code dir="ltr">{{ url('/api/v2') }}</code></section>
             <section x-cloak x-show="section === 'authentication'"><h2>{{ __('Authentication') }}</h2><p>{{ __('Send your API key in the Authorization header on every request, including file downloads.') }}</p><pre dir="ltr">Authorization: Bearer YOUR_API_KEY</pre><p>{{ __('Keep keys on your server. Never embed them in public browser code or mobile applications.') }}</p><p>{{ __('Keys use your current plan permissions. Revoking a key immediately prevents new requests with it.') }}</p></section>
             <section x-cloak x-show="section === 'keys'"><h2>{{ __('API Keys') }}</h2><p>{{ __('The full secret is shown only once. Copy it now and store it securely.') }}</p>
+                @if($this->keyAccessMessage)<p class="alert alert-info" role="status">{{ $this->keyAccessMessage }}</p>@endif
                 <form wire:submit="createKey" class="api-key-form"><label for="api-key-name">{{ __('Key name') }}</label><input id="api-key-name" dir="auto" class="form-control" wire:model="keyName" maxlength="100" autocomplete="off"><button class="btn btn-primary" wire:loading.attr="disabled" wire:target="createKey">{{ __('Create API key') }}</button>@error('keyName')<span class="text-danger">{{ $message }}</span>@enderror</form>
                 <div class="api-new-key" x-cloak x-show="secret"><p>{{ __('The full secret is shown only once. Copy it now and store it securely.') }}</p><code dir="ltr" x-text="secret"></code><div><button class="btn btn-sm btn-primary" @click="copy(secret)">{{ __('Copy') }}</button><button class="btn btn-sm btn-outline-secondary" @click="secret = ''">{{ __('Dismiss secret') }}</button></div></div>
                 <div class="api-table"><table><thead><tr><th>{{ __('Name') }}</th><th>{{ __('Prefix') }}</th><th>{{ __('Created') }}</th><th>{{ __('Last used') }}</th><th>{{ __('Status') }}</th><th>{{ __('Actions') }}</th></tr></thead><tbody>@forelse($this->keys as $key)<tr wire:key="api-key-{{ $key->id }}"><td dir="auto">{{ $key->name }}</td><td><code dir="ltr">{{ $key->key_prefix }}…</code></td><td>{{ $key->created_at->format('Y-m-d') }}</td><td>{{ $key->last_used_at?->diffForHumans() ?? __('Never') }}</td><td>{{ $key->status === 'active' ? __('Active') : __('Revoked') }}</td><td>@if($key->status === 'active')<button class="btn btn-sm btn-outline-danger" data-v2-confirm="{{ __('Revoke this API key? Applications using it will lose access immediately.') }}" wire:click="revokeKey({{ $key->id }})" @click="secret = ''">{{ __('Revoke') }}</button>@endif</td></tr>@empty<tr><td colspan="6">{{ __('No API keys yet. Create one to get started.') }}</td></tr>@endforelse</tbody></table></div>

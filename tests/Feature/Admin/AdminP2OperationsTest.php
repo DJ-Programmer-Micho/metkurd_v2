@@ -54,6 +54,38 @@ function p2Api(Customer $c, ?MlJob $j = null): ApiJob
     return ApiJob::create(['id' => (string) Str::uuid(), 'customer_id' => $c->id, 'api_key_id' => $key->id, 'ml_job_id' => $j?->id, 'tool_code' => 'ocr', 'tool_action' => 'ocr.standard', 'engine' => 'v2', 'status' => 'processing', 'storage_mode' => 'temporary', 'idempotency_hash' => hash('sha256', Str::uuid()), 'meta' => ['api_version' => 2, 'service' => 'ocr', 'expires_at' => now()->addDays(7)->toIso8601String()]]);
 }
 
+it('keeps attention groups aligned with local persistence and API reservation evidence using read queries only', function () {
+    $uncertain = p2Job($this->customer, values: ['status' => 'queued', 'failure_stage' => 'provider_submission_unknown']);
+    $saving = p2Job($this->customer, values: ['status' => 'saving', 'output' => ['provider_success' => true]]);
+    $missing = p2Job($this->customer, values: ['status' => 'done']);
+    $saved = p2Job($this->customer, values: ['status' => 'done', 'output' => ['text' => 'isolated saved text']]);
+    $failed = p2Job($this->customer, values: ['status' => 'failed', 'failure_stage' => 'refund_pending']);
+    $linked = p2Job($this->customer);
+    $api = p2Api($this->customer, $linked);
+    $api->update(['status' => 'completed']);
+    ApiCreditReservation::create(['id' => (string) Str::uuid(), 'customer_id' => $this->customer->id, 'api_job_id' => $api->id, 'amount' => 100, 'status' => 'reserved']);
+    $sql = [];
+    DB::listen(function ($q) use (&$sql) {
+        $sql[] = $q->sql;
+    });
+    $summary = $this->reader->jobSummary(['customer' => $this->customer->id]);
+    expect($summary)->toMatchArray(['attention' => 5, 'active' => 3, 'completed' => 2, 'failed' => 1, 'uncertain' => 1, 'persistence' => 2, 'reservation' => 1]);
+    expect($this->reader->jobSummary(['customer' => $this->customer->id, 'search' => $saved->id])['attention'])->toBe(0);
+    foreach (AdminOperations::JOB_GROUPS as $group) {
+        $rows = $this->reader->query('jobs', ['customer' => $this->customer->id, 'group' => $group])->get();
+        expect($rows)->toHaveCount($summary[$group]);
+        if ($group === 'attention') {
+            foreach ($rows as $job) {
+                expect($this->reader->row($job)['attention'])->toBeTrue();
+            }
+        }
+    }
+    Livewire::test('admin::pages.operations.adm-operations')->set('group', 'uncertain')
+        ->assertSee($uncertain->id)->assertDontSee($failed->id)->call('resetFilters')->assertSet('group', '');
+    expect(collect($sql)->filter(fn ($q) => preg_match('/^\s*(insert|update|delete|replace|alter|create|drop)\b/i', $q))->all())->toBe([]);
+    Http::assertNothingSent();
+});
+
 it('renders every operational section for read support without remote requests', function (string $section) {
     $this->get(route('admin.operations', ['locale' => 'en', 'section' => $section]))->assertOk()->assertSee('Local records only');
     Http::assertNothingSent();

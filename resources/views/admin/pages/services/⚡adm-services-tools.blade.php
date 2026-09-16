@@ -20,8 +20,8 @@ class extends Component
 
 <div class="container-fluid">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
+    <x-admin-capability-notice :capabilities="['admin.catalog']" />
     <x-admin-change-reason />
-    <x-admin-v2-catalog />
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -37,7 +37,7 @@ class extends Component
                     </button>
                     <button type="button" class="btn btn-primary" wire:click="openToolCreateModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                         <i class="ri-add-line align-bottom me-1"></i>
-                        {{ __('New Tool') }}
+                        {{ __('admin_ux.add_tool') }}
                     </button>
                 </div>
             </div>
@@ -95,6 +95,7 @@ class extends Component
         </div>
     </div>
 
+    <x-admin-v2-catalog />
     <div class="card">
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
@@ -265,7 +266,7 @@ class extends Component
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
                                         <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openActionCreateModal({{ $tool->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Add Action') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openToolEditModal({{ $tool->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Quick Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openToolEditModal({{ $tool->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Edit') }}</button>
                                         <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmToolDelete({{ $tool->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                                     </div>
                                 </td>

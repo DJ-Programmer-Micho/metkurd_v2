@@ -7,20 +7,16 @@ use App\Domain\Payments\Enums\PaymentMode;
 use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Enums\PaymentProviderObjectType;
 use App\Domain\Payments\Enums\PaymentStatus;
-use App\Domain\Payments\Enums\PurchaseType;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Enums\PaymentRecurringStrategy;
 use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
-use App\Models\ServicePlan;
-use App\Models\StoragePlan;
 use App\Services\Billing\CustomerBillingStateService;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class ReconcileSubscriptions extends Command
@@ -332,108 +328,19 @@ class ReconcileSubscriptions extends Command
         PaymentEventRecorder $events,
         int $defaultPlanId = 0,
     ): bool {
-        return (bool) DB::transaction(function () use ($modelClass, $subscriptionId, $scopeLabel, $threshold, $events, $defaultPlanId) {
-            /** @var CustomerServiceSubscription|CustomerStorageSubscription|null $subscription */
-            $subscription = $modelClass::query()
-                ->with('payment')
-                ->lockForUpdate()
-                ->find($subscriptionId);
+        $subscription = $modelClass::find($subscriptionId);
 
-            if (! $subscription instanceof CustomerServiceSubscription
-                && ! $subscription instanceof CustomerStorageSubscription) {
-                return false;
-            }
-
-            if ($subscription->status !== 'active') {
-                return false;
-            }
-
-            if ($defaultPlanId > 0) {
-                if ($subscription instanceof CustomerServiceSubscription && (int) $subscription->service_plan_id === $defaultPlanId) {
-                    return false;
-                }
-
-                if ($subscription instanceof CustomerStorageSubscription && (int) $subscription->storage_plan_id === $defaultPlanId) {
-                    return false;
-                }
-            }
-
-            if (! $this->isOverdueForDowngrade($subscription, $threshold)) {
-                return false;
-            }
-
-            $payment = $subscription->payment;
-            $endedAt = $this->resolvePeriodEnd($subscription) ?? now();
-            $meta = (array) ($subscription->meta ?? []);
-            $meta['cancel_source'] = 'renewal_failed';
-            $meta['provider_status'] = $payment?->providerStatusLabel();
-            $meta['provider_active_until'] = $payment?->active_until?->toIso8601String();
-            $meta['provider_last_payment_at'] = $payment?->last_payment_at?->toIso8601String();
-            $meta['provider_lifecycle_synced_at'] = now()->toIso8601String();
-            $meta['provider_lifecycle_sync_source'] = 'scheduled_reconciliation_local_expiry';
-
-            $subscription->forceFill([
-                'status' => 'ended',
-                'auto_renew' => false,
-                'ends_at' => $subscription->ends_at ?? $endedAt,
-                'canceled_at' => $subscription->canceled_at ?? now(),
-                'cycle_ends_on' => $endedAt->toDateString(),
-                'next_renewal_on' => $endedAt->toDateString(),
-                'meta' => $meta,
-            ])->save();
-
-            if ($payment) {
-                $events->record($payment, [
-                    'event_type' => $scopeLabel.'_subscription_ended',
-                    'source' => 'scheduled_reconciliation_local_expiry',
-                    'event_key' => 'subscription-local-expiry:'.$scopeLabel.':'.$subscription->id.':'.sha1($endedAt->toIso8601String()),
-                    'before_status' => $payment->status->value,
-                    'after_status' => $payment->status->value,
-                    'meta' => [
-                        'provider_status' => $payment->providerStatusLabel(),
-                        'period_ends_at' => $endedAt->toIso8601String(),
-                        'sync_source' => 'scheduled_reconciliation_local_expiry',
-                    ],
-                ]);
-            }
-
-            if ($defaultPlanId > 0) {
-                $this->ensureDefaultSubscriptionActive(
-                    modelClass: $modelClass,
-                    customerId: (int) $subscription->customer_id,
-                    defaultPlanId: $defaultPlanId,
-                    endedSubscriptionId: (int) $subscription->id,
-                    activatedAt: now(),
-                );
-            }
-
-            return true;
-        }, 3);
+        return $subscription && app(\App\Services\Billing\ExpireSubscription::class)->handle($subscription, $threshold);
     }
 
     protected function isOverdueForDowngrade(
         CustomerServiceSubscription|CustomerStorageSubscription $subscription,
         CarbonInterface $threshold
     ): bool {
-        if ($this->hasMissingRenewalMetadata($subscription)) {
-            return false;
-        }
-
         $periodEnd = $this->resolvePeriodEnd($subscription);
 
-        if (! $periodEnd instanceof CarbonInterface) {
-            return false;
-        }
-
-        if ($periodEnd->gt($threshold)) {
-            return false;
-        }
-
-        if ($this->hasSuccessfulRenewalExtendingPeriod($subscription, $periodEnd)) {
-            return false;
-        }
-
-        return true;
+        return app(\App\Services\Billing\SubscriptionCyclePolicy::class)->isCurrent($subscription)
+            && $periodEnd && $periodEnd->lte($threshold);
     }
 
     protected function localOverdueDisposition(
@@ -447,48 +354,6 @@ class ReconcileSubscriptions extends Command
         return $this->isOverdueForDowngrade($subscription, $threshold)
             ? 'downgrade'
             : 'skip';
-    }
-
-    protected function hasSuccessfulRenewalExtendingPeriod(
-        CustomerServiceSubscription|CustomerStorageSubscription $subscription,
-        CarbonInterface $periodEnd
-    ): bool {
-        $isService = $subscription instanceof CustomerServiceSubscription;
-        $purchaseType = $isService ? PurchaseType::PLAN_SUBSCRIPTION : PurchaseType::STORAGE_SUBSCRIPTION;
-        $purchasableType = $isService ? ServicePlan::class : StoragePlan::class;
-        $purchasableId = $isService
-            ? (int) ($subscription->service_plan_id ?? 0)
-            : (int) ($subscription->storage_plan_id ?? 0);
-        $currentPaymentId = (int) ($subscription->payment_id ?? 0);
-
-        $query = Payment::query()
-            ->where('customer_id', (int) $subscription->customer_id)
-            ->where('purchase_type', $purchaseType->value)
-            ->where('status', PaymentStatus::PAID->value)
-            ->where(function ($renewed) use ($periodEnd) {
-                $renewed
-                    ->where(function ($activeUntil) use ($periodEnd) {
-                        $activeUntil->whereNotNull('active_until')->where('active_until', '>', $periodEnd);
-                    })
-                    ->orWhere(function ($lastPayment) use ($periodEnd) {
-                        $lastPayment->whereNotNull('last_payment_at')->where('last_payment_at', '>', $periodEnd);
-                    })
-                    ->orWhere(function ($paidAt) use ($periodEnd) {
-                        $paidAt->whereNotNull('paid_at')->where('paid_at', '>', $periodEnd);
-                    });
-            });
-
-        if ($purchasableId > 0) {
-            $query
-                ->where('purchasable_type', $purchasableType)
-                ->where('purchasable_id', $purchasableId);
-        }
-
-        if ($currentPaymentId > 0) {
-            $query->where('id', '!=', $currentPaymentId);
-        }
-
-        return $query->exists();
     }
 
     protected function applyMissingRenewalMetadataPaymentScope(Builder $payment): void
@@ -547,45 +412,13 @@ class ReconcileSubscriptions extends Command
             return false;
         }
 
-        return ! ($payment->active_until instanceof CarbonInterface);
+        return $this->resolvePeriodEnd($subscription) === null;
     }
 
     protected function resolvePeriodEnd(
         CustomerServiceSubscription|CustomerStorageSubscription $subscription
     ): ?CarbonInterface {
-        if ($subscription->ends_at instanceof CarbonInterface) {
-            return $subscription->ends_at;
-        }
-
-        foreach (['period_ends_at', 'provider_active_until'] as $key) {
-            $value = data_get($subscription->meta, $key);
-
-            if (! is_scalar($value) || trim((string) $value) === '') {
-                continue;
-            }
-
-            try {
-                return Carbon::parse((string) $value);
-            } catch (\Throwable) {
-                continue;
-            }
-        }
-
-        if ($subscription->cycle_ends_on instanceof CarbonInterface) {
-            return $subscription->cycle_ends_on->copy()->endOfDay();
-        }
-
-        if ($subscription->next_renewal_on instanceof CarbonInterface) {
-            return $subscription->next_renewal_on->copy()->endOfDay();
-        }
-
-        $payment = $subscription->payment;
-
-        if ($payment && $payment->active_until instanceof CarbonInterface) {
-            return Carbon::instance($payment->active_until);
-        }
-
-        return null;
+        return app(\App\Services\Billing\SubscriptionCyclePolicy::class)->boundary($subscription);
     }
 
     protected function markRenewalMetadataMissing(
@@ -653,99 +486,5 @@ class ReconcileSubscriptions extends Command
                 ],
             ]);
         }, 3);
-    }
-
-    protected function ensureDefaultSubscriptionActive(
-        string $modelClass,
-        int $customerId,
-        int $defaultPlanId,
-        int $endedSubscriptionId,
-        CarbonInterface $activatedAt
-    ): void {
-        if ($defaultPlanId <= 0 || $customerId <= 0) {
-            return;
-        }
-
-        if ($modelClass === CustomerServiceSubscription::class) {
-            $hasActive = CustomerServiceSubscription::query()
-                ->lockForUpdate()
-                ->where('customer_id', $customerId)
-                ->where('status', 'active')
-                ->where(function ($query) {
-                    $query->whereNull('starts_at')->orWhere('starts_at', '<=', now());
-                })
-                ->where(function ($query) {
-                    $query->whereNull('ends_at')->orWhere('ends_at', '>=', now());
-                })
-                ->exists();
-
-            if ($hasActive) {
-                return;
-            }
-
-            $cycleEnd = $activatedAt->copy()->addMonthNoOverflow()->subDay();
-
-            CustomerServiceSubscription::query()->create([
-                'customer_id' => $customerId,
-                'payment_id' => null,
-                'service_plan_id' => $defaultPlanId,
-                'status' => 'active',
-                'source' => 'system',
-                'starts_at' => $activatedAt,
-                'cycle_started_on' => $activatedAt->toDateString(),
-                'cycle_ends_on' => $cycleEnd->toDateString(),
-                'next_renewal_on' => $cycleEnd->toDateString(),
-                'auto_renew' => false,
-                'renewal_strategy' => PaymentRecurringStrategy::MANUAL_RENEWAL->value,
-                'meta' => [
-                    'activated_by' => 'subscriptions:reconcile',
-                    'activated_reason' => 'renewal_failed_downgrade',
-                    'activated_at' => $activatedAt->toIso8601String(),
-                    'from_subscription_id' => $endedSubscriptionId,
-                ],
-            ]);
-
-            return;
-        }
-
-        if ($modelClass === CustomerStorageSubscription::class) {
-            $hasActive = CustomerStorageSubscription::query()
-                ->lockForUpdate()
-                ->where('customer_id', $customerId)
-                ->where('status', 'active')
-                ->where(function ($query) {
-                    $query->whereNull('starts_at')->orWhere('starts_at', '<=', now());
-                })
-                ->where(function ($query) {
-                    $query->whereNull('ends_at')->orWhere('ends_at', '>=', now());
-                })
-                ->exists();
-
-            if ($hasActive) {
-                return;
-            }
-
-            $cycleEnd = $activatedAt->copy()->addMonthNoOverflow()->subDay();
-
-            CustomerStorageSubscription::query()->create([
-                'customer_id' => $customerId,
-                'payment_id' => null,
-                'storage_plan_id' => $defaultPlanId,
-                'status' => 'active',
-                'source' => 'system',
-                'starts_at' => $activatedAt,
-                'cycle_started_on' => $activatedAt->toDateString(),
-                'cycle_ends_on' => $cycleEnd->toDateString(),
-                'next_renewal_on' => $cycleEnd->toDateString(),
-                'auto_renew' => false,
-                'renewal_strategy' => PaymentRecurringStrategy::MANUAL_RENEWAL->value,
-                'meta' => [
-                    'activated_by' => 'subscriptions:reconcile',
-                    'activated_reason' => 'renewal_failed_downgrade',
-                    'activated_at' => $activatedAt->toIso8601String(),
-                    'from_subscription_id' => $endedSubscriptionId,
-                ],
-            ]);
-        }
     }
 }

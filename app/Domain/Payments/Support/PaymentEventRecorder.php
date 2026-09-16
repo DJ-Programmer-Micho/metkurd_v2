@@ -14,6 +14,9 @@ class PaymentEventRecorder
      */
     public function record(?Payment $payment, array $attributes): PaymentEvent
     {
+        if (strlen((string) Arr::get($attributes, 'source', 'system')) > 40) {
+            throw new \InvalidArgumentException('Payment event source exceeds its schema contract.');
+        }
         $provider = $payment?->provider ?? PaymentProvider::FIB;
         $eventKey = Arr::get($attributes, 'event_key');
         $payload = [

@@ -33,10 +33,11 @@ class FulfillStorageSubscription implements RecurringPaymentHandler
     public function handle(Payment $payment): void
     {
         DB::transaction(function () use ($payment) {
+            \App\Models\Customer::whereKey($payment->customer_id)->lockForUpdate()->firstOrFail();
             /** @var Payment $locked */
             $locked = Payment::query()->lockForUpdate()->with(['customer.profile', 'purchasable'])->findOrFail($payment->id);
 
-            if ($locked->fulfilled_at !== null || $locked->status !== PaymentStatus::PAID) {
+            if (! $locked->isCurrentBillingPeriod() || $locked->fulfilled_at !== null || $locked->status !== PaymentStatus::PAID) {
                 return;
             }
 

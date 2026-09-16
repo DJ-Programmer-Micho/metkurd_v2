@@ -53,12 +53,15 @@ class CustomerUsageSummaryService
             'activeStorageSubscription.storagePlan',
         ]);
 
-        $servicePlan = $this->resolveFreshServicePlan($customer);
+        $serviceState = $this->billingState->servicePlanState($customer);
+        $servicePlan = $serviceState['current_plan'];
         $storagePlan = $this->resolveFreshStoragePlan($customer);
         $storageState = $this->billingState->storageQuotaState($customer);
         $wallet = $this->walletForCustomer($customer, $walletType);
 
-        $monthlyCredits = $this->monthlyCreditsForPlan($servicePlan, $walletType);
+        $monthlyCredits = $serviceState['agreement']
+            ? (int) $serviceState['allowances'][$walletType]
+            : $this->monthlyCreditsForPlan($servicePlan, $walletType);
         $creditBalance = max(0, (int) ($wallet?->balance_credits ?? 0));
         $creditUsed = $monthlyCredits !== null
             ? max($monthlyCredits - $creditBalance, 0)
@@ -143,23 +146,7 @@ class CustomerUsageSummaryService
 
     protected function walletForCustomer(Customer $customer, string $walletType): ?CreditWallet
     {
-        if ($walletType === CreditWallet::TYPE_API) {
-            if ($customer->relationLoaded('apiWallet')) {
-                $wallet = $customer->getRelation('apiWallet');
-
-                return $wallet instanceof CreditWallet ? $wallet : null;
-            }
-
-            return $customer->apiWallet()->first();
-        }
-
-        if ($customer->relationLoaded('wallet')) {
-            $wallet = $customer->getRelation('wallet');
-
-            return $wallet instanceof CreditWallet ? $wallet : null;
-        }
-
-        return $customer->wallet()->first();
+        return $walletType === CreditWallet::TYPE_API ? $customer->apiWallet()->first() : $customer->wallet()->first();
     }
 
     protected function storageQuotaMbForPlan(?StoragePlan $plan): ?int
@@ -171,17 +158,6 @@ class CustomerUsageSummaryService
         $value = $plan->getAttribute('quota_mb');
 
         return $value === null ? null : max(0, (int) $value);
-    }
-
-    protected function resolveFreshServicePlan(Customer $customer): ?ServicePlan
-    {
-        $planId = (int) ($customer->currentServicePlanId() ?? 0);
-
-        if ($planId > 0) {
-            return ServicePlan::query()->find($planId) ?: $this->billingState->defaultServicePlan();
-        }
-
-        return $this->billingState->defaultServicePlan();
     }
 
     protected function resolveFreshStoragePlan(Customer $customer): ?StoragePlan

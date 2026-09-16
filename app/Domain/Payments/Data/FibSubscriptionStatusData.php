@@ -88,15 +88,10 @@ final class FibSubscriptionStatusData
 
     protected static function nullableCarbon(mixed $value): ?Carbon
     {
-        if (! is_scalar($value) || trim((string) $value) === '') {
-            return null;
-        }
-
-        try {
-            return Carbon::parse((string) $value);
-        } catch (\Throwable) {
-            return null;
-        }
+        // Eloquent stores timezone-less dates in the application's configured zone.
+        // Preserve the parsed UTC instant across that write/read boundary.
+        return \App\Domain\Payments\Support\FibSubscriptionTimestamp::parse($value)
+            ?->setTimezone(config('app.timezone', 'UTC'));
     }
 
     /**

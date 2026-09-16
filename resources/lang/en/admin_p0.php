@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'close_checkout' => 'Close Abandoned Checkout',
+    'close_checkout_impact' => 'This closes the local abandoned checkout and allows the customer to start a new purchase. It does not refund, cancel or alter a confirmed provider payment.',
+    'checkout_closed' => 'The abandoned checkout was closed. History is retained and the customer can start a new purchase unless another payment still requires review.',
     'change_reason' => 'Reason for administrative change',
     'operation_conflict' => 'This correction identity belongs to a different request. Start a new correction.',
     'invalidation' => 'This payment is no longer eligible for invalidation.',

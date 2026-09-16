@@ -2,11 +2,13 @@
 
 namespace App\Services\Billing;
 
+use App\Domain\Payments\Models\Payment;
 use App\Models\CreditLedger;
 use App\Models\CreditWallet;
 use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
 use App\Models\ServicePlan;
+use App\Models\SubscriptionCreditAllocation;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
@@ -369,6 +371,14 @@ class CreditService
             $meta,
             $referenceCode
         ) {
+            $lockedPayment = null;
+            $candidate = CustomerServiceSubscription::find($subscriptionId);
+            if ($candidate) {
+                Customer::whereKey($candidate->customer_id)->lockForUpdate()->firstOrFail();
+                if ($candidate->payment_id) {
+                    $lockedPayment = Payment::whereKey($candidate->payment_id)->lockForUpdate()->firstOrFail();
+                }
+            }
             /** @var CustomerServiceSubscription|null $lockedSubscription */
             $lockedSubscription = CustomerServiceSubscription::query()
                 ->with('servicePlan:id,code,name,monthly_credits,app_monthly_credits,api_monthly_credits,is_active')
@@ -385,6 +395,39 @@ class CreditService
                 ];
             }
 
+            $policy = app(SubscriptionCyclePolicy::class);
+            $payment = $lockedPayment;
+            $lockedSubscription->setRelation('payment', $payment);
+            $noop = ['applied' => false, 'already_applied' => false, 'app_delta' => 0, 'api_delta' => 0, 'provider_cycle_key' => $providerCycleKey];
+            if (! $policy->isCurrent($lockedSubscription) || $lockedSubscription->status !== 'active'
+                || ! $policy->verifiedCollection($payment)
+                || (int) $payment->customer_id !== (int) $lockedSubscription->customer_id
+                || $payment->purchasable_type !== ServicePlan::class
+                || (int) $payment->purchasable_id !== (int) $lockedSubscription->service_plan_id
+                || $payment->providerRecurringCycleKey() !== $providerCycleKey
+                || ! $cycleStartedAt->equalTo($payment->last_payment_at)
+                || ! $cycleEndsAt?->equalTo($payment->active_until)
+                || ! $cycleEndsAt->isFuture()) {
+                return $noop;
+            }
+            $claim = SubscriptionCreditAllocation::where('payment_id', $payment->id)
+                ->where('cycle_key', $providerCycleKey)->lockForUpdate()->first();
+            if ($claim?->applied_at) {
+                return array_replace($noop, ['already_applied' => true]);
+            }
+            if ($lockedSubscription->canceled_at || data_get($payment->meta, 'provider_cancellation.requested_at')
+                || in_array(strtoupper((string) $payment->provider_subscription_status), ['CANCELLED', 'CANCELED'], true)) {
+                return $noop;
+            }
+            $latest = SubscriptionCreditAllocation::where('payment_id', $payment->id)
+                ->whereIn('allocation_type', ['initial', 'provider_renewal'])->whereNotNull('applied_at')
+                ->orderByDesc('cycle_started_at')->lockForUpdate()->first()?->cycle_started_at;
+            $appliedThrough = data_get($lockedSubscription->meta, 'last_allocated_payment_at')
+                ?? data_get($lockedSubscription->meta, 'provider_last_payment_at');
+            if (($latest && $cycleStartedAt->lte(Carbon::parse($latest)))
+                || ($appliedThrough && $cycleStartedAt->lte(Carbon::parse($appliedThrough)))) {
+                return $noop;
+            }
             $subscriptionMeta = (array) ($lockedSubscription->meta ?? []);
 
             if ((string) data_get($subscriptionMeta, 'last_applied_renewal_cycle_key', '') === $providerCycleKey) {
@@ -409,6 +452,12 @@ class CreditService
                 ];
             }
 
+            $claim = SubscriptionCreditAllocation::create([
+                'customer_id' => $lockedSubscription->customer_id, 'subscription_id' => $subscriptionId,
+                'payment_id' => $payment->id, 'cycle_key' => $providerCycleKey,
+                'allocation_type' => 'provider_renewal', 'cycle_started_at' => $cycleStartedAt,
+                'paid_through' => $cycleEndsAt,
+            ]);
             $wallet = $this->lockWallet((int) $lockedSubscription->customer_id, CreditWallet::TYPE_APP);
             $apiWallet = $this->lockWallet((int) $lockedSubscription->customer_id, CreditWallet::TYPE_API);
 
@@ -436,6 +485,7 @@ class CreditService
                     'billing_cycle' => $billingCycle,
                     'provider_cycle_key' => $providerCycleKey,
                     'provider_last_payment_at' => data_get($meta, 'provider_last_payment_at'),
+                    'last_allocated_payment_at' => $cycleStartedAt->toIso8601String(),
                     'last_applied_renewal_cycle_key' => $providerCycleKey,
                     'last_applied_renewal_at' => now()->toIso8601String(),
                     'last_applied_renewal_source' => data_get($meta, 'source'),
@@ -492,6 +542,8 @@ class CreditService
                     ]),
                 );
             }
+
+            $claim->update(['status' => 'applied', 'applied_at' => now()]);
 
             return [
                 'applied' => true,

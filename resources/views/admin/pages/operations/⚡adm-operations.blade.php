@@ -8,10 +8,22 @@ new #[Layout('admin::layouts.app')] class extends Component
     use \App\Support\Admin\ReadsOperations;
 };
 ?>
+<x-slot:title>{{ $customer ? __('admin_ux.customer_profile') : __('admin_p2.operations') }} | {{ __('MET KURD') }}</x-slot:title>
 <div>
-    <h4>{{ __('admin_p2.operations') }}</h4>
+    <h4>{{ $customer ? __('admin_ux.customer_profile') : __('admin_p2.operations') }}</h4>
     <x-admin-customer-context :customer-id="$customer ?: (int) $customerFilter" :name="data_get($this->overview, 'identity.username')" />
     <p class="text-muted">{{ __('admin_p2.read_notice') }}</p>
+    @if ($section === 'jobs')
+        <p class="text-muted small">{{ __('admin_ux.evidence_help') }}</p>
+        <div class="row g-2 mb-3">
+            @foreach ($this->jobSummary as $state => $count)
+                <div class="col-6 col-md-3 col-xl"><button type="button" wire:click="$set('group', '{{ $state }}')" class="btn w-100 h-100 text-start border {{ $group === $state ? 'btn-primary' : 'btn-light' }}" aria-pressed="{{ $group === $state ? 'true' : 'false' }}">
+                    <span class="small d-block">{{ __('admin_ux.'.($state === 'persistence' ? 'persistence_problems' : $state)) }}</span><strong class="fs-4">{{ number_format($count) }}</strong>
+                </button></div>
+            @endforeach
+        </div>
+        <p class="text-muted small">{{ __('admin_ux.summary_help') }}</p>
+    @endif
     @if (!$customer)
         <div class="row g-2 mb-3">
             <div class="col-md-6"><label class="form-label" for="admin-field-adm-operations-1">{{ __('admin_p2.customer_search') }}</label><input class="form-control" wire:model.live.debounce.400ms="customerSearch" maxlength="100" dir="auto" id="admin-field-adm-operations-1"></div>
@@ -19,10 +31,7 @@ new #[Layout('admin::layouts.app')] class extends Component
         </div>
     @endif
     @if ($this->overview)
-        <div class="row g-3 mb-3">@foreach ($this->overview as $title => $values)
-            <div class="col-xl-4 col-md-6"><div class="card h-100"><div class="card-body"><h5>{{ __('admin_p2.'.$title) }}</h5><x-admin-operation-values :values="$values" /></div></div></div>
-        @endforeach</div>
-        <p class="text-muted">{{ __('admin_p2.wallet_notice') }}</p>
+        <x-admin-customer-overview :overview="$this->overview" />
     @endif
     @if ($this->context)
         <div class="card"><div class="card-body"><h5>{{ __('admin_p2.detail') }}</h5><x-admin-operation-values :values="$this->context" /></div></div>
@@ -33,9 +42,18 @@ new #[Layout('admin::layouts.app')] class extends Component
             <button type="button" class="nav-link {{ $section === $tab ? 'active' : '' }}" wire:click="$set('section', '{{ $tab }}')">{{ __('admin_p2.'.$tab) }}</button>
         @endforeach
     </nav>
+    @if (in_array($section, ['payments', 'orders'], true))
+        <div class="mb-3"><label for="financial-era" class="form-label">{{ __('billing_epoch.history') }}</label>
+            <select id="financial-era" class="form-select" wire:model.live="financialEra"><option value="current">{{ __('billing_epoch.current') }}</option><option value="legacy">{{ __('billing_epoch.legacy') }}</option></select>
+            <p class="text-muted small">{{ __('billing_epoch.help') }}</p>
+        </div>
+    @endif
     <div class="card"><div class="card-body">
         <div class="row g-2 mb-3">
             <div class="col-12"><button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button></div>
+            @if ($section === 'jobs')
+                <div class="col-md-3"><label class="form-label" for="op-group">{{ __('admin_ux.job_group') }}</label><select id="op-group" class="form-select" wire:model.live="group"><option value="">{{ __('admin_p2.all') }}</option>@foreach (\App\Services\Admin\AdminOperations::JOB_GROUPS as $state)<option value="{{ $state }}">{{ __('admin_ux.'.($state === 'persistence' ? 'persistence_problems' : $state)) }}</option>@endforeach</select></div>
+            @endif
             @foreach (['search', 'status', 'from', 'until'] as $filter)
                 <div class="col-md-3"><label class="form-label" for="op-{{ $filter }}">{{ __('admin_p2.'.$filter) }}</label><input id="op-{{ $filter }}" @if($filter === 'status') list="admin-operational-statuses" @endif type="{{ in_array($filter, ['from', 'until']) ? 'date' : 'text' }}" class="form-control" wire:model.live.debounce.400ms="{{ $filter }}" maxlength="100" dir="auto"></div>
             @endforeach
@@ -62,6 +80,9 @@ new #[Layout('admin::layouts.app')] class extends Component
         </datalist>
         @php($rows = $this->rows)
         <div wire:loading class="text-muted" role="status">{{ __('admin_p2.loading') }}</div>
+        @if ($section === 'jobs')
+            <x-admin-job-table :rows="$rows" />
+        @else
         <div class="table-responsive"><table class="table table-striped align-middle"><thead><tr><th>{{ __('admin_p2.id') }}</th><th>{{ __('admin_p2.customer') }}</th><th>{{ __('admin_p2.summary') }}</th><th>{{ __('admin_p2.trace') }}</th></tr></thead><tbody>
         @forelse ($rows as $row)
             <tr wire:key="op-{{ $section }}-{{ $row['id'] }}">
@@ -82,6 +103,7 @@ new #[Layout('admin::layouts.app')] class extends Component
             </tr>
         @empty <tr><td colspan="4">{{ __('admin_p2.empty') }}</td></tr> @endforelse
         </tbody></table></div>
+        @endif
         {{ $rows->links() }}
     </div></div>
 </div>

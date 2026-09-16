@@ -59,7 +59,7 @@ class ReconcileFibSubscription extends Command
             return self::FAILURE;
         }
 
-        $payment = Payment::query()
+        $payment = Payment::query()->currentBillingPeriod()
             ->with(['customer', 'purchasable'])
             ->find((int) $this->argument('payment'));
 
@@ -103,6 +103,12 @@ class ReconcileFibSubscription extends Command
             return self::FAILURE;
         }
 
+        if ($reason = app(\App\Domain\Payments\Support\FibStatusEvidence::class)->rejection($payment, $status)) {
+            $this->error('Provider evidence rejected: '.$reason);
+
+            return self::FAILURE;
+        }
+
         $providerStatus = $this->subscriptions->normalizeProviderStatus($status->status);
         $manualPaidAt = $this->manualPaidAtOverride();
 
@@ -113,12 +119,10 @@ class ReconcileFibSubscription extends Command
         }
 
         $providerPaymentStatus = $this->mapper->explicitPaidStatusFromPayloads(
-            $status,
-            is_array($payment->callback_payload) ? $payment->callback_payload : null
+            $status
         );
         $hasPaidEvidence = $this->mapper->hasConfirmedPaymentEvidence(
-            $status,
-            is_array($payment->callback_payload) ? $payment->callback_payload : null
+            $status
         );
 
         if (! in_array($providerStatus, ['ACTIVE', 'SUBSCRIBED'], true) || ! $hasPaidEvidence) {
@@ -178,7 +182,7 @@ class ReconcileFibSubscription extends Command
 
         DB::transaction(function () use ($payment, $customer, $activeSubscription, $status, $providerStatus, $providerPaymentStatus, $supersededPayment, $manualPaidAt) {
             /** @var Payment $lockedPayment */
-            $lockedPayment = Payment::query()->lockForUpdate()->findOrFail($payment->id);
+            $lockedPayment = Payment::query()->currentBillingPeriod()->lockForUpdate()->findOrFail($payment->id);
             /** @var CustomerServiceSubscription $lockedSubscription */
             $lockedSubscription = CustomerServiceSubscription::query()
                 ->lockForUpdate()
@@ -381,7 +385,7 @@ class ReconcileFibSubscription extends Command
             return null;
         }
 
-        $superseded = Payment::query()
+        $superseded = Payment::query()->currentBillingPeriod()
             ->whereKey($supersededId)
             ->where('customer_id', $payment->customer_id)
             ->first();
@@ -467,7 +471,7 @@ class ReconcileFibSubscription extends Command
 
         DB::transaction(function () use ($supersededPayment, $reconciledPayment, $result) {
             /** @var Payment $locked */
-            $locked = Payment::query()->lockForUpdate()->findOrFail($supersededPayment->id);
+            $locked = Payment::query()->currentBillingPeriod()->lockForUpdate()->findOrFail($supersededPayment->id);
             $meta = array_merge((array) ($locked->meta ?? []), [
                 'superseded_by_payment_id' => $reconciledPayment->id,
                 'superseded_by_fib_subscription_id' => $reconciledPayment->fib_subscription_id,

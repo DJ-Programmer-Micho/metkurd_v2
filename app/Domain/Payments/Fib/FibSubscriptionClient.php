@@ -91,6 +91,8 @@ class FibSubscriptionClient extends FibAuthorizedClient
         ]);
 
         $response = $this->authorized()
+            // A later durable retry must check GET before repeating an ambiguous POST.
+            ->retry(1, 0, null, false)
             ->acceptJson()
             ->post($this->path('subscription_cancel', ['subscriptionId' => $providerSubscriptionId]));
 

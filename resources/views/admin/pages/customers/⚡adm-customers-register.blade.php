@@ -139,11 +139,13 @@ class extends Component
     </div>
 
     @if ($this->selectedCustomer)
+        <a wire:navigate class="btn btn-soft-secondary mb-3" href="{{ route('admin.operations', ['locale' => app()->getLocale(), 'customerFilter' => $this->selectedCustomer->id, 'section' => 'orders', 'financialEra' => 'legacy']) }}">{{ __('billing_epoch.legacy') }}</a>
         @php
             $focusedCustomer = $this->selectedCustomer;
             $focusedWallet = $focusedCustomer->wallet;
             $focusedApiWallet = $focusedCustomer->apiWallet;
-            $focusedPlan = $focusedCustomer->servicePlan;
+            $focusedState = $focusedCustomer->servicePlanState();
+            $focusedPlan = $focusedState['current_plan'];
             $focusedStoragePlan = $focusedCustomer->activeStorageSubscription?->storagePlan ?? $focusedCustomer->currentStoragePlan();
         @endphp
         <div class="row mb-3">
@@ -170,6 +172,8 @@ class extends Component
                     </div>
                     <div class="card-body">
                         <div class="mb-2"><span class="fw-semibold">{{ __('Service Plan:') }}</span> {{ $focusedPlan?->name ?? __('No active plan') }}</div>
+                        @if($focusedState['subscription'])<div class="mb-2"><x-admin-subscription-origin :subscription="$focusedState['subscription']" /></div>@endif
+                        @if($focusedState['externally_managed'])<div class="mb-2">{{ __('agreement.external') }}</div>@endif
                         <div class="mb-2"><span class="fw-semibold">{{ __('Storage Plan:') }}</span> {{ $focusedStoragePlan?->name ?? __('No active storage plan') }}</div>
                         <div class="mb-2"><span class="fw-semibold">{{ __('App Wallet Balance:') }}</span> {{ __(':credits credits', ['credits' => $this->formatCredits($focusedWallet?->balance_credits)]) }}</div>
                         <div class="mb-2"><span class="fw-semibold">{{ __('App Subscription Bucket:') }}</span> {{ $this->formatCredits($focusedWallet?->subscription_balance_credits) }}</div>
@@ -224,25 +228,25 @@ class extends Component
                 <div class="row g-3">
                     <div class="col-xl-6">
                         <div class="border rounded p-3 h-100">
-                            <h6 class="text-uppercase text-muted fs-12 mb-2">{{ __('Manual Plan Grant — No Revenue') }}</h6>
+                            <h6 class="text-uppercase text-muted fs-12 mb-2">{{ __('admin_ux.grant_title') }}</h6>
                             <div class="alert alert-warning small mb-3">
                                 <div>{{ __('This action does not create revenue.') }}</div>
                                 <div>{{ __('This action does not create a FIB payment.') }}</div>
                                 <div>{{ __('This action does not connect to a provider subscription.') }}</div>
                                 <div>{{ __('Use this only for internal/company/testing/partner access.') }}</div>
                             </div>
-                            <div class="fw-semibold mb-3">{{ __('Manual Grant — No Revenue / No Provider Subscription') }}</div>
+                            <div class="fw-semibold mb-3">{{ __('admin_ux.grant_classification') }}</div>
                             <div class="mb-3">
                                 <label class="form-label" for="admin-field-adm-customers-register-6">{{ __('Customer') }}</label>
                                 <input type="text" class="form-control" value="{{ $this->customerIdentityLabel($focusedCustomer) }}" readonly id="admin-field-adm-customers-register-6">
                             </div>
                             <div class="mb-3">
                                 <label class="form-label" for="admin-field-adm-customers-register-7">{{ __('Service Plan') }}</label>
-                                <select class="form-select" wire:model="servicePlanAdjustmentId" data-admin-review id="admin-field-adm-customers-register-7">
+                                <select class="form-select" wire:model.live="servicePlanAdjustmentId" data-admin-review id="admin-field-adm-customers-register-7">
                                     <option value="">{{ __('Select plan') }}</option>
                                     @foreach ($this->registerServicePlanOptions as $plan)
                                         <option value="{{ $plan->id }}">
-                                            {{ $plan->name }} ({{ $this->formatCredits($plan->monthly_credits) }} {{ __('credits') }})
+                                            {{ $plan->name }} ({{ $this->formatCredits($plan->appMonthlyCredits()) }} {{ __('credits') }})
                                         </option>
                                     @endforeach
                                 </select>
@@ -252,13 +256,15 @@ class extends Component
                             </div>
                             <div class="mb-3">
                                 <label class="form-label" for="admin-field-adm-customers-register-8">{{ __('Reason') }}</label>
-                                <select class="form-select" wire:model="servicePlanGrantReason" id="admin-field-adm-customers-register-8">
+                                <select class="form-select" wire:model.live="servicePlanGrantReason" id="admin-field-adm-customers-register-8">
                                     <option value="">{{ __('Select reason') }}</option>
                                     <option value="internal_team_account">{{ __('Internal team account') }}</option>
                                     <option value="company_account">{{ __('Company account') }}</option>
                                     <option value="testing_account">{{ __('Testing account') }}</option>
                                     <option value="partner_access">{{ __('Partner access') }}</option>
                                     <option value="founder_admin_access">{{ __('Founder/admin access') }}</option>
+                                    <option value="support_compensation">{{ __('admin_ux.grant_support') }}</option>
+                                    <option value="promotional">{{ __('admin_ux.grant_promotional') }}</option>
                                     <option value="other">{{ __('Other') }}</option>
                                 </select>
                                 @error('servicePlanGrantReason')
@@ -284,8 +290,8 @@ class extends Component
                                 @enderror
                             </div>
                             <div class="mb-3">
-                                <label class="form-label" for="admin-field-adm-customers-register-11">{{ __('Billing Cycle') }}</label>
-                                <select class="form-select" wire:model="servicePlanBillingCycle" data-admin-review id="admin-field-adm-customers-register-11">
+                                <label class="form-label" for="admin-field-adm-customers-register-11">{{ __('admin_ux.grant_duration') }}</label>
+                                <select class="form-select" wire:model.live="servicePlanBillingCycle" data-admin-review id="admin-field-adm-customers-register-11">
                                     <option value="monthly">{{ __('Monthly') }}</option>
                                     <option value="yearly">{{ __('Yearly') }}</option>
                                 </select>
@@ -300,13 +306,25 @@ class extends Component
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
                             </div>
-                            <div class="small text-muted mb-3">{{ __('You are about to grant this customer a plan without revenue and without a provider subscription. No FIB payment will be created. No fib_subscription_id will be attached.') }}</div>
+                            @php
+                                $grantPlan = $this->registerServicePlanOptions->firstWhere('id', (int) $servicePlanAdjustmentId);
+                            @endphp
+                            @if ($grantPlan)
+                                <div class="rounded border p-3 mb-3" dir="auto">
+                                    <div>{{ __('admin_ux.grant_app_allowance', ['credits' => $this->formatCredits($grantPlan->appMonthlyCredits())]) }}</div>
+                                    <div>{{ __('admin_ux.grant_api_allowance', ['credits' => $this->formatCredits($grantPlan->apiMonthlyCredits())]) }}</div>
+                                    <div class="mt-2">{{ __('admin_ux.grant_added', ['app' => $this->formatCredits($this->complimentaryCreditPreview['app'] ?? 0), 'api' => $this->formatCredits($this->complimentaryCreditPreview['api'] ?? 0)]) }}</div>
+                                    <div class="small text-muted mt-2">{{ __('admin_ux.grant_credit_policy') }}</div>
+                                    <div class="small text-muted mt-2">{{ __('admin_ux.grant_expiry', ['date' => ($servicePlanBillingCycle === 'yearly' ? now()->addYearNoOverflow() : now()->addMonthNoOverflow())->format('Y-m-d H:i')]) }}</div>
+                                </div>
+                            @endif
+                            <div class="small text-muted mb-3">{{ __('admin_ux.grant_confirmation') }}</div>
                             <button
                                 type="button"
                                 class="btn btn-primary w-100"
-                                data-admin-target="{{ $focusedCustomer?->username }}" data-admin-method="applyServicePlanAdjustment" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('You are about to grant this customer a plan without revenue and without a provider subscription. No FIB payment will be created. No fib_subscription_id will be attached. Continue?') }}"
+                                data-admin-target="{{ $focusedCustomer?->username }}" data-admin-method="applyServicePlanAdjustment" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_ux.grant_confirmation') }}"
                              @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>
-                                {{ __('Apply Manual Grant') }}
+                                {{ __('admin_ux.grant_action') }}
                             </button>
                         </div>
                     </div>
@@ -483,11 +501,14 @@ class extends Component
             </div>
         </div>
 
+        @include('admin.pages.customers.service-agreements')
+
         <div class="row mb-3">
             <div class="col-xl-6 mb-3">
                 <div class="card h-100">
                     <div class="card-header border-0">
                         <h5 class="card-title mb-0">{{ __('Recent Subscription History') }}</h5>
+                        <p class="text-muted small mb-0">{{ __('billing_epoch.recorded_status') }}</p>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
@@ -496,6 +517,7 @@ class extends Component
                                     <tr>
                                         <th>{{ __('Type') }}</th>
                                         <th>{{ __('Plan') }}</th>
+                                        <th>{{ __('Source') }}</th>
                                         <th>{{ __('Status') }}</th>
                                         <th>{{ __('Cycle') }}</th>
                                     </tr>
@@ -505,6 +527,7 @@ class extends Component
                                         <tr>
                                             <td><span class="badge bg-info-subtle text-info">{{ __('Service') }}</span></td>
                                             <td>{{ $subscription->servicePlan?->name ?? __('Unknown plan') }}</td>
+                                            <td><x-admin-subscription-origin :subscription="$subscription" /></td>
                                             <td><span class="badge bg-light text-body">{{ $subscription->status }}</span></td>
                                             <td>{{ $subscription->cycle_started_on?->format('M d, Y') ?? __('n/a') }} - {{ $subscription->cycle_ends_on?->format('M d, Y') ?? __('n/a') }}</td>
                                         </tr>
@@ -515,6 +538,7 @@ class extends Component
                                         <tr>
                                             <td><span class="badge bg-warning-subtle text-warning">{{ __('Storage') }}</span></td>
                                             <td>{{ $storageSubscription->storagePlan?->name ?? __('Unknown storage plan') }}</td>
+                                            <td><x-admin-subscription-origin :subscription="$storageSubscription" /></td>
                                             <td><span class="badge bg-light text-body">{{ $storageSubscription->status }}</span></td>
                                             <td>{{ $storageSubscription->cycle_started_on?->format('M d, Y') ?? __('n/a') }} - {{ $storageSubscription->cycle_ends_on?->format('M d, Y') ?? __('n/a') }}</td>
                                         </tr>
@@ -523,7 +547,7 @@ class extends Component
 
                                     @if ($focusedCustomer->serviceSubscriptions->isEmpty() && $focusedCustomer->storageSubscriptions->isEmpty())
                                         <tr>
-                                            <td colspan="4" class="text-center py-3 text-muted">{{ __('No subscription history recorded.') }}</td>
+                                            <td colspan="5" class="text-center py-3 text-muted">{{ __('No subscription history recorded.') }}</td>
                                         </tr>
                                     @endif
                                 </tbody>
@@ -558,8 +582,8 @@ class extends Component
                                             $intendedCode = (string) data_get($snapshot, 'code', '');
                                             $providerReference = $payment->fib_subscription_id ?: $payment->fib_payment_id ?: __('n/a');
                                             $currentCustomerPlan = match ($payment->purchase_type?->value ?? $payment->purchase_type) {
-                                                'storage_subscription' => $focusedCustomer->activeStorageSubscription?->storagePlan?->name,
-                                                default => $focusedCustomer->activeServiceSubscription?->servicePlan?->name,
+                                                'storage_subscription' => $focusedCustomer->currentStoragePlan()?->name,
+                                                default => $focusedCustomer->currentServicePlan()?->name,
                                             };
                                         @endphp
                                         <tr>
@@ -695,7 +719,7 @@ class extends Component
                                     </div>
                                     <div class="mb-3">
                                         <label class="form-label" for="admin-field-adm-customers-register-27">{{ __('Operator Reason') }}</label>
-                                        <textarea class="form-control" rows="4" wire:model.defer="reviewResolutionReason" placeholder="{{ __('Explain what you verified, which FIB reference you matched, or why the record should be closed/reclassified.') }}" id="admin-field-adm-customers-register-27" dir="auto"></textarea>
+                                        <textarea class="form-control" rows="4" wire:model.defer="reviewResolutionReason" data-admin-review placeholder="{{ __('Explain what you verified, which FIB reference you matched, or why the record should be closed/reclassified.') }}" id="admin-field-adm-customers-register-27" dir="auto"></textarea>
                                         @error('reviewResolutionReason')
                                             <div class="text-danger small mt-1">{{ $message }}</div>
                                         @enderror
@@ -745,13 +769,14 @@ class extends Component
                                 <div class="border rounded p-3 h-100">
                                     <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Review Resolution Actions') }}</h6>
                                     <div class="mb-3">
+                                        @if($reviewSelection['can_close_checkout'] && \App\Support\Admin\AdminUiAccess::can('admin.finance') && \App\Support\Admin\AdminUiAccess::can('admin.reconcile'))
                                         <button
                                             type="button"
                                             class="btn btn-soft-secondary me-2 mb-2"
-                                            data-admin-target="{{ $reviewSelection['customer'].' · '.__('Payment ID:').' '.$reviewSelection['payment_id'] }}" data-admin-method="markReviewPaymentInvalid" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('This will mark the payment as invalid/expired, remove it from actionable review processing, and keep full audit history. It will not fulfill or refill credits. Continue?') }}"
-                                         @if(! \App\Support\Admin\AdminUiAccess::can('admin.reconcile')) disabled @endif>
-                                            {{ __('Mark Invalid / Expired') }}
+                                            data-admin-target="{{ $reviewSelection['customer'].' · '.__('Payment ID:').' '.$reviewSelection['payment_id'] }}" data-admin-method="markReviewPaymentInvalid" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p0.close_checkout_impact') }}">
+                                            {{ __('admin_p0.close_checkout') }}
                                         </button>
+                                        @endif
                                         <button
                                             type="button"
                                             class="btn btn-soft-dark mb-2"
@@ -871,7 +896,7 @@ class extends Component
                                         <span class="text-muted small">{{ data_get($customer, 'profile.address', __('No address provided')) }}</span>
                                     </div>
                                 </td>
-                                <td><span class="badge {{ $this->planBadgeClasses($customer->servicePlan?->code) }}">{{ $customer->servicePlan?->name ?? __('No active plan') }}</span></td>
+                                <td><span class="badge {{ $this->planBadgeClasses($customer->servicePlan?->code) }}">{{ $customer->currentServicePlan()?->name ?? __('No active plan') }}</span></td>
                                 <td>
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold">{{ data_get($customer, 'profile.job_title', __('No job title')) }}</span>

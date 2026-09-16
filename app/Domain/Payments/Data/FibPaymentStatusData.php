@@ -67,7 +67,7 @@ final class FibPaymentStatusData
         }
 
         try {
-            return Carbon::parse((string) $value);
+            return \App\Domain\Payments\Support\FibSubscriptionTimestamp::parse($value)?->setTimezone(config('app.timezone', 'UTC'));
         } catch (\Throwable) {
             return null;
         }

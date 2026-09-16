@@ -6,9 +6,10 @@ use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
 use App\Models\ServicePlan;
+use App\Models\ServicePlanAgreement;
 use App\Models\StoragePlan;
 use Carbon\CarbonInterface;
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 class CustomerBillingStateService
 {
@@ -44,15 +45,44 @@ class CustomerBillingStateService
             && $subscription->ends_at->isFuture();
         $hasPaidPlan = $subscription instanceof CustomerServiceSubscription
             && ! (bool) ($currentPlan->is_free ?? false);
+        $agreement = null;
+        $pendingAgreement = null;
+        if (Schema::hasTable('service_plan_agreements')) {
+            if ($subscription?->source === ServiceAgreementLifecycle::SOURCE) {
+                $agreement = ServicePlanAgreement::where('customer_id', $customer->id)
+                    ->where('subscription_id', $subscription->id)->where('service_plan_id', $currentPlan->id)->first();
+            }
+            $pendingAgreement = ServicePlanAgreement::with('servicePlan:id,name,code')->where('customer_id', $customer->id)
+                ->whereNull('subscription_id')->whereIn('status', ['scheduled', 'requires_review'])
+                ->where('ends_at', '>', now())->orderBy('starts_at')->first();
+        }
 
         return [
             'subscription' => $subscription,
             'current_plan' => $currentPlan,
             'default_plan' => $defaultPlan,
             'current_plan_id' => (int) $currentPlan->id,
+            'source' => $subscription?->source ?? 'system',
+            'access_type' => match (true) {
+                (bool) $currentPlan->is_free => 'free',
+                $subscription?->source === ServiceAgreementLifecycle::SOURCE => 'external',
+                $subscription && ! CustomerServiceSubscription::whereKey($subscription->id)->excludingComplimentary()->exists() => 'complimentary',
+                $subscription?->source === 'fib' => 'provider',
+                default => 'manual',
+            },
+            'starts_at' => $subscription?->starts_at,
+            'ends_at' => $subscription?->ends_at,
+            'auto_renew' => (bool) $subscription?->auto_renew,
+            'agreement' => $agreement,
+            'pending_agreement' => $pendingAgreement,
+            'allowances' => [
+                'app' => $agreement?->app_monthly_credits ?? $currentPlan->appMonthlyCredits(),
+                'api' => $agreement?->api_monthly_credits ?? $currentPlan->apiMonthlyCredits(),
+            ],
             'has_active_paid_main_plan' => $hasPaidPlan,
             'should_hide_free_plan' => $hasPaidPlan,
-            'cancelable' => $hasPaidPlan && ! $cancellationScheduled,
+            'externally_managed' => $subscription?->source === ServiceAgreementLifecycle::SOURCE,
+            'cancelable' => $hasPaidPlan && ! $cancellationScheduled && $subscription?->source !== ServiceAgreementLifecycle::SOURCE,
             'cancellation_scheduled' => $cancellationScheduled,
             'period_ends_at' => $periodEndsAt,
             'scheduled_plan' => $cancellationScheduled ? $defaultPlan : null,
@@ -178,21 +208,13 @@ class CustomerBillingStateService
         $subscription = CustomerServiceSubscription::query()
             ->with('servicePlan')
             ->where('customer_id', (int) $customer->id)
-            ->where('status', 'active')
-            ->where(function ($query) {
-                $query->whereNull('starts_at')->orWhere('starts_at', '<=', now());
-            })
-            ->where(function ($query) {
-                $query->whereNull('ends_at')->orWhere('ends_at', '>=', now());
-            })
+            ->effectiveAt()
             ->latest('id')
             ->first();
 
         $customer->setRelation('activeServiceSubscription', $subscription);
 
-        if ($subscription?->servicePlan instanceof ServicePlan) {
-            $customer->setRelation('servicePlan', $subscription->servicePlan);
-        }
+        $customer->setRelation('servicePlan', $subscription?->servicePlan ?? $this->defaultServicePlan());
 
         return $subscription;
     }
@@ -200,7 +222,7 @@ class CustomerBillingStateService
     public function resolveActiveStorageSubscription(Customer $customer): ?CustomerStorageSubscription
     {
         $subscription = CustomerStorageSubscription::query()
-            ->with('storagePlan')
+            ->with('storagePlan')->effectiveAt()
             ->where('customer_id', (int) $customer->id)
             ->where('status', 'active')
             ->where(function ($query) {
@@ -227,45 +249,6 @@ class CustomerBillingStateService
             return null;
         }
 
-        if ($subscription->ends_at instanceof CarbonInterface) {
-            return $subscription->ends_at;
-        }
-
-        $metaPeriodEnd = $this->resolveMetaPeriodEnd((array) ($subscription->meta ?? []));
-
-        if ($metaPeriodEnd instanceof CarbonInterface) {
-            return $metaPeriodEnd;
-        }
-
-        if ($subscription->cycle_ends_on instanceof CarbonInterface) {
-            return $subscription->cycle_ends_on->endOfDay();
-        }
-
-        if ($subscription->next_renewal_on instanceof CarbonInterface) {
-            return $subscription->next_renewal_on->endOfDay();
-        }
-
-        return $subscription->starts_at instanceof CarbonInterface
-            ? $subscription->starts_at->copy()->addMonth()->endOfDay()
-            : null;
-    }
-
-    protected function resolveMetaPeriodEnd(array $meta): ?CarbonInterface
-    {
-        foreach (['period_ends_at', 'provider_active_until'] as $key) {
-            $value = data_get($meta, $key);
-
-            if (! is_scalar($value) || trim((string) $value) === '') {
-                continue;
-            }
-
-            try {
-                return Carbon::parse((string) $value);
-            } catch (\Throwable) {
-                continue;
-            }
-        }
-
-        return null;
+        return app(SubscriptionCyclePolicy::class)->boundary($subscription);
     }
 }

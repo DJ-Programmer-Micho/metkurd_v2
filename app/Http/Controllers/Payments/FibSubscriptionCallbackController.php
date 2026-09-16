@@ -19,13 +19,13 @@ class FibSubscriptionCallbackController extends Controller
         FibSubscriptionWebhookValidator $validator,
         PaymentEventRecorder $events,
     ): JsonResponse {
-        $payload = $request->all();
+        $payload = \App\Domain\Payments\Support\FibCallbackNotification::payload($request);
         $validation = $validator->validate($request);
 
         Log::info('FIB subscription callback received.', [
             'provider_object_type' => 'subscription',
             'vm_hostname' => gethostname() ?: php_uname('n'),
-            'request_url' => $request->fullUrl(),
+            'request_url' => $request->url(),
             'request_host' => $request->getHost(),
             'request_ip' => $request->ip(),
             'x_forwarded_for' => $request->header('x-forwarded-for'),
@@ -62,6 +62,7 @@ class FibSubscriptionCallbackController extends Controller
         }
 
         $payment = Payment::query()
+            ->where('provider', 'fib')
             ->where('provider_object_type', PaymentProviderObjectType::SUBSCRIPTION)
             ->where('fib_subscription_id', (string) $validation['subscription_id'])
             ->first();

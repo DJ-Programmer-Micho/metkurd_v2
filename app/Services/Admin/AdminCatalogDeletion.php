@@ -58,7 +58,7 @@ class AdminCatalogDeletion
                 || CustomerFile::where('tool_code', $target->tool_code)->exists();
         }
         if ($target instanceof ServicePlan) {
-            return $target->subscriptions()->exists() || $target->previousSubscriptions()->exists()
+            return $this->agreementReferences($target->id) || $target->subscriptions()->exists() || $target->previousSubscriptions()->exists()
                 || $target->pricingRules()->exists() || $target->planEntitlements()->exists()
                 || $target->voiceAccesses()->exists() || $target->monthlyGrants()->exists()
                 || CreditOrder::where('service_plan_id', $target->id)->exists() || $this->purchases($target, 'service_plan');
@@ -95,11 +95,17 @@ class AdminCatalogDeletion
         }
         if ($target instanceof PlanVoiceAccess) {
             // Retain access for every current or historical subscription referencing this plan.
-            return $target->servicePlan()->where(fn (Builder $plan) => $plan
+            return $this->agreementReferences($target->service_plan_id) || $target->servicePlan()->where(fn (Builder $plan) => $plan
                 ->whereHas('subscriptions')->orWhereHas('previousSubscriptions'))->exists();
         }
 
         return true;
+    }
+
+    private function agreementReferences(int $planId): bool
+    {
+        return \Illuminate\Support\Facades\Schema::hasTable('service_plan_agreements')
+            && \App\Models\ServicePlanAgreement::where('service_plan_id', $planId)->exists();
     }
 
     private function purchases(Model $target, string $purpose): bool

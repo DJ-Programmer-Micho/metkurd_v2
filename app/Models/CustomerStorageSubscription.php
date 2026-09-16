@@ -7,6 +7,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CustomerStorageSubscription extends Model
 {
+    public function scopeEffectiveAt(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        app(\App\Services\Billing\BillingSubscriptionAuthority::class)->apply($query);
+        $table = $query->getModel()->getTable();
+
+        return $query->where($table.'.status', 'active')->whereNull($table.'.meta->superseded_at')
+            ->where(fn ($q) => $q->whereNull($table.'.starts_at')->orWhere($table.'.starts_at', '<=', now()))
+            ->where(fn ($q) => $q->whereNull($table.'.ends_at')->orWhere($table.'.ends_at', '>=', now()));
+    }
+
     protected $fillable = [
         'customer_id',
         'payment_id',

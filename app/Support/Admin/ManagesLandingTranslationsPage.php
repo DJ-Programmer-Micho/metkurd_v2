@@ -8,6 +8,8 @@ use Livewire\Attributes\Url;
 
 trait ManagesLandingTranslationsPage
 {
+    use SecureAdminComponent;
+
     #[Url(as: 'q', keep: true)]
     public string $search = '';
 
@@ -37,6 +39,8 @@ trait ManagesLandingTranslationsPage
 
     public function saveTranslations(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $rules = [];
 
         foreach ($this->translations as $id => $row) {
@@ -64,6 +68,7 @@ trait ManagesLandingTranslationsPage
         }
 
         $this->translationManager()->saveEditableEntries($payload);
+        app(\App\Services\Admin\AdminAudit::class)->record('landing.translations.saved', 'landing_translations', 'en-ar-ku', requested: ['keys' => array_keys($payload)]);
         $this->reloadTranslationCatalog();
 
         $this->dispatch('alert', type: 'success', message: __('Landing translations saved successfully.'));

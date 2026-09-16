@@ -37,14 +37,13 @@ class FibPaymentController extends Controller
         $payment = $payment->fresh(['customer.profile']) ?? $payment;
 
         $isSuccess = $payment->isPaid() && $payment->isApplied();
-        $isTerminal = $payment->isTerminal()
-            && ($payment->status !== \App\Domain\Payments\Enums\PaymentStatus::PAID
-                || $payment->isApplied()
-                || $payment->requiresReview());
-        $state = $this->frontendState($payment);
-        $message = $isSuccess
-            ? $this->successMessage($payment)
-            : $this->statusMessage($payment);
+        $checkoutState = app(\App\Domain\Payments\Support\PaymentCheckoutState::class)->state($payment);
+        $isTerminal = ! in_array($checkoutState, ['awaiting', 'confirming'], true);
+        $state = match ($checkoutState) {
+            'completed' => 'success', 'awaiting', 'confirming' => 'pending', default => $checkoutState
+        };
+        $message = $isSuccess ? $this->successMessage($payment)
+            : (in_array($checkoutState, ['expired', 'canceled', 'failed', 'review'], true) ? __('payment_v2.'.$checkoutState.'_help') : $this->statusMessage($payment));
 
         return response()->json([
             'status' => $payment->status->value,
@@ -52,7 +51,7 @@ class FibPaymentController extends Controller
             'state' => $state,
             'is_terminal' => $isTerminal,
             'is_success' => $isSuccess,
-            'can_retry' => in_array($payment->status->value, ['failed', 'canceled', 'expired'], true),
+            'can_retry' => in_array($checkoutState, ['failed', 'canceled', 'expired'], true),
             'redirect_url' => $isSuccess && $payment->fulfilled_at !== null
                 ? route('app.home', ['locale' => $locale])
                 : null,
@@ -178,6 +177,11 @@ class FibPaymentController extends Controller
 
     protected function shouldPollProvider(Payment $payment): bool
     {
+        if (! app(\App\Domain\Payments\Support\PaymentCheckoutState::class)->canPoll($payment)
+            && app(\App\Domain\Payments\Support\PaymentCheckoutState::class)->state($payment) !== 'confirming') {
+            return false;
+        }
+
         if ($payment->isTerminal() && ! ($payment->isPaid() && ! $payment->isApplied() && ! $payment->requiresReview())) {
             return false;
         }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync, readdirSync, existsSync} from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import {execFileSync} from 'node:child_process';
 const root = path.resolve(import.meta.dirname, '../..');
 const read = p => readFileSync(path.join(root,p),'utf8');
 const files = directory => readdirSync(path.join(root,directory)).filter(f=>f.endsWith('.php')).map(f=>directory+'/'+f);
@@ -14,19 +15,41 @@ for (const file of [...sources]) {
 }
 sources.push('app/Support/Admin/InteractsWithCustomerAdmin.php','app/Support/Admin/InteractsWithPaymentAdmin.php');
 const catalogs = Object.fromEntries(['en','ar','ku'].map(locale=>[locale,JSON.parse(read('resources/lang/admin/'+locale+'.json'))]));
+const phpCatalogs = Object.fromEntries(['agreement','billing_epoch'].map(namespace=>[namespace,
+ Object.fromEntries(['en','ar','ku'].map(locale=>[locale, JSON.parse(execFileSync('php', ['-r', 'echo json_encode(require $argv[1], JSON_THROW_ON_ERROR);', path.join(root, 'resources/lang', locale, namespace+'.php')], {encoding:'utf8'}))]))]));
 const tokens = value => [...value.matchAll(/:[a-zA-Z_]+/g)].map(m=>m[0]).sort();
-test('all literal scoped Admin JSON messages exist in EN AR KU with matching replacement tokens',()=>{
+test('all literal scoped Admin JSON and PHP messages exist in EN AR KU with matching replacement tokens',()=>{
  const keys = new Set();
  for(const file of sources) {
   const text=read(file).replace(/{{--[\s\S]*?--}}/g,'');
   for(const m of text.matchAll(/(?:__|@lang)\(\s*'((?:\\.|[^'\\])*)'/g)) {
    const key=m[1].replace(/\\'/g,"'").replace(/\\\\/g,'\\');
-   if(!/^(admin_p|validation\.)/.test(key)) keys.add(key);
+   if(!/^(admin_p|admin_ux\.|validation\.)/.test(key) && key !== 'agreement.' && !['subscription_lifecycle.', 'subscription_lifecycle.labels.'].includes(key)) keys.add(key);
   }
  }
  for(const key of keys) for(const locale of ['en','ar','ku']) {
+  const namespace=key.split('.')[0];
+  if(Object.hasOwn(phpCatalogs,namespace)) {
+   const shortKey=key.slice(namespace.length+1);
+   assert.ok(Object.hasOwn(phpCatalogs[namespace][locale],shortKey), `${locale}: ${key}`);
+   assert.deepEqual(tokens(phpCatalogs[namespace][locale][shortKey]),tokens(phpCatalogs[namespace].en[shortKey]),`${locale} placeholders: ${key}`);
+   continue;
+  }
   assert.ok(Object.hasOwn(catalogs[locale],key),`${locale}: ${key}`);
   assert.deepEqual(tokens(catalogs[locale][key]),tokens(key),`${locale} placeholders: ${key}`);
+ }
+});
+test('recurring lifecycle labels and customer messages have matching EN AR KU keys and placeholders',()=>{
+ const flatten=(value,prefix='')=>Object.fromEntries(Object.entries(value).flatMap(([key,item])=>
+  typeof item==='object' ? Object.entries(flatten(item,prefix+key+'.')) : [[prefix+key,item]]));
+ const rows=Object.fromEntries(['en','ar','ku'].map(locale=>[locale,flatten(JSON.parse(execFileSync('php',
+  ['-r','echo json_encode(require $argv[1], JSON_THROW_ON_ERROR);',path.join(root,'resources/lang',locale,'subscription_lifecycle.php')],{encoding:'utf8'})))]));
+ for(const locale of ['ar','ku']) {
+  assert.deepEqual(Object.keys(rows[locale]).sort(),Object.keys(rows.en).sort());
+  for(const [key,value] of Object.entries(rows.en)) {
+   assert.ok(rows[locale][key].trim(),`${locale}: ${key}`);
+   assert.deepEqual(tokens(rows[locale][key]),tokens(value),`${locale}: ${key}`);
+  }
  }
 });
 test('scoped mutations have no native dialogs or wire confirmation directives',()=>{

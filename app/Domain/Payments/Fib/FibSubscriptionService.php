@@ -145,12 +145,7 @@ class FibSubscriptionService
 
         return in_array($normalized, [
             'ACTIVE',
-            'PAID',
-            'SUBSCRIBED',
-            'UNPAID',
-            'PENDING',
-            'CREATED',
-            'INITIATED',
+            'TRIAL',
         ], true);
     }
 

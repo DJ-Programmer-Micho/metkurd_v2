@@ -482,6 +482,10 @@ it('repairs a provider-paid fib subscription locally and supersedes the older fi
         'https://fib-stage.fib.iq/protected/v1/subscriptions/fib-old-student-admin-123/cancel' => Http::response(null, 204),
     ]);
 
+    // Callback claims alone no longer expose a provider-paid repair action.
+    expect($brokenPayment->hasProviderPaidSubscriptionEvidence())->toBeFalse();
+    app(\App\Domain\Payments\Actions\SyncFibCheckoutStatus::class)->handle($brokenPayment, 'test_verified_status', null, false, false);
+
     $this->actingAs($admin, 'admin');
 
     Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
@@ -738,9 +742,9 @@ it('defaults paid reconciliation to the safer no-credit-refill mode and renders 
     Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->assertSet('paidReconciliationMode', 'manual_correction_already_applied')
-        ->assertSee('Manual Grant — No Revenue / No Provider Subscription')
+        ->assertSee(__('admin_ux.grant_classification'))
         ->assertSee('Paid Customer Reconciliation — Real FIB Payment')
-        ->assertSee('Apply Manual Grant')
+        ->assertSee(__('admin_ux.grant_action'))
         ->assertSee('Reconcile Paid FIB Subscription');
 });
 

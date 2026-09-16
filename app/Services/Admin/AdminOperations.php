@@ -35,6 +35,58 @@ class AdminOperations
 
     public const PAGE_SIZE = 25;
 
+    public const JOB_GROUPS = ['attention', 'active', 'completed', 'failed', 'uncertain', 'persistence', 'reservation'];
+
+    public function jobSummary(array $filters): array
+    {
+        $counts = [];
+        unset($filters['group'], $filters['status']);
+        foreach (self::JOB_GROUPS as $group) {
+            $counts[$group] = $this->query('jobs', $filters + ['group' => $group])->count();
+        }
+
+        return $counts;
+    }
+
+    private function jobGroup(Builder $query, string $group): void
+    {
+        if ($group === 'attention') {
+            $query->where(function ($q) {
+                foreach (['failed', 'uncertain', 'persistence', 'reservation'] as $part) {
+                    $q->orWhere(fn ($nested) => $this->jobGroup($nested, $part));
+                }
+                $q->orWhere('status', 'delete_failed')->orWhere(fn ($q) => $q->whereIn('status', ['queued', 'running', 'saving'])->where('created_at', '<', now()->subHours(2)));
+            });
+        } elseif ($group === 'active') {
+            $query->whereIn('status', ['queued', 'running', 'saving']);
+        } elseif ($group === 'completed') {
+            $query->where('status', 'done');
+        } elseif ($group === 'failed') {
+            $query->where(fn ($q) => $q->where('status', 'failed')->orWhere('failure_stage', 'refund_pending'));
+        } elseif ($group === 'uncertain') {
+            $query->where('failure_stage', 'provider_submission_unknown');
+        } elseif ($group === 'reservation') {
+            $review = $this->query('review', ['queue' => 'reservation_review'])->select('api_job_id')->reorder();
+            $query->whereIn('id', ApiJob::select('ml_job_id')->whereIn('id', $review)->whereColumn('customer_id', 'ml_jobs.customer_id'));
+        } elseif ($group === 'persistence') {
+            $query->where(function ($q) {
+                $q->where(fn ($q) => $q->whereIn('status', ['queued', 'running', 'saving'])->where('output->provider_success', true))
+                    ->orWhere(function ($q) {
+                        $q->where('status', 'done')->whereRaw("(JSON_EXTRACT(output, '$.text') IS NULL OR JSON_EXTRACT(output, '$.text') IN ('', 'null', '\"\"'))")
+                            ->whereNotExists(function ($files) {
+                                $files->selectRaw('1')->from('customer_files')->whereColumn('customer_id', 'ml_jobs.customer_id')
+                                    ->where('status', 'active')->whereNull('deleted_at')->whereIn('purpose', ['render', 'transcription', 'caption'])
+                                    ->where(function ($f) {
+                                        $f->where(fn ($f) => $f->where('source_type', 'ml_job')->whereColumn('source_id', 'ml_jobs.id'))
+                                            ->orWhereColumn('meta->job_id', 'ml_jobs.id')
+                                            ->orWhere(fn ($f) => $f->where('source_type', 'api_job')->whereIn('source_id', ApiJob::select('id')->whereColumn('ml_job_id', 'ml_jobs.id')->whereColumn('customer_id', 'ml_jobs.customer_id')));
+                                    });
+                            });
+                    });
+            });
+        }
+    }
+
     public function customerLookup(string $search, ?int $selected = null)
     {
         AdminAccess::authorize('admin.read');
@@ -56,7 +108,8 @@ class AdminOperations
     {
         AdminAccess::authorize('admin.read');
         $c = Customer::query()->with(['activeServiceSubscription.servicePlan', 'activeServiceSubscription.previousServicePlan', 'activeStorageSubscription.storagePlan'])->findOrFail($id);
-        $plan = $c->currentServicePlan();
+        $state = $c->servicePlanState();
+        $plan = $state['current_plan'];
         $config = app(CustomerApiAccessService::class)->configForCustomer($c);
         $used = $c->storageUsedBytes();
         $quota = $c->storageQuotaMb() * 1024 * 1024;
@@ -69,12 +122,19 @@ class AdminOperations
                 'requests_per_minute' => $config['requests_per_minute'], 'concurrent_jobs' => $config['concurrent_jobs'],
                 'active_jobs' => ApiJob::where('customer_id', $id)->whereIn('status', ['accepted', 'queued', 'processing'])->count()]];
         $blocks['identity']['status'] = (int) $c->status === 1 ? 'active' : 'inactive';
+        if ($agreement = $state['agreement'] ?? $state['pending_agreement']) {
+            $blocks['plan']['agreement'] = $this->fields($agreement, ['id', 'reference', 'status', 'starts_at', 'ends_at', 'subscription_id']);
+        }
+        if ($state['externally_managed']) {
+            $blocks['plan']['payment_id'] = __('agreement.external');
+        }
         foreach (['app', 'api'] as $type) {
             $w = $wallets->get($type);
             $blocks[$type.'_credits'] = ['wallet_type' => $type, 'wallet_id' => $w?->id,
                 'balance_credits' => $w?->balance_credits, 'subscription_balance_credits' => $w?->subscription_balance_credits,
                 'addon_balance_credits' => $w?->addon_balance_credits,
-                'allowance' => $type === 'api' ? $plan?->api_monthly_credits : ($plan?->app_monthly_credits ?? $plan?->monthly_credits),
+                'lifetime_earned' => $w?->lifetime_earned, 'lifetime_spent' => $w?->lifetime_spent, 'lifetime_refunded' => $w?->lifetime_refunded,
+                'allowance' => $state['allowances'][$type],
                 'held_amount' => $type === 'api' ? ApiCreditReservation::where('customer_id', $id)->where('status', 'reserved')->sum('amount') : null,
                 'latest_activity' => CreditLedger::where('customer_id', $id)->where('wallet_type', $type)->max('created_at')];
         }
@@ -108,6 +168,20 @@ class AdminOperations
             'orders' => CreditOrder::query(), 'keys' => CustomerApiKey::query()->select(['id', 'customer_id', 'name', 'key_prefix', 'scopes', 'status', 'created_at', 'last_used_at', 'revoked_at']),
             'audit' => AdminAuditEvent::query(), 'entitlements' => PlanEntitlement::with('toolAction:id,full_code'),
         };
+        if (in_array($section, ['payments', 'orders'], true)) {
+            if (($f['financialEra'] ?? 'current') === 'legacy' && $queue === '') {
+                $boundary = app(\App\Services\Billing\BillingReportingBoundary::class)->current();
+                if ($boundary) {
+                    $table = $section === 'payments' ? 'payments' : 'credit_orders';
+                    $q->where(fn ($old) => $old->where($table.'.created_at', '<', $boundary['starts_at'])
+                        ->orWhereNull($table.'.created_at')->orWhere($table.'.id', '<=', $boundary[$section === 'payments' ? 'payment_id' : 'credit_order_id']));
+                } else {
+                    $q->whereRaw('1 = 0');
+                }
+            } else {
+                $q->currentBillingPeriod();
+            }
+        }
         if ($customer = (int) ($f['customer'] ?? 0)) {
             if ($section === 'audit') {
                 $this->auditCustomer($q, $customer);
@@ -142,6 +216,9 @@ class AdminOperations
             }
         }
         if ($section === 'jobs') {
+            if (in_array($f['group'] ?? '', self::JOB_GROUPS, true)) {
+                $this->jobGroup($q, $f['group']);
+            }
             if (in_array($f['channel'] ?? '', ['app', 'api'], true)) {
                 $apiIds = ApiJob::select('ml_job_id')->whereNotNull('ml_job_id');
                 ($f['channel'] === 'api') ? $q->whereIn('id', $apiIds) : $q->whereNotIn('id', $apiIds);
@@ -174,7 +251,9 @@ class AdminOperations
                 $q->where('provider', $f['method']);
             }
             if ($queue === 'payment_review') {
-                $q->where('internal_status', 'requires_review')->where(fn ($q) => $q->whereNull('meta->review_resolution->closed_at')->orWhere('meta->review_resolution->closed_at', ''));
+                $q->where(fn ($review) => $review->where(fn ($open) => $open->where('internal_status', 'requires_review')
+                    ->where(fn ($resolution) => $resolution->whereNull('meta->review_resolution->closed_at')->orWhere('meta->review_resolution->closed_at', '')))
+                    ->orWhere('meta->provider_cancellation->provider_cancel_pending', true));
             }
         }
         if ($section === 'reservations' && $queue === 'reservation_review') {
@@ -289,7 +368,7 @@ class AdminOperations
 
     private function job(MlJob $j): array
     {
-        $api = ApiJob::where('customer_id', $j->customer_id)->where('ml_job_id', $j->id)->first(['id']);
+        $api = ApiJob::where('customer_id', $j->customer_id)->where('ml_job_id', $j->id)->first(['id', 'status']);
         $action = $j->toolAction?->full_code;
         $variant = collect(app(ApiCatalog::class)->variants())->firstWhere('action', $action);
         $files = $this->query('files', ['job' => $j->id]);
@@ -319,6 +398,12 @@ class AdminOperations
             }
         }
         $row['local_lifecycle'] = $row['status'];
+        $row['age'] = $j->created_at?->diffForHumans();
+        $row['attention'] = in_array($j->failure_stage, ['refund_pending', 'provider_submission_unknown'], true)
+            || in_array($j->status, ['failed', 'delete_failed'], true)
+            || ($j->status === 'done' && $row['persisted_result'] === 'not_confirmed')
+            || (in_array($j->status, ['queued', 'running', 'saving'], true) && ($row['provider_status'] === 'provider_success_recorded' || $j->created_at?->lt(now()->subHours(2))))
+            || (isset($reservation) && $reservation->status === 'reserved' && ($reservation->created_at?->lt(now()->subHours(2)) || in_array($api?->status, ['completed', 'failed', 'cancelled'], true)));
         unset($row['status']);
 
         return $row;
@@ -342,7 +427,12 @@ class AdminOperations
         $row['fulfillment'] = $p->fulfilled_at ? 'fulfilled' : 'not_recorded';
         if ($this->deepEvidence()) {
             $row['provider_reference'] = $p->providerReference();
+            $row['provider_status'] = $p->provider_subscription_status ?: $p->provider_status;
             $row['provider_evidence'] = AdminData::diagnostics($p->status_response);
+            $row['provider_cancellation'] = array_intersect_key((array) data_get($p->meta, 'provider_cancellation', []), array_flip([
+                'state', 'reason_code', 'requested_at', 'provider_cancel_requested_at', 'provider_cancel_confirmed_at',
+                'provider_cancel_pending', 'effective_access_until', 'replacement_subscription_id', 'replacement_payment_id', 'retry_after',
+            ]));
         }
 
         return $row;
@@ -352,6 +442,15 @@ class AdminOperations
     {
         return $this->fields($s, ['id', 'customer_id', 'payment_id', 'status', 'source', 'starts_at', 'ends_at', 'cycle_started_on', 'cycle_ends_on', 'next_renewal_on', 'auto_renew', 'renewal_strategy'])
             + ['plan' => $s instanceof CustomerServiceSubscription ? $s->servicePlan?->name : $s->storagePlan?->name,
+                'access_status' => $s->status === 'active' && $s->ends_at?->isPast() ? 'expired' : $s->status,
+                'provider_status' => data_get($s->meta, 'provider_status'),
+                'renewal_status' => data_get($s->meta, 'provider_cancellation.state', $s->auto_renew ? 'renewing' : 'off'),
+                'provider_cancel_pending' => (bool) data_get($s->meta, 'provider_cancellation.provider_cancel_pending'),
+                'effective_access_until' => data_get($s->meta, 'provider_cancellation.effective_access_until', data_get($s->meta, 'period_ends_at')),
+                'superseded_at' => data_get($s->meta, 'superseded_at'),
+                'replacement_subscription_id' => data_get($s->meta, 'provider_cancellation.replacement_subscription_id'),
+                'expired_at' => data_get($s->meta, 'expired_at'),
+                'renewal_payment_missing' => (bool) data_get($s->meta, 'renewal_payment_missing'),
                 'previous_plan' => $s instanceof CustomerServiceSubscription ? $s->previousServicePlan?->name : null];
     }
 

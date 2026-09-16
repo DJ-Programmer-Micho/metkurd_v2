@@ -40,6 +40,8 @@ class AppShellData
             return;
         }
 
+        Cache::put("app-shell:{$customerId}:revision", (string) \Illuminate\Support\Str::uuid(), now()->addDay());
+
         Cache::forget("app-shell:{$customerId}:access-map");
         Cache::forget("app-shell:{$customerId}:active-jobs");
         Cache::forget("app-shell:{$customerId}:usage-summary");
@@ -65,12 +67,14 @@ class AppShellData
         }
 
         $customerId = (int) $customer->id;
-        $planCacheVersion = self::servicePlanCacheVersion();
-        $requestCacheKey = $this->cacheKeyForCustomerId($customerId, $planCacheVersion);
-
         if ($forceRefresh) {
             self::forgetForCustomerId($customerId);
         }
+        $servicePlan = $customer->currentServicePlan();
+        $planCacheVersion = self::servicePlanCacheVersion().':'.$servicePlan?->id.':'.$customer->activeServiceSubscription?->id
+            .':'.Cache::get("app-shell:{$customerId}:revision", '0')
+            .':'.hash('sha256', json_encode(app(\App\Services\Billing\BillingReportingBoundary::class)->current()));
+        $requestCacheKey = $this->cacheKeyForCustomerId($customerId, $planCacheVersion);
 
         if (isset(self::$cache[$requestCacheKey])) {
             return self::$cache[$requestCacheKey];
@@ -169,7 +173,7 @@ class AppShellData
         ];
     }
 
-    protected function cacheKeyForCustomerId(int $customerId, int $planCacheVersion): string
+    protected function cacheKeyForCustomerId(int $customerId, int|string $planCacheVersion): string
     {
         if ($customerId <= 0) {
             return '0';

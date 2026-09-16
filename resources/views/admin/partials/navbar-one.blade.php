@@ -108,7 +108,7 @@
                     <livewire:partials.components.nav-feature-link
                         route="admin.customers.register"
                         icon="bx bxs-microphone-alt"
-                        :label="__('Billing Register')"
+                        :label="__('Customer Register')"
                     />
 
                     <livewire:partials.components.nav-feature-link

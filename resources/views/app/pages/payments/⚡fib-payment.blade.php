@@ -45,6 +45,11 @@ class extends Component
     public function pollStatus(): void
     {
         $payment = $this->payment->fresh(['customer.profile']) ?? $this->payment;
+        if (! app(\App\Domain\Payments\Support\PaymentCheckoutState::class)->canPoll($payment)
+            && app(\App\Domain\Payments\Support\PaymentCheckoutState::class)->state($payment) !== 'confirming') {
+            $this->payment = $payment;
+            return;
+        }
 
         if ($payment->isTerminal() && ! ($payment->isPaid() && ! $payment->isApplied() && ! $payment->requiresReview())) {
             $this->payment = $payment;
@@ -127,6 +132,11 @@ class extends Component
             }
 
             $newPayment = $this->replaceCheckoutWithCoupon($context, $this->couponCode);
+            if ($newPayment->id === $latestPayment->id) {
+                $this->couponMessage = __('payment_v2.block_active');
+                $this->couponMessageType = 'warning';
+                return;
+            }
 
             session()->flash('payment_status_message', __('Coupon :code applied. A new checkout was created with the updated total.', [
                 'code' => $this->couponCode,
@@ -189,7 +199,7 @@ class extends Component
             return false;
         }
 
-        return in_array($payment->status->value, ['pending', 'awaiting_customer_action'], true);
+        return app(\App\Domain\Payments\Support\PaymentCheckoutState::class)->canPoll($payment);
     }
 
     protected function checkoutCouponContext(): ?CouponContext
@@ -324,9 +334,8 @@ class extends Component
         $payment = $this->payment->fresh(['customer.profile']) ?? $this->payment;
         $snapshot = $payment->snapshot();
         $purchaseConversionPayload = app(ConversionTrackingService::class)->preparePurchaseConversionPayload($payment);
-        $links = $payment->appLinks();
-        $shouldPoll = in_array($payment->status->value, ['pending', 'awaiting_customer_action'], true)
-            || ($payment->isPaid() && ! $payment->isApplied() && ! $payment->requiresReview());
+        $links = app(\App\Domain\Payments\Support\PaymentCheckoutState::class)->canPoll($payment) ? $payment->appLinks() : [];
+        $shouldPoll = in_array(app(\App\Domain\Payments\Support\PaymentCheckoutState::class)->state($payment), ['awaiting', 'confirming'], true);
         $status = $payment->status->value;
         $statusClass = match (true) {
             $payment->requiresReview() => 'warning',
@@ -453,7 +462,7 @@ class extends Component
     $activeUntilLabel = $payment->active_until?->timezone($baghdadTimezone)->format('Y-m-d H:i');
     $knownProviderStatus = $fibSubscriptions->normalizeProviderStatus($payment->providerStatusLabel());
     $cancelResult = (string) data_get($payment->cancel_response, 'result', '');
-    $showCancel = $payment->status->value === 'awaiting_customer_action'
+    $showCancel = app(\App\Domain\Payments\Support\PaymentCheckoutState::class)->canPoll($payment)
         && ! in_array($cancelResult, ['already_scheduled', 'already_canceled', 'non_cancelable'], true)
         && (! $isSubscriptionCheckout || $knownProviderStatus === null || $fibSubscriptions->isCancelableProviderStatus($knownProviderStatus));
     $showRefresh = in_array($payment->status->value, ['awaiting_customer_action', 'pending'], true)
@@ -715,7 +724,7 @@ class extends Component
                         <div class="border rounded-4 p-3 p-lg-4 h-100">
                             <div class="fw-semibold mb-2">{{ $isSubscriptionCheckout ? __('Complete Subscription In FIB') : __('Complete Payment In FIB') }}</div>
 
-                            @if (!empty($payment->qr_code) && $payment->status->value === 'awaiting_customer_action')
+                            @if (!empty($payment->qr_code) && app(\App\Domain\Payments\Support\PaymentCheckoutState::class)->canPoll($payment))
                                 <div class="text-center mb-3">
                                     <img src="{{ $payment->qr_code }}"
                                          alt="{{ __('FIB payment QR code') }}"

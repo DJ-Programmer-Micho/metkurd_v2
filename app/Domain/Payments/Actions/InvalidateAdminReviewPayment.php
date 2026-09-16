@@ -7,21 +7,25 @@ use App\Domain\Payments\Enums\PaymentStatus;
 use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Services\Admin\AdminOperationRunner;
+use App\Services\Coupons\CouponRedemptionService;
+use App\Support\Admin\AdminAccess;
 use Illuminate\Validation\ValidationException;
 
 class InvalidateAdminReviewPayment
 {
+    public function eligible(Payment $payment): bool
+    {
+        return app(\App\Domain\Payments\Support\AbandonedCheckoutEligibility::class)->adminEligible($payment);
+    }
+
     public function handle(string $operationId, int $customerId, int $paymentId, string $reason): Payment
     {
+        AdminAccess::authorize('admin.finance');
+        $reason = trim($reason);
         app(AdminOperationRunner::class)->run($operationId, 'admin.reconcile', 'payment.invalidate', $customerId,
             ['payment_id' => $paymentId], $reason, function () use ($paymentId, $customerId, $reason, $operationId) {
                 $payment = Payment::query()->lockForUpdate()->findOrFail($paymentId);
-                if ((int) $payment->customer_id !== $customerId || ! $payment->requiresReview()
-                    || $payment->fulfilled_at || $payment->paid_at || $payment->isApplied()
-                    || $payment->last_payment_at || $payment->hasProviderPaidSubscriptionEvidence()
-                    || in_array($payment->providerPaymentStatusLabel(), ['PAID', 'APPROVED', 'CONFIRMED', 'CAPTURED', 'SETTLED', 'SUCCESS'], true)
-                    || ! in_array($payment->status, [PaymentStatus::PENDING, PaymentStatus::AWAITING_CUSTOMER_ACTION, PaymentStatus::FAILED, PaymentStatus::CANCELED], true)
-                    || in_array($payment->internal_status, [PaymentInternalStatus::APPLIED, PaymentInternalStatus::PAID_PENDING_APPLICATION], true)) {
+                if ((int) $payment->customer_id !== $customerId || ! $this->eligible($payment)) {
                     throw ValidationException::withMessages(['reviewPaymentId' => __('admin_p0.invalidation')]);
                 }
                 $before = $payment->status->value;
@@ -38,6 +42,7 @@ class InvalidateAdminReviewPayment
                     'event_key' => 'admin-invalidate:'.$operationId, 'before_status' => $before, 'after_status' => $payment->status->value,
                     'meta' => ['admin_id' => auth('admin')->id(), 'reason' => $reason, 'operation_id' => $operationId],
                 ]);
+                app(CouponRedemptionService::class)->releaseForPayment($payment, 'admin_abandoned_checkout');
 
                 return ['payment_id' => $payment->id];
             });

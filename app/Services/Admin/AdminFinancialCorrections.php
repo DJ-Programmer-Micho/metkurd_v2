@@ -22,21 +22,25 @@ use Illuminate\Validation\ValidationException;
 
 class AdminFinancialCorrections
 {
-    public function plan(string $id, int $customerId, int $planId, string $cycle, string $reason): array
+    public function plan(string $id, int $customerId, int $planId, string $cycle, string $reason, string $grantReasonCode = 'other'): array
     {
+        \Illuminate\Support\Facades\Validator::make(['grant_reason_code' => $grantReasonCode],
+            ['grant_reason_code' => 'required|in:internal_team_account,company_account,testing_account,partner_access,founder_admin_access,support_compensation,promotional,other'])->validate();
+
         return app(AdminOperationRunner::class)->run($id, 'admin.finance', 'grant.plan', $customerId,
             ['plan_id' => $planId, 'cycle' => $cycle, 'wallets' => ['app', 'api']], $reason,
-            function (Customer $customer) use ($planId, $cycle, $reason, $id) {
+            function (Customer $customer) use ($planId, $cycle, $reason, $id, $grantReasonCode) {
                 $plan = ServicePlan::query()->lockForUpdate()->where('is_active', true)->findOrFail($planId);
                 $this->cycle($plan, $cycle);
                 $old = $customer->currentServicePlan();
                 $allowances = ['app' => $old?->appMonthlyCredits() ?? 0, 'api' => $old?->apiMonthlyCredits() ?? 0];
                 $subscription = app(ManualServicePlanGrantService::class)->grant($customer, $plan, [
                     'billing_cycle' => $cycle, 'admin_id' => auth('admin')->id(), 'reason' => $reason, 'operation_id' => $id,
+                    'grant_reason_code' => $grantReasonCode,
                 ]);
                 $result = $this->sync($customer->fresh(), $plan, $subscription, $id, $reason, $allowances, 'admin_manual_grant');
 
-                return [...$result, 'subscription_id' => $subscription->id,
+                return [...$result, 'subscription_id' => $subscription->id, 'revenue_excluded' => true,
                     'cycle_started_on' => $subscription->cycle_started_on?->toDateString(),
                     'cycle_ends_on' => $subscription->cycle_ends_on?->toDateString()];
             });

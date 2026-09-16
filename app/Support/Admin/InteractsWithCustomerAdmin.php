@@ -163,12 +163,15 @@ trait InteractsWithCustomerAdmin
         };
     }
 
-    protected function scopePaidOrders(Builder|Relation $query, ?CarbonInterface $windowStart = null): Builder|Relation
+    protected function scopePaidOrders(Builder|Relation $query, ?CarbonInterface $windowStart = null, bool $currentReporting = true): Builder|Relation
     {
         $query->where('status', 'paid');
 
         if (method_exists($query->getModel(), 'scopeRevenueIncluded')) {
             $query->revenueIncluded();
+            if ($currentReporting) {
+                $query->currentBillingPeriod();
+            }
         }
 
         if ($windowStart) {

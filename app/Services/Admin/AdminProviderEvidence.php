@@ -13,6 +13,59 @@ use Illuminate\Validation\ValidationException;
 
 class AdminProviderEvidence
 {
+    /** Local evidence only: never contact the provider to clear abandoned history. */
+    public function preventsCheckoutInvalidation(Payment $payment): bool
+    {
+        foreach ([$payment->provider_status, $payment->provider_payment_status, $payment->provider_subscription_status] as $status) {
+            if (! in_array(strtoupper(trim((string) $status)), ['', 'DRAFT', 'UNPAID', 'PENDING', 'CREATED', 'INITIATED', 'FAILED', 'DECLINED', 'REJECTED', 'CANCELED', 'CANCELLED', 'EXPIRED', 'TIMED_OUT'], true)) {
+                return true;
+            }
+        }
+        foreach ([$payment->create_response, $payment->status_response, $payment->cancel_response, $payment->callback_payload, $payment->meta] as $payload) {
+            if ($this->containsCollectionEvidence((array) $payload)) {
+                return true;
+            }
+        }
+        // Older observations must not disappear behind a newer DRAFT response.
+        foreach ($payment->events()->lazyById(100) as $event) {
+            if ($this->containsCollectionEvidence([
+                'before_status' => $event->before_status, 'after_status' => $event->after_status,
+                'payload' => $event->payload, 'meta' => $event->meta,
+            ])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function containsCollectionEvidence(array $payload): bool
+    {
+        foreach ($payload as $key => $value) {
+            if (is_array($value)) {
+                if ($this->containsCollectionEvidence($value)) {
+                    return true;
+                }
+
+                continue;
+            }
+            $key = strtolower(str_replace('_', '', (string) $key));
+            if (str_ends_with($key, 'status') && is_scalar($value)
+                && in_array(strtoupper(trim((string) $value)), ['PAID', 'APPROVED', 'CONFIRMED', 'CAPTURED', 'SETTLED', 'SUCCESS', 'SUCCESSFUL', 'COMPLETED', 'ACTIVE', 'SUBSCRIBED', 'REFUNDED', 'REFUND_REQUESTED', 'APPLIED', 'PAID_PENDING_APPLICATION'], true)) {
+                return true;
+            }
+            if (in_array($key, ['paidat', 'lastpaymentat', 'activeuntil', 'fulfilledat'], true) && $value !== null && $value !== '') {
+                return true;
+            }
+            if (in_array($key, ['paid', 'ispaid', 'paymentcompleted', 'ispaymentcompleted'], true)
+                && in_array($value, [true, 1, '1', 'true'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function verify(Payment $payment, string $candidate): FibPaymentStatusData|FibSubscriptionStatusData
     {
         if ($payment->provider !== PaymentProvider::FIB || trim($candidate) === '' || ! $payment->customer || ! $payment->purchasable) {
@@ -26,6 +79,13 @@ class AdminProviderEvidence
             throw ValidationException::withMessages(['providerReference' => __('admin_p0.provider_failed')]);
         }
         $returnedId = $status instanceof FibSubscriptionStatusData ? $status->subscriptionId : $status->paymentId;
+        // Reference correction has its own ownership proof below. Apply shared
+        // format/money checks against the candidate without changing the real row.
+        $candidatePayment = clone $payment;
+        $candidatePayment->setAttribute($status instanceof FibSubscriptionStatusData ? 'fib_subscription_id' : 'fib_payment_id', $candidate);
+        if (app(\App\Domain\Payments\Support\FibStatusEvidence::class)->rejection($candidatePayment, $status) !== null) {
+            $this->reject();
+        }
         $money = $status->raw['monetaryValue'] ?? $status->raw['amount'] ?? null;
         if ($returnedId !== $candidate || ! is_array($money) || ! is_numeric($money['amount'] ?? null)
             || (float) $money['amount'] !== (float) $payment->amount

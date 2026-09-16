@@ -1,8 +1,8 @@
 @php($preview = $this->v2Preview)
-<section class="card" aria-label="{{ __('admin_p1.catalog') }}">
-    <div class="card-header"><h5 class="mb-0">{{ __('admin_p1.catalog') }}</h5></div>
+<details class="card admin-reference" aria-label="{{ __('admin_p1.catalog') }}">
+    <summary class="card-header fw-semibold">{{ __('admin_ux.configuration_reference') }}</summary>
     <div class="card-body">
-        <p>{{ __('admin_p1.read_only') }}</p>
+        <p class="small text-muted">{{ __('admin_ux.configuration_help') }}</p>
         <div class="row g-3 mb-3">
             <div class="col-md-4"><label class="form-label" for="admin-field-admin-v2-catalog-1">{{ __('admin_p1.plan') }}</label>
                 <select class="form-select" wire:model.live="v2PlanId" id="admin-field-admin-v2-catalog-1">
@@ -66,4 +66,4 @@
             <p>{{ __('admin_p1.runtime_limits') }}</p>
         </details>
     </div>
-</section>
+</details>

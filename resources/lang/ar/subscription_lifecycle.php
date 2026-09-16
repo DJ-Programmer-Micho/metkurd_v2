@@ -1,0 +1,31 @@
+<?php
+
+return [
+    'issue' => 'مشكلة في دفعة التجديد',
+    'pending' => 'الإلغاء قيد الانتظار', 'requested' => 'تم طلب الإلغاء', 'confirmed' => 'تم الإلغاء',
+    'renewal_off' => 'التجديد التلقائي متوقف.',
+    'awaiting_provider' => 'تم حفظ طلبك. ننتظر تأكيد FIB لإلغاء التجديدات المستقبلية.',
+    'access_until' => 'الوصول متاح حتى :date', 'renews' => 'يتجدد في :date',
+    'changing' => 'التغيير إلى :plan. أكمل الدفع لتفعيل الخطة الجديدة.',
+    'old_pending' => 'إلغاء تجديد خطة :plan السابقة قيد الانتظار.', 'ended' => 'انتهى اشتراك :plan السابق.',
+    'cancel_success' => 'تم تسجيل طلب الإلغاء مع الحفاظ على مدة الوصول المدفوعة. راجع حالة التجديد لتأكيد مزود الدفع.',
+    'off' => 'التجديد التلقائي متوقف',
+    'renewing' => 'التجديد التلقائي مفعّل',
+    'labels' => [
+        'provider_cancellation' => 'إلغاء مزود الدفع',
+        'state' => 'حالة الإلغاء',
+        'reason_code' => 'السبب',
+        'requested_at' => 'وقت تسجيل الطلب',
+        'provider_cancel_requested_at' => 'قبول طلب الإلغاء',
+        'provider_cancel_confirmed_at' => 'تأكيد الإلغاء لدى المزود',
+        'provider_cancel_pending' => 'إلغاء المزود قيد الانتظار',
+        'effective_access_until' => 'الوصول المدفوع حتى',
+        'replacement_subscription_id' => 'الاشتراك البديل',
+        'replacement_payment_id' => 'دفعة الاستبدال',
+        'retry_after' => 'فحص الإلغاء التالي',
+        'access_status' => 'حالة الوصول',
+        'renewal_status' => 'حالة التجديد',
+        'superseded_at' => 'وقت الاستبدال',
+        'renewal_payment_missing' => 'لا توجد دفعة أحدث مؤكدة عند انتهاء المدة',
+    ],
+];

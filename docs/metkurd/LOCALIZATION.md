@@ -1,5 +1,42 @@
 # Localization
 
+## Responsive FIB payment controls — 2026-09-13
+
+Payment V2 EN/AR/KU catalogs now include QR/app instructions, readable code, copy
+feedback and countdown wording. Code/time retain LTR isolation in RTL layouts.
+See [PAYMENT-CHECKOUT-V2.md](PAYMENT-CHECKOUT-V2.md) for responsive fixture checks
+and provider-testing limits.
+
+## V2 payment status — 2026-09-10
+
+`resources/lang/{en,ar,ku}/payment_v2.php` provides checkout state explanations,
+review/live blocker text, timeline, summary, safe continuation and return actions.
+The V2 shell retains locale/direction; dynamic purchase names use automatic
+direction and amounts/dates remain isolated. Native raw provider errors are omitted.
+The shared policy also supplies read-only V2 billing-history state labels.
+See [PAYMENT-CHECKOUT-V2.md](PAYMENT-CHECKOUT-V2.md) for browser verification limits.
+
+## V2 purchase pages — 2026-09-10
+
+Subscription, storage and add-on presentation uses matching
+`resources/lang/{en,ar,ku}/purchase_v2.php` catalogs and existing account/App copy.
+Mode/interval, reviews, credit effects, cancellation, unavailable states and storage
+limitations are translated. V2 styling uses logical alignment and automatic
+direction for catalog names; amounts/technical inputs retain isolated direction.
+EN desktop, AR mobile/RTL dropdown and KU mobile add-ons were checked in the
+signed-in local browser. Provider checkout remains shared. See
+[PURCHASE-V2.md](PURCHASE-V2.md) for scope and remaining domain limitations.
+
+## V2 customer account pages — 2026-09-10
+
+Profile and Billing use matching `resources/lang/{en,ar,ku}/account_v2.php`
+catalogs alongside existing App JSON account/validation copy. Shared OTP and phone
+country labels retain their existing translations. EN is LTR, AR/KU RTL; email,
+phone, dates and identifiers are isolated LTR, names use automatic direction.
+The V2 billing paginator supplies translated previous/next/page-count labels
+without changing V1 pagination. Desktop EN and mobile AR/KU pages were checked
+in the signed-in local browser; mutation and delivery coverage remains isolated.
+
 ## Admin P2 operational copy — 2026-09-06
 
 New Operational/customer detail labels use matching EN/AR/KU admin_p2.php catalogs.

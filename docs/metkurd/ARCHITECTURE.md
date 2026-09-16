@@ -1,5 +1,194 @@
 # MetKurd architecture
 
+## Cutover deployment identity — 2026-09-15
+
+PaymentDomainCutover keeps one business review/mutation algorithm. CutoverIdentity
+selects local-rehearsal or production policies from explicit disabled-by-default
+deployment assertions, without altering Laravel's connection. Production preflight
+binds migrations, the exact active Admin's capabilities, backup/restore references
+and persisted provider-obligation disposition into the review. Unresolved obligations
+and still-valid coverage block deletion; no provider action runs in review/execution.
+Local SQL hostname checking is not applied to RDS. See the production runbook for
+the command contract and native MySQL acceptance still required.
+
+## Effective authority and financial epoch — 2026-09-15
+
+After the successful local cutover, BillingSubscriptionAuthority separates effective
+service/storage access from preserved balances and provenance. The same eligibility
+is used by CustomerBillingStateService, current Customer relations/helpers, checkout
+application assessment, Admin metrics and cycle operations. Manual metadata deadlines
+are strictly parsed; expired/ambiguous terms are not indefinite grants. Old provider
+rows have no current authority. New online coverage requires an owned, plan-matched,
+paid current-epoch Payment and valid term. Cash access requires the actual agreement.
+Lifecycle authority permits expiry of current obligations while refusing refills/expiry
+mutations from grants already expired at cutover. Reads do not rewrite those rows.
+
+BillingReportingBoundary is the single DB-backed epoch: committed Admin audit timestamp
+plus retained payment/order watermarks. V2 Payment History previously merged detached
+CreditOrders without this filter; both UNION branches now use it. Current Admin financial
+reads, checkout blockers, provider reconciliation and fulfillment use the same boundary.
+Legacy Admin history remains separately readable. ML jobs, files, usage and ledger activity
+are continuous. See [the launch runbook and table matrix](V1-TO-V2-PRODUCTION-RUNBOOK.md).
+
+
+## Local payment-domain cutover — 2026-09-15
+
+The separately authorized local business cutover can retire all online processing
+records while retaining orders, ledgers, allocations, credits and normalized history.
+It ends only old provider-derived local authority and preserves explicit internal
+and external access. A transactional Admin audit stores the cutover timestamp,
+retired ID watermarks and dependency manifest. Current Admin revenue uses this
+boundary; historical evidence remains readable. No migration, provider call or
+credit allocation is part of the operation. See [BILLING-DOMAIN-CUTOVER.md](BILLING-DOMAIN-CUTOVER.md)
+for exact guards and the distinction between implementation, dry run and execution.
+
+
+## Recurring subscription actions — 2026-09-14
+
+Renewal state is now tracked separately from paid access using durable local
+cancellation intent, authenticated GET confirmation and a bounded retry scheduler.
+Paid plan replacement commits before cancelling the superseded provider subscription.
+Late collections after cancellation/expiry/supersession enter financial review without
+restoring access. Existing App/API allocation and add-on policy remains authoritative.
+See [RECURRING-SUBSCRIPTION-LIFECYCLE.md](RECURRING-SUBSCRIPTION-LIFECYCLE.md).
+
+
+## Explicit payment history reset — 2026-09-14
+
+The separate `billing:reset-payment-history` operator command uses a frozen retained
+Payment identity in the full-state review hash for an all-or-nothing maintenance
+transaction. Latest active (open or paid) selection is automatic; no UUID argument
+is required. Inventory and locking explicitly scope to the active database.
+It preserves the kept Payment/events, financial state and normalized history; only
+approved historical `payment_id` links detach, with mappings in a transactional
+Admin audit. Allocation claims and unapproved retained dependencies block deletion.
+It makes no provider calls and changes no checkout or reconciliation policy. See
+[PAYMENT-HISTORY-RESET.md](PAYMENT-HISTORY-RESET.md) for guards and the operator
+procedure. No application reset or native-engine acceptance was executed.
+
+## Customer checkout abandonment — 2026-09-14
+
+The V2 payment page has an owned, locked, idempotent local-draft cancellation action
+with stricter eligibility than Admin review. The Admin evidence predicate is shared,
+while PaymentCheckoutState and final creation guards remain unchanged. Historical
+NOT_FOUND/ambiguous paid-reference review still requires Admin resolution. V2 purchase
+pages no longer accept coupons and refresh open reviews after closure. Provider fields,
+financial history and legacy coupon services remain intact. See
+[PAYMENT-CHECKOUT-V2.md](PAYMENT-CHECKOUT-V2.md#customer-abandonment-of-unavailable-checkout--2026-09-14).
+
+
+## Effective plan and Pro API follow-up — 2026-09-14
+
+Current service-plan reads now share CustomerBillingStateService and the normalized
+subscription eligibility scope. Partial relations, synthetic customer plan IDs and
+stale model caches cannot override it. Agreement snapshots supply monthly allowance
+presentation; scheduled/review agreements remain supplementary. Scoped shell cache
+invalidation follows committed subscription/wallet changes and effective-plan changes.
+
+The operator explicitly approved all six V2 API service scopes for the existing local
+Pro plan. They were saved through the authenticated Admin scope-only action, preserving
+legacy scopes and all prices/allowances. This is an audited local configuration change,
+not a migration or automatic scope backfill. See [EFFECTIVE-PLAN-CONSISTENCY.md](EFFECTIVE-PLAN-CONSISTENCY.md)
+for evidence, preserved-data fingerprints and verification limits.
+
+
+## Dated external agreements — 2026-09-13
+
+`ServicePlanAgreement` is a scheduling/approval record, not a second subscription or
+payment engine. It creates `CustomerServiceSubscription` only when due; monthly
+access uses SubscriptionCreditAllocation and the existing App/API wallets and ledger.
+AdminOperationRunner authorizes the immutable deal. A provider-independent scheduler
+processes only these agreements; shared expiry covers their credit cleanup. No online
+provider or collected revenue is implied. See [SERVICE-AGREEMENTS.md](SERVICE-AGREEMENTS.md).
+
+
+## Admin abandoned-checkout resolution — 2026-09-13
+
+The existing Admin review invalidation now closes eligible ambiguous checkout by
+explicit operator decision. Both finance/reconcile capabilities and the durable
+P0 operation are required; locked local evidence and retained fulfillment links
+can reject closure. History and provider fields remain, unused coupons release,
+and the unchanged customer policy then reads expired. Paid provider verification
+remains a separate reconciliation path. See [PAYMENT-CHECKOUT-V2.md](PAYMENT-CHECKOUT-V2.md).
+
+
+## Checkout lifetime and V2 payment status — 2026-09-10
+
+PaymentCheckoutState separates actionable checkout, known unpaid closure and
+financial review using actual provider deadlines/evidence. CheckoutCreationGuard
+now wraps all Create* actions across V1/V2, while locked terminal transitions retain
+history and prevent late observations from reviving old checkout. Creation/status
+timestamps preserve their provider instant when stored in the application timezone.
+V2 payment status uses owned safe projections and bounded polling through existing
+confirmation services. See [PAYMENT-CHECKOUT-V2.md](PAYMENT-CHECKOUT-V2.md).
+
+## V2 purchase pages — 2026-09-10
+
+V2 subscription/storage/add-on routes share `Account\PurchasePage` presentation
+and CustomerPurchaseCheckout entry coordination, delegating to existing Create*
+payment actions and shared FIB checkout. Catalog mode is fixed per record; the
+selector filters records. A pure PlanSwitcher calculation supplies both actual
+switch balances and separate App/API previews without changing allowance policy.
+Pending purchases are reused; rendering remains provider-free. Storage replacement
+and unsupported one-time intervals are blocked where existing domain handling is
+incomplete. See [PURCHASE-V2.md](PURCHASE-V2.md) for behavior and verification limits.
+
+## V2 customer account pages — 2026-09-10
+
+`/{locale}/app-v2/profile` and `/{locale}/app-v2/my-billing` use the V2 shell
+and existing customer authentication, active/verified middleware and App V2 gate.
+V1 route names remain. The V1 and V2 view-based components share the extracted
+`App\Livewire\Account\ProfilePage` and `BillingPage` handlers; V2 billing extends
+them with customer-owned display projections. No account tables or billing engine
+were introduced. Shared phone/email OTP and password-reset pages remain the sole
+verification/reset implementation; changed-phone verification returns to V2.
+
+Profile retains shared validation and avatar storage. The independent V2 avatar
+action uses the same S3 customer avatar prefix and removes the previous object
+only after the replacement is stored and the profile saved. Billing reads separate
+App/API buckets, persisted usage, paginated payment and ledger history; cancellation
+delegates to `ScheduleServicePlanCancellation`. Reads never settle payments, renew
+subscriptions or contact providers. See [ACCOUNT-V2.md](ACCOUNT-V2.md).
+
+## Complimentary grants and legacy payment review — 2026-09-09
+
+Admin service-plan grants continue through the existing durable operation runner
+and manual grant service. They create a normalized subscription and genuine App/API
+credit ledgers, with explicit non-revenue classification and local expiry, without
+Payment or CreditOrder creation. Complimentary access is excluded from the dashboard's
+paid-subscriber count. Supersession preserves the previous purchase's financial metadata.
+The operator-only legacy reset command is a guarded, local maintenance operation,
+not a scheduler or customer flow. Its current dry run is blocked and retains all
+purchase evidence. See [the focused runbook](LEGACY-PAYMENT-CLEANUP.md).
+
+## Billing Phase 2 — 2026-09-09
+
+Recurring financial allocation is separate from provider status observation.
+`subscription_credit_allocations` retains unique subscription/cycle and
+Payment/cycle claims; claims, locked App/API bucket resets and ledger writes are
+atomic. Customer-first locking serializes plan switches and renewal, and old
+normalized subscriptions cannot regain authority. Verified annual terms support
+monthly allowances; paid monthly plans require a new verified collection.
+`SubscriptionCyclePolicy` shares the paid-through boundary and `ExpireSubscription`
+creates the explicit Free row at expiry. Reads do not invoke that mutation.
+Cancellation preserves paid history and access through the verified term. See
+[BILLING-AUDIT.md](BILLING-AUDIT.md) for schema, source status and acceptance limits.
+The operator applied the additive migration locally. Rollback-only acceptance
+passed against the existing MariaDB application schema with historical fingerprints
+preserved; native MySQL/RDS concurrency and real-provider acceptance remain separate.
+
+## Admin usability follow-up — 2026-09-08
+
+The current Admin UI keeps P0/P1/P2/P3 contracts. Landing CMS mutations now also
+require the existing admin.catalog capability and change reason, with database
+CMS changes recorded by the Admin audit observer. Translation file saves audit
+the affected key names. This extends the existing Admin contract without changing
+the CMS persistence architecture. Dashboard window correctness, read-only job
+groups and Admin-to-App/Landing consumer fixes are detailed in ADMIN-AUDIT.md.
+Currency edits refresh existing display caches after commit; no billing policy,
+customer financial history, service identity or route architecture changed.
+
+
 ## Admin P2 local operational reads — 2026-09-06
 
 AdminOperations supplies allowlisted local read projections to one shared

@@ -5,11 +5,13 @@ namespace App\Console\Commands;
 use App\Models\CreditLedger;
 use App\Models\CreditMonthlyGrant;
 use App\Models\CreditWallet;
+use App\Models\Customer;
 use App\Models\CustomerServiceSubscription;
 use App\Models\ServicePlan;
+use App\Models\SubscriptionCreditAllocation;
+use App\Services\Billing\SubscriptionCyclePolicy;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -49,7 +51,7 @@ class RefillMonthlyCredits extends Command
 
         $query = CustomerServiceSubscription::query()
             ->with([
-                'servicePlan:id,code,name,monthly_credits,app_monthly_credits,api_monthly_credits,is_active',
+                'servicePlan:id,code,name,monthly_credits,app_monthly_credits,api_monthly_credits,is_active,is_free',
                 'customer:id,created_at',
             ])
             ->whereIn('id', $activeLatestIds);
@@ -114,6 +116,10 @@ class RefillMonthlyCredits extends Command
                         continue;
                     }
 
+                    if (! app(SubscriptionCyclePolicy::class)->calendarAllocation($subscription, $dueAt)) {
+                        continue;
+                    }
+
                     if ($existingGrants->has((int) $subscription->customer_id)) {
                         continue;
                     }
@@ -161,7 +167,8 @@ class RefillMonthlyCredits extends Command
 
     protected function dueAtForMonth(CustomerServiceSubscription $subscription, CarbonInterface $now): ?CarbonInterface
     {
-        $anchor = $subscription->starts_at
+        $anchor = (data_get($subscription->meta, 'billing_cycle') === 'yearly' ? $subscription->payment?->last_payment_at : null)
+            ?? $subscription->starts_at
             ?? $subscription->customer?->created_at
             ?? $subscription->created_at;
 
@@ -185,15 +192,26 @@ class RefillMonthlyCredits extends Command
     protected function refillCustomer(int $subscriptionId, string $yearMonth, CarbonInterface $dueAt): bool
     {
         return (bool) DB::transaction(function () use ($subscriptionId, $yearMonth, $dueAt) {
+            $candidate = CustomerServiceSubscription::find($subscriptionId);
+            if (! $candidate) {
+                return false;
+            }
+            Customer::whereKey($candidate->customer_id)->lockForUpdate()->firstOrFail();
+            $lockedPayment = null;
+            if ($candidate->payment_id) {
+                $lockedPayment = \App\Domain\Payments\Models\Payment::whereKey($candidate->payment_id)->lockForUpdate()->firstOrFail();
+            }
             /** @var CustomerServiceSubscription|null $subscription */
             $subscription = CustomerServiceSubscription::query()
-                ->with(['servicePlan:id,code,name,monthly_credits,app_monthly_credits,api_monthly_credits,is_active'])
+                ->with(['servicePlan:id,code,name,monthly_credits,app_monthly_credits,api_monthly_credits,is_active,is_free'])
                 ->lockForUpdate()
                 ->find($subscriptionId);
 
             if (! $subscription instanceof CustomerServiceSubscription) {
                 return false;
             }
+
+            $subscription->setRelation('payment', $lockedPayment);
 
             if ($subscription->status !== 'active') {
                 return false;
@@ -215,6 +233,16 @@ class RefillMonthlyCredits extends Command
                 return false;
             }
 
+            $allocation = app(SubscriptionCyclePolicy::class)->calendarAllocation($subscription, $dueAt);
+            if (! $allocation || SubscriptionCreditAllocation::where(function ($query) use ($subscription, $subscriptionId) {
+                $query->where('subscription_id', $subscriptionId);
+                if ($subscription->payment_id) {
+                    $query->orWhere('payment_id', $subscription->payment_id);
+                }
+            })->where('cycle_key', $allocation['key'])->lockForUpdate()->first()) {
+                return false;
+            }
+
             $existing = CreditMonthlyGrant::query()
                 ->where('customer_id', (int) $subscription->customer_id)
                 ->where('year_month', $yearMonth)
@@ -224,6 +252,13 @@ class RefillMonthlyCredits extends Command
             if ($existing instanceof CreditMonthlyGrant) {
                 return false;
             }
+
+            $claim = SubscriptionCreditAllocation::create([
+                'customer_id' => $subscription->customer_id, 'subscription_id' => $subscriptionId,
+                'payment_id' => $subscription->payment_id, 'cycle_key' => $allocation['key'],
+                'allocation_type' => $allocation['type'], 'cycle_started_at' => $dueAt,
+                'paid_through' => app(SubscriptionCyclePolicy::class)->boundary($subscription),
+            ]);
 
             /** @var CreditWallet $wallet */
             $wallet = CreditWallet::query()
@@ -299,29 +334,21 @@ class RefillMonthlyCredits extends Command
                 'last_granted_at' => $apiPlanCredits > 0 ? $now : $apiWallet->last_granted_at,
             ])->save();
 
-            try {
-                $grant = CreditMonthlyGrant::create([
-                    'customer_id' => (int) $subscription->customer_id,
-                    'service_plan_id' => (int) $plan->id,
-                    'subscription_id' => (int) $subscription->id,
-                    'year_month' => $yearMonth,
-                    'granted_credits' => $planCredits,
-                    'granted_at' => $now,
-                    'meta' => [
-                        'plan_code' => (string) $plan->code,
-                        'source' => 'credits:refill-monthly',
-                        'due_at' => $dueAt->toDateString(),
-                        'app_granted_credits' => $planCredits,
-                        'api_granted_credits' => $apiPlanCredits,
-                    ],
-                ]);
-            } catch (QueryException $exception) {
-                if (str_contains(strtolower($exception->getMessage()), 'cmg_customer_month_uq')) {
-                    return false;
-                }
-
-                throw $exception;
-            }
+            $grant = CreditMonthlyGrant::create([
+                'customer_id' => (int) $subscription->customer_id,
+                'service_plan_id' => (int) $plan->id,
+                'subscription_id' => (int) $subscription->id,
+                'year_month' => $yearMonth,
+                'granted_credits' => $planCredits,
+                'granted_at' => $now,
+                'meta' => [
+                    'plan_code' => (string) $plan->code,
+                    'source' => 'credits:refill-monthly',
+                    'due_at' => $dueAt->toDateString(),
+                    'app_granted_credits' => $planCredits,
+                    'api_granted_credits' => $apiPlanCredits,
+                ],
+            ]);
 
             CreditLedger::create([
                 'customer_id' => (int) $subscription->customer_id,
@@ -380,6 +407,8 @@ class RefillMonthlyCredits extends Command
                     'source' => 'credits:refill-monthly',
                 ],
             ]);
+
+            $claim->update(['status' => 'applied', 'applied_at' => now()]);
 
             return true;
         }, 3);

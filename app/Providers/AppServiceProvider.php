@@ -50,6 +50,8 @@ class AppServiceProvider extends ServiceProvider
             \App\Models\Coupon::class, \App\Models\PaymentMethod::class, \App\Models\PricingRule::class,
             \App\Models\PlanEntitlement::class, \App\Models\Voice::class, \App\Models\PlanVoiceAccess::class,
             \App\Models\Currency::class, \App\Models\CurrencyExchangeRate::class,
+            \App\Models\LandingToolPage::class, \App\Models\LandingSocialLink::class,
+            \App\Models\LandingSetting::class, \App\Models\SiteMetaSetting::class,
             \App\Models\CustomerServiceSubscription::class, \App\Models\CustomerStorageSubscription::class,
             \App\Models\CreditOrder::class, Payment::class] as $auditedModel) {
             $auditedModel::observe(\App\Observers\AdminAuditObserver::class);
@@ -65,6 +67,12 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->configureLivewireRoutes();
         Customer::observe(CustomerObserver::class);
+        foreach ([\App\Models\CustomerServiceSubscription::class, \App\Models\CreditWallet::class] as $accountModel) {
+            $accountModel::saved(function ($record) {
+                $customerId = (int) $record->customer_id;
+                DB::afterCommit(fn () => \App\Support\AppShellData::forgetForCustomerId($customerId));
+            });
+        }
         Gate::policy(Payment::class, PaymentPolicy::class);
         Event::listen(PaymentConfirmed::class, RunPaymentFulfillment::class);
 

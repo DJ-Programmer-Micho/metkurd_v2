@@ -103,7 +103,7 @@ trait ManagesPaymentAddonsPage
     {
         $canonicalAmountSql = $this->canonicalAmountSql('credit_orders');
         $summary = CreditOrder::query()
-            ->revenueIncluded()
+            ->revenueIncluded()->currentBillingPeriod()
             ->where('status', 'paid')
             ->whereNotNull('credit_product_id')
             ->selectRaw('COUNT(*) as orders')
@@ -125,7 +125,7 @@ trait ManagesPaymentAddonsPage
         $canonicalAmountSql = $this->canonicalAmountSql('credit_orders');
         $priceIqdSql = $this->effectiveCatalogAmountSql('credit_products', 'price_iqd', 'price_usd');
         $orderStats = CreditOrder::query()
-            ->revenueIncluded()
+            ->revenueIncluded()->currentBillingPeriod()
             ->where('status', 'paid')
             ->whereNotNull('credit_product_id')
             ->groupBy('credit_product_id')

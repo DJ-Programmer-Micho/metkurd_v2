@@ -107,7 +107,9 @@ it('opens the guided payment review panel and can close a review row as invalid 
         'fib_subscription_id' => 'fib-admin-review-close-123',
         'amount' => $studentPlan->priceIqdForCycle('monthly'),
         'currency' => 'IQD',
-        'provider_subscription_status' => 'NOT_FOUND',
+        // A failed lookup retains the last observed provider state; NOT_FOUND is
+        // error evidence, not a verified subscription state eligible for closure.
+        'provider_subscription_status' => 'DRAFT',
         'mismatch_reason' => 'Stored subscription id was not found at the provider and should not be fulfilled automatically.',
         'review_required_at' => now(),
         'paid_at' => null,

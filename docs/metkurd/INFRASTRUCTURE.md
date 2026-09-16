@@ -1,5 +1,38 @@
 # Infrastructure relationships
 
+## Recurring cancellation recovery — 2026-09-14
+
+The existing FIB reconciliation scheduler gate also schedules
+`payments:reconcile-fib-cancellations --limit=100` every five minutes. It retries
+persisted cancellation intents, including expired and superseded subscriptions,
+and confirms with authenticated GET. Ordinary renewal polling excludes these
+intents and confirmed CANCELLED subscriptions. No gate was enabled and no live
+scheduler/provider acceptance was run. See
+[RECURRING-SUBSCRIPTION-LIFECYCLE.md](RECURRING-SUBSCRIPTION-LIFECYCLE.md).
+
+
+## Billing Phase 1 callback boundary — 2026-09-09
+
+The existing FIB and Areeba callback routes now share a 300/minute per-IP throttle.
+FIB accepts bounded notifications and always obtains authenticated provider status
+before new financial application; callbacks themselves never prove payment. The
+optional local FIB secret header is a delivery filter, not a documented provider
+signature. Verify upstream support before configuring it; a header FIB cannot send
+will block callbacks. Polling remains the existing recovery path.
+
+Areeba's compatibility route rejects financial processing when its provider is
+disabled or its configured shared-secret authentication is missing/invalid. Source
+and synthetic tests do not establish a live Areeba delivery agreement. Do not enable
+either provider or add an unsigned fallback to bypass this boundary. Callback URL,
+public HTTPS, worker operation and expected traffic still need deployment checks.
+
+Subscription status dates are parsed with explicit Unix-millisecond/strict date
+formats, then represented in the application time zone for current Eloquent date
+storage. No database/session time-zone setting or historical row was changed.
+Scheduled event labels now fit the existing schema; no billing migration is needed
+for this phase. See [the Phase 1 status](BILLING-AUDIT.md#phase-1-implementation--2026-09-09)
+for trust rules, verification limits and deferred credit/cancellation work.
+
 ## Current local upgrade scope — 2026-09-07
 
 The operator cancelled R2A's separate Docker environment. Use the existing local

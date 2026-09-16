@@ -257,7 +257,7 @@ it('creates a ui generated key that works with the public customer api', functio
 
 it('shows api wallet credits on the api access page while the app shell keeps app wallet credits', function () {
     $customer = apiAccessPageCustomer('api-balance-split@example.com', 'api_balance_split');
-    assignApiAccessPlan($customer, 'pro');
+    $plan = assignApiAccessPlan($customer, 'pro');
     seedApiAccessWallet($customer, CreditWallet::TYPE_APP, 1111, 0);
     seedApiAccessWallet($customer, CreditWallet::TYPE_API, 2222, 0);
 
@@ -270,7 +270,7 @@ it('shows api wallet credits on the api access page while the app shell keeps ap
     Livewire::actingAs($customer->fresh(), 'app')
         ->test('app::pages.api.app-api-access')
         ->assertSet('creditBalance', 2222)
-        ->assertSet('monthlyAllowance', 200000)
+        ->assertSet('monthlyAllowance', $plan->apiMonthlyCredits())
         ->assertSee('API Credits Remaining')
         ->assertDontSee('1,111');
 });

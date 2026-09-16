@@ -1,5 +1,244 @@
 # MetKurd Admin engineering audit
 
+## Recurring cancellation operational reads — 2026-09-14
+
+The payment-review queue now includes durable pending remote cancellations even
+when the historical Payment is fulfilled. Subscription projections separate access,
+renewal/provider state, paid-through boundary, supersession/replacement and local
+expiry. Missing collection means no newer verified receipt at expiry, not a bank
+failure assertion. Deep Payment evidence keeps finance/reconcile authorization.
+These views perform local reads only; provider recovery belongs to the cancellation
+scheduler. See [RECURRING-SUBSCRIPTION-LIFECYCLE.md](RECURRING-SUBSCRIPTION-LIFECYCLE.md).
+
+
+## Explicit operator payment history reset — 2026-09-14
+
+The separately authorized `billing:reset-payment-history` command defaults to
+review only and automatically retains the latest active (open or paid) Payment,
+bound to the review hash; no UUID argument is required. It requires maintenance,
+stopped-writer attestation, a matching full-state review hash, reason and fresh active
+`admin.finance` plus `admin.reconcile`. Its sanitized Admin audit manifest, approved
+historical link detachments and child-first deletions commit in one transaction;
+prior audit and all retained financial state are fingerprint-checked. Allocation
+claims, current/unknown obligations and unapproved dependencies block the entire
+reset. No customer/Admin checkout action or legacy cleanup policy was changed.
+See [PAYMENT-HISTORY-RESET.md](PAYMENT-HISTORY-RESET.md). Follow-up verification: 67
+focused reset tests and 234 existing billing/checkout/Admin regressions passed in
+isolated SQLite. The corrected local MariaDB inventory completed in a READ ONLY
+transaction and reported dependency blockers. No application reset or native
+MySQL/RDS acceptance was performed.
+
+## Customer checkout abandonment — 2026-09-14
+
+The V2 payment page has an owned, locked, idempotent local-draft cancellation action
+with stricter eligibility than Admin review. The Admin evidence predicate is shared,
+while PaymentCheckoutState and final creation guards remain unchanged. Historical
+NOT_FOUND/ambiguous paid-reference review still requires Admin resolution. V2 purchase
+pages no longer accept coupons and refresh open reviews after closure. Provider fields,
+financial history and legacy coupon services remain intact. See
+[PAYMENT-CHECKOUT-V2.md](PAYMENT-CHECKOUT-V2.md#customer-abandonment-of-unavailable-checkout--2026-09-14).
+
+
+## Effective plan and Pro API follow-up — 2026-09-14
+
+Current service-plan reads now share CustomerBillingStateService and the normalized
+subscription eligibility scope. Partial relations, synthetic customer plan IDs and
+stale model caches cannot override it. Agreement snapshots supply monthly allowance
+presentation; scheduled/review agreements remain supplementary. Scoped shell cache
+invalidation follows committed subscription/wallet changes and effective-plan changes.
+
+The operator explicitly approved all six V2 API service scopes for the existing local
+Pro plan. They were saved through the authenticated Admin scope-only action, preserving
+legacy scopes and all prices/allowances. This is an audited local configuration change,
+not a migration or automatic scope backfill. See [EFFECTIVE-PLAN-CONSISTENCY.md](EFFECTIVE-PLAN-CONSISTENCY.md)
+for evidence, preserved-data fingerprints and verification limits.
+
+
+## Dated external service agreements — 2026-09-13
+
+The existing Customer Register now has an Admin-finance-only dated cash/external
+agreement action. Scheduled records leave current subscriptions untouched; activation
+uses normalized subscriptions and monthly App/API allocation claims. Start/inclusive
+expiry, current billing conflicts, customer ownership, durable intent identity and
+history guards are enforced server-side. Collections remain external, so optional
+contract amounts are not marked received or included in collected revenue. See
+[SERVICE-AGREEMENTS.md](SERVICE-AGREEMENTS.md) for lifecycle and manual migration.
+No application data, public prices, providers or feature gates were changed by source
+implementation. Existing online P0 evidence and checkout protections remain intact.
+Validation: 18 focused agreement cases passed; the final account/date rerun passed
+55 tests. The broader run passed 239 with the already-known V1 Arabic redirect-copy
+assertion failure; 21 frontend checks and scoped syntax/Pint passed. Full acceptance
+limits and non-additive test counts are recorded in SERVICE-AGREEMENTS.md.
+
+
+## Admin closure of abandoned checkout — 2026-09-13
+
+The Customer Register's existing payment review panel exposes **Close Abandoned
+Checkout** only to operators with both `admin.finance` and `admin.reconcile` and
+only when the shared customer policy classifies the selected Payment as review.
+The existing SweetAlert bridge includes the customer/payment identity, entered
+reason and explicit local-only impact. Enter a reason of 10–500 characters, then
+confirm the action. Use the existing **Start a new correction** control for a
+separate decision; retry keeps the original durable operation identity.
+
+`InvalidateAdminReviewPayment` reuses `AdminOperationRunner` (fresh active Admin
+capabilities, reason-bound intent, customer then Payment locks, audit and replay).
+Its shared display/final eligibility check excludes fulfilled/applied/paid/refund
+states, paid or coverage timestamps, future known checkout deadlines, unknown
+current provider states, retained subscription/CreditOrder/allocation links, and
+consumed coupon evidence. A matching
+subscription provider reference also blocks closure. `AdminProviderEvidence` now
+has a local-only conservative evidence check: current fields, stored responses,
+callbacks and prior PaymentEvents cannot contain paid/active/refund collection
+evidence. An older paid observation cannot be hidden by a newer DRAFT response.
+This is an operator decision; neither missing deadlines nor age automatically
+closes a review. `AdminPaymentReconciliation` and its remote paid-evidence
+verification remain separate and unchanged; this action never calls them or FIB.
+
+Success retains Payment, provider fields and all prior events, sets existing
+status/internal status to `expired`, records `expired_at`, clears the open review
+marker, and retains the reason/actor/operation/time in review resolution metadata.
+The existing keyed invalidation event and Admin audit are recorded transactionally;
+`CouponRedemptionService` releases unused reservations once; consumed redemptions
+block closure and remain untouched. No wallet, ledger, revenue, refund or fulfillment evidence is created.
+
+`PaymentCheckoutState` is unchanged. Customer V2 pages still show **Payment requires
+review** before closure; after refresh they show expired and **Start a new purchase**
+with the Subscription, Storage or Add-on destination. Another independent blocker
+still prevents checkout. Customers have no Admin action. No application database
+record was closed or repaired by this implementation; operator execution is separate.
+A read-only transaction against the confirmed local copy found the known historical
+Payment still in review and eligible for this explicit operator action.
+
+Verification (isolated SQLite, fake HTTP/storage): final Admin P0 run **69 passed
+(509 assertions)**, including the existing dependency/race cases and 21 new
+abandoned-checkout cases. The broader Payments/Account/Phase 2/subscription/storage/
+Admin UI/billing run has **304 other passing tests** and the previously known
+Arabic V1 English-copy assertion failure at FibPaymentFlowTest:2470. Its two initial
+coupon-fixture failures were corrected and pass in the final P0 run; overlapping
+runs are not additive. All 12 Admin frontend tests, eight syntax checks, focused
+Pint and EN/AR/KU catalog parity passed. Livewire rendering/actions are tested;
+interactive Admin confirmation and native MySQL/RDS execution were not performed.
+
+
+## Complimentary plan follow-up — 2026-09-09
+
+The existing P0 manual service-plan path remains non-revenue and uses the same
+operation identity, authorization and credit policy. New grants now explicitly
+record complimentary type/reason and exact local expiry; register/detail previews
+show separate App/API allowances, expected credits added and the non-billing term.
+EN/AR/KU history and SweetAlert copy identify complimentary access. The dashboard's
+paid-subscriber count excludes complimentary sources/metadata. Superseding a prior
+subscription no longer overwrites its original financial classification. No
+historical row was repaired or reclassified. Five legacy manual paid CreditOrders
+without non-revenue flags remain for separate operator review.
+
+The new operator-only payment cleanup command is locally gated and dry-run by
+default. Its actual local inventory is blocked and contains no eligible deletion
+IDs. No destructive cleanup or Phase 3 work ran. See
+[LEGACY-PAYMENT-CLEANUP.md](LEGACY-PAYMENT-CLEANUP.md) for inventory, guardrails,
+commands and verification results.
+
+
+## Admin usability and consumer verification — 2026-09-08
+
+Scope: improve the existing Admin interface and exercise its real consumers after
+the local V2 database upgrade. No routes, migrations, service identities, feature
+gates, customer balances, historical records or business prices were changed in
+the application database. Writes in regression tests use isolated fixtures.
+
+### Dashboard and operations
+
+The activity query previously ignored the selected period and always read 14 days.
+It now uses the same window as the other period metrics: 7/30/90 calendar days
+including today, or monthly buckets for 365 days/all history. Lifetime headline
+metrics stay lifetime; subscriber distribution remains a current snapshot. Period
+and currency state coexist in the URL. Version 3 cache keys prevent reuse of the
+old timeline semantics while retaining database/environment/locale isolation.
+Charts redraw after Livewire morphing, use readable theme colours, bounded axis
+labels, explicit empty states and localized RTL legends/tooltips.
+
+Operations Jobs has overlapping attention/active/completed/failed/uncertain/
+persistence/API-reservation groups and a concise table. Counts use the same
+customer/date/service/channel/search/failure filters; selecting a group narrows
+the table. Local status, provider evidence, recorded results, App charge/refund,
+API reservation and deletion remain independent. Completed rows without recorded
+results and unfinalized provider success enter persistence review. Reservation
+review uses the linked API job's terminal state or reservation age, not a guessed
+MlJob financial state. Orphan reservations remain in the existing review queue.
+No reads poll providers, probe storage, refund, retry or repair records.
+
+Customer context links now include files, service/storage subscriptions, payments,
+credit purchases and ledger. App and API wallet cards show separate buckets and
+recorded lifetime totals; API access details remain expandable. Historical wallet
+anomalies are displayed as recorded and are not recalculated or repaired.
+
+### Permissions and service management
+
+The sole local Admin was active with a NULL capability list: implicit admin.read,
+without admin.catalog/admin.pricing. This explains unavailable Tools/Voices and
+Pricing/Entitlements controls. Capability notices now explain the restriction;
+Add/Edit labels are explicit and the V2 reference is collapsed by default.
+No capabilities were granted. If the operator intends these permissions, the
+existing trusted command is:
+
+```sh
+php artisan admin:capabilities 1 admin.catalog admin.pricing --reason="Enable local catalog and pricing administration"
+```
+
+This replaces the stored list; retain any other intended permissions when using
+it for a different account. It does not grant billing/reconciliation powers.
+The existing tool identity guards, grouped pricing transactions, entitlement scope
+ownership, final deletion guards and Omni voice cache versioning remain in use.
+
+Landing CMS had active-admin routing but no final catalog capability checks.
+Its four components now use SecureAdminComponent plus admin.catalog and a change
+reason on saves/toggles/import/deletion. Landing setting/tool/social models join
+the existing audit observer; translation saves audit key names, not full content.
+UI hints complement the server checks and do not grant permissions.
+
+### Admin configuration → customer/public consumers
+
+| Admin configuration | Actual consumer and result |
+|---|---|
+| Service plans | App subscription-plan component, PaymentIntentService/PlanSwitcher, CustomerApiAccessService and LandingPricingCatalog consume active plans and normalized fields. Existing plan save invalidation is retained. |
+| Storage plans | App storage-plan/my-storage components and storage payment intents consume active plans, quota and canonical price. |
+| Credit products | App addon-credits component and add-on payment intent read active products. Free-plan purchase restrictions remain authoritative. |
+| Coupons | CouponService/CouponContext validates the saved configuration for checkout; no redemption or historical order is repaired by this review. |
+| Payment methods | PaymentMethodCatalog checkout availability uses saved visibility/activation, purpose, currency and provider readiness; existing cache flush is verified. Enabling a row alone does not configure a provider. |
+| Currencies/rates | BillingCurrencyService consumes saved rates and rounding. Fixed a stale model after bulk rate deactivation that could leave an edited rate non-current, and missing cache invalidation for supported currencies, currency metadata and derived IQD display rates. No conversion formula or price policy changed. |
+| Payments/billing register | Existing normalized payment/order/subscription and ledger evidence remains the source. P0 actions keep explicit permissions and operation identities; Operations remains read-only. |
+| Landing tool pages | LandingToolPageCatalog → public tool listing/detail, localized content/demo/media/meta. Inactive defined slugs suppress fallback entries. Fixed a missing Livewire root when a new page has no demo configured. |
+| Landing translations | LandingTranslationManager → resources/lang/landing locale JSON → AreaJsonTranslations/LandingContent and public pages. Save flushes the area/locale cache. Tests redirect writes to a temporary fixture tree. |
+| Contact/social | LandingSettingsRepository → contact company/support blocks and footer social links; active social visibility is verified. Global contact values are shared across locales; surrounding labels use translations. |
+| Meta settings | SiteMetaSettingsRepository → public/layout and law/clean metadata. Fixed favicon and Apple touch icon tags ignoring their configured values, and avoided an old SVG overriding a custom favicon. Page-specific SEO text deliberately takes priority over global fallback text; the editor explains this. |
+
+No disconnected billing control was found in the reviewed purchase paths. Legacy
+USD catalog fields remain compatibility/reference values; canonical IQD values
+and the existing display resolver are authoritative. Global SEO fallback text is
+not a per-page override. Landing layout structure, bundled default assets, code
+fallback tool definitions, analytics integration and the old exported HTML law
+pages have no general CMS editor. Localized Landing text is managed through the
+translation editor; adding/rearranging sections remains source work. Translation
+files still require deployment persistence in a multi-instance environment; this
+review did not introduce a shared CMS database or alter deployment architecture.
+
+### Verification boundary
+
+Authenticated local browser checks covered live period/currency changes, EN/AR
+charts, KU pricing/reference expansion, read-only service controls and Operations
+group filtering, plus customer profile navigation. Authorized saves, validation, transactions and consumer output
+are covered by isolated SQLite tests with fake storage and mocked provider HTTP.
+The local browser database is MariaDB; this is not native MySQL or RDS acceptance.
+No actual provider checkout, financial repair or permission grant was performed.
+
+Verification: 284 tests / 2,931 assertions passed across all Admin suites (including
+P0/P1/P2/P3 and dependency/race tests), Landing tests, PaymentMethodCatalogTest
+and CouponCheckoutTest. The 12 Admin frontend Node tests and Vite production
+build passed; focused PHP syntax and Pint checks passed. Final label-only changes
+were checked with the scoped P3 locale/render tests.
+
+
 ## R2 native MySQL acceptance prerequisite — 2026-09-07
 
 The intended platform is local MySQL and Amazon RDS for MySQL. A fresh

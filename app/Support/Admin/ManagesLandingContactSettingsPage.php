@@ -10,6 +10,8 @@ use Livewire\Attributes\Url;
 
 trait ManagesLandingContactSettingsPage
 {
+    use SecureAdminComponent;
+
     public string $supportEmail = '';
 
     public string $supportLinesText = '';
@@ -89,6 +91,8 @@ trait ManagesLandingContactSettingsPage
 
     public function saveContactSettings(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $this->validate([
             'supportEmail' => ['nullable', 'email', 'max:190'],
             'supportLinesText' => ['nullable', 'string', 'max:4000'],
@@ -135,6 +139,8 @@ trait ManagesLandingContactSettingsPage
 
     public function saveSocialLink(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $this->validate([
             'socialPlatform' => ['required', 'string', 'min:2', 'max:80'],
             'socialUrl' => ['required', 'url', 'max:2048'],
@@ -168,6 +174,8 @@ trait ManagesLandingContactSettingsPage
 
     public function toggleSocialStatus(int $socialLinkId): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         $social = LandingSocialLink::query()->findOrFail($socialLinkId);
         $social->update(['is_active' => ! $social->is_active]);
 
@@ -187,6 +195,8 @@ trait ManagesLandingContactSettingsPage
 
     public function performSocialDelete(): void
     {
+        $this->authorizeAdminChange('admin.catalog');
+
         if (! $this->socialLinkIdPendingDelete) {
             return;
         }

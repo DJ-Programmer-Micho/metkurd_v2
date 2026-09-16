@@ -1,5 +1,15 @@
 # MetKurd API V2 engineering contract
 
+## Effective plan / legacy scope distinction — 2026-09-14
+
+Current customer API configuration uses the same full normalized effective plan as
+Billing and Admin. An enabled API plan can still have no configured V2 services:
+exact V1 scopes do not automatically grant V2 family scopes. The portal now explains
+that condition separately. The operator-approved local Pro update retained V1 scopes
+and explicitly added all six V2 service scopes through the Admin scope-only save.
+No rollout gate, customer override or existing API key was rewritten. See
+[EFFECTIVE-PLAN-CONSISTENCY.md](EFFECTIVE-PLAN-CONSISTENCY.md) for audit and verification.
+
 ## Admin P2 visibility — 2026-09-06
 
 The Admin Operations/customer detail view shows effective plan scopes and per-action

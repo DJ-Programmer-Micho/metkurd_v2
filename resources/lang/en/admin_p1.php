@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'save_scopes' => 'Save API scopes only',
+    'scopes_saved' => 'API scopes updated successfully.',
+    'scopes_impact' => 'Update explicit API service permissions for every customer on this plan. Prices, credits and billing settings remain unchanged.',
     'catalog' => 'Current V2 catalog and effective configuration',
     'read_only' => 'Read-only diagnostics. Missing native records belong in the migration process; this view never seeds or repairs data.',
     'plan' => 'Plan',

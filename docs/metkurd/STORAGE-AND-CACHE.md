@@ -1,5 +1,29 @@
 # Storage, cache and history
 
+## Effective subscription cache boundary — 2026-09-14
+
+Customer current-plan reads no longer reuse a partial or stale plan relation. Tool
+and action decision caches include the effective plan ID. AppShellData cache keys
+include the effective plan/subscription and customer revision, so crossing an expiry
+boundary changes the cache identity even before scheduled processing. Committed
+service-subscription and wallet model saves invalidate only the affected customer's
+shell through the existing forgetForCustomerId entry point. Plan catalog edits retain
+their existing version invalidation. No global cache flush or storage operation is
+part of this change. See [EFFECTIVE-PLAN-CONSISTENCY.md](EFFECTIVE-PLAN-CONSISTENCY.md).
+
+## Admin configuration refresh — 2026-09-08
+
+Admin currency save/deactivation now invalidates the supported-currency list,
+currency metadata and derived IQD-to-display rate cache entries after its database
+transaction. This prevents a successful Admin edit leaving checkout/display on a
+10-minute-old rate. No wallet, ledger or historical price is recalculated.
+Dashboard analytics use the existing scoped identity with cache version 3 because
+activity now follows the selected window instead of a fixed 14-day range.
+Landing translation saves retain area/locale invalidation. Public meta layouts
+now render configured favicon/Apple icons rather than unconditional bundled
+fallbacks; media storage, private-result policy and destructive gates are unchanged.
+
+
 ## Admin dashboard cache boundary — 2026-09-07
 
 Customer population is a single uncached aggregate within the request-computed

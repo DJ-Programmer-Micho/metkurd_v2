@@ -111,7 +111,7 @@ class PaymentApplicationService
         $intendedPlanCode = (string) data_get($snapshot, 'code', data_get($snapshot, 'intended_plan.code', ''));
         $intendedPlanName = (string) data_get($snapshot, 'name', data_get($snapshot, 'intended_plan.name', 'Subscription'));
 
-        $currentSubscription = CustomerServiceSubscription::query()
+        $currentSubscription = CustomerServiceSubscription::query()->effectiveAt()
             ->with('servicePlan:id,code,name,is_free')
             ->lockForUpdate()
             ->where('customer_id', $payment->customer_id)
@@ -192,7 +192,7 @@ class PaymentApplicationService
         $intendedPlanCode = (string) data_get($snapshot, 'code', data_get($snapshot, 'intended_plan.code', ''));
         $intendedPlanName = (string) data_get($snapshot, 'name', data_get($snapshot, 'intended_plan.name', 'Storage'));
 
-        $currentSubscription = CustomerStorageSubscription::query()
+        $currentSubscription = CustomerStorageSubscription::query()->effectiveAt()
             ->with('storagePlan:id,code,name')
             ->lockForUpdate()
             ->where('customer_id', $payment->customer_id)

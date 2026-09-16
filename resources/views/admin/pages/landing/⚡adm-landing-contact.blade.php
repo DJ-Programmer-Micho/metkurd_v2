@@ -19,6 +19,8 @@ class extends Component
 <x-slot:title>{{ __('Landing Contact & Social') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
+    <x-admin-capability-notice :capabilities="['admin.catalog']" />
+    <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -27,7 +29,7 @@ class extends Component
                     <p class="text-muted mb-0">{{ __('Manage contact/company info and which social links are visible on landing/contact pages.') }}</p>
                 </div>
                 <div class="page-title-right">
-                    <button type="button" class="btn btn-primary" wire:click="saveContactSettings">
+                    <button type="button" class="btn btn-primary" wire:click="saveContactSettings" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                         <i class="ri-save-line align-bottom me-1"></i>
                         {{ __('Save Contact Settings') }}
                     </button>
@@ -49,7 +51,7 @@ class extends Component
                     @error('supportEmail') <div class="invalid-feedback">{{ $message }}</div> @enderror
                 </div>
                 <div class="col-md-6 d-flex align-items-end">
-                    <button type="button" class="btn btn-primary w-100" wire:click="saveContactSettings">
+                    <button type="button" class="btn btn-primary w-100" wire:click="saveContactSettings" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                         {{ __('Save Contact/Company Info') }}
                     </button>
                 </div>
@@ -78,7 +80,7 @@ class extends Component
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetSocialFilters">
                         {{ __('Clear Filters') }}
                     </button>
-                    <button type="button" class="btn btn-primary" wire:click="openSocialCreateModal">
+                    <button type="button" class="btn btn-primary" wire:click="openSocialCreateModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                         <i class="ri-add-line align-bottom me-1"></i>
                         {{ __('New Social Link') }}
                     </button>
@@ -131,11 +133,11 @@ class extends Component
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-success" wire:click="toggleSocialStatus({{ $link->id }})">
+                                        <button type="button" class="btn btn-sm btn-soft-success" wire:click="toggleSocialStatus({{ $link->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                                             {{ $link->is_active ? __('Disable') : __('Enable') }}
                                         </button>
-                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openSocialEditModal({{ $link->id }})">{{ __('Edit') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmSocialDelete({{ $link->id }})">{{ __('Delete') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openSocialEditModal({{ $link->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmSocialDelete({{ $link->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                                     </div>
                                 </td>
                             </tr>
@@ -215,7 +217,7 @@ class extends Component
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetSocialDeleteState">{{ __('Cancel') }}</button>
-                    <button type="button" class="btn btn-danger" wire:click="performSocialDelete">{{ __('Delete') }}</button>
+                    <button type="button" class="btn btn-danger" wire:click="performSocialDelete" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                 </div>
             </div>
         </div>

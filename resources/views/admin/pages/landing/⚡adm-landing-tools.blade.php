@@ -25,6 +25,8 @@ class extends Component
 @endphp
 
 <div class="container-fluid">
+    <x-admin-capability-notice :capabilities="['admin.catalog']" />
+    <x-admin-change-reason />
     <div class="row mb-3">
         <div class="col-12 d-flex justify-content-between align-items-center">
             <div>
@@ -33,8 +35,8 @@ class extends Component
             </div>
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
-                <button type="button" class="btn btn-soft-info" wire:click="importDefaultTools">{{ __('Import Default Tools') }}</button>
-                <button type="button" class="btn btn-primary" wire:click="openToolCreateModal">{{ __('New Tool Page') }}</button>
+                <button type="button" class="btn btn-soft-info" wire:click="importDefaultTools" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Import Default Tools') }}</button>
+                <button type="button" class="btn btn-primary" wire:click="openToolCreateModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('New Tool Page') }}</button>
             </div>
         </div>
     </div>
@@ -115,9 +117,9 @@ class extends Component
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-success" wire:click="toggleToolPageStatus({{ $toolPage->id }})">{{ $toolPage->is_active ? __('Disable') : __('Enable') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openToolEditModal({{ $toolPage->id }})">{{ __('Edit') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmToolPageDelete({{ $toolPage->id }})">{{ __('Delete') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-success" wire:click="toggleToolPageStatus({{ $toolPage->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ $toolPage->is_active ? __('Disable') : __('Enable') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openToolEditModal({{ $toolPage->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmToolPageDelete({{ $toolPage->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                                     </div>
                                 </td>
                             </tr>
@@ -746,7 +748,7 @@ class extends Component
             <div class="modal-content">
                 <div class="modal-header"><h5 class="modal-title">{{ __('Delete Tool Page') }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetDeleteState"></button></div>
                 <div class="modal-body"><p class="mb-0">{{ __('Delete tool page ":slug"? This action cannot be undone.', ['slug' => $toolPageDeleteLabel]) }}</p></div>
-                <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetDeleteState">{{ __('Cancel') }}</button><button type="button" class="btn btn-danger" wire:click="performToolPageDelete">{{ __('Delete') }}</button></div>
+                <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetDeleteState">{{ __('Cancel') }}</button><button type="button" class="btn btn-danger" wire:click="performToolPageDelete" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button></div>
             </div>
         </div>
     </div>

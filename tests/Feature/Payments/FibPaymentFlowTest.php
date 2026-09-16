@@ -38,6 +38,8 @@ use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 beforeEach(function () {
+    // Default provider receipts below cover May 2026; individual lifecycle tests advance explicitly.
+    Carbon::setTestNow('2026-05-01 10:00:00');
     Cache::flush();
     Mail::fake();
     Notification::fake();
@@ -128,16 +130,13 @@ function fibFlowCreateResponse(string $paymentId, array $overrides = []): array
     ], $overrides);
 }
 
+// Lifecycle fixtures omit optional money unless explicitly supplied; fixed 26500 was wrong for other products.
 function fibFlowStatusResponse(string $paymentId, string $status, array $overrides = []): array
 {
     return array_merge([
         'paymentId' => $paymentId,
         'status' => $status,
         'validUntil' => '2026-05-01T10:15:00Z',
-        'amount' => [
-            'amount' => '26500',
-            'currency' => 'IQD',
-        ],
     ], $overrides);
 }
 
@@ -159,10 +158,6 @@ function fibFlowSubscriptionStatusResponse(string $subscriptionId, string $statu
         'readableCode' => 'SUB-CODE-123',
         'title' => 'MET KURD Subscription',
         'description' => 'Recurring checkout',
-        'monetaryValue' => [
-            'amount' => '26500',
-            'currency' => 'IQD',
-        ],
         'interval' => 'P1M',
         'trialPeriod' => null,
         'status' => $status,
@@ -590,6 +585,9 @@ it('retries local fulfillment for paid but unapplied plan checkouts during livew
         'paid_at' => now(),
         'provider_status' => 'ACTIVE',
         'provider_subscription_status' => 'ACTIVE',
+        'status_response' => fibFlowSubscriptionStatusResponse($payment->fib_subscription_id, 'ACTIVE', [
+            'monetaryValue' => ['amount' => $payment->amount, 'currency' => $payment->currency],
+        ]),
         'last_status_checked_at' => now()->subMinutes(10),
     ])->save();
 
@@ -636,6 +634,9 @@ it('retries local fulfillment for paid but unapplied plan checkouts from the sha
         'paid_at' => now(),
         'provider_status' => 'ACTIVE',
         'provider_subscription_status' => 'ACTIVE',
+        'status_response' => fibFlowSubscriptionStatusResponse($payment->fib_subscription_id, 'ACTIVE', [
+            'monetaryValue' => ['amount' => $payment->amount, 'currency' => $payment->currency],
+        ]),
         'last_status_checked_at' => now()->subMinutes(10),
     ])->save();
 
@@ -821,7 +822,7 @@ it('auto-updates plan subscription checkout status quickly via status polling ev
         ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id);
 });
 
-it('treats ACTIVE plus callback paymentStatus PAID as a paid subscription and fulfills it once', function () {
+it('does not treat ACTIVE plus callback paymentStatus PAID as payment evidence', function () {
     Http::preventStrayRequests();
 
     $customer = fibFlowCustomer();
@@ -860,14 +861,12 @@ it('treats ACTIVE plus callback paymentStatus PAID as a paid subscription and fu
     $payment = $payment->fresh();
     $customer = $customer->fresh(['wallet', 'apiWallet']);
 
-    expect($payment->status)->toBe(PaymentStatus::PAID)
-        ->and($payment->provider_payment_status)->toBe('PAID')
-        ->and($payment->fulfilled_at)->not->toBeNull()
-        ->and($customer->currentServicePlanId())->toBe($plan->id)
-        ->and((int) ($customer->wallet?->subscription_balance_credits ?? 0))->toBe((int) $plan->appMonthlyCredits())
-        ->and((int) ($customer->apiWallet?->subscription_balance_credits ?? 0))->toBe((int) $plan->apiMonthlyCredits())
-        ->and(CreditOrder::query()->where('payment_id', $payment->id)->count())->toBe(1)
-        ->and(PaymentEvent::query()->where('payment_id', $payment->id)->where('event_type', 'payment_fulfilled')->count())->toBe(1);
+    expect($payment->status)->toBe(PaymentStatus::AWAITING_CUSTOMER_ACTION)
+        ->and($payment->provider_payment_status)->not->toBe('PAID')
+        ->and($payment->fulfilled_at)->toBeNull()
+        ->and($customer->currentServicePlanId())->not->toBe($plan->id)
+        ->and(CreditOrder::query()->where('payment_id', $payment->id)->count())->toBe(0)
+        ->and(PaymentEvent::query()->where('payment_id', $payment->id)->where('event_type', 'payment_fulfilled')->count())->toBe(0);
 });
 
 it('ignores duplicate callbacks without double-fulfilling addon credits', function () {
@@ -1238,10 +1237,10 @@ it('extends a fulfilled hourly subscription when fib reports a successful renewa
         ->latest('id')
         ->firstOrFail();
 
-    expect($payment->active_until?->toIso8601String())->toContain('2026-05-01T12:00:00')
+    expect($payment->active_until?->copy()->utc()->toIso8601String())->toContain('2026-05-01T12:00:00')
         ->and($subscription->status)->toBe('active')
         ->and($subscription->auto_renew)->toBeTrue()
-        ->and(data_get($subscription->meta, 'period_ends_at'))->toContain('2026-05-01T12:00:00')
+        ->and(Carbon::parse(data_get($subscription->meta, 'period_ends_at'))->utc()->toIso8601String())->toContain('2026-05-01T12:00:00')
         ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id)
         ->and(PaymentEvent::query()
             ->where('payment_id', $payment->id)
@@ -1309,12 +1308,12 @@ it('detects recurring renewal through the dedicated renewal reconciliation and r
         ->where('event_type', 'service_subscription_renewed')
         ->get();
 
-    expect($payment->active_until?->toIso8601String())->toContain('2026-05-01T12:00:00')
-        ->and($payment->last_payment_at?->toIso8601String())->toContain('2026-05-01T11:00:00')
-        ->and(data_get($payment->meta, 'subscription_lifecycle.sync_source'))->toBe('scheduled_subscription_renewal_reconciliation')
-        ->and(data_get($subscription->meta, 'provider_lifecycle_sync_source'))->toBe('scheduled_subscription_renewal_reconciliation')
+    expect($payment->active_until?->copy()->utc()->toIso8601String())->toContain('2026-05-01T12:00:00')
+        ->and($payment->last_payment_at?->copy()->utc()->toIso8601String())->toContain('2026-05-01T11:00:00')
+        ->and(data_get($payment->meta, 'subscription_lifecycle.sync_source'))->toBe('scheduled_sub_renewal')
+        ->and(data_get($subscription->meta, 'provider_lifecycle_sync_source'))->toBe('scheduled_sub_renewal')
         ->and($renewalEvents->contains(function (PaymentEvent $event): bool {
-            return str_contains((string) data_get($event->meta, 'period_ends_at', ''), '2026-05-01T12:00:00');
+            return str_contains(Carbon::parse(data_get($event->meta, 'period_ends_at'))->utc()->toIso8601String(), '2026-05-01T12:00:00');
         }))->toBeTrue();
 });
 
@@ -1587,7 +1586,7 @@ it('keeps applied recurring subscriptions out of checkout reconciliation and rec
             ->where('event_type', 'payment_requires_review')
             ->count())->toBe(0)
         ->and($renewalFailureEvents->count())->toBe(1)
-        ->and((string) $renewalFailureEvents->first()?->source)->toBe('scheduled_subscription_renewal_reconciliation')
+        ->and((string) $renewalFailureEvents->first()?->source)->toBe('scheduled_sub_renewal')
         ->and((string) data_get($renewalFailureEvents->first()?->payload, 'fib_error_code'))->toBe('NOT_FOUND_ERROR');
 });
 
@@ -1650,7 +1649,7 @@ it('keeps renewal reconciliation events and notifications idempotent across repe
 
     expect($renewalEvents->count())->toBe(1)
         ->and($renewalEvents->filter(function (PaymentEvent $event): bool {
-            return str_contains((string) data_get($event->meta, 'period_ends_at', ''), '2026-05-01T12:00:00');
+            return str_contains(Carbon::parse(data_get($event->meta, 'period_ends_at'))->utc()->toIso8601String(), '2026-05-01T12:00:00');
         })->count())->toBe(1);
 
     $renewalAlerts = Notification::sent(
@@ -1708,6 +1707,8 @@ it('supersedes an older fib student subscription when a newer premium subscripti
     Carbon::setTestNow('2026-05-01 12:00:00');
 
     $premiumPayment = app(CreatePlanSubscriptionPayment::class)->handle($customer->fresh(), $proPlan->id, 'monthly');
+    expect($customer->fresh()->currentServicePlanId())->toBe($studentPlan->id);
+    Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/cancel'));
     $premiumPayment = app(ConfirmFibPayment::class)->handle($premiumPayment, 'premium_upgrade_fulfillment')->fresh();
     $studentPayment = $studentPayment->fresh();
     $customer = $customer->fresh();
@@ -1716,6 +1717,8 @@ it('supersedes an older fib student subscription when a newer premium subscripti
         ->and($customer->currentServicePlanId())->toBe($proPlan->id)
         ->and(data_get($studentPayment->meta, 'supersession.superseded_by_payment_id'))->toBe((int) $premiumPayment->id)
         ->and(data_get($studentPayment->meta, 'supersession.provider_cancel_result'))->toBe('cancel_requested')
+        ->and(data_get($studentPayment->meta, 'provider_cancellation.state'))->toBe('requested')
+        ->and(data_get($studentPayment->meta, 'provider_cancellation.replacement_payment_id'))->toBe($premiumPayment->id)
         ->and(CustomerServiceSubscription::query()
             ->where('customer_id', $customer->id)
             ->where('status', 'active')
@@ -1779,6 +1782,7 @@ it('supersedes an older fib pro subscription when a newer student subscription i
         ->and($customer->currentServicePlanId())->toBe($studentPlan->id)
         ->and(data_get($proPayment->meta, 'supersession.superseded_by_payment_id'))->toBe((int) $studentPayment->id)
         ->and(data_get($proPayment->meta, 'supersession.provider_cancel_result'))->toBe('cancel_requested')
+        ->and(data_get($proPayment->meta, 'provider_cancellation.reason_code'))->toBe('plan_switch')
         ->and(CustomerServiceSubscription::query()
             ->where('customer_id', $customer->id)
             ->where('status', 'active')
@@ -1847,6 +1851,7 @@ it('keeps the newer premium fulfillment even if superseded fib cancellation fail
     expect($premiumPayment->fulfilled_at)->not->toBeNull()
         ->and($customer->fresh()->currentServicePlanId())->toBe($proPlan->id)
         ->and(data_get($studentPayment->meta, 'supersession.provider_cancel_result'))->toBe('provider_error')
+        ->and(data_get($studentPayment->meta, 'provider_cancellation.provider_cancel_pending'))->toBeTrue()
         ->and(PaymentEvent::query()
             ->where('payment_id', $studentPayment->id)
             ->where('event_type', 'provider_cancel_failed')
@@ -1920,7 +1925,7 @@ it('syncs provider-side cancellation changes into local recurring entitlement st
 it('downgrades a fulfilled hourly service subscription to free after a failed renewal reaches the period end', function () {
     Http::preventStrayRequests();
     fibFlowEnableHourlyTesting();
-    Carbon::setTestNow('2026-05-01 10:00:00');
+    Carbon::setTestNow(Carbon::parse('2026-05-01 10:00:00', 'UTC')->setTimezone(config('app.timezone')));
 
     $customer = fibFlowCustomer();
     $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
@@ -1950,9 +1955,10 @@ it('downgrades a fulfilled hourly service subscription to free after a failed re
     $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
     $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_initial_paid')->fresh();
 
-    Carbon::setTestNow('2026-05-01 11:05:00');
+    Carbon::setTestNow(Carbon::parse('2026-05-01 11:05:00', 'UTC')->setTimezone(config('app.timezone')));
 
     $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_failed_renewal')->fresh();
+    expect([$payment->provider_subscription_status, $payment->active_until?->copy()->utc()->toIso8601String(), now()->utc()->toIso8601String()])->toBe(['FAILED', '2026-05-01T11:00:00+00:00', '2026-05-01T11:05:00+00:00']);
     $subscription = CustomerServiceSubscription::query()
         ->where('payment_id', $payment->id)
         ->latest('id')
@@ -1970,7 +1976,7 @@ it('downgrades a fulfilled hourly service subscription to free after a failed re
 it('keeps hourly plan access until the exact cancellation boundary and then falls back to free', function () {
     Http::preventStrayRequests();
     fibFlowEnableHourlyTesting();
-    Carbon::setTestNow('2026-05-01 10:00:00');
+    Carbon::setTestNow(Carbon::parse('2026-05-01 10:00:00', 'UTC')->setTimezone(config('app.timezone')));
 
     $customer = fibFlowCustomer();
     $plan = ServicePlan::query()->where('code', 'pro')->firstOrFail();
@@ -2001,22 +2007,24 @@ it('keeps hourly plan access until the exact cancellation boundary and then fall
     $payment = app(CreatePlanSubscriptionPayment::class)->handle($customer, $plan->id, 'hourly');
     $payment = app(ConfirmFibPayment::class)->handle($payment, 'hourly_cancel_plan_paid')->fresh();
 
+    expect($payment->active_until?->copy()->utc()->toIso8601String())->toBe('2026-05-01T11:00:00+00:00');
+    expect($payment->last_payment_at?->copy()->utc()->toIso8601String())->toBe('2026-05-01T10:00:00+00:00');
     $scheduled = app(ScheduleServicePlanCancellation::class)->handle($customer->fresh());
 
-    expect($scheduled->ends_at?->format('Y-m-d H:i:s'))->toBe('2026-05-01 11:00:00')
+    expect($scheduled->ends_at?->copy()->utc()->format('Y-m-d H:i:s'))->toBe('2026-05-01 11:00:00')
         ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id);
 
-    Carbon::setTestNow('2026-05-01 10:59:00');
+    Carbon::setTestNow(Carbon::parse('2026-05-01 10:59:00', 'UTC')->setTimezone(config('app.timezone')));
     expect(Customer::query()->findOrFail($customer->id)->currentServicePlanId())->toBe($plan->id);
 
-    Carbon::setTestNow('2026-05-01 11:00:01');
+    Carbon::setTestNow(Carbon::parse('2026-05-01 11:00:01', 'UTC')->setTimezone(config('app.timezone')));
     expect(Customer::query()->findOrFail($customer->id)->currentServicePlan()?->code)->toBe('free');
 });
 
 it('keeps hourly storage access until the exact cancellation boundary and then falls back to free storage', function () {
     Http::preventStrayRequests();
     fibFlowEnableHourlyTesting();
-    Carbon::setTestNow('2026-05-01 10:00:00');
+    Carbon::setTestNow(Carbon::parse('2026-05-01 10:00:00', 'UTC')->setTimezone(config('app.timezone')));
 
     $customer = fibFlowCustomer();
     $plan = StoragePlan::query()->where('code', 'pro-5120')->firstOrFail();
@@ -2049,10 +2057,10 @@ it('keeps hourly storage access until the exact cancellation boundary and then f
 
     $scheduled = app(ScheduleStoragePlanCancellation::class)->handle($customer->fresh());
 
-    expect($scheduled->ends_at?->format('Y-m-d H:i:s'))->toBe('2026-05-01 11:00:00')
+    expect($scheduled->ends_at?->copy()->utc()->format('Y-m-d H:i:s'))->toBe('2026-05-01 11:00:00')
         ->and((int) ($customer->fresh()->currentStoragePlan()?->id ?? 0))->toBe($plan->id);
 
-    Carbon::setTestNow('2026-05-01 11:00:01');
+    Carbon::setTestNow(Carbon::parse('2026-05-01 11:00:01', 'UTC')->setTimezone(config('app.timezone')));
     expect(Customer::query()->findOrFail($customer->id)->currentStoragePlan()?->code)->toBe('free-512');
 });
 
@@ -2629,4 +2637,33 @@ it('treats already canceled fib subscriptions safely and does not call the provi
     Http::assertNotSent(fn ($request) => $request->url() === fibFlowStageUrl('/protected/v1/subscriptions/fib-already-canceled-sub-123/cancel'));
 
     expect(data_get($payment->fresh()->cancel_response, 'result'))->toBe('already_canceled');
+});
+
+it('leaves the old paid plan untouched when the new recurring checkout is rejected', function () {
+    Http::preventStrayRequests();
+    $customer = fibFlowCustomer();
+    $oldPlan = ServicePlan::where('code', 'student')->firstOrFail();
+    $newPlan = ServicePlan::where('code', 'pro')->firstOrFail();
+    Http::fake([
+        fibFlowStageUrl('/auth/realms/fib-online-shop/protocol/openid-connect/token') => Http::response(['access_token' => 'fixture-token', 'expires_in' => 3600]),
+        fibFlowStageUrl('/protected/v1/subscriptions') => Http::sequence()
+            ->push(fibFlowSubscriptionCreateResponse('fixture-old-active'), 201)
+            ->push(fibFlowSubscriptionCreateResponse('fixture-new-rejected'), 201),
+        fibFlowStageUrl('/protected/v1/subscriptions/fixture-old-active') => Http::response(fibFlowSubscriptionStatusResponse('fixture-old-active', 'ACTIVE', [
+            'lastPaymentAt' => '2026-05-01T10:00:00+03:00', 'activeUntil' => '2026-06-01T10:00:00+03:00'])),
+        fibFlowStageUrl('/protected/v1/subscriptions/fixture-new-rejected') => Http::response(fibFlowSubscriptionStatusResponse('fixture-new-rejected', 'REJECTED', [
+            'lastPaymentAt' => null, 'activeUntil' => null])),
+    ]);
+    $old = app(CreatePlanSubscriptionPayment::class)->handle($customer, $oldPlan->id, 'monthly');
+    $old = app(ConfirmFibPayment::class)->handle($old)->fresh();
+    $oldSub = CustomerServiceSubscription::where('payment_id', $old->id)->firstOrFail();
+    $state = [$oldSub->getAttributes(), $customer->fresh()->wallet->getAttributes(), $customer->fresh()->apiWallet->getAttributes(), CreditLedger::count()];
+    $new = app(CreatePlanSubscriptionPayment::class)->handle($customer->fresh(), $newPlan->id, 'monthly');
+    expect(app(\App\Services\Billing\SubscriptionLifecycleView::class)->customer($customer)['changing_to'])->toBe($newPlan->name);
+    $new = app(ConfirmFibPayment::class)->handle($new)->fresh();
+    expect($new->fulfilled_at)->toBeNull()
+        ->and($customer->fresh()->currentServicePlanId())->toBe($oldPlan->id)
+        ->and([$oldSub->fresh()->getAttributes(), $customer->fresh()->wallet->getAttributes(), $customer->fresh()->apiWallet->getAttributes(), CreditLedger::count()])->toBe($state)
+        ->and(data_get($old->fresh()->meta, 'provider_cancellation'))->toBeNull();
+    Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/cancel'));
 });

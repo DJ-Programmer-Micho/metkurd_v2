@@ -154,13 +154,13 @@ it('normalizes legacy scheduled reconciliation failure events for unresolved row
         ->firstOrFail();
 
     expect($result['skipped'] ?? false)->toBeFalse()
-        ->and((string) ($result['source'] ?? ''))->toBe('scheduled_subscription_checkout_reconciliation')
-        ->and((string) $event->source)->toBe('scheduled_subscription_checkout_reconciliation')
+        ->and((string) ($result['source'] ?? ''))->toBe('scheduled_sub_checkout')
+        ->and((string) $event->source)->toBe('scheduled_sub_checkout')
         ->and(PaymentEvent::query()
             ->where('payment_id', $payment->id)
             ->where('event_type', 'provider_status_sync_failed')
             ->where('source', 'scheduled_reconciliation')
             ->count())->toBe(0)
-        ->and((string) data_get($payment->meta, 'latest_sync_failure.source'))->toBe('scheduled_subscription_checkout_reconciliation')
+        ->and((string) data_get($payment->meta, 'latest_sync_failure.source'))->toBe('scheduled_sub_checkout')
         ->and((int) data_get($payment->meta, 'latest_sync_failure_count'))->toBe(1);
 });

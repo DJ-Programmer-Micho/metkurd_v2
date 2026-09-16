@@ -23,10 +23,13 @@ class FibSubscriptionCancellationService
      *     error_codes:array<int, string>
      * }
      */
-    public function cancel(Payment $payment): array
+    public function cancel(Payment $payment, bool $requestCancellation = true): array
     {
         try {
             $status = $this->subscriptions->getStatus($payment);
+            if ($reason = app(\App\Domain\Payments\Support\FibStatusEvidence::class)->rejection($payment, $status)) {
+                throw new FibApiException('Provider evidence rejected: '.$reason);
+            }
         } catch (FibApiException $exception) {
             return [
                 'result' => 'provider_error',
@@ -51,6 +54,10 @@ class FibSubscriptionCancellationService
             return array_merge($base, [
                 'result' => $this->resultForClosedStatus($providerStatus, $status->activeUntil, $status->lastPaymentAt),
             ]);
+        }
+
+        if (! $requestCancellation) {
+            return array_merge($base, ['result' => 'awaiting_confirmation']);
         }
 
         try {

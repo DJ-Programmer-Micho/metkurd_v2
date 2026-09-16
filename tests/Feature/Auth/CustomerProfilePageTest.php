@@ -194,16 +194,13 @@ it('verifies an updated phone and returns the customer to the profile page', fun
     ]);
 
     session(['phone_verification_return_url' => route('app.profile', ['locale' => 'en'])]);
+    \Illuminate\Support\Facades\Cache::put('phone_otp_expires_'.$customer->id, now()->addMinutes(5)->timestamp, 360);
+    \Illuminate\Support\Facades\Notification::fake();
 
     $this->actingAs($customer, 'app');
 
     Livewire::test('app::auth.phone-otp')
-        ->set('digit1', '1')
-        ->set('digit2', '2')
-        ->set('digit3', '3')
-        ->set('digit4', '4')
-        ->set('digit5', '5')
-        ->set('digit6', '6')
+        ->set('otpCode', '123456')
         ->call('confirm')
         ->assertRedirect(route('app.profile', ['locale' => 'en']));
 

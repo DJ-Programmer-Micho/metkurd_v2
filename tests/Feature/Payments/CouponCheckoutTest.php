@@ -27,6 +27,7 @@ use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 
 beforeEach(function () {
+    \Carbon\Carbon::setTestNow('2026-05-01 10:00:00');
     Cache::flush();
     couponFeatureConfigureFib();
     $this->seed();
@@ -462,7 +463,9 @@ it('enforces per-customer coupon limits for one-time add-on payments', function 
     ]);
 
     couponFeatureFakeAddonPayment('fib-addon-user-1');
-    app(CreateAddonPayment::class)->handle($customer, $product->id, $coupon->code);
+    $first = app(CreateAddonPayment::class)->handle($customer, $product->id, $coupon->code);
+    // A second purchase is only eligible after the first checkout is applied.
+    $first->forceFill(['status' => 'paid', 'internal_status' => 'applied', 'fulfilled_at' => now()])->save();
 
     couponFeatureFakeAddonPayment('fib-addon-user-2');
 
@@ -594,7 +597,7 @@ it('removes coupon input from the old pre-checkout plan and storage modals', fun
         ->assertDontSee('Coupon Code');
 });
 
-it('applies coupon from the fib payment page by creating a new checkout with updated totals', function () {
+it('does not replace a checkout with a coupon until cancellation is confirmed', function () {
     Http::preventStrayRequests();
 
     $customer = couponFeatureCustomer();
@@ -623,12 +626,9 @@ it('applies coupon from the fib payment page by creating a new checkout with upd
 
     $newPayment = Payment::query()->latest('id')->first();
 
-    expect($newPayment)->not->toBeNull()
-        ->and($newPayment->id)->not->toBe($payment->id)
-        ->and(Payment::query()->count())->toBe($initialCount + 1)
-        ->and($newPayment->coupon_code)->toBe('PAGE10')
-        ->and((int) round((float) $newPayment->discount_amount_iqd))->toBeGreaterThan(0)
-        ->and((int) round((float) $newPayment->discounted_amount_iqd))->toBeLessThan((int) round((float) $newPayment->original_amount_iqd));
+    expect($newPayment->id)->toBe($payment->id)
+        ->and(Payment::query()->count())->toBe($initialCount)
+        ->and($newPayment->coupon_code)->toBeNull();
 });
 
 it('hides fib recurring coupon input when available recurring coupons are provider-incompatible', function () {

@@ -18,7 +18,17 @@ class AdminV2Catalog
     public function planCustomer(ServicePlan $plan): Customer
     {
         // Unsaved read context: no real customer overrides, wallet, or subscription writes.
-        return (new Customer)->forceFill(['id' => 0, 'status' => 1])->setRelation('servicePlan', $plan);
+        $preview = new class extends Customer
+        {
+            protected $table = 'customers';
+
+            public function currentServicePlan(): ?ServicePlan
+            {
+                return $this->getRelation('servicePlan');
+            }
+        };
+
+        return $preview->forceFill(['id' => 0, 'status' => 1])->setRelation('servicePlan', $plan);
     }
 
     public function rows(ServicePlan $plan, array $sample = []): array

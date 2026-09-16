@@ -20,8 +20,8 @@ class extends Component
 
 <div class="container-fluid">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
+    <x-admin-capability-notice :capabilities="['admin.pricing']" />
     <x-admin-change-reason />
-    <x-admin-v2-catalog />
     <div class="row">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -32,7 +32,7 @@ class extends Component
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <a wire:navigate href="{{ route('admin.services.entitlements', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-secondary">{{ __('View Entitlements') }}</a>
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
-                    <button type="button" class="btn btn-primary" wire:click="openPricingRuleCreateModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('New Pricing Rule') }}</button>
+                    <button type="button" class="btn btn-primary" wire:click="openPricingRuleCreateModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('admin_ux.add_pricing') }}</button>
                 </div>
             </div>
         </div>
@@ -77,6 +77,7 @@ class extends Component
         </div>
     </div>
 
+    <x-admin-v2-catalog />
     <div class="card">
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">

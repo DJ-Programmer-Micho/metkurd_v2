@@ -17,6 +17,17 @@ class BillingCurrencyService
 
     public const ADMIN_PREVIEW_CURRENCIES = ['IQD', 'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'CHF'];
 
+    public function flushConfigurationCache(): void
+    {
+        Cache::forget('billing-supported-currencies');
+        // Every public conversion starts in IQD; a USD rate edit also affects
+        // all derived IQD-to-display rates. Preserve unrelated cache entries.
+        foreach (Currency::query()->pluck('code') as $code) {
+            Cache::forget("billing-currency:{$code}");
+            Cache::forget('billing-rate:'.self::BASE_CURRENCY.':'.$code);
+        }
+    }
+
     public function baseCurrencyCode(): string
     {
         return self::BASE_CURRENCY;

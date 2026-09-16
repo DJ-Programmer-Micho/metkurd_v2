@@ -94,6 +94,25 @@ class CancelFibSubscription extends Command
             return self::FAILURE;
         }
 
+        // Paid recurring access uses the same durable intent as customer cancellation.
+        // The separate legacy unfulfilled-checkout path below does not own paid access.
+        if ($execute && $payment->isFulfilled()) {
+            DB::transaction(function () use ($payment) {
+                \App\Models\Customer::whereKey($payment->customer_id)->lockForUpdate()->firstOrFail();
+                $locked = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+                $latest = $this->latestActiveLookingPlanSubscription($locked->customer_id);
+                if ($this->validateTarget($locked) !== null || (! $this->option('force-current') && $latest?->id === $locked->id)) {
+                    throw new \RuntimeException('Cancellation target changed; review the operation again.');
+                }
+                app(\App\Services\Billing\ProviderSubscriptionCancellation::class)->request($locked, 'admin_cancel',
+                    ['type' => 'operator', 'reason' => (string) $this->option('reason')]);
+            });
+            $context = data_get($payment->fresh()->meta, 'provider_cancellation', []);
+            $this->info('Cancellation intent recorded; provider state: '.($context['state'] ?? 'pending').'. Paid access is retained.');
+
+            return self::SUCCESS;
+        }
+
         $providerStatus = null;
         $providerActiveUntil = null;
         $providerLastPaymentAt = null;
@@ -127,9 +146,18 @@ class CancelFibSubscription extends Command
         }
 
         DB::transaction(function () use ($payment, $supersedingPayment, $result, $providerStatus, $providerActiveUntil, $providerLastPaymentAt) {
+            \App\Models\Customer::whereKey($payment->customer_id)->lockForUpdate()->firstOrFail();
             /** @var Payment $locked */
             $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
             $safeProviderStatus = $result['provider_status'] ?? $providerStatus ?? $locked->provider_subscription_status;
+            $lastPaymentAt = $result['last_payment_at'] ?? $providerLastPaymentAt;
+            $paidThrough = $lastPaymentAt ? ($result['active_until'] ?? $providerActiveUntil) : null;
+            if (! $lastPaymentAt || ($locked->last_payment_at && $lastPaymentAt->lt($locked->last_payment_at))) {
+                $lastPaymentAt = $locked->last_payment_at;
+            }
+            if (! $paidThrough || ($locked->active_until && $paidThrough->lt($locked->active_until))) {
+                $paidThrough = $locked->active_until;
+            }
             $paidHistoryShouldRemain = $locked->isApplied() || $locked->paid_at !== null || $locked->status === PaymentStatus::PAID;
             $meta = array_merge((array) ($locked->meta ?? []), [
                 'superseded_by_payment_id' => $supersedingPayment?->id,
@@ -148,8 +176,8 @@ class CancelFibSubscription extends Command
                 'internal_status' => $paidHistoryShouldRemain ? $locked->internal_status : PaymentInternalStatus::CANCELED,
                 'provider_status' => $safeProviderStatus,
                 'provider_subscription_status' => $safeProviderStatus,
-                'active_until' => $result['active_until'] ?? $providerActiveUntil ?? $locked->active_until,
-                'last_payment_at' => $result['last_payment_at'] ?? $providerLastPaymentAt ?? $locked->last_payment_at,
+                'active_until' => $paidThrough,
+                'last_payment_at' => $lastPaymentAt,
                 'canceled_at' => $locked->canceled_at ?? now(),
                 'cancel_response' => array_filter([
                     'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
@@ -178,13 +206,27 @@ class CancelFibSubscription extends Command
                     'cancel_reason' => (string) $this->option('reason'),
                 ]);
 
+                $isCurrent = $paidHistoryShouldRemain && app(\App\Services\Billing\SubscriptionCyclePolicy::class)->isCurrent($serviceSubscription);
+                if ($isCurrent) {
+                    unset($subscriptionMeta['superseded_at'], $subscriptionMeta['superseded_by_payment_id'], $subscriptionMeta['superseded_by_fib_subscription_id']);
+                    $subscriptionMeta['cancel_source'] = 'operator';
+                    $subscriptionMeta['cancel_requested_at'] = now()->toIso8601String();
+                    $paymentMeta = (array) $locked->meta;
+                    unset($paymentMeta['superseded_at'], $paymentMeta['superseded_by_payment_id'], $paymentMeta['superseded_by_fib_subscription_id']);
+                    $locked->update(['meta' => $paymentMeta]);
+                }
                 $serviceSubscription->forceFill([
-                    'status' => 'ended',
+                    'status' => $isCurrent ? $serviceSubscription->status : 'ended',
                     'auto_renew' => false,
-                    'ends_at' => $serviceSubscription->ends_at ?? now(),
+                    'ends_at' => $isCurrent
+                        ? app(\App\Services\Billing\SubscriptionCyclePolicy::class)->boundary($serviceSubscription)
+                        : ($serviceSubscription->ends_at ?? now()),
                     'canceled_at' => $serviceSubscription->canceled_at ?? now(),
                     'meta' => $subscriptionMeta,
                 ])->save();
+                if ($isCurrent) {
+                    app(\App\Services\Billing\ExpireSubscription::class)->handle($serviceSubscription);
+                }
             }
 
             $this->events->record($locked, [
@@ -208,7 +250,7 @@ class CancelFibSubscription extends Command
             ]);
         }, 3);
 
-        $this->info('Provider cancellation completed safely and the local row was marked superseded.');
+        $this->info('Provider cancellation completed; local cancellation or supersession was recorded.');
 
         return self::SUCCESS;
     }

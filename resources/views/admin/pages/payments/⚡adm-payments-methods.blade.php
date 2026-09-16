@@ -20,6 +20,7 @@ class extends Component
 
 <div class="container-fluid">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
+    <x-admin-capability-notice :capabilities="['admin.catalog']" />
     <x-admin-change-reason />
     <div class="row">
         <div class="col-12">

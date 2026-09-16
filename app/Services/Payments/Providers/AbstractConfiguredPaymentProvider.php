@@ -95,7 +95,9 @@ abstract class AbstractConfiguredPaymentProvider implements PaymentProviderInter
         $headerName = trim((string) ($config['callback_secret_header'] ?? $config['webhook_secret_header'] ?? ''));
 
         if ($secret === '' || $headerName === '') {
-            return null;
+            // This compatibility adapter cannot verify authenticity without an
+            // explicitly configured shared-secret delivery agreement.
+            return false;
         }
 
         $actual = trim((string) $request->header($headerName, ''));

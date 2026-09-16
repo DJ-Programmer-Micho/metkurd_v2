@@ -13,6 +13,8 @@ use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->seed();
+    config(['payments.providers.areeba.enabled' => true, 'areeba.webhook_secret' => 'fixture-secret']);
+    $this->withHeader('x-webhook-secret', 'fixture-secret');
 });
 
 function createWebhookTestCustomer(string $email, string $username): Customer
@@ -72,6 +74,8 @@ it('processes a paid provider webhook once and ignores duplicate delivery', func
 
     $payload = [
         'merchantTransactionId' => $intent->merchant_transaction_id,
+        'amount' => $intent->gross_amount_iqd,
+        'currency' => 'IQD',
         'transactionStatus' => 'PAID',
         'uuid' => 'AREEBA-UUID-123',
         'purchaseId' => 'AREEBA-PURCHASE-456',
@@ -99,4 +103,62 @@ it('processes a paid provider webhook once and ignores duplicate delivery', func
         ->and(PaymentTransaction::query()->where('payment_intent_id', $intent->id)->count())->toBe(1)
         ->and($intent?->creditOrders()->count())->toBe(1)
         ->and((int) ($wallet?->addon_balance_credits ?? 0))->toBe((int) $product->credits_amount);
+});
+
+function phaseOneLegacyIntent(string $provider = 'areeba'): PaymentIntent
+{
+    $customer = createWebhookTestCustomer(Str::uuid().'@example.test', 'legacy_'.Str::lower(Str::random(10)));
+    $product = CreditProduct::where('code', 'addon_10000')->firstOrFail();
+
+    return PaymentIntent::create([
+        'uuid' => (string) Str::uuid(), 'customer_id' => $customer->id, 'provider' => $provider,
+        'payment_method' => 'card', 'purpose_type' => 'credit_product', 'purpose_id' => $product->id,
+        'base_amount_iqd' => $product->priceIqdAmount(), 'gross_amount_iqd' => $product->priceIqdAmount(),
+        'base_currency_code' => 'IQD', 'status' => 'pending', 'idempotency_key' => (string) Str::uuid(),
+        'merchant_transaction_id' => (string) Str::uuid(), 'provider_transaction_id' => 'fixture-'.Str::uuid(),
+    ]);
+}
+
+it('rejects legacy financial callbacks without enabled authenticated delivery', function (string $case) {
+    $intent = phaseOneLegacyIntent();
+    if ($case === 'disabled') {
+        config(['payments.providers.areeba.enabled' => false]);
+    } elseif ($case === 'unconfigured') {
+        config(['areeba.webhook_secret' => null]);
+    } else {
+        $this->withHeader('x-webhook-secret', $case === 'unsigned' ? '' : 'wrong-fixture-secret');
+    }
+    $this->postJson(route('payments.webhooks.areeba'), ['merchantTransactionId' => $intent->merchant_transaction_id,
+        'transactionStatus' => 'PAID'])->assertForbidden();
+    expect($intent->fresh()->status)->toBe('pending')->and($intent->fresh()->fulfilled_at)->toBeNull()
+        ->and(PaymentTransaction::where('payment_intent_id', $intent->id)->count())->toBe(0);
+})->with(['disabled', 'unconfigured', 'unsigned', 'invalid']);
+
+it('does not resolve another providers intent even with valid callback authentication', function () {
+    $intent = phaseOneLegacyIntent('fib');
+    $this->postJson(route('payments.webhooks.areeba'), ['merchantTransactionId' => $intent->merchant_transaction_id,
+        'transactionStatus' => 'PAID'])->assertAccepted();
+    expect($intent->fresh()->status)->toBe('pending')->and($intent->fresh()->fulfilled_at)->toBeNull()
+        ->and(PaymentWebhookEvent::first()->payment_intent_id)->toBeNull();
+});
+
+it('rejects mismatched legacy references or monetary evidence', function (string $case) {
+    $intent = phaseOneLegacyIntent();
+    $payload = ['merchantTransactionId' => $intent->merchant_transaction_id, 'transactionStatus' => 'PAID',
+        'uuid' => $intent->provider_transaction_id, 'amount' => $intent->gross_amount_iqd, 'currency' => 'IQD'];
+    $payload[$case] = match ($case) {
+        'amount' => 1, 'currency' => 'USD', default => 'another-transaction'
+    };
+    $this->postJson(route('payments.webhooks.areeba'), $payload)->assertStatus(422);
+    expect($intent->fresh()->status)->toBe('pending')->and($intent->fresh()->fulfilled_at)->toBeNull()
+        ->and(PaymentTransaction::where('payment_intent_id', $intent->id)->count())->toBe(0);
+})->with(['uuid', 'amount', 'currency']);
+
+it('does not retain callback authentication headers or banking payloads', function () {
+    $intent = phaseOneLegacyIntent();
+    $this->postJson(route('payments.webhooks.areeba'), ['merchantTransactionId' => $intent->merchant_transaction_id,
+        'transactionStatus' => 'PENDING', 'bankAccount' => 'fixture-sensitive-bank-data'])->assertOk();
+    $stored = PaymentWebhookEvent::first()->toJson();
+    expect($stored)->not->toContain('fixture-secret')->not->toContain('fixture-sensitive-bank-data')
+        ->and(PaymentWebhookEvent::first()->headers)->toBe([]);
 });

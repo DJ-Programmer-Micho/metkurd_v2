@@ -38,7 +38,7 @@ class ReconcileFibPayments extends Command
         $customerId = (int) $this->option('customer-id');
         $dryRun = (bool) $this->option('dry-run');
 
-        $baseQuery = Payment::query()
+        $baseQuery = Payment::query()->currentBillingPeriod()
             ->where('provider', PaymentProvider::FIB)
             ->where('provider_object_type', PaymentProviderObjectType::PAYMENT)
             ->whereNotNull('fib_payment_id');
@@ -179,7 +179,7 @@ class ReconcileFibPayments extends Command
     {
         DB::transaction(function () use ($payment, $events) {
             /** @var Payment $locked */
-            $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
+            $locked = Payment::query()->currentBillingPeriod()->lockForUpdate()->findOrFail($payment->id);
 
             if (! $this->shouldExpireLocally($locked)) {
                 return;
@@ -198,7 +198,7 @@ class ReconcileFibPayments extends Command
 
             $events->record($locked, [
                 'event_type' => 'provider_status_expired_locally',
-                'source' => 'scheduled_payment_reconciliation_local_expiry',
+                'source' => 'scheduled_payment_expiry',
                 'event_key' => 'payment-local-expiry:'.$locked->id,
                 'before_status' => $beforeStatus,
                 'after_status' => PaymentStatus::EXPIRED->value,

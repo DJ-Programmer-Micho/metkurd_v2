@@ -12,14 +12,25 @@ use App\Models\CustomerServiceSubscription;
 use App\Models\CustomerStorageSubscription;
 use App\Models\ServicePlan;
 use App\Models\StoragePlan;
+use App\Models\SubscriptionCreditAllocation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class PlanSwitcher
 {
+    /** The same initial allowance calculation used by fulfillment and read-only purchase previews. */
+    public function servicePlanBalanceResult(ServicePlan $plan, int $appAddon, int $apiAddon): array
+    {
+        return [
+            'app' => ['subscription' => $plan->appMonthlyCredits(), 'addon' => $appAddon, 'total' => $plan->appMonthlyCredits() + $appAddon],
+            'api' => ['subscription' => $plan->apiMonthlyCredits(), 'addon' => $apiAddon, 'total' => $plan->apiMonthlyCredits() + $apiAddon],
+        ];
+    }
+
     public function switchServicePlan(Customer $customer, int $servicePlanId, array $meta = []): CustomerServiceSubscription
     {
         return DB::transaction(function () use ($customer, $servicePlanId, $meta) {
+            $customer = Customer::whereKey($customer->id)->lockForUpdate()->firstOrFail();
             $plan = ServicePlan::where('is_active', true)->findOrFail($servicePlanId);
             $billingCycle = $this->normalizeBillingCycle((string) ($meta['billing_cycle'] ?? 'monthly'));
             $catalogAmountIqd = $plan->priceIqdForCycle($billingCycle === 'yearly' ? 'yearly' : 'monthly');
@@ -42,8 +53,9 @@ class PlanSwitcher
             $netAmount = (int) ($meta['net_amount_iqd'] ?? max(0, $grossAmount - $providerFeeAmount));
             $customerPaymentMethodId = $meta['customer_payment_method_id'] ?? null;
             $renewalStrategy = (string) ($meta['renewal_strategy'] ?? PaymentRecurringStrategy::MANUAL_RENEWAL->value);
-            $periodEndsAt = $this->periodEnd($meta['active_until'] ?? null, $billingCycle);
-            $nextRenewalOn = $periodEndsAt->toDateString();
+            $periodEndsAt = $renewalStrategy === PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
+                && empty($meta['active_until']) ? null : $this->periodEnd($meta['active_until'] ?? null, $billingCycle);
+            $nextRenewalOn = $periodEndsAt?->toDateString();
 
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
@@ -95,7 +107,7 @@ class PlanSwitcher
                 ], $meta),
             ]);
 
-            $currentSub = $customer->activeServiceSubscription()->first();
+            $currentSub = CustomerServiceSubscription::where('customer_id', $customer->id)->latest('id')->lockForUpdate()->first();
             $previousPlanId = $currentSub?->service_plan_id;
 
             if ($currentSub) {
@@ -105,9 +117,11 @@ class PlanSwitcher
                 $currentMeta['superseded_by_service_plan_code'] = $plan->code;
                 $currentMeta['superseded_by_payment_id'] = $paymentId;
                 $currentMeta['superseded_by_provider_ref'] = $providerRef;
+                $currentMeta['previous_paid_through'] = app(SubscriptionCyclePolicy::class)->boundary($currentSub)?->toIso8601String();
 
                 $currentSub->update([
                     'status' => 'ended',
+                    'auto_renew' => false,
                     'ends_at' => now(),
                     'canceled_at' => now(),
                     'meta' => $currentMeta,
@@ -154,9 +168,10 @@ class PlanSwitcher
                     'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                     'merchant_transaction_id' => $merchantTransactionId,
                     'provider_transaction_id' => $providerTransactionId,
-                    'provider_active_until' => $periodEndsAt->toIso8601String(),
-                    'period_ends_at' => $periodEndsAt->toIso8601String(),
+                    'provider_active_until' => $periodEndsAt?->toIso8601String(),
+                    'period_ends_at' => $periodEndsAt?->toIso8601String(),
                     'provider_last_payment_at' => data_get($meta, 'provider_last_payment_at'),
+                    'last_allocated_payment_at' => data_get($meta, 'provider_last_payment_at'),
                     'provider_cycle_key' => data_get($meta, 'provider_cycle_key'),
                 ],
             ]);
@@ -179,16 +194,27 @@ class PlanSwitcher
                 CreditWallet::defaultAttributes((int) $customer->id, CreditWallet::TYPE_API)
             );
 
+            $wallet = CreditWallet::whereKey($wallet->id)->lockForUpdate()->firstOrFail();
+            $apiWallet = CreditWallet::whereKey($apiWallet->id)->lockForUpdate()->firstOrFail();
             if ((bool) ($meta['reset_wallet_balances'] ?? true)) {
+                SubscriptionCreditAllocation::create([
+                    'customer_id' => $customer->id, 'subscription_id' => $newSub->id,
+                    'payment_id' => $paymentId,
+                    'cycle_key' => data_get($meta, 'provider_cycle_key') ?: 'initial:'.$newSub->id,
+                    'allocation_type' => 'initial',
+                    'cycle_started_at' => data_get($meta, 'provider_last_payment_at') ?: now(),
+                    'paid_through' => $periodEndsAt, 'status' => 'applied', 'applied_at' => now(),
+                ]);
                 $oldCombined = (int) $wallet->balance_credits;
                 $oldAddon = (int) ($wallet->addon_balance_credits ?? 0);
                 $oldApiCombined = (int) ($apiWallet->balance_credits ?? 0);
                 $oldApiAddon = (int) ($apiWallet->addon_balance_credits ?? 0);
 
-                $newSubscriptionBalance = (int) $plan->appMonthlyCredits();
-                $newCombined = $newSubscriptionBalance + $oldAddon;
-                $newApiSubscriptionBalance = (int) $plan->apiMonthlyCredits();
-                $newApiCombined = $newApiSubscriptionBalance + $oldApiAddon;
+                $balances = $this->servicePlanBalanceResult($plan, $oldAddon, $oldApiAddon);
+                $newSubscriptionBalance = $balances['app']['subscription'];
+                $newCombined = $balances['app']['total'];
+                $newApiSubscriptionBalance = $balances['api']['subscription'];
+                $newApiCombined = $balances['api']['total'];
 
                 $wallet->update([
                     'subscription_balance_credits' => $newSubscriptionBalance,
@@ -301,6 +327,7 @@ class PlanSwitcher
     public function switchStoragePlan(Customer $customer, int $storagePlanId, array $meta = []): CustomerStorageSubscription
     {
         return DB::transaction(function () use ($customer, $storagePlanId, $meta) {
+            $customer = Customer::whereKey($customer->id)->lockForUpdate()->firstOrFail();
             $plan = StoragePlan::where('is_active', true)->findOrFail($storagePlanId);
             $billingCycle = $this->normalizeBillingCycle((string) ($meta['billing_cycle'] ?? 'monthly'), ['monthly', 'yearly', 'hourly']);
             $catalogAmountIqd = $plan->priceIqdAmount();
@@ -323,7 +350,8 @@ class PlanSwitcher
             $netAmount = (int) ($meta['net_amount_iqd'] ?? max(0, $grossAmount - $providerFeeAmount));
             $customerPaymentMethodId = $meta['customer_payment_method_id'] ?? null;
             $renewalStrategy = (string) ($meta['renewal_strategy'] ?? PaymentRecurringStrategy::MANUAL_RENEWAL->value);
-            $periodEndsAt = $this->periodEnd($meta['active_until'] ?? null, $billingCycle);
+            $periodEndsAt = $renewalStrategy === PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
+                && empty($meta['active_until']) ? null : $this->periodEnd($meta['active_until'] ?? null, $billingCycle);
 
             $order = CreditOrder::create([
                 'customer_id' => $customer->id,
@@ -376,7 +404,7 @@ class PlanSwitcher
                 ], $meta),
             ]);
 
-            $current = $customer->activeStorageSubscription()->first();
+            $current = CustomerStorageSubscription::where('customer_id', $customer->id)->latest('id')->lockForUpdate()->first();
 
             if ($current) {
                 $current->update([
@@ -408,8 +436,8 @@ class PlanSwitcher
                 'source' => $provider,
                 'provider_ref' => $order->provider_ref,
                 'cycle_started_on' => now()->toDateString(),
-                'cycle_ends_on' => $periodEndsAt->toDateString(),
-                'next_renewal_on' => $periodEndsAt->toDateString(),
+                'cycle_ends_on' => $periodEndsAt?->toDateString(),
+                'next_renewal_on' => $periodEndsAt?->toDateString(),
                 'auto_renew' => $renewalStrategy === PaymentRecurringStrategy::PROVIDER_SCHEDULE->value
                     || ($customerPaymentMethodId !== null && $renewalStrategy !== PaymentRecurringStrategy::MANUAL_RENEWAL->value),
                 'customer_payment_method_id' => $customerPaymentMethodId,
@@ -430,8 +458,8 @@ class PlanSwitcher
                     'currency_resolution_source' => $currencySnapshot['currency_resolution_source'],
                     'merchant_transaction_id' => $merchantTransactionId,
                     'provider_transaction_id' => $providerTransactionId,
-                    'provider_active_until' => $periodEndsAt->toIso8601String(),
-                    'period_ends_at' => $periodEndsAt->toIso8601String(),
+                    'provider_active_until' => $periodEndsAt?->toIso8601String(),
+                    'period_ends_at' => $periodEndsAt?->toIso8601String(),
                 ],
             ]);
 

@@ -1,5 +1,249 @@
 # Architectural and behavioral decisions
 
+## V2 subscription callback preflight — 2026-09-16
+
+Validate recurring FIB callback configuration before creating V2 service checkout
+records or coupon reservations. Explain setup failure in EN/AR/KU instead of
+misidentifying it as a billing-history blocker. Preserve the epoch boundary and
+genuine review guards; no history, prices or provider rules change. A real local
+checkout still requires a public HTTPS callback reaching that same application.
+
+## One cutover algorithm, explicit deployment targets — 2026-09-15
+
+Replace the hardcoded local-schema identity with disabled-by-default deployment
+assertions and separate local-rehearsal/production policies. Keep the review, patches,
+locks, deletion, audit, epoch and preservation algorithm shared. Bind target/server,
+migrations, production Admin, backup/restore references and provider disposition to
+the review hash. Production refuses MariaDB/read replicas and unresolved obligations
+or remaining paid coverage; remote cancellation is never a cutover side effect.
+Require target-specific confirmation and production backup/restore attestations.
+Admin capability audit now requires all six reported launch capabilities for exit 0.
+Document native MySQL acceptance and actual deployment evidence as outstanding gates.
+
+## Shared post-cutover authority and billing history — 2026-09-15
+
+Reuse the successful cutover audit as the sole billing epoch. Apply it to V2 history,
+current Admin financial reads, checkout and provider processing; preserve continuous
+AI work/credit activity and expose archived financial evidence separately. Current plan
+resolution excludes expired retained manual terms and historical provider authority
+without rewriting balances/history. Share service/storage eligibility across reads and
+cycle guards; validate new paid coverage while allowing legitimate current expiry.
+Add read-only Admin capability audit and release preflight, plus a production runbook
+that explicitly stops at missing deployment evidence and the local-only cutover guard.
+Local mocked fulfillment is separately labelled and is not provider acceptance.
+
+
+## Separate local billing-domain cutover — 2026-09-15
+
+Add an explicit local-only all-payment cutover without changing conservative reset
+or checkout policies. Bind deletion, nullable detachments and provider-subscription
+retirement to a whole-database review hash, fresh Admin capabilities, maintenance
+and exact transactional preservation checks. Persist the current-revenue boundary
+and retired ID watermarks in the same append-only audit as the manifest; scope
+current Admin revenue and cache keys while retaining historical order evidence.
+No provider/storage calls, credit allocation or historical accounting reclassification.
+See [BILLING-DOMAIN-CUTOVER.md](BILLING-DOMAIN-CUTOVER.md) for operator-review and
+acceptance boundaries.
+
+
+## Recurring cancellation intent and replacement recovery — 2026-09-14
+
+Persist renewal cancellation before remote HTTP and keep previously paid access.
+Treat cancel acceptance as requested until authenticated GET confirms CANCELLED;
+retry pending requests including superseded/expired subscriptions separately from
+renewal polling. Fulfilled upgrades/downgrades retain existing allocation policy
+and schedule old-provider cancellation after commit. Reject coverage-only extensions
+and route post-cancellation collections to review. Customer and Admin projections
+separate renewal, access and pending replacement cleanup. See the
+[recurring lifecycle contract](RECURRING-SUBSCRIPTION-LIFECYCLE.md).
+
+
+## Explicit payment history reset — 2026-09-14
+
+Follow-up: the operator requested automatic latest-active selection, so the CLI no
+longer accepts/requires a keep UUID. The review hash still binds the selected row
+and refuses changed selection/state. Fixed local dry-run SQLSTATE 42S02 / 1146 by
+scoping Laravel table listing, locks and engine metadata to the active schema;
+unscoped discovery had included unrelated databases. SQL failures now expose only
+safe error codes. See the updated runbook for current syntax and verification.
+
+Added a dedicated `billing:reset-payment-history` command instead of widening legacy
+cleanup or customer abandonment. One reviewed Payment remains immutable; exact history
+deletions and permitted `payment_id` detachments are bound to a deterministic hash,
+fresh finance/reconcile authorization, maintenance and stopped-writer attestation.
+The whole transaction includes a durable sanitized Admin manifest and full-row
+preservation checks. Unresolved obligations, allocation claims and unapproved
+dependencies block the entire reset. No application reset was executed. See
+[PAYMENT-HISTORY-RESET.md](PAYMENT-HISTORY-RESET.md); native MySQL/RDS acceptance
+remains unverified.
+
+## Customer checkout abandonment — 2026-09-14
+
+The V2 payment page has an owned, locked, idempotent local-draft cancellation action
+with stricter eligibility than Admin review. The Admin evidence predicate is shared,
+while PaymentCheckoutState and final creation guards remain unchanged. Historical
+NOT_FOUND/ambiguous paid-reference review still requires Admin resolution. V2 purchase
+pages no longer accept coupons and refresh open reviews after closure. Provider fields,
+financial history and legacy coupon services remain intact. See
+[PAYMENT-CHECKOUT-V2.md](PAYMENT-CHECKOUT-V2.md#customer-abandonment-of-unavailable-checkout--2026-09-14).
+
+
+## Effective plan and Pro API follow-up — 2026-09-14
+
+Current service-plan reads now share CustomerBillingStateService and the normalized
+subscription eligibility scope. Partial relations, synthetic customer plan IDs and
+stale model caches cannot override it. Agreement snapshots supply monthly allowance
+presentation; scheduled/review agreements remain supplementary. Scoped shell cache
+invalidation follows committed subscription/wallet changes and effective-plan changes.
+
+The operator explicitly approved all six V2 API service scopes for the existing local
+Pro plan. They were saved through the authenticated Admin scope-only action, preserving
+legacy scopes and all prices/allowances. This is an audited local configuration change,
+not a migration or automatic scope backfill. See [EFFECTIVE-PLAN-CONSISTENCY.md](EFFECTIVE-PLAN-CONSISTENCY.md)
+for evidence, preserved-data fingerprints and verification limits.
+
+
+## 2026-09-13 — Dated cash/external service agreements
+
+- Add Admin-approved start/inclusive-expiry dates and monthly allowance snapshots,
+  with externally managed collections and optional informational agreement value.
+- Keep future agreements out of current-subscription resolution until activation.
+  Reuse normalized subscriptions, durable allocation identities, separate App/API
+  ledger entries and shared expiry; preserve add-ons and online billing safeguards.
+- Add the non-destructive agreement-table migration and provider-independent lifecycle
+  command. Application migration and native MySQL/browser acceptance are not performed.
+- Document operator controls and boundaries in SERVICE-AGREEMENTS.md.
+
+
+## 2026-09-13 — Explicit Admin abandoned-checkout resolution
+
+Reuse P0 invalidation and the Admin SweetAlert review panel to close eligible
+ambiguous unpaid checkout with both finance/reconcile permissions and an explicit
+reason. Check retained local provider/history/obligation evidence, retain the keyed
+operation/audit, and release unused coupons. The customer policy remains unchanged;
+closed checkout renders expired with a V2 purchase link. No provider contact or
+historical bulk repair. See [PAYMENT-CHECKOUT-V2.md](PAYMENT-CHECKOUT-V2.md).
+
+
+## 2026-09-10 — Checkout expiry and V2 payment status
+
+- Replace indefinite pending-row blocking with shared provider-deadline/evidence
+  policy. Preserve real review/unknown cases; close only known unpaid sessions.
+- Move final creation coordination into all three Create* actions across V1/V2.
+  Keep old closed Payments immutable as purchase identities; late paid callbacks
+  require review instead of fulfillment. Coupon replacement waits for closure.
+- Add the owned V2 payment page, bounded status polling, safe continuation links,
+  V2 history/return links and timezone-correct checkout timestamp persistence.
+- Record unchanged financial policy, local evidence and verification limits in
+  [PAYMENT-CHECKOUT-V2.md](PAYMENT-CHECKOUT-V2.md).
+
+## 2026-09-10 — V2 purchase entry and shared billing policy
+
+- Add localized subscription/storage/add-on pages and existing account-dropdown
+  links. Fresh catalog/method checks delegate to existing Create* actions and
+  shared checkout. Pending owned purchases are reused.
+- Share PlanSwitcher's existing calculation with the preview: reset subscription
+  allowance, retain App/API add-ons. No price or economic changes.
+- Block storage replacement without confirmed remote retirement and non-monthly
+  one-time storage whose fulfillment loses the interval. Preserve separate
+  cancellation actions and non-destructive quota enforcement.
+- Record behavior and local verification limits in [PURCHASE-V2.md](PURCHASE-V2.md).
+
+## 2026-09-10 — V2 Profile and Billing
+
+- Add localized V2 account routes/navigation while retaining V1 routes. Extract
+  existing profile and usage handlers into shared Livewire bases so both UIs
+  use the same validation, verification, storage and billing queries.
+- Add independent avatar saving with replacement persisted before old-object
+  deletion. Phone changes retain verification invalidation and return to V2.
+- Add separate wallet buckets, server-derived charts, paginated owned payment
+  and ledger projections, complimentary classification and existing cancellation
+  delegation. Financial policy and historical data remain unchanged.
+- Document local read-only browser checks and isolated mutation coverage in
+  [ACCOUNT-V2.md](ACCOUNT-V2.md); real delivery/provider acceptance is separate.
+
+## 2026-09-09 — Read-only cutover inventory
+
+- Add `billing:cutover-inventory` with identity-first output, aggregate counts,
+  optional sanitized internal details and a conservative unknown-blocks verdict.
+  MySQL/MariaDB inventory uses one read-only snapshot; no model mutation,
+  provider call or reconciliation path is invoked.
+- Retain both wallet buckets and ledger history; purchase provenance is reported
+  without changing credits. Production evidence remains operator-controlled.
+  The conservative legacy cleanup is unchanged and the destructive cutover
+  command is not implemented. See [BILLING-CUTOVER.md](BILLING-CUTOVER.md).
+
+## 2026-09-09 — Complimentary grants and guarded legacy-history review
+
+- Preserve the existing non-revenue manual grant path and durable Admin intent;
+  add explicit complimentary reason/type and local expiry metadata, separate
+  allowance previews and translated customer-history labels.
+- Exclude complimentary access from paid-subscriber reporting and retain an older
+  subscription's original financial classification when superseding it.
+- Add a local-only, reviewed, transactional abandoned-payment cleanup command.
+  The local inventory is blocked by active/unresolved/purchase dependencies and
+  has no eligible deletion IDs. No destructive execution or historical repair.
+  See [LEGACY-PAYMENT-CLEANUP.md](LEGACY-PAYMENT-CLEANUP.md). Phase 3 remains deferred.
+
+## 2026-09-09 — Billing Phase 2: recurring allocation and paid-through expiry
+
+- Subscription allowances now have durable allocation identities, independent of
+  observation events. One additive table protects both subscription/cycle and
+  Payment/cycle identity; claims, App/API resets, retained add-ons and ledgers
+  commit together. Failed attempts remain retryable without consuming a cycle.
+- Paid monthly provider plans no longer receive anniversary-only refills. Annual
+  prepaid allowances are monthly slices inside verified coverage. Free and explicit
+  manual grants retain their separate calendar policy; initial plan-switch policy
+  remains unchanged. Customer/subscription and wallet locks serialize these paths.
+- Verified collection evidence survives incomplete observations, paid timestamps
+  and coverage remain monotonic, and older/superseded subscriptions cannot become
+  authoritative again. Cancellation intent survives ACTIVE responses; a shared
+  expiry operation creates an explicit Free subscription at the known boundary
+  while retaining paid financial history and existing wallet/add-on balances.
+- Missing historical boundaries remain reviewable, with no fabricated receipts,
+  period extensions or bulk repairs. Populated allocation history cannot be dropped
+  by migration rollback. After implementation, the operator applied the migration
+  locally; 10 rollback-only MariaDB acceptance cases passed with saved financial
+  fingerprints preserved. Native MySQL concurrency/provider acceptance and B15 creation ambiguity remain
+  open. Phase 3 was not started. See [BILLING-AUDIT.md](BILLING-AUDIT.md).
+
+## 2026-09-09 — Billing Phase 1: provider evidence and callback trust
+
+- FIB callbacks are bounded, rate-limited wake-up notifications. Current/stored
+  callback paid claims are never financial proof; authenticated GET identity,
+  returned money and optional merchant reference are validated before application.
+  Rejected observations retain safe reason-coded review evidence, not raw payloads.
+  Local paid-application retry requires validated stored GET evidence or a fresh
+  GET; neither a local paid flag nor stored callback claims suffice alone.
+- Subscription dates use explicit millisecond/strict date parsing and preserve the
+  UTC instant through the application's database time zone. Supported values fit
+  the current TIMESTAMP era; invalid supplied dates fail closed. Nonterminal stale
+  observations cannot regress payment time or coverage; normal terminal sync
+  preserves last-payment time while allowing existing period-end handling.
+- Legacy Areeba processing requires enabled, configured authenticated delivery and
+  provider-scoped intent matching. Raw auth headers and banking extras are excluded
+  from new callback receipts. No provider signing protocol is invented.
+- Shortened scheduled event source labels fit the existing 40-character schema;
+  no migration/history rewrite. Same-Payment fulfillment and Admin P0 remain.
+  Monthly/provider credit allocation, durable cycle identity, supersession and
+  cancellation precedence are explicitly deferred. See [BILLING-AUDIT.md](BILLING-AUDIT.md).
+  No live FIB, native MySQL/RDS or deployment acceptance is claimed.
+
+## 2026-09-08 — Admin usability and configuration consumers
+
+- Dashboard activity now follows the selected period, with lifetime/current labels,
+  localized charts, morph refresh and a scoped cache version change.
+- Operations gets local-evidence attention groups and a compact expandable job
+  table; customer context separates wallets and connects retained records.
+- Service actions explain missing capabilities; pricing/access previews become a
+  secondary reference. Landing CMS adopts the existing catalog/reason checks.
+- Fixed edited exchange rates remaining non-current after bulk deactivation and
+  stale currency caches; fixed Landing no-demo rendering and ignored configured
+  favicon/Apple icons. Global SEO fallback precedence remains unchanged.
+- Added isolated Admin-save-to-consumer regressions. No application database price,
+  wallet, ledger, historical data or feature-gate changes. See ADMIN-AUDIT.md.
+
+
 ## 2026-09-07 — Simplify to the existing local database upgrade
 
 The operator cancelled the separate Docker/MySQL acceptance environment. Remove

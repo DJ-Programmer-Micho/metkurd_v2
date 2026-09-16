@@ -20,6 +20,7 @@ class extends Component
 
 <div class="container-fluid">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
+    <x-admin-capability-notice :capabilities="['admin.catalog', 'admin.pricing']" />
     <x-admin-change-reason />
     <div class="row">
         <div class="col-12">
@@ -31,7 +32,7 @@ class extends Component
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
                     <button type="button" class="btn btn-soft-primary" wire:click="openAccessCreateModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('Grant Access') }}</button>
-                    <button type="button" class="btn btn-primary" wire:click="openVoiceCreateModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('New Voice') }}</button>
+                    <button type="button" class="btn btn-primary" wire:click="openVoiceCreateModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('admin_ux.add_voice') }}</button>
                 </div>
             </div>
         </div>
@@ -185,7 +186,7 @@ class extends Component
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end flex-wrap gap-2">
                                         <button type="button" class="btn btn-sm btn-soft-primary" wire:click="openAccessCreateModal({{ $voice->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>{{ __('Grant Access') }}</button>
-                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openVoiceEditModal({{ $voice->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Quick Edit') }}</button>
+                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="openVoiceEditModal({{ $voice->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Edit') }}</button>
                                         <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmVoiceDelete({{ $voice->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                                     </div>
                                 </td>

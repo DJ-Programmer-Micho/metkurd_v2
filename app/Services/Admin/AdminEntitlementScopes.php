@@ -13,6 +13,17 @@ class AdminEntitlementScopes
 {
     public const META_KEY = 'admin_api_scopes';
 
+    public function updateExplicit(int $planId, array $scopes): void
+    {
+        AdminAccess::authorize('admin.pricing');
+        validator(['scopes' => $scopes], ['scopes' => 'array|max:100', 'scopes.*' => 'string|max:100'])->validate();
+
+        DB::transaction(function () use ($planId, $scopes) {
+            $plan = ServicePlan::lockForUpdate()->findOrFail($planId);
+            $this->synchronize($plan, array_values(array_unique($scopes)));
+        });
+    }
+
     public function explicit(ServicePlan $plan): array
     {
         $ownership = (array) data_get($plan->meta, self::META_KEY, []);

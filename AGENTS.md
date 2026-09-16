@@ -1,11 +1,99 @@
 # MetKurd engineering context
 
+## Post-cutover billing epoch — 2026-09-15
+
+Current financial reads and processing use BillingReportingBoundary from the committed
+cutover audit (timestamp plus retired payment/order watermarks). CustomerBillingStateService
+and shared effectiveAt scopes apply BillingSubscriptionAuthority: valid current online
+coverage, bounded manual grants, bound active cash agreements, otherwise Free. Retained
+wallet balances never confer a plan; old/expired manual terms cannot refill carried credits.
+Do not mutate historical rows to fix display. Jobs, usage, files and credit activity remain
+continuous. Admin financial history defaults to current with a separate Legacy / Pre-V2
+History selector. Read [the production runbook](docs/metkurd/V1-TO-V2-PRODUCTION-RUNBOOK.md).
+PaymentDomainCutover now shares one mutation algorithm across explicit configured
+local-rehearsal/production identity policies. It is disabled by default; production
+requires native MySQL, complete Admin/migration readiness, confirmed backup/restore,
+resolved provider obligations and stopped writers. No CLI identity bypass or automatic
+provider disposition is allowed. Native MySQL/deployment acceptance remains separate.
+Local synthetic Payment 176
+(customer 1083) is mock evidence, not real revenue; never promote it or poll its reference.
+
+
+## Local business cutover rehearsal — 2026-09-15
+
+Read [BILLING-DOMAIN-CUTOVER.md](docs/metkurd/BILLING-DOMAIN-CUTOVER.md) before
+operating `billing:cutover-reset-payment-domain` or changing current revenue reads.
+This separate command intentionally retires all five payment-processing tables on
+the explicitly authorized deployment target. It preserves credits, ledger/order/allocation
+history and valid local/external access; it performs no provider or storage calls.
+One transactional Admin audit stores the reporting boundary and reviewed mappings.
+Current reporting uses that boundary; historical evidence does not. Do not weaken
+the conservative reset or infer execution approval from source/tests. Operator
+review, maintenance, stopped writers and fresh finance/reconcile authority remain
+required. Production and post-cutover lifecycle acceptance remain separate.
+
+
+## Recurring subscription action lifecycle — 2026-09-14
+
+Read [RECURRING-SUBSCRIPTION-LIFECYCLE.md](docs/metkurd/RECURRING-SUBSCRIPTION-LIFECYCLE.md)
+before changing recurring cancellation, expiry or plan replacement. Renewal state
+and paid access are separate. Preserve committed cancellation intent before HTTP,
+GET-only confirmation, retry of expired/superseded provider subscriptions and the
+new plan's authority despite old cancellation failure. No new collection timestamp
+means no extended coverage; late collections after cancellation require review.
+Local reasons/dates/replacement IDs are never FIB cancel request parameters.
+
+
+## Explicit payment-history reset — 2026-09-14
+
+`billing:reset-payment-history` is a separate maintenance-only operator reset,
+default dry-run. Read [PAYMENT-HISTORY-RESET.md](docs/metkurd/PAYMENT-HISTORY-RESET.md)
+before changing or operating it. It automatically retains the latest active
+(open or paid) Payment; no UUID argument is required. The review hash binds that
+selection and aborts on changes. Schema inventory/locks must explicitly scope to
+the active database. Execution requires matching review hash, active finance/reconcile Admin, reason, exact confirmation
+and stopped-writer attestation. All dependencies must pass; no partial reset.
+Keep the selected Payment/events, financial state and normalized history. Only
+approved historical subscription/CreditOrder `payment_id` links may be detached;
+allocation links and CreditOrder `payment_intent_id` always block deletion.
+This intentional PaymentEvent-retention exception does not relax checkout,
+abandonment, Admin review or the older legacy cleanup command. Implementation
+does not authorize application/production execution. Native-engine acceptance
+remains separate from isolated SQLite tests.
+
 MetKurd is a multilingual AI service platform for speech generation and cloning,
 transcription/captions, OCR, audio separation, and translation, with customer
 credits, subscriptions, file storage, and history. **MetKurd V2 is the primary application and future production target.** The repository still gates `/{locale}/app-v2`
 with `FEATURE_APP_V2` (default false); this does not prove production enablement.
 V1 `/{locale}/app` is legacy and will be retired. Its continued presence is not
 a requirement to modernize it or preserve obsolete behavior.
+
+## Effective service plan / API scope consistency (2026-09-14)
+
+Customer checkout abandonment uses AbandonedCheckoutEligibility's shared Admin
+evidence guard plus stricter local-draft checks. Never turn unresolved provider
+review into automatic expiry. Retain owned locking, keyed customer events, legacy
+coupon reservation safety and provider history. V2 purchase UI no longer accepts
+coupon codes. See [PAYMENT-CHECKOUT-V2.md](docs/metkurd/PAYMENT-CHECKOUT-V2.md).
+
+Use CustomerBillingStateService for current normalized service-plan state. Customer
+helpers and current relations share its eligibility rules; never trust a partial
+loaded plan or a synthetic customers.service_plan_id. Agreements remain scheduling
+records until normalized activation. API enablement, V2 scopes, per-action entitlements,
+wallet balances and feature gates are separate checks. Legacy exact V1 scopes do not
+automatically authorize V2 families. Admin can save explicit scopes separately from
+prices through the existing pricing capability/reason/audit and SweetAlert controls.
+See [EFFECTIVE-PLAN-CONSISTENCY.md](docs/metkurd/EFFECTIVE-PLAN-CONSISTENCY.md).
+
+## Dated external service agreements (2026-09-13)
+
+Read [SERVICE-AGREEMENTS.md](docs/metkurd/SERVICE-AGREEMENTS.md) before changing
+cash/external agreements. Collections and instalments stay external: optional
+agreement totals are not receipts or collected revenue. Preserve Admin finance
+approval, durable intent identity, inclusive end-date presentation, deferred activation,
+monthly allowance snapshots, no rollover, App/API separation, retained add-ons and
+shared expiry cleanup. The new agreement migration must be applied by the operator;
+source implementation does not authorize migrations or live agreement processing.
 
 ## Latest local follow-up (2026-09-06)
 
