@@ -154,13 +154,16 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 @endpush
 
 @push('scripts')
-<script type="module">
+<script type="module" data-navigate-once>
 import * as pdfjs from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs';
 pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
 
-(() => {
+(window.MetKurdV2Pages ||= []).push({key: 'ocr-preview', selector: '.v2-ocr-page', boot(ctx) {
+    let revision = 0, loadingTask = null;
+    const renders = new Set();
+    const canvasTasks = new WeakMap();
     let pdf = null, page = 1, scale = 1, url = null, imageUrl = null, visiblePages = [];
-    const $ = id => document.getElementById(id);
+    const $ = id => ctx.root.querySelector(`#${id}`);
     const preview = $('v2-ocr-preview');
     const labels = {
         thumbnails: preview?.dataset.thumbnailsLabel || 'PDF thumbnails',
@@ -171,8 +174,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
         pagesSelected: preview?.dataset.pagesSelectedLabel || 'pages selected',
         allPages: preview?.dataset.allPagesLabel || 'All pages',
     };
-    const root = () => document.querySelector('.v2-ocr-page')?.closest('[wire\\:id]');
-    const livewire = () => root() ? window.Livewire?.find(root().getAttribute('wire:id')) : null;
+    const livewire = ctx.component;
     const isPdf = file => file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
     const allowed = file => file && (/\.(pdf|png|jpe?g|webp|bmp|gif|tiff?)$/i.test(file.name) || isPdf(file));
 
@@ -210,24 +212,38 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
     };
 
     const render = async (pageNumber, canvas, renderScale) => {
-        const sourcePage = await pdf.getPage(pageNumber);
-        const viewport = sourcePage.getViewport({ scale: renderScale });
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        await sourcePage.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        const source = pdf, version = revision;
+        if (!ctx.alive() || !source || !canvas) return false;
+        const previous = canvasTasks.get(canvas);
+        previous?.cancel();
+        if (previous) await previous.promise.catch(() => {});
+        try {
+            const sourcePage = await source.getPage(pageNumber);
+            if (!ctx.alive() || version !== revision || source !== pdf) return false;
+            const viewport = sourcePage.getViewport({ scale: renderScale });
+            canvas.width = viewport.width; canvas.height = viewport.height;
+            const task = sourcePage.render({ canvasContext: canvas.getContext('2d'), viewport });
+            canvasTasks.set(canvas, task); renders.add(task);
+            try { await task.promise; } finally { renders.delete(task); if (canvasTasks.get(canvas) === task) canvasTasks.delete(canvas); }
+            return ctx.alive() && version === revision && source === pdf;
+        } catch (error) {
+            if (ctx.alive() && version === revision && error.name !== 'RenderingCancelledException') console.warn('OCR preview could not be rendered.');
+            return false;
+        }
     };
 
     const draw = async pageNumber => {
         if (!pdf || !visiblePages.length) return;
         page = visiblePages.includes(pageNumber) ? pageNumber : visiblePages[0];
         const canvas = $('v2-ocr-canvas');
-        await render(page, canvas, scale);
+        if (!await render(page, canvas, scale)) return;
         canvas.style.display = 'block';
         $('v2-ocr-page-info').textContent = `${page} / ${pdf.numPages}`;
-        document.querySelectorAll('#v2-ocr-thumbs button').forEach(button => button.classList.toggle('is-active', Number(button.dataset.page) === page));
+        ctx.root.querySelectorAll('#v2-ocr-thumbs button').forEach(button => button.classList.toggle('is-active', Number(button.dataset.page) === page));
     };
 
     const drawThumbnails = async () => {
+        if (!ctx.alive()) return;
         const holder = $('v2-ocr-thumbs');
         holder.innerHTML = `<small>${labels.thumbnails}</small>`;
         visiblePages = selectedPreviewPages();
@@ -240,7 +256,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
         }
         for (const pageNumber of visiblePages) {
             const thumbnail = document.createElement('canvas');
-            await render(pageNumber, thumbnail, .16);
+            if (!await render(pageNumber, thumbnail, .16)) return;
             const button = document.createElement('button');
             button.type = 'button';
             button.dataset.page = String(pageNumber);
@@ -264,7 +280,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
         if (pdf) {
             const canvas = $('v2-ocr-modal-canvas');
             $('v2-ocr-modal-image').style.display = 'none';
-            await render(page, canvas, Math.min(2.2, Math.max(1.2, scale * 1.35)));
+            if (!await render(page, canvas, Math.min(2.2, Math.max(1.2, scale * 1.35)))) return;
             canvas.style.display = 'block';
         } else {
             $('v2-ocr-modal-canvas').style.display = 'none';
@@ -273,8 +289,19 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
         }
     };
 
+    const release = () => {
+        revision++;
+        renders.forEach(task => task.cancel()); renders.clear();
+        const task = loadingTask, source = pdf;
+        loadingTask = null; pdf = null;
+        Promise.resolve(task ? task.destroy() : source?.destroy()).catch(() => {});
+        if (url) URL.revokeObjectURL(url);
+        url = null; imageUrl = null;
+    };
     const clear = () => {
-        pdf = null; page = 1; visiblePages = [];
+        release();
+        if (!ctx.alive()) return;
+        page = 1; visiblePages = [];
         if (url) URL.revokeObjectURL(url);
         url = null; imageUrl = null;
         $('v2-ocr-thumbs').innerHTML = `<small>${labels.thumbnails}</small>`;
@@ -287,10 +314,16 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
 
     const load = async file => {
         clear();
-        if (!allowed(file)) return;
+        if (!ctx.alive() || !allowed(file)) return;
+        const version = revision;
         url = URL.createObjectURL(file);
         if (isPdf(file)) {
-            pdf = await pdfjs.getDocument(url).promise;
+            loadingTask = pdfjs.getDocument(url);
+            try {
+                const loaded = await loadingTask.promise;
+                if (!ctx.alive() || version !== revision) { await loaded.destroy(); return; }
+                pdf = loaded;
+            } catch (_) { return; }
             livewire()?.set('clientPdfPageCount', pdf.numPages);
             await drawThumbnails();
         } else {
@@ -300,33 +333,35 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
             $('v2-ocr-page-info').textContent = labels.imagePreview;
             $('v2-ocr-preview-selection').textContent = '';
         }
-        livewire()?.upload('documentFile', file);
+        if (ctx.alive() && version === revision) livewire()?.upload('documentFile', file);
     };
 
     const fileInput = $('v2-ocr-file');
-    fileInput?.addEventListener('change', event => load(event.target.files?.[0]));
+    ctx.listen(fileInput, 'change', event => load(event.target.files?.[0]));
     const uploadPanel = $('v2-ocr-upload-panel');
     let dragDepth = 0;
     const setDragState = active => {
         uploadPanel?.classList.toggle('is-dragging', active);
         $('v2-ocr-dropzone')?.classList.toggle('is-dragging', active);
     };
-    uploadPanel?.addEventListener('dragenter', event => { event.preventDefault(); dragDepth++; setDragState(true); });
-    uploadPanel?.addEventListener('dragover', event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDragState(true); });
-    uploadPanel?.addEventListener('dragleave', event => { event.preventDefault(); dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) setDragState(false); });
-    uploadPanel?.addEventListener('drop', event => { event.preventDefault(); dragDepth = 0; setDragState(false); load(event.dataTransfer?.files?.[0]); });
-    $('v2-ocr-prev')?.addEventListener('click', () => draw(visiblePages[Math.max(0, visiblePages.indexOf(page) - 1)]));
-    $('v2-ocr-next')?.addEventListener('click', () => draw(visiblePages[Math.min(visiblePages.length - 1, visiblePages.indexOf(page) + 1)]));
-    $('v2-ocr-zoom')?.addEventListener('input', event => { scale = Number(event.target.value) / 100; draw(page); });
-    $('v2-ocr-stage')?.addEventListener('click', openPreview);
-    $('v2-ocr-expand')?.addEventListener('click', openPreview);
-    $('v2-ocr-modal-close')?.addEventListener('click', closePreview);
-    $('v2-ocr-modal')?.addEventListener('click', event => { if (event.target === $('v2-ocr-modal')) closePreview(); });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') closePreview(); });
-    window.Livewire?.on('v2-ocr-document-cleared', clear);
-    window.Livewire?.on('v2-ocr-preview-range', refreshRange);
-    window.Livewire?.on('v2-ocr-copy-text', event => navigator.clipboard?.writeText(event.text || ''));
-    document.addEventListener('livewire:navigating', clear);
-})();
+    ctx.listen(uploadPanel, 'dragenter', event => { event.preventDefault(); dragDepth++; setDragState(true); });
+    ctx.listen(uploadPanel, 'dragover', event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDragState(true); });
+    ctx.listen(uploadPanel, 'dragleave', event => { event.preventDefault(); dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) setDragState(false); });
+    ctx.listen(uploadPanel, 'drop', event => { event.preventDefault(); dragDepth = 0; setDragState(false); load(event.dataTransfer?.files?.[0]); });
+    ctx.listen($('v2-ocr-prev'), 'click', () => draw(visiblePages[Math.max(0, visiblePages.indexOf(page) - 1)]));
+    ctx.listen($('v2-ocr-next'), 'click', () => draw(visiblePages[Math.min(visiblePages.length - 1, visiblePages.indexOf(page) + 1)]));
+    ctx.listen($('v2-ocr-zoom'), 'input', event => { scale = Number(event.target.value) / 100; draw(page); });
+    ctx.listen($('v2-ocr-stage'), 'click', openPreview);
+    ctx.listen($('v2-ocr-expand'), 'click', openPreview);
+    ctx.listen($('v2-ocr-modal-close'), 'click', closePreview);
+    ctx.listen($('v2-ocr-modal'), 'click', event => { if (event.target === $('v2-ocr-modal')) closePreview(); });
+    ctx.listen(document, 'keydown', event => { if (event.key === 'Escape') closePreview(); });
+    ctx.on('v2-ocr-document-cleared', clear);
+    ctx.on('v2-ocr-preview-range', refreshRange);
+    ctx.on('v2-ocr-copy-text', event => navigator.clipboard?.writeText(event.text || ''));
+    const owner = livewire();
+    ctx.cleanup(() => owner?.cancelUpload('documentFile'));
+    return {destroy: release};
+}});
 </script>
 @endpush

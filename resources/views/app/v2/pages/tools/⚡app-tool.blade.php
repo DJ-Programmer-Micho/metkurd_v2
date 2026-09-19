@@ -442,7 +442,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 
 @if (in_array(($toolDefinition['kind'] ?? null), ['omni_tts', 'omni_clone'], true))
     @push('scripts')
-        <script data-navigate-once src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js" onload="window.dispatchEvent(new CustomEvent('metkurd:wavesurfer-ready'))"></script>
+
     @endpush
 @endif
 
@@ -467,71 +467,5 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 @endif
 
 @if (($toolDefinition['kind'] ?? null) === 'omni_clone')
-    @push('styles')<link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet">@endpush
-    @push('scripts')
-        <script data-navigate-once src="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.min.js"></script>
-        <script data-navigate-once src="https://unpkg.com/filepond-plugin-file-validate-size/dist/filepond-plugin-file-validate-size.min.js"></script>
-        <script data-navigate-once src="https://unpkg.com/filepond@^4/dist/filepond.min.js"></script>
-        <script data-navigate-once>
-        (() => {
-            const state = window.__METKURD_V2_CTTS_POND__ ||= {};
-            const input = () => document.getElementById('v2-ctts-reference-pond');
-            const root = () => document.querySelector('.v2-ctts-workspace')?.closest('[wire\\:id]');
-            const component = () => {
-                const host = root();
-                return host && window.Livewire ? window.Livewire.find(host.getAttribute('wire:id')) : null;
-            };
-            const destroy = () => {
-                const pond = state.pond;
-                state.pond = null;
-                state.host = null;
-                try { pond?.destroy(); } catch (_) {}
-            };
-            const boot = () => {
-                const field = input(), host = root();
-                if (!field || !host || !window.FilePond || state.pond || !component()) return;
-                if (!state.plugins) { FilePond.registerPlugin(FilePondPluginFileValidateType, FilePondPluginFileValidateSize); state.plugins = true; }
-                state.host = host;
-                state.pond = FilePond.create(field, {
-                    allowMultiple: false, credits: false,
-                    acceptedFileTypes: ['audio/wav','audio/x-wav','audio/mpeg','audio/mp3','audio/mp4','audio/x-m4a','audio/aac','audio/ogg','audio/webm'],
-                    maxFileSize: '20MB',
-                    labelIdle: '<strong>{{ __('Drop a reference audio file') }}</strong><br><span class="filepond--label-action">{{ __('Browse') }}</span>',
-                    server: {
-                        process: (name, file, meta, load, error, progress, abort) => {
-                            // Resolve at upload time: navigation can replace the Livewire component.
-                            const lw = component();
-                            if (!lw) { error('{{ __('Upload failed') }}'); return { abort }; }
-                            lw.upload('referenceAudio', file, temporaryName => load(temporaryName), () => error('{{ __('Upload failed') }}'), event => progress(event.lengthComputable, event.loaded, event.total));
-                            return { abort: () => { lw.cancelUpload('referenceAudio'); abort(); } };
-                        },
-                        revert: (id, load, error) => {
-                            const lw = component();
-                            if (!lw) { error('{{ __('Upload failed') }}'); return; }
-                            Promise.resolve(lw.call('removeReferenceAudio')).then(load, () => error('{{ __('Upload failed') }}'));
-                        },
-                    },
-                });
-            };
-            const reconcile = () => requestAnimationFrame(() => {
-                if (state.pond && (state.host !== root() || state.pond.element?.isConnected === false)) destroy();
-                boot();
-            });
-            const bindLivewire = () => {
-                if (!window.Livewire || state.livewireBound) return;
-                state.livewireBound = true;
-                window.Livewire.on('ctts-reference-audio-cleared', () => state.pond?.removeFiles({ revert: false }));
-                window.Livewire.hook('morphed', reconcile);
-            };
-            if (!state.listeners) {
-                state.listeners = true;
-                document.addEventListener('livewire:navigating', destroy);
-                document.addEventListener('livewire:navigated', () => { bindLivewire(); reconcile(); });
-                document.addEventListener('livewire:initialized', () => { bindLivewire(); reconcile(); });
-            }
-            bindLivewire();
-            reconcile();
-        })();
-        </script>
-    @endpush
+    @push('styles')<link href="{{ asset('app/libs/filepond/filepond.min.css') }}" rel="stylesheet">@endpush
 @endif

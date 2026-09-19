@@ -139,7 +139,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         <main class="v2-workspace-panel v2-create-panel v2-leo-upload-panel">
             <div class="v2-panel-heading"><span>{{ __('Audio Upload') }}</span><small>{{ __('Upload audio to transcribe') }}</small></div>
             <div class="v2-leo-upload-copy"><i class="ri-mic-2-line"></i><span>{{ __('Supported audio up to 100 MB. Existing ASR validation rules apply.') }}</span></div>
-            <div wire:ignore><input id="v2-leo-audio-pond" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,.flac,audio/*"></div>
+            <div wire:ignore><input id="v2-leo-audio-pond" data-upload-error="{{ __('Upload failed') }}" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,.flac,audio/*"></div>
             @if($audioName)<div class="v2-leo-file"><i class="ri-file-music-line"></i><span><strong>{{ $audioName }}</strong><small>{{ $audioMime }} · {{ number_format((float) $audioDurationSec, 1) }}s</small></span><button type="button" wire:click="removeAudio" class="btn btn-sm btn-outline-success">{{ __('Remove') }}</button></div><div class="v2-leo-upload-waveform" wire:ignore data-metkurd-waveform data-leo-upload-waveform data-job="leo-upload" data-accent="success"><div class="v2-render-player-controls"><button type="button" class="v2-waveform-toggle" data-metkurd-waveform-toggle aria-label="{{ __('Play or pause uploaded audio') }}"><i class="ri-play-fill" data-metkurd-waveform-icon></i></button><span class="v2-waveform-time" data-metkurd-waveform-time>00:00 / --:--</span></div><div class="v2-waveform-canvas" data-metkurd-waveform-canvas></div><small class="v2-waveform-load-state" data-metkurd-waveform-state>{{ __('Loading audio preview…') }}</small></div>@endif
             @error('audioFile')<small class="text-danger mt-2">{{ $message }}</small>@enderror
             <label class="v2-leo-intelligent mt-3"><span><strong>{{ __('Intelligent') }} <em>{{ __('Beta') }}</em></strong><small>{{ __('Improves transcription using intelligent post-processing.') }}</small></span><input type="checkbox" wire:model="intelligent" role="switch"></label>
@@ -165,80 +165,5 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 @endif
 </section>
 
-@push('styles')<link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet"><style>.metkurd-v2 .v2-leo-workspace{grid-template-columns:minmax(290px,.8fr) minmax(440px,1.35fr);border-color:rgba(var(--v2-accent-rgb),.4);background:linear-gradient(135deg,rgba(var(--v2-accent-rgb),.14),rgba(3,18,13,.3));}.metkurd-v2 .v2-leo-workspace .v2-panel-heading>span{color:var(--v2-accent-text)}.metkurd-v2 .v2-leo-upload-copy,.metkurd-v2 .v2-leo-file,.metkurd-v2 .v2-leo-processing,.metkurd-v2 .v2-leo-failed{display:flex;gap:.65rem;align-items:center;margin:1rem 0;padding:.75rem;border:1px solid rgba(var(--v2-accent-rgb),.22);border-radius:.8rem;background:rgba(var(--v2-accent-rgb),.07);font-size:.78rem}.metkurd-v2 .v2-leo-upload-copy i,.metkurd-v2 .v2-leo-file>i{font-size:1.2rem;color:var(--v2-accent-text)}.metkurd-v2 .v2-leo-file span{display:grid;min-width:0;flex:1}.metkurd-v2 .v2-leo-file small{color:rgba(226,232,240,.55)}.metkurd-v2 .v2-leo-intelligent{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:.75rem;border:1px solid rgba(var(--v2-accent-rgb),.18);border-radius:.75rem;cursor:pointer}.metkurd-v2 .v2-leo-intelligent span{display:grid;gap:.14rem}.metkurd-v2 .v2-leo-intelligent small{color:rgba(226,232,240,.55);font-size:.7rem}.metkurd-v2 .v2-leo-intelligent em{padding:.12rem .34rem;border-radius:999px;background:rgba(245,158,11,.16);color:#fde68a;font-size:.6rem;font-style:normal;text-transform:uppercase}.metkurd-v2 .v2-leo-intelligent input{width:2.35rem;height:1.25rem;accent-color:rgb(var(--v2-accent-rgb))}.metkurd-v2 .v2-leo-results-panel{min-height:575px}.metkurd-v2 .v2-leo-transcript{min-height:180px;margin-top:1rem;padding:1rem;border:1px solid rgba(var(--v2-accent-rgb),.82);border-radius:.9rem;background:rgba(2,6,23,.34);white-space:pre-wrap;line-height:1.9;user-select:text}.metkurd-v2 .v2-leo-empty{padding:2rem 0}.metkurd-v2 .v2-leo-history{margin-top:1.25rem;padding-top:1rem;border-top:1px solid rgba(148,163,184,.12);display:grid;gap:.65rem}.metkurd-v2 .v2-leo-history .v2-panel-heading{padding-bottom:.65rem}.metkurd-v2 .v2-leo-history .v2-render-item{margin:0}.metkurd-v2 .v2-leo-processing{color:#bbf7d0}.metkurd-v2 .v2-leo-failed{color:#fecaca;border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.08)}@media(max-width:767.98px){.metkurd-v2 .v2-leo-workspace{grid-template-columns:1fr}.metkurd-v2 .v2-leo-results-panel{min-height:0}}</style>@endpush
+@push('styles')<link href="{{ asset('app/libs/filepond/filepond.min.css') }}" rel="stylesheet"><style>.metkurd-v2 .v2-leo-workspace{grid-template-columns:minmax(290px,.8fr) minmax(440px,1.35fr);border-color:rgba(var(--v2-accent-rgb),.4);background:linear-gradient(135deg,rgba(var(--v2-accent-rgb),.14),rgba(3,18,13,.3));}.metkurd-v2 .v2-leo-workspace .v2-panel-heading>span{color:var(--v2-accent-text)}.metkurd-v2 .v2-leo-upload-copy,.metkurd-v2 .v2-leo-file,.metkurd-v2 .v2-leo-processing,.metkurd-v2 .v2-leo-failed{display:flex;gap:.65rem;align-items:center;margin:1rem 0;padding:.75rem;border:1px solid rgba(var(--v2-accent-rgb),.22);border-radius:.8rem;background:rgba(var(--v2-accent-rgb),.07);font-size:.78rem}.metkurd-v2 .v2-leo-upload-copy i,.metkurd-v2 .v2-leo-file>i{font-size:1.2rem;color:var(--v2-accent-text)}.metkurd-v2 .v2-leo-file span{display:grid;min-width:0;flex:1}.metkurd-v2 .v2-leo-file small{color:rgba(226,232,240,.55)}.metkurd-v2 .v2-leo-intelligent{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:.75rem;border:1px solid rgba(var(--v2-accent-rgb),.18);border-radius:.75rem;cursor:pointer}.metkurd-v2 .v2-leo-intelligent span{display:grid;gap:.14rem}.metkurd-v2 .v2-leo-intelligent small{color:rgba(226,232,240,.55);font-size:.7rem}.metkurd-v2 .v2-leo-intelligent em{padding:.12rem .34rem;border-radius:999px;background:rgba(245,158,11,.16);color:#fde68a;font-size:.6rem;font-style:normal;text-transform:uppercase}.metkurd-v2 .v2-leo-intelligent input{width:2.35rem;height:1.25rem;accent-color:rgb(var(--v2-accent-rgb))}.metkurd-v2 .v2-leo-results-panel{min-height:575px}.metkurd-v2 .v2-leo-transcript{min-height:180px;margin-top:1rem;padding:1rem;border:1px solid rgba(var(--v2-accent-rgb),.82);border-radius:.9rem;background:rgba(2,6,23,.34);white-space:pre-wrap;line-height:1.9;user-select:text}.metkurd-v2 .v2-leo-empty{padding:2rem 0}.metkurd-v2 .v2-leo-history{margin-top:1.25rem;padding-top:1rem;border-top:1px solid rgba(148,163,184,.12);display:grid;gap:.65rem}.metkurd-v2 .v2-leo-history .v2-panel-heading{padding-bottom:.65rem}.metkurd-v2 .v2-leo-history .v2-render-item{margin:0}.metkurd-v2 .v2-leo-processing{color:#bbf7d0}.metkurd-v2 .v2-leo-failed{color:#fecaca;border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.08)}@media(max-width:767.98px){.metkurd-v2 .v2-leo-workspace{grid-template-columns:1fr}.metkurd-v2 .v2-leo-results-panel{min-height:0}}</style>@endpush
 @push('styles')<style>.metkurd-v2 .v2-leo-upload-waveform,.metkurd-v2 .v2-leo-recent-waveform{margin-top:.75rem}.metkurd-v2 .v2-leo-upload-waveform{padding:.75rem;border:1px solid rgba(var(--v2-accent-rgb),.28);border-radius:.8rem;background:rgba(var(--v2-accent-rgb),.06)}.metkurd-v2 .v2-leo-recent-waveform .v2-waveform-canvas{min-height:32px}.metkurd-v2 .v2-leo-recent-waveform .v2-render-player-controls{margin:.55rem 0 .3rem}.metkurd-v2 .v2-leo-upload-waveform .v2-waveform-toggle,.metkurd-v2 .v2-leo-recent-waveform .v2-waveform-toggle{border-color:rgba(var(--v2-accent-rgb),.62);background:rgba(var(--v2-accent-rgb),.16);color:var(--v2-accent-text)}.metkurd-v2 .v2-leo-transcript-modal .modal-content{border:1px solid rgba(var(--v2-accent-rgb),.38);background:linear-gradient(160deg,#17231a,#0d1210);color:#e5ebe5;box-shadow:0 24px 70px rgba(0,0,0,.5),0 0 30px rgba(var(--v2-accent-rgb),.12)}.metkurd-v2 .v2-leo-transcript-modal .modal-header,.metkurd-v2 .v2-leo-transcript-modal .modal-footer{border-color:rgba(var(--v2-accent-rgb),.16)}.metkurd-v2 .v2-leo-transcript-modal small{color:var(--v2-accent-text);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em}.metkurd-v2 .v2-leo-modal-transcript{white-space:pre-wrap;line-height:1.95;user-select:text}.metkurd-v2 .v2-leo-history .btn-outline-success,.metkurd-v2 .v2-leo-file .btn-outline-success{border-color:rgba(var(--v2-accent-rgb),.68);color:var(--v2-accent-text)}.metkurd-v2 .v2-leo-history .btn-outline-success:hover,.metkurd-v2 .v2-leo-file .btn-outline-success:hover{background:rgba(var(--v2-accent-rgb),.18);color:#fff}</style>@endpush
-@push('scripts')
-<script data-navigate-once src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js" onload="window.dispatchEvent(new CustomEvent('metkurd:wavesurfer-ready'))"></script>
-<script data-navigate-once src="https://unpkg.com/filepond@^4/dist/filepond.min.js"></script>
-<script data-navigate-once>
-(() => {
-    let pond;
-    let clearingPond = false;
-    let uploadObjectUrl = null;
-    const uploadJobId = 'leo-upload';
-    const component = () => {
-        const root = document.querySelector('.v2-leo-page');
-        return root ? window.Livewire?.find(root.getAttribute('wire:id')) : null;
-    };
-    const syncUploadWaveform = () => requestAnimationFrame(() => {
-        const root = document.querySelector('[data-leo-upload-waveform]');
-        if (!root || !uploadObjectUrl) return;
-        root.dataset.url = uploadObjectUrl;
-        window.MetKurdWaveform?.mount();
-    });
-    window.MetKurdLeoUploadPreview = {
-        set(file) {
-            this.destroy();
-            uploadObjectUrl = URL.createObjectURL(file);
-            syncUploadWaveform();
-        },
-        destroy() {
-            window.MetKurdWaveform?.destroy(uploadJobId);
-            if (uploadObjectUrl) URL.revokeObjectURL(uploadObjectUrl);
-            uploadObjectUrl = null;
-        },
-        sync: syncUploadWaveform,
-    };
-    const boot = () => {
-        const input = document.getElementById('v2-leo-audio-pond');
-        if (!input || pond || !window.FilePond) return;
-        pond = FilePond.create(input, {
-            allowMultiple: false,
-            acceptedFileTypes: ['audio/wav','audio/x-wav','audio/mpeg','audio/mp3','audio/mp4','audio/x-m4a','audio/aac','audio/ogg','audio/webm','audio/flac','audio/x-flac'],
-            maxFileSize: '100MB',
-            onaddfile: (_, file) => {
-                window.MetKurdLeoUploadPreview.set(file.file);
-                component()?.upload('audioFile', file.file);
-            },
-            onremovefile: () => {
-                window.MetKurdLeoUploadPreview.destroy();
-                if (!clearingPond) component()?.call('removeAudio');
-            },
-        });
-    };
-    const destroyPond = () => {
-        if (!pond) return;
-        clearingPond = true;
-        try { pond.destroy(); } finally { pond = undefined; clearingPond = false; }
-    };
-    const bindLivewire = () => {
-        if (!window.Livewire || window.__metKurdLeoLivewireBound) return;
-        window.__metKurdLeoLivewireBound = true;
-        window.Livewire.hook('commit', ({ succeed }) => succeed(() => window.MetKurdLeoUploadPreview.sync()));
-        window.Livewire.on('leo-audio-cleared', () => {
-            window.MetKurdLeoUploadPreview.destroy();
-            if (!pond) return;
-            clearingPond = true;
-            try { pond.removeFiles(); } finally { clearingPond = false; }
-        });
-        window.Livewire.on('leo-copy-transcript', (event) => navigator.clipboard?.writeText(event.text || ''));
-    };
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
-    else boot();
-    bindLivewire();
-    document.addEventListener('livewire:navigated', () => { boot(); window.MetKurdLeoUploadPreview.sync(); });
-    document.addEventListener('livewire:navigating', () => { window.MetKurdLeoUploadPreview.destroy(); destroyPond(); });
-    document.addEventListener('livewire:init', bindLivewire);
-})();
-</script>
-@endpush

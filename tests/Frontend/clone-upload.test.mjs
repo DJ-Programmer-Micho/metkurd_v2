@@ -3,54 +3,40 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-// Exercise the shared Vector uploader with the same deferred component registration
-// as Livewire's initial page load. Actual file transfer still needs browser acceptance.
-const view = readFileSync(new URL('../../resources/views/app/v2/pages/tools/⚡app-tool.blade.php', import.meta.url), 'utf8');
-const script = view.match(/<script data-navigate-once>\s*([\s\S]*?)<\/script>/)[1]
-    .replace(/\{\{\s*__\('([^']+)'\)\s*\}\}/g, (_, label) => label);
+import {mountUpload} from '../../resources/js/v2-upload.js';
 
 function setup({ ready = false } = {}) {
     const events = {}, hooks = {}, listeners = {}, components = new Map(), ponds = [];
     const page = { host: null, field: null };
-    const mount = (id) => {
-        const wire = {
-            uploads: [], cancelled: [], calls: [],
-            upload(...args) { this.uploads.push(args); },
-            cancelUpload(name) { this.cancelled.push(name); },
-            call(name) { this.calls.push(name); return this.result ?? Promise.resolve(); },
-        };
-        page.host = { getAttribute: () => id };
-        page.field = { isConnected: true };
+    const mount = id => {
+        const wire = {uploads: [], cancelled: [], calls: [], upload(...args) { this.uploads.push(args); },
+            cancelUpload(name) { this.cancelled.push(name); }, call(name) { this.calls.push(name); return this.result ?? Promise.resolve(); }};
+        page.id = id; page.host = {getAttribute: () => id}; page.field = {isConnected: true, dataset: {}};
         return wire;
     };
     const wire = mount('vector-1');
     if (ready) components.set('vector-1', wire);
-    const FilePond = {
-        registerPlugin() {},
-        create(field, options) {
-            const pond = {
-                element: { isConnected: true }, options, destroyed: false, removals: [],
-                destroy() { this.destroyed = true; },
-                removeFiles(options) { this.removals.push(options); },
-            };
-            ponds.push(pond);
-            return pond;
-        },
+    const win = {FilePond: {find() {}, create(field, options) {
+        const pond = {element: field, options, destroyed: false, removals: [],
+            destroy() { this.destroyed = true; }, removeFiles(options) { this.removals.push(options); }};
+        ponds.push(pond); return pond;
+    }}};
+    let controller, active = true, cleanups = [];
+    const boot = () => {
+        active = true;
+        if (!controller) controller = mountUpload({
+            root: {querySelector: () => page.field}, alive: () => active,
+            component: () => active ? components.get(page.id) : null,
+            on: (name, callback) => { listeners[name] = callback; }, cleanup: callback => cleanups.push(callback),
+        }, {input: '#fixture', property: 'referenceAudio', maxSize: '20MB', remove: 'removeReferenceAudio', clear: 'ctts-reference-audio-cleared'}, win);
+        controller.update();
     };
-    const window = { FilePond, Livewire: {
-        find: id => components.get(id),
-        hook: (name, callback) => { hooks[name] = callback; },
-        on: (name, callback) => { listeners[name] = callback; },
-    } };
-    const document = {
-        getElementById: () => page.field,
-        querySelector: () => page.host ? { closest: () => page.host } : null,
-        addEventListener: (name, callback) => { events[name] = callback; },
-    };
-    vm.runInNewContext(script, { window, document, FilePond,
-        FilePondPluginFileValidateType: {}, FilePondPluginFileValidateSize: {},
-        requestAnimationFrame: callback => callback() });
-    return { events, hooks, listeners, components, ponds, page, mount, wire };
+    events['livewire:navigating'] = () => { cleanups.forEach(fn => fn()); cleanups = []; active = false; controller?.destroy(); controller = null; };
+    events['livewire:navigated'] = boot;
+    events['livewire:initialized'] = boot;
+    hooks.morphed = boot;
+    boot();
+    return {events, hooks, listeners, components, ponds, page, mount, wire};
 }
 
 function upload(pond) {
@@ -102,7 +88,7 @@ test('selecting a saved reference releases the removed uploader and switching ba
     state.page.field = null;
     state.hooks.morphed();
     assert.equal(state.ponds[0].destroyed, true);
-    state.page.field = { isConnected: true };
+    state.page.field = { isConnected: true, dataset: {} };
     state.hooks.morphed();
     assert.equal(state.ponds.length, 2);
     upload(state.ponds[1]);

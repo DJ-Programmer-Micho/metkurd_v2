@@ -1,3 +1,4 @@
+import {loadAsset} from './v2-assets.js';
 const players = new Map();
 const pendingAudioBlobs = new Map();
 const audioCacheName = 'xomni-audio-v4';
@@ -14,6 +15,7 @@ const destroy = (jobId) => {
     const player = players.get(jobId);
     if (!player) return;
 
+    player.toggle.removeEventListener('click', player.onToggle);
     try { player.waveSurfer.destroy(); } catch (_) {}
     if (player.blobUrl) URL.revokeObjectURL(player.blobUrl);
     players.delete(jobId);
@@ -38,7 +40,7 @@ const cachedAudioBlob = async (url) => {
     })();
 
     pendingAudioBlobs.set(url, request);
-    request.finally(() => pendingAudioBlobs.delete(url));
+    request.then(() => pendingAudioBlobs.delete(url), () => pendingAudioBlobs.delete(url));
     return request;
 };
 
@@ -47,9 +49,9 @@ const loadAudio = async (jobId, player) => {
         const blob = await cachedAudioBlob(player.url);
         if (players.get(jobId) !== player) return;
         player.blobUrl = URL.createObjectURL(blob);
-        player.waveSurfer.load(player.blobUrl);
+        await player.waveSurfer.load(player.blobUrl);
     } catch (_) {
-        if (players.get(jobId) === player) player.waveSurfer.load(player.url);
+        if (players.get(jobId) === player) await player.waveSurfer.load(player.url).catch(() => {});
     }
 };
 
@@ -110,7 +112,7 @@ const mount = (scope = document) => {
             progressColor: colors.progress,
             cursorColor: colors.cursor,
         });
-        const player = { root, canvas, url, waveSurfer };
+        const player = { root, canvas, url, waveSurfer, toggle, onToggle: () => waveSurfer.playPause().catch(() => {}) };
         players.set(jobId, player);
         setLoadState(player, 'loading');
 
@@ -139,7 +141,7 @@ const mount = (scope = document) => {
             setLoadState(player, 'error', 'Audio preview could not be loaded.');
         });
 
-        toggle.addEventListener('click', () => waveSurfer.playPause());
+        toggle.addEventListener('click', player.onToggle);
         loadAudio(jobId, player);
     });
 };
@@ -195,35 +197,21 @@ window.MetKurdSpeakerPreview = {
     },
 };
 
-window.addEventListener('metkurd:wavesurfer-ready', refresh);
-document.addEventListener('livewire:navigated', refresh);
-document.addEventListener('livewire:navigating', () => {
-    window.MetKurdWaveform.destroyAll();
-    window.MetKurdSpeakerPreview.stop();
+(window.MetKurdV2Pages ||= []).push({key: 'waveforms', selector: 'body',
+    prepare: () => document.querySelector('[data-metkurd-waveform]') ? loadAsset('WaveSurfer') : undefined,
+    boot(ctx) {
+        ctx.listen(window, 'metkurd:wavesurfer-ready', refresh);
+        ctx.listen(document, 'click', event => {
+            if (event.target.closest('[wire\\:click="previousRecentRendersPage"], [wire\\:click="nextRecentRendersPage"]')) window.MetKurdWaveform.destroyAll();
+        });
+        ctx.on('ctts-reference-selected', () => { destroyCttsReferencePlayers(); window.MetKurdV2Navigation.refresh(); });
+        ctx.on('ctts-reference-audio-cleared', destroyCttsReferencePlayers);
+        const update = () => {
+            if (!window.WaveSurfer && document.querySelector('[data-metkurd-waveform]')) {
+                loadAsset('WaveSurfer').then(() => { if (ctx.alive()) refresh(); }).catch(() => {});
+            } else refresh();
+        };
+        update();
+        return {update, destroy() { window.MetKurdWaveform.destroyAll(); window.MetKurdSpeakerPreview.stop(); }};
+    },
 });
-document.addEventListener('click', (event) => {
-    if (event.target.closest('[wire\\:click="previousRecentRendersPage"], [wire\\:click="nextRecentRendersPage"]')) {
-        window.MetKurdWaveform.destroyAll();
-    }
-});
-document.addEventListener('livewire:init', () => {
-    if (typeof window.Livewire?.hook !== 'function') return;
-
-    window.Livewire.hook('commit', ({ succeed }) => {
-        succeed(() => requestAnimationFrame(refresh));
-    });
-
-    window.Livewire.on('ctts-reference-selected', () => {
-        destroyCttsReferencePlayers();
-        requestAnimationFrame(refresh);
-    });
-    window.Livewire.on('ctts-reference-audio-cleared', () => {
-        destroyCttsReferencePlayers();
-    });
-});
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', refresh, { once: true });
-} else {
-    refresh();
-}

@@ -1,5 +1,15 @@
 # MetKurd architecture
 
+## V2 browser navigation lifecycle — 2026-09-16
+
+`resources/js/v2-navigation.js` owns page mounting, morph reconciliation and
+cleanup before Livewire replaces or snapshots the page. Tool controllers register
+their root, dependency preparation and scoped listeners instead of installing
+another navigation handler. Assets wait for real load completion; FilePond inputs
+are restored synchronously before history snapshots. Bootstrap's delegated
+handlers load once. See [V2-NAVIGATION.md](V2-NAVIGATION.md) for the contract,
+destination progress colors and local verification scope.
+
 ## Cutover deployment identity — 2026-09-15
 
 PaymentDomainCutover keeps one business review/mutation algorithm. CutoverIdentity

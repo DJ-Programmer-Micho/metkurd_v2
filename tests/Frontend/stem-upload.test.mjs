@@ -11,7 +11,8 @@ function setup({ libraryReady = true, componentReady = true } = {}) {
     const state = {};
     function mount(mode) {
         const host = { getAttribute: () => `stem-${mode}` };
-        state.page = { dataset: {}, closest: () => host };
+        state.page = { dataset: {}, closest: () => host, isConnected: true, querySelectorAll: () => [],
+            querySelector: selector => selector === '#v2-stem-audio-pond' ? state.input : null, addEventListener() {} };
         state.input = {};
         const wire = { uploads: [], cancelled: [],
             upload(...args) { this.uploads.push(args); },
@@ -23,14 +24,14 @@ function setup({ libraryReady = true, componentReady = true } = {}) {
     }
     const wire = mount(2);
     if (!componentReady) components.clear();
-    const FilePond = { create(input, options) {
+    const FilePond = { find() {}, create(input, options) {
         const pond = { options, element: { isConnected: true }, destroyed: false,
             destroy() { this.destroyed = true; }, removeFiles() {},
         };
         ponds.push(pond);
         return pond;
     } };
-    const window = { Livewire: {
+    const window = { MetKurdV2Assets: {disposePond: pond => pond?.destroy()}, Livewire: {
         find: id => components.get(id),
         on: (name, callback) => { listeners[name] = callback; },
         hook: (name, callback) => { hooks[name] = callback; },
@@ -41,7 +42,19 @@ function setup({ libraryReady = true, componentReady = true } = {}) {
         querySelectorAll: () => [], getElementById: () => state.input,
         addEventListener: (name, callback) => { events[name] = callback; },
     };
-    vm.runInNewContext(script, { window, document, requestAnimationFrame: callback => callback() });
+    vm.runInNewContext(script, { window, document, AbortController });
+    let controller, cleanups = [], active = true;
+    const boot = () => {
+        active = true;
+        if (!window.FilePond || !components.get(state.page.closest().getAttribute())) return;
+        controller ||= window.MetKurdV2Pages[0].boot({root: state.page, alive: () => active,
+            component: () => active ? components.get(state.page.closest().getAttribute()) : null,
+            on: (name, cb) => {listeners[name] = cb;}, listen() {}, cleanup: cb => cleanups.push(cb)});
+        controller.update();
+    };
+    events['livewire:navigating'] = () => { cleanups.forEach(fn => fn()); cleanups = []; active = false; controller?.destroy(); controller = null; };
+    events['livewire:navigated'] = events['livewire:initialized'] = events['FilePond:loaded'] = hooks.morphed = boot;
+    boot();
     return { window, FilePond, state, events, hooks, components, ponds, wire, mount };
 }
 

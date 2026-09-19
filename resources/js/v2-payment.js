@@ -73,13 +73,21 @@ export function installPaymentUi(win = window, doc = document) {
         event.preventDefault();
         void copy(button);
     });
-    doc.addEventListener('livewire:navigating', () => {
+    const cleanup = () => {
         generation++;
         win.clearInterval(timer);
         timer = null; clock = null; expiredKey = null;
-    });
-    doc.addEventListener('livewire:navigated', initialize);
-    doc.addEventListener('DOMContentLoaded', initialize);
+    };
+    if (win.MetKurdV2Navigation) {
+        win.MetKurdV2Navigation.register({key: 'payment-clock', selector: '[data-v2-payment]', boot() {
+            initialize(); return {destroy: cleanup};
+        }});
+    } else {
+        // Standalone embedding/tests also support the normal Livewire events.
+        doc.addEventListener('livewire:navigating', cleanup);
+        doc.addEventListener('livewire:navigated', initialize);
+        doc.addEventListener('DOMContentLoaded', initialize);
+    }
     doc.addEventListener('visibilitychange', () => {
         if (doc.visibilityState === 'visible' && root()) { tick(); void recheck(); }
     });

@@ -97,6 +97,12 @@ source implementation does not authorize migrations or live agreement processing
 
 ## Latest local follow-up (2026-09-06)
 
+- V2 browser lifecycle follow-up (2026-09-16): register controllers with
+  `MetKurdV2Navigation` / `MetKurdV2Pages`; use its scoped listeners and cleanup.
+  Do not add another per-page navigation handler or reload Bootstrap on navigation.
+  Use `MetKurdV2Assets` for dependency readiness and FilePond disposal before history
+  snapshots. See [V2-NAVIGATION.md](docs/metkurd/V2-NAVIGATION.md).
+
 - The user reports all V2 services working in their service tests. Record this
   as user-reported local acceptance, not independent production or API acceptance.
 - Vector and STEM FilePond initialization must handle initial registration,

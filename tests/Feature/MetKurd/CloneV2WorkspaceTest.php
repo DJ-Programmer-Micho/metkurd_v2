@@ -307,6 +307,6 @@ it('resolves V2 service themes from configured service color on service and tool
     $customer = cloneV2Customer('themes');
     $this->actingAs($customer, 'app');
     $this->get(route('app.v2.service', ['locale' => 'en', 'service' => 'text-to-speech']))->assertOk()->assertSee('metkurd-v2--primary');
-    $this->get(route('app.v2.tool', ['locale' => 'en', 'service' => 'clone-text-to-speech', 'tool' => 'vector-2']))->assertOk()->assertSee('metkurd-v2--danger')->assertSee('wavesurfer.js@7');
+    $this->get(route('app.v2.tool', ['locale' => 'en', 'service' => 'clone-text-to-speech', 'tool' => 'vector-2']))->assertOk()->assertSee('metkurd-v2--danger')->assertSee('v2-ctts-reference-pond');
     $this->get(route('app.v2.service', ['locale' => 'en', 'service' => 'speech-to-text']))->assertOk()->assertSee('metkurd-v2--success');
 });

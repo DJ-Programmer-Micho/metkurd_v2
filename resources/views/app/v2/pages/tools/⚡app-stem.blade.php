@@ -280,7 +280,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             <div class="v2-workspace-panel v2-create-panel v2-stem-create-panel">
                 <div class="v2-panel-heading"><span>{{ __('Create separation') }}</span><small>{{ __('Upload a source track') }}</small></div>
                 <div class="v2-stem-mode mb-3"><i class="ri-git-branch-line"></i><span><strong>{{ $stems }} {{ __('Stems') }}</strong><small>{{ $stems === 2 ? __('Vocals and instrumental') : __('Vocals, drums, bass, and other') }}</small></span></div>
-                <div wire:ignore><input id="v2-stem-audio-pond" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,.flac,audio/*"></div>
+                <div wire:ignore><input id="v2-stem-audio-pond" data-upload-error="{{ __('Upload failed') }}" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,.flac,audio/*"></div>
                 <div class="v2-stem-source-preview" wire:ignore data-v2-stem-source-preview hidden><div class="v2-stem-source-preview-heading"><span class="v2-stem-source-preview-icon"><i class="ri-headphone-line"></i></span><span><strong>{{ __('Source preview') }}</strong><br><small>{{ __('Listen before starting separation') }}</small></span><span class="v2-stem-source-preview-state mx-3" data-stem-source-state>{{ __('Ready to review') }}</span></div><div class="v2-stem-source-wave" data-v2-stem-source-wave></div><audio preload="metadata" data-v2-stem-source-audio hidden></audio><div class="v2-stem-source-preview-footer"><div class="v2-stem-source-transport"><button type="button" class="v2-stem-source-play btn btn-success btn-sm mb-1" data-stem-source-toggle aria-pressed="false" aria-label="{{ __('Play source preview') }}"><i class="ri-play-fill"></i><span data-stem-source-toggle-label>{{ __('Play') }}</span></button><span class="mx-3" data-stem-source-time>00:00 / --:--</span></div><button type="button" class="btn btn-warning btn-sm" data-stem-upload-source><i class="ri-upload-cloud-2-line"></i> {{ __('Upload audio') }}</button></div><small>{{ __('Happy with this track? Upload it when you are ready.') }}</small></div>
                 @if($audioName)<div class="v2-stem-file"><i class="ri-file-music-line"></i><span><strong>{{ $audioName }}</strong><small>{{ $audioMime }} · {{ number_format((float) $audioDurationSec, 1) }}s</small></span><button type="button" wire:click="removeAudio" class="btn btn-sm btn-outline-warning">{{ __('Remove') }}</button></div>@endif
                 @error('audioFile')<small class="text-danger mt-2">{{ $message }}</small>@enderror
@@ -303,7 +303,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     </div>
 </section>
 
-@push('styles')<link href="https://unpkg.com/filepond@^4/dist/filepond.min.css" rel="stylesheet"><link href="{{ asset('app/libs/sweetalert2/sweetalert2.min.css') }}" rel="stylesheet"><style>
+@push('styles')<link href="{{ asset('app/libs/filepond/filepond.min.css') }}" rel="stylesheet"><link href="{{ asset('app/libs/sweetalert2/sweetalert2.min.css') }}" rel="stylesheet"><style>
 .metkurd-v2 .v2-stem-workspace{grid-template-columns:minmax(290px,.72fr) minmax(520px,1.55fr);align-items:start;border-color:rgba(var(--v2-accent-rgb),.42);background:linear-gradient(135deg,rgba(var(--v2-accent-rgb),.12),rgba(20,14,3,.35))}.metkurd-v2 .v2-stem-left-column{display:grid;}.metkurd-v2 .v2-stem-create-panel{min-height:0}.metkurd-v2 .v2-stem-mode,.metkurd-v2 .v2-stem-file,.metkurd-v2 .v2-stem-processing{display:flex;align-items:center;gap:.7rem;margin-top:1rem;padding:.75rem;border:1px solid rgba(var(--v2-accent-rgb),.26);border-radius:.8rem;background:rgba(var(--v2-accent-rgb),.08)}.metkurd-v2 .v2-stem-mode>i,.metkurd-v2 .v2-stem-file>i{font-size:1.25rem;color:var(--v2-accent-text)}.metkurd-v2 .v2-stem-mode span,.metkurd-v2 .v2-stem-file span{display:grid;min-width:0;flex:1}.metkurd-v2 .v2-stem-mode small,.metkurd-v2 .v2-stem-file small{color:rgba(226,232,240,.55);font-size:.69rem}.metkurd-v2 .v2-stem-history-panel{max-height:440px;overflow:auto}.metkurd-v2 .v2-stem-history-panel .v2-render-item{padding:.65rem}.metkurd-v2 .v2-stem-history-panel .v2-render-item>button{display:flex;justify-content:space-between;align-items:start;gap:.5rem;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left}.metkurd-v2 .v2-stem-history-panel .v2-render-item>button span:first-child{display:grid;gap:.16rem;min-width:0}.metkurd-v2 .v2-stem-history-panel .v2-render-item>button strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.metkurd-v2 .v2-stem-history-panel .v2-render-item>button small{color:rgba(226,232,240,.52);font-size:.65rem}.metkurd-v2 .v2-stem-history-panel .is-selected{border-color:rgba(var(--v2-accent-rgb),.8);box-shadow:0 0 0 1px rgba(var(--v2-accent-rgb),.18)}.metkurd-v2 .v2-stem-history-actions{display:flex;gap:.4rem;margin-top:.55rem}.metkurd-v2 .v2-stem-player-panel{min-height:590px}.metkurd-v2 .v2-stem-processing{color:var(--v2-accent-text)}.metkurd-v2 .v2-stem-player{margin-top:1.1rem;padding:1rem;border:1px solid rgba(var(--v2-accent-rgb),.25);border-radius:1rem;background:rgba(2,6,23,.4)}.metkurd-v2 .v2-stem-transport{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}.metkurd-v2 .v2-stem-timeline{display:grid;grid-template-columns:45px minmax(0,1fr) 45px;align-items:center;gap:.65rem;margin:1rem 0;color:rgba(226,232,240,.62);font-size:.7rem;font-variant-numeric:tabular-nums}.metkurd-v2 .v2-stem-timeline input{width:100%;accent-color:rgb(var(--v2-accent-rgb))}.metkurd-v2 .v2-stem-track-list{display:grid;gap:.65rem}.metkurd-v2 .v2-stem-track{display:grid;grid-template-columns:minmax(120px,1fr) auto;align-items:center;padding:.75rem;border:1px solid rgba(148,163,184,.18);border-radius:.8rem;background:linear-gradient(120deg,rgba(15,23,42,.8),rgba(var(--v2-accent-rgb),.06))}.metkurd-v2 .v2-stem-track.is-solo{border-color:rgba(var(--v2-accent-rgb),.85);box-shadow:0 0 0 1px rgba(var(--v2-accent-rgb),.15)}.metkurd-v2 .v2-stem-track.is-muted{opacity:.6}.metkurd-v2 .v2-stem-track-identity{display:flex;align-items:center;gap:.55rem;min-width:0}.metkurd-v2 .v2-stem-track-identity i{color:var(--v2-accent-text);font-size:1.15rem}.metkurd-v2 .v2-stem-track-identity strong{font-size:.78rem}.metkurd-v2 .v2-stem-track-actions{display:flex;align-items:center;gap:.35rem}.metkurd-v2 .v2-stem-track-actions button,.metkurd-v2 .v2-stem-track-actions a{display:grid;place-items:center;min-width:2rem;height:2rem;padding:0 .45rem;border:1px solid rgba(148,163,184,.26);border-radius:.5rem;background:rgba(2,6,23,.35);color:#e2e8f0;font-size:.68rem;text-decoration:none}.metkurd-v2 .v2-stem-track-actions button:first-child{color:var(--v2-accent-text);border-color:rgba(var(--v2-accent-rgb),.58)}.metkurd-v2 .v2-stem-track-actions button[aria-pressed="true"]{border-color:rgba(var(--v2-accent-rgb),.86);background:rgba(var(--v2-accent-rgb),.22);color:#fff}.metkurd-v2 .v2-stem-track-meter{grid-column:1/-1;height:15px;display:flex;align-items:center;gap:3px;overflow:hidden;color:rgba(var(--v2-accent-rgb),.8)}.metkurd-v2 .v2-stem-track-meter i{width:4px;height:5px;border-radius:99px;background:currentColor;opacity:.35}.metkurd-v2 .v2-stem-track.is-playing .v2-stem-track-meter i{opacity:.9;animation:v2StemMeter .8s ease-in-out infinite alternate}.metkurd-v2 .v2-stem-track.is-playing .v2-stem-track-meter i:nth-child(2n){height:13px;animation-delay:.12s}.metkurd-v2 .v2-stem-track.is-playing .v2-stem-track-meter i:nth-child(3n){height:9px;animation-delay:.26s}@keyframes v2StemMeter{to{transform:scaleY(.35);opacity:.45}}.metkurd-v2 .v2-stem-empty{min-height:420px;display:grid;place-items:center;align-content:center;gap:.7rem;text-align:center}.metkurd-v2 .v2-stem-empty i{font-size:3rem;color:rgba(var(--v2-accent-rgb),.6)}.metkurd-v2--stem .v2-stem-page .btn-warning{border-color:#f97316;background:#f97316;color:#fff}.metkurd-v2--stem .v2-stem-page .btn-warning:hover,.metkurd-v2--stem .v2-stem-page .btn-warning:focus{border-color:#ea580c;background:#ea580c;color:#fff}.metkurd-v2--stem .v2-stem-page .btn-outline-warning{border-color:rgba(var(--v2-accent-rgb),.72);color:var(--v2-accent-text)}.metkurd-v2--stem .v2-stem-page .btn-outline-warning:hover{border-color:#f97316;background:rgba(var(--v2-accent-rgb),.18);color:#fff}.metkurd-v2--stem .v2-stem-page .glass-load--warning{--glass-accent:rgba(var(--v2-accent-rgb),.2);border-color:rgba(var(--v2-accent-rgb),.34)}@media(max-width:991.98px){.metkurd-v2 .v2-stem-workspace{grid-template-columns:1fr}.metkurd-v2 .v2-stem-left-column{grid-template-columns:1fr 1fr}.metkurd-v2 .v2-stem-history-panel{max-height:none}}@media(max-width:575.98px){.metkurd-v2 .v2-stem-left-column{grid-template-columns:1fr}.metkurd-v2 .v2-stem-transport .ms-auto{margin-left:0!important}.metkurd-v2 .v2-stem-track{grid-template-columns:1fr}.metkurd-v2 .v2-stem-track-actions{justify-content:space-between}.metkurd-v2 .v2-stem-player-panel{min-height:0}}
 </style>
 <style>
@@ -335,16 +335,20 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 .metkurd-v2 .v2-stem-wave{background:linear-gradient(135deg,rgba(2,6,23,.6),rgba(var(--v2-accent-rgb),.06))}.metkurd-v2 .v2-stem-track-actions button:hover,.metkurd-v2 .v2-stem-track-actions a:hover{border-color:rgba(var(--v2-accent-rgb),.7);background:rgba(var(--v2-accent-rgb),.15);color:#fff}
 </style>@endpush
 
-@push('scripts')<script data-navigate-once src="https://unpkg.com/filepond@^4/dist/filepond.min.js"></script><script data-navigate-once src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script><script data-navigate-once>
-(() => {
+@push('scripts')<script data-navigate-once>
+(window.MetKurdV2Pages ||= []).push({key: 'stem', selector: '.v2-stem-page',
+    prepare: () => Promise.all([window.MetKurdV2Assets.filePond(), window.MetKurdV2Assets.load('WaveSurfer')]),
+    boot(ctx) {
     let messagesRoot, messages = {};
-    const t = key => { const root = document.querySelector('.v2-stem-page'); if (root !== messagesRoot) { messagesRoot = root; messages = JSON.parse(root?.dataset.stemMessages || '{}'); } return messages[key] || key; };
+    const t = key => { const root = ctx.root; if (root !== messagesRoot) { messagesRoot = root; messages = JSON.parse(root?.dataset.stemMessages || '{}'); } return messages[key] || key; };
     const format = seconds => { seconds = Math.max(0, Math.floor(seconds || 0)); return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`; };
     const mountedPlayers = new Set();
     const bootPlayer = root => {
         if (!root || root.dataset.stemBound || !window.WaveSurfer) return;
         root.dataset.stemBound = '1';
         mountedPlayers.add(root);
+        const controller = new AbortController();
+        const listen = (target, name, callback, options = {}) => target?.addEventListener(name, callback, {...options, signal: controller.signal});
         const rows = [...root.querySelectorAll('[data-stem-track]')].map(row => ({
             row, wave: row.querySelector('[data-stem-wave]'), audio: row.querySelector('[data-stem-audio]'),
             url: row.querySelector('[data-stem-wave]')?.dataset.url || row.querySelector('[data-stem-audio]')?.dataset.src,
@@ -366,7 +370,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         const sync = time => rows.forEach(track => { if (Math.abs(timeOf(track) - time) > .04) seek(track, time); });
         const update = () => { if (destroyed || !master || seeking) return; const time = timeOf(master) || 0; if (timeline) timeline.value = String(time); if (current) current.textContent = format(time); rows.forEach(track => { if (isPlaying(track) && Math.abs(timeOf(track) - time) > .05) seek(track, time); track.row.classList.toggle('is-playing', isPlaying(track)); track.toggle.querySelector('i').className = isPlaying(track) ? 'ri-pause-fill' : 'ri-play-fill'; if (track.time) track.time.textContent = format(timeOf(track)); }); const playing = rows.some(isPlaying); if (playAll) { playAll.querySelector('span').textContent = playing ? t('Pause All') : t('Play All'); playAll.querySelector('i').className = playing ? 'ri-pause-fill' : 'ri-play-fill'; } };
         const bindPlayer = track => {
-            const ready = () => { updateDuration(); seek(track, timeOf(master) || 0); update(); };
+            const ready = () => { if (destroyed) return; updateDuration(); seek(track, timeOf(master) || 0); update(); };
             const tick = () => { if (track === master) update(); };
             const finished = () => { if (track === master) { rows.forEach(pause); sync(maxDuration()); update(); } };
             try {
@@ -374,6 +378,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                 track.player.on('ready', ready); track.player.on('timeupdate', tick); track.player.on('play', update); track.player.on('pause', update); track.player.on('finish', finished);
                 track.player.on('interaction', time => { master = track; seeking = true; sync(Number(time) || timeOf(track)); seeking = false; update(); });
                 track.player.on('error', () => {
+                    if (destroyed) return;
                     // WaveSurfer needs CORS for direct object-storage fetches.
                     // Retain a per-track proxy fallback for installations whose
                     // bucket CORS has not been configured yet.
@@ -382,31 +387,32 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                         track.player = null; track.proxyTried = true; track.url = track.fallbackUrl;
                         bindPlayer(track); return;
                     }
-                    try { track.player.destroy(); } catch (_) {} track.player = null; track.audio.src = track.url; track.audio.addEventListener('loadedmetadata', ready, { once: true }); track.audio.addEventListener('timeupdate', tick); track.audio.addEventListener('play', update); track.audio.addEventListener('pause', update); track.audio.addEventListener('ended', finished); track.audio.load();
+                    try { track.player.destroy(); } catch (_) {} track.player = null; track.audio.src = track.url; listen(track.audio, 'loadedmetadata', ready, { once: true }); listen(track.audio, 'timeupdate', tick); listen(track.audio, 'play', update); listen(track.audio, 'pause', update); listen(track.audio, 'ended', finished); track.audio.load();
                 });
-            } catch (_) { track.audio.src = track.url; track.audio.addEventListener('loadedmetadata', ready, { once: true }); track.audio.addEventListener('timeupdate', tick); track.audio.load(); }
+            } catch (_) { track.audio.src = track.url; listen(track.audio, 'loadedmetadata', ready, { once: true }); listen(track.audio, 'timeupdate', tick); track.audio.load(); }
         };
-        rows.forEach(track => { bindPlayer(track); track.toggle.addEventListener('click', async () => { master = track; if (isPlaying(track)) pause(track); else { sync(timeOf(track) || 0); await play(track).catch(() => {}); } update(); }); track.mute.addEventListener('click', () => { track.mute.setAttribute('aria-pressed', track.mute.getAttribute('aria-pressed') !== 'true'); updateVolumes(); }); track.solo.addEventListener('click', () => { track.solo.setAttribute('aria-pressed', track.solo.getAttribute('aria-pressed') !== 'true'); updateVolumes(); }); });
-        playAll?.addEventListener('click', async () => { const active = rows.some(isPlaying); if (active) rows.forEach(pause); else { master ||= rows[0]; const time = timeOf(master) || 0; sync(time); await Promise.all(rows.map(track => play(track).catch(() => {}))); } update(); });
-        stopAll?.addEventListener('click', () => { rows.forEach(track => pause(track)); sync(0); update(); });
-        timeline?.addEventListener('input', () => { seeking = true; const time = Number(timeline.value); sync(time); if (current) current.textContent = format(time); }); timeline?.addEventListener('change', () => { seeking = false; update(); });
-        root.__stemDestroy = () => { destroyed = true; mountedPlayers.delete(root); rows.forEach(track => { pause(track); try { track.player?.destroy(); } catch (_) {} }); delete root.dataset.stemBound; delete root.__stemDestroy; };
+        rows.forEach(track => { bindPlayer(track); listen(track.toggle, 'click', async () => { master = track; if (isPlaying(track)) pause(track); else { sync(timeOf(track) || 0); await play(track).catch(() => {}); } update(); }); listen(track.mute, 'click', () => { track.mute.setAttribute('aria-pressed', track.mute.getAttribute('aria-pressed') !== 'true'); updateVolumes(); }); listen(track.solo, 'click', () => { track.solo.setAttribute('aria-pressed', track.solo.getAttribute('aria-pressed') !== 'true'); updateVolumes(); }); });
+        listen(playAll, 'click', async () => { const active = rows.some(isPlaying); if (active) rows.forEach(pause); else { master ||= rows[0]; const time = timeOf(master) || 0; sync(time); await Promise.all(rows.map(track => play(track).catch(() => {}))); } update(); });
+        listen(stopAll, 'click', () => { rows.forEach(track => pause(track)); sync(0); update(); });
+        listen(timeline, 'input', () => { seeking = true; const time = Number(timeline.value); sync(time); if (current) current.textContent = format(time); }); listen(timeline, 'change', () => { seeking = false; update(); });
+        root.__stemDestroy = () => { destroyed = true; controller.abort(); mountedPlayers.delete(root); rows.forEach(track => { pause(track); try { track.player?.destroy(); } catch (_) {} }); delete root.dataset.stemBound; delete root.__stemDestroy; };
         updateVolumes();
     };
     const destroyPlayers = () => [...mountedPlayers].forEach(root => root.__stemDestroy?.());
-    const boot = () => { [...mountedPlayers].filter(root => !root.isConnected).forEach(root => root.__stemDestroy?.()); document.querySelectorAll('[data-v2-stem-player]').forEach(bootPlayer); };
-    let pond, pondHost, clearing = false, sourcePreviewUrl = null, sourcePreviewWave = null;
-    const componentRoot = () => document.querySelector('.v2-stem-page')?.closest('[wire\\:id]');
-    const component = () => { const root = componentRoot(); return root ? window.Livewire?.find(root.getAttribute('wire:id')) : null; };
-    const setSourcePreviewState = (state, label) => { const preview = document.querySelector('[data-v2-stem-source-preview]'), status = document.querySelector('[data-stem-source-state]'), upload = document.querySelector('[data-stem-upload-source]'); if (!preview) return; preview.classList.toggle('is-uploading', state === 'uploading'); preview.classList.toggle('is-uploaded', state === 'uploaded'); if (status) status.textContent = label; if (upload) { upload.disabled = state === 'uploading' || state === 'uploaded'; upload.innerHTML = state === 'uploaded' ? '<i class="ri-checkbox-circle-line"></i> '+t('Uploaded') : state === 'uploading' ? '<span class="spinner-border spinner-border-sm"></span> '+t('Uploading…') : '<i class="ri-upload-cloud-2-line"></i> '+t('Upload audio'); } };
-    const updateSourcePreviewTransport = () => { const toggle = document.querySelector('[data-stem-source-toggle]'), time = document.querySelector('[data-stem-source-time]'), audio = document.querySelector('[data-v2-stem-source-audio]'); const player = sourcePreviewWave || audio; if (!player) return; const current = sourcePreviewWave ? sourcePreviewWave.getCurrentTime() : audio.currentTime; const duration = sourcePreviewWave ? sourcePreviewWave.getDuration() : audio.duration; if (time) time.textContent = `${format(current)} / ${Number.isFinite(duration) ? format(duration) : '--:--'}`; if (toggle) { const playing = sourcePreviewWave ? sourcePreviewWave.isPlaying() : !audio.paused; toggle.querySelector('i').className = playing ? 'ri-pause-fill' : 'ri-play-fill'; toggle.querySelector('[data-stem-source-toggle-label]').textContent = playing ? t('Pause') : t('Play'); toggle.setAttribute('aria-pressed', playing ? 'true' : 'false'); toggle.setAttribute('aria-label', playing ? t('Pause source preview') : t('Play source preview')); } };
-    const clearSourcePreview = () => { const preview = document.querySelector('[data-v2-stem-source-preview]'), audio = document.querySelector('[data-v2-stem-source-audio]'), wave = document.querySelector('[data-v2-stem-source-wave]'); try { sourcePreviewWave?.destroy(); } catch (_) {} sourcePreviewWave = null; if (wave) wave.replaceChildren(); if (audio) { audio.pause(); audio.removeAttribute('src'); audio.hidden = true; audio.load(); } if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl); sourcePreviewUrl = null; if (preview) { preview.hidden = true; preview.classList.remove('is-uploading', 'is-uploaded'); } };
-    const previewSourceFile = file => { if (!file) return; clearSourcePreview(); const preview = document.querySelector('[data-v2-stem-source-preview]'), audio = document.querySelector('[data-v2-stem-source-audio]'), wave = document.querySelector('[data-v2-stem-source-wave]'); if (!preview || !audio || !wave) return; sourcePreviewUrl = URL.createObjectURL(file); preview.hidden = false; setSourcePreviewState('ready', t('Ready to review')); if (!window.WaveSurfer) { audio.src = sourcePreviewUrl; audio.hidden = false; audio.addEventListener('loadedmetadata', updateSourcePreviewTransport, { once: true }); audio.addEventListener('timeupdate', updateSourcePreviewTransport); audio.addEventListener('play', updateSourcePreviewTransport); audio.addEventListener('pause', updateSourcePreviewTransport); return; } try { sourcePreviewWave = window.WaveSurfer.create({ container: wave, url: sourcePreviewUrl, height: 58, waveColor: 'rgba(249,115,22,.36)', progressColor: '#f97316', cursorColor: '#fed7aa', cursorWidth: 2, barWidth: 2, barGap: 2, barRadius: 2, normalize: true, interact: true, autoScroll: false }); sourcePreviewWave.on('ready', updateSourcePreviewTransport); sourcePreviewWave.on('timeupdate', updateSourcePreviewTransport); sourcePreviewWave.on('play', updateSourcePreviewTransport); sourcePreviewWave.on('pause', updateSourcePreviewTransport); sourcePreviewWave.on('finish', updateSourcePreviewTransport); sourcePreviewWave.on('error', () => { try { sourcePreviewWave?.destroy(); } catch (_) {} sourcePreviewWave = null; audio.src = sourcePreviewUrl; audio.hidden = false; audio.addEventListener('loadedmetadata', updateSourcePreviewTransport, { once: true }); }); } catch (_) { audio.src = sourcePreviewUrl; audio.hidden = false; audio.addEventListener('loadedmetadata', updateSourcePreviewTransport, { once: true }); } };
+    const boot = () => { [...mountedPlayers].filter(root => !root.isConnected).forEach(root => root.__stemDestroy?.()); ctx.root.querySelectorAll('[data-v2-stem-player]').forEach(bootPlayer); };
+    let pond, pondHost, uploading = false, clearing = false, sourcePreviewUrl = null, sourcePreviewWave = null;
+    const componentRoot = () => ctx.root.closest('[wire\\:id]');
+    const component = ctx.component;
+    const setSourcePreviewState = (state, label) => { const preview = ctx.root.querySelector('[data-v2-stem-source-preview]'), status = ctx.root.querySelector('[data-stem-source-state]'), upload = ctx.root.querySelector('[data-stem-upload-source]'); if (!preview) return; preview.classList.toggle('is-uploading', state === 'uploading'); preview.classList.toggle('is-uploaded', state === 'uploaded'); if (status) status.textContent = label; if (upload) { upload.disabled = state === 'uploading' || state === 'uploaded'; upload.innerHTML = state === 'uploaded' ? '<i class="ri-checkbox-circle-line"></i> '+t('Uploaded') : state === 'uploading' ? '<span class="spinner-border spinner-border-sm"></span> '+t('Uploading…') : '<i class="ri-upload-cloud-2-line"></i> '+t('Upload audio'); } };
+    const updateSourcePreviewTransport = () => { const toggle = ctx.root.querySelector('[data-stem-source-toggle]'), time = ctx.root.querySelector('[data-stem-source-time]'), audio = ctx.root.querySelector('[data-v2-stem-source-audio]'); const player = sourcePreviewWave || audio; if (!player) return; const current = sourcePreviewWave ? sourcePreviewWave.getCurrentTime() : audio.currentTime; const duration = sourcePreviewWave ? sourcePreviewWave.getDuration() : audio.duration; if (time) time.textContent = `${format(current)} / ${Number.isFinite(duration) ? format(duration) : '--:--'}`; if (toggle) { const playing = sourcePreviewWave ? sourcePreviewWave.isPlaying() : !audio.paused; toggle.querySelector('i').className = playing ? 'ri-pause-fill' : 'ri-play-fill'; toggle.querySelector('[data-stem-source-toggle-label]').textContent = playing ? t('Pause') : t('Play'); toggle.setAttribute('aria-pressed', playing ? 'true' : 'false'); toggle.setAttribute('aria-label', playing ? t('Pause source preview') : t('Play source preview')); } };
+    const clearSourcePreview = () => { const preview = ctx.root.querySelector('[data-v2-stem-source-preview]'), audio = ctx.root.querySelector('[data-v2-stem-source-audio]'), wave = ctx.root.querySelector('[data-v2-stem-source-wave]'); try { sourcePreviewWave?.destroy(); } catch (_) {} sourcePreviewWave = null; if (wave) wave.replaceChildren(); if (audio) { audio.pause(); audio.removeAttribute('src'); audio.hidden = true; audio.load(); } if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl); sourcePreviewUrl = null; if (preview) { preview.hidden = true; preview.classList.remove('is-uploading', 'is-uploaded'); } };
+    const previewSourceFile = file => { if (!file) return; clearSourcePreview(); const preview = ctx.root.querySelector('[data-v2-stem-source-preview]'), audio = ctx.root.querySelector('[data-v2-stem-source-audio]'), wave = ctx.root.querySelector('[data-v2-stem-source-wave]'); if (!preview || !audio || !wave) return; sourcePreviewUrl = URL.createObjectURL(file); preview.hidden = false; setSourcePreviewState('ready', t('Ready to review')); if (!window.WaveSurfer) { audio.src = sourcePreviewUrl; audio.hidden = false; audio.addEventListener('loadedmetadata', updateSourcePreviewTransport, { once: true }); audio.addEventListener('timeupdate', updateSourcePreviewTransport); audio.addEventListener('play', updateSourcePreviewTransport); audio.addEventListener('pause', updateSourcePreviewTransport); return; } try { sourcePreviewWave = window.WaveSurfer.create({ container: wave, url: sourcePreviewUrl, height: 58, waveColor: 'rgba(249,115,22,.36)', progressColor: '#f97316', cursorColor: '#fed7aa', cursorWidth: 2, barWidth: 2, barGap: 2, barRadius: 2, normalize: true, interact: true, autoScroll: false }); sourcePreviewWave.on('ready', updateSourcePreviewTransport); sourcePreviewWave.on('timeupdate', updateSourcePreviewTransport); sourcePreviewWave.on('play', updateSourcePreviewTransport); sourcePreviewWave.on('pause', updateSourcePreviewTransport); sourcePreviewWave.on('finish', updateSourcePreviewTransport); sourcePreviewWave.on('error', () => { if (!ctx.alive()) return; try { sourcePreviewWave?.destroy(); } catch (_) {} sourcePreviewWave = null; audio.src = sourcePreviewUrl; audio.hidden = false; audio.addEventListener('loadedmetadata', updateSourcePreviewTransport, { once: true }); }); } catch (_) { audio.src = sourcePreviewUrl; audio.hidden = false; audio.addEventListener('loadedmetadata', updateSourcePreviewTransport, { once: true }); } };
     const notifyUploadComplete = () => window.dispatchEvent(new CustomEvent('alert', { detail: { type: 'success', message: t('Audio uploaded') } }));
     const bootPond = () => {
-        const input = document.getElementById('v2-stem-audio-pond');
+        const input = ctx.root.querySelector('#v2-stem-audio-pond');
         if (!input || pond || !window.FilePond || !component()) return;
         pondHost = componentRoot();
+        window.MetKurdV2Assets.disposePond(window.FilePond.find(input));
         pond = window.FilePond.create(input, {
             allowMultiple: false,
             allowReplace: true,
@@ -427,17 +433,18 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                         return { abort };
                     }
 
+                    uploading = true;
                     lw.upload(
                         'audioFile',
                         file,
-                        temporaryName => load(temporaryName),
-                        () => error(t('Upload failed')),
-                        event => progress(event.lengthComputable, event.loaded, event.total),
+                        temporaryName => { uploading = false; if (ctx.alive()) load(temporaryName); },
+                        () => { uploading = false; if (ctx.alive()) error(t('Upload failed')); },
+                        event => { if (ctx.alive()) progress(event.lengthComputable, event.loaded, event.total); },
                     );
 
                     return {
                         abort: () => {
-                            lw.cancelUpload('audioFile');
+                            uploading = false; lw.cancelUpload('audioFile');
                             abort();
                         },
                     };
@@ -446,22 +453,22 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                     if (clearing) { load(); return; }
                     const lw = component();
                     if (!lw) { error(t('Upload failed')); return; }
-                    Promise.resolve(lw.call('removeAudio')).then(load, () => error(t('Upload failed')));
+                    Promise.resolve(lw.call('removeAudio')).then(load, () => { uploading = false; if (ctx.alive()) error(t('Upload failed')); });
                 },
             },
         });
     };
-    const destroyPond = () => { if (!pond) return; clearing = true; try { pond.destroy(); } finally { pond = undefined; pondHost = null; clearing = false; clearSourcePreview(); } };
-    const reconcile = () => requestAnimationFrame(() => {
+    const destroyPond = () => { if (!pond) return; clearing = true; try { window.MetKurdV2Assets.disposePond(pond); } finally { pond = undefined; pondHost = null; clearing = false; clearSourcePreview(); } };
+    const reconcile = () => {
+        if (!ctx.alive()) return;
         if (pond && (pondHost !== componentRoot() || pond.element?.isConnected === false)) destroyPond();
         boot(); bootPond();
-    });
-    const bind = () => { if (!window.Livewire || window.__metKurdStemV2Bound) return; window.__metKurdStemV2Bound = true; window.Livewire.on('stem-v2-audio-cleared', () => { if (pond) { clearing = true; try { pond.removeFiles({ revert: false }); } finally { clearing = false; } } clearSourcePreview(); }); window.Livewire.hook('morphed', reconcile); window.Livewire.hook('morph.removed', () => { [...mountedPlayers].filter(root => !root.isConnected).forEach(root => root.__stemDestroy?.()); }); };
-    document.addEventListener('click', event => { const sourceToggle = event.target.closest('[data-stem-source-toggle]'); if (sourceToggle) { if (sourcePreviewWave) sourcePreviewWave.playPause(); else { const audio = document.querySelector('[data-v2-stem-source-audio]'); if (audio) audio.paused ? audio.play().catch(() => {}) : audio.pause(); } return; } const upload = event.target.closest('[data-stem-upload-source]'); if (!upload || !pond) return; const files = pond.getFiles().filter(file => !file.archived); if (!files.length) return; setSourcePreviewState('uploading', t('Uploading audio…')); pond.processFiles().catch(() => setSourcePreviewState('ready', t('Ready to retry upload'))); });
-    document.addEventListener('livewire:navigated', () => { bind(); reconcile(); });
-    document.addEventListener('livewire:initialized', () => { bind(); reconcile(); });
-    document.addEventListener('FilePond:loaded', reconcile);
-    document.addEventListener('livewire:navigating', () => { destroyPlayers(); destroyPond(); });
-    bind(); reconcile();
-})();
+    };
+    ctx.on('stem-v2-audio-cleared', () => { if (pond) { clearing = true; try { pond.removeFiles({ revert: false }); } finally { clearing = false; } } clearSourcePreview(); });
+    ctx.listen(ctx.root, 'click', event => { const sourceToggle = event.target.closest('[data-stem-source-toggle]'); if (sourceToggle) { if (sourcePreviewWave) sourcePreviewWave.playPause(); else { const audio = ctx.root.querySelector('[data-v2-stem-source-audio]'); if (audio) audio.paused ? audio.play().catch(() => {}) : audio.pause(); } return; } const upload = event.target.closest('[data-stem-upload-source]'); if (!upload || !pond) return; const files = pond.getFiles().filter(file => !file.archived); if (!files.length) return; setSourcePreviewState('uploading', t('Uploading audio…')); pond.processFiles().catch(() => setSourcePreviewState('ready', t('Ready to retry upload'))); });
+    const owner = component();
+    ctx.cleanup(() => { if (uploading) owner?.cancelUpload('audioFile'); uploading = false; });
+    reconcile();
+    return {update: reconcile, destroy: () => { destroyPlayers(); destroyPond(); clearSourcePreview(); }};
+}});
 </script>@endpush

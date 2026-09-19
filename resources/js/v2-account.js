@@ -47,27 +47,14 @@ export async function initializeAccountPhone(root, phoneLibrary) {
 
 if (typeof document !== 'undefined') {
     installPurchaseRefresh();
-    const initialize = () => {
-        const root = document.querySelector('[data-v2-profile]');
-        initializeAccountPhone(root, window.MetIntlTelInput).catch(() => {
-            const error = root?.querySelector('#profile_phone_number_client_error');
-            if (error) {
-                error.textContent = JSON.parse(root.dataset.phoneConfig || '{}').assetErrorMessage || '';
-                error.style.display = 'block';
-            }
+    (window.MetKurdV2Pages ||= []).push({key: 'account-phone', selector: '[data-v2-profile]', boot(ctx) {
+        const initialize = () => initializeAccountPhone(ctx.root, window.MetIntlTelInput).catch(() => {
+            if (!ctx.alive()) return;
+            const error = ctx.root.querySelector('#profile_phone_number_client_error');
+            if (error) { error.textContent = JSON.parse(ctx.root.dataset.phoneConfig || '{}').assetErrorMessage || ''; error.style.display = 'block'; }
         });
-    };
-    for (const event of ['DOMContentLoaded', 'livewire:navigated', 'met:intl-tel-input-ready']) {
-        document.addEventListener(event, initialize);
-    }
-    document.addEventListener('livewire:navigating', () => {
-        // Destroy while the old input is still attached to its document.
-        window.MetIntlTelInput?.destroy('v2-profile-phone');
-    });
-    document.addEventListener('livewire:init', () => {
-        window.Livewire.hook('morphed', ({ el }) => {
-            if (el?.matches?.('[data-v2-profile]')) initialize();
-        });
-    });
-    initialize();
+        ctx.listen(document, 'met:intl-tel-input-ready', initialize);
+        initialize();
+        return {update: initialize, destroy: () => window.MetIntlTelInput?.destroy('v2-profile-phone')};
+    }});
 }

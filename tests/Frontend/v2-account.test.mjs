@@ -30,12 +30,15 @@ test('destroys the old phone widget before navigation replaces its DOM', async (
     const calls = [];
     const root = {dataset:{},querySelector:()=>null};
     const source = readFileSync(new URL('../../resources/js/v2-account.js', import.meta.url), 'utf8').replaceAll('export ', '');
+    const win = {addEventListener:()=>{}, MetIntlTelInput:{init:async()=>calls.push('init'),destroy:key=>calls.push(`destroy:${key}`)}};
     runInNewContext(source, {
         document: {querySelector:()=>root, addEventListener:(name, handler)=>events.set(name,handler)},
-        window: {addEventListener:()=>{}, MetIntlTelInput:{init:async()=>calls.push('init'),destroy:key=>calls.push(`destroy:${key}`)}},
+        window: win,
     });
-    events.get('livewire:navigating')();
-    events.get('livewire:navigated')();
+    const definition = win.MetKurdV2Pages[0];
+    const context = {root, alive: () => true, listen() {}};
+    definition.boot(context).destroy();
+    definition.boot(context);
     assert.deepEqual(calls, ['init','destroy:v2-profile-phone','init']);
 });
 

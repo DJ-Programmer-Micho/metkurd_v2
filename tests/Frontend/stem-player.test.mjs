@@ -50,7 +50,13 @@ function setup() {
         querySelectorAll: () => root.isConnected ? [root] : [], getElementById: () => null,
         addEventListener: (name, callback) => { events[name] = callback; },
     };
-    vm.runInNewContext(script, { window, document, requestAnimationFrame: callback => callback() });
+    page.closest = () => null;
+    page.querySelectorAll = () => root.isConnected ? [root] : [];
+    vm.runInNewContext(script, { window, document, AbortController });
+    const controller = window.MetKurdV2Pages[0].boot({root: page, alive: () => true, component: () => null,
+        on() {}, listen() {}, cleanup() {}});
+    hooks.morphed = hooks['morph.removed'] = controller.update;
+    events['livewire:navigating'] = controller.destroy;
     return { root, tracks, all, stop, timeline, hooks, events, players };
 }
 

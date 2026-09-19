@@ -1,5 +1,16 @@
 # Architectural and behavioral decisions
 
+## Shared V2 navigation ownership — 2026-09-16
+
+Centralize page boot/cleanup and destination progress colors in a small registry.
+Wait for actual FilePond/plugin/WaveSurfer readiness, retain the owning Livewire
+temporary-upload interface and cancel on disposal. Restore FilePond's original
+input before Livewire caches the page, then release its instance. Scope OCR PDF
+work and events to the mounted page; discard late completion after navigation.
+Load Bootstrap's delegated handlers once and dispose page dropdown instances.
+No tool submission, credit, billing or rollout policy changes. Local tests and
+browser verification are recorded in [V2-NAVIGATION.md](V2-NAVIGATION.md).
+
 ## V2 subscription callback preflight — 2026-09-16
 
 Validate recurring FIB callback configuration before creating V2 service checkout
