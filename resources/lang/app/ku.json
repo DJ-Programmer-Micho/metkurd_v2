@@ -1815,5 +1815,8 @@
     "The project exceeds the total character limit.": "پڕۆژەکە لە کۆی سنووری پیتەکان زیاترە.",
     "The audio project failed. No partial audio was saved.": "پڕۆژەی دەنگی سەرکەوتوو نەبوو. هیچ دەنگێکی ناتەواو پاشەکەوت نەکرا.",
     "The project references exceed the size limit.": "دەنگە نموونەکانی پڕۆژەکە لە سنووری قەبارە زیاترە.",
-    "Your concurrent job limit has been reached. Wait for the current project to finish.": "گەیشتوویتە سنووری کارە هاوکاتەکان. چاوەڕێی تەواوبوونی پڕۆژەی ئێستا بکە."
+    "Your concurrent job limit has been reached. Wait for the current project to finish.": "گەیشتوویتە سنووری کارە هاوکاتەکان. چاوەڕێی تەواوبوونی پڕۆژەی ئێستا بکە.",
+    "Choose a voice for segment :number": "دەنگێک بۆ بەشی :number هەڵبژێرە",
+    "Add a segment to choose its voice.": "بەشێک زیاد بکە بۆ هەڵبژاردنی دەنگەکەی.",
+    "Preview and choose a voice": "گوێ لە دەنگ بگرە و هەڵیبژێرە"
 }

@@ -1,7 +1,10 @@
 export function mountSegments(ctx) {
-    let dragged = null;
+    let dragged = null, pending = false;
+    ctx.on('multi-speaker-voice-picker', () => {
+        ctx.root.querySelector('#multi-speaker-voice-picker')?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    });
     ctx.listen(ctx.root, 'dragstart', event => {
-        if (!event.target.closest('[data-segment-handle]')) return;
+        if (pending || !event.target.closest('[data-segment-handle]')) return;
         dragged = event.target.closest('[data-segment-id]')?.dataset.segmentId;
         if (dragged) event.dataTransfer?.setData('text/plain', dragged);
     });
@@ -10,13 +13,18 @@ export function mountSegments(ctx) {
     });
     ctx.listen(ctx.root, 'drop', event => {
         const target = event.target.closest('[data-segment-id]')?.dataset.segmentId;
-        if (!dragged || !target || dragged === target) return;
+        if (pending || !dragged || !target || dragged === target) return;
         event.preventDefault();
         const ids = Array.from(ctx.root.querySelectorAll('[data-segment-id]'), row => row.dataset.segmentId);
         const from = ids.indexOf(dragged), to = ids.indexOf(target);
         if (from >= 0 && to >= 0) {
-            ids.splice(from, 1); ids.splice(to, 0, dragged);
-            ctx.component()?.call('reorderSegments', ids);
+            // Drop before the target; removing an earlier row changes its index.
+            ids.splice(from, 1); ids.splice(ids.indexOf(target), 0, dragged);
+            const component = ctx.component();
+            if (component) {
+                pending = true;
+                Promise.resolve(component.call('reorderSegments', ids)).finally(() => { pending = false; }).catch(() => {});
+            }
         }
         dragged = null;
     });

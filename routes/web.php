@@ -267,11 +267,11 @@ Route::prefix('{locale}')
             ->name('app.xtts.speaker.avatar');
 
         Route::get('/app/xomni/speakers/{voiceCode}/preview', [XomniSpeakerAssetController::class, 'preview'])
-            ->middleware('app.tool.access:xomni')
+            ->middleware('app.tool.access:any,xomni,zeta')
             ->name('app.xomni.speaker.preview');
 
         Route::get('/app/xomni/speakers/{voiceCode}/avatar', [XomniSpeakerAssetController::class, 'avatar'])
-            ->middleware('app.tool.access:xomni')
+            ->middleware('app.tool.access:any,xomni,zeta')
             ->name('app.xomni.speaker.avatar');
 
         Route::get('/app/f5tts/speakers/{voiceCode}/preview', [F5ttsSpeakerAssetController::class, 'preview'])

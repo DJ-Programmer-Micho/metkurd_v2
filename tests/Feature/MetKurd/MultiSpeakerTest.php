@@ -226,13 +226,138 @@ it('maps supported pauses and validates size and segment identity', function () 
 });
 
 it('supports segment sorting deletion and native page routing for both products', function (string $service, string $slug) {
-    $page = Livewire::test('app::v2.pages.tools.multi-speaker', ['service' => $service, 'tool' => $slug])->set('segments', $this->segments);
-    $page->call('reorderSegments', ['two', 'one'])->assertSet('segments.0.id', 'two')->assertSet('segments.0.text', 'جیهان')
-        ->call('moveSegment', 'two', 1)->assertSet('segments.0.id', 'one')
-        ->call('reorderSegments', ['one', 'one'])->assertSet('segments.1.id', 'two')
-        ->call('deleteSegment', 'one')->assertSet('segments.0.id', 'two');
+    $page = Livewire::test('app::v2.pages.tools.multi-speaker', ['service' => $service, 'tool' => $slug]);
+    $page->call('addSegment')->call('addSegment')->call('addSegment');
+    [$a, $b, $c, $d] = $page->get('segmentOrder');
+    foreach ([$a, $b, $c, $d] as $index => $id) {
+        $page->set("segments.$id.text", ['A سڵاو', 'B world', 'C مرحبا', 'D جیهان'][$index])
+            ->set("segments.$id.voice", $index % 2 ? 'second' : 'first')
+            ->set("segments.$id.reference_id", 100 + $index)
+            ->set("segments.$id.ref_text", 'Reference '.$index)
+            ->set("segments.$id.language", ['ckb', 'en', 'ar', 'ckb'][$index])
+            ->set("segments.$id.pause_after_ms", [500, 1000, 2000, 0][$index]);
+    }
+    $original = $page->get('segments');
+    $chars = $page->get('totalChars');
+    $quote = $page->get('creditsCost');
+    $page->call('reorderSegments', [$a, $d, $b, $c])->assertSet('segmentOrder', [$a, $d, $b, $c])
+        ->assertSet('segments', $original)->assertSet('totalChars', $chars)->assertSet('creditsCost', $quote)
+        ->assertSee('segments.'.$d.'.text', false)
+        ->set("segments.$d.text", 'D edited')->assertSet("segments.$b.text", $original[$b]['text'])
+        ->call('moveSegment', $d, 1)->assertSet('segmentOrder', [$a, $b, $d, $c])
+        ->call('reorderSegments', [$c, $d, $a, $b])->assertSet('segmentOrder', [$c, $d, $a, $b])
+        ->call('reorderSegments', [$a, $a, $b, $c])->assertSet('segmentOrder', [$c, $d, $a, $b])
+        ->call('deleteSegment', $b)->assertSet('segmentOrder', [$c, $d, $a])->call('addSegment');
+    $new = $page->get('segmentOrder')[3];
+    $page->call('reorderSegments', [$new, $a, $d, $c])->assertSet('segmentOrder', [$new, $a, $d, $c])
+        ->assertSet("segments.$d.text", 'D edited')->assertSet("segments.$c.language", 'ar')
+        ->assertSet("segments.$c.pause_after_ms", 2000)->assertSet("segments.$new.text", '');
+    expect(array_column($page->get('orderedSegments'), 'id'))->toBe([$new, $a, $d, $c]);
     $this->get(route('app.v2.tool', ['locale' => 'en', 'service' => $service, 'tool' => $slug]))->assertOk()->assertSee('Generate full project');
 })->with([['text-to-speech', 'zeta-1'], ['clone-text-to-speech', 'theta-1']]);
+
+it('uses the Apollo panel to select a voice only for the active Zeta segment', function () {
+    $voice = Voice::where('code', 'first')->firstOrFail();
+    $voice->update(['meta' => $voice->meta + ['avatar_path' => 'first.png', 'preview_audio' => 'first.wav']]);
+    $page = Livewire::test('app::v2.pages.tools.multi-speaker', ['service' => 'text-to-speech', 'tool' => 'zeta-1']);
+    $a = $page->get('segmentOrder')[0];
+    $page->call('addSegment');
+    $b = $page->get('segmentOrder')[1];
+    $page->assertSee('omni-reference-panel', false)->assertSee('omni-voice-avatar-image', false)
+        ->assertSee('MetKurdSpeakerPreview', false)
+        ->call('editSegmentVoice', $a)->call('selectSpeaker', 'first')
+        ->assertSet("segments.$a.voice", 'first')->assertSet("segments.$b.voice", '')
+        ->call('editSegmentVoice', $b)->call('selectSpeaker', 'second')->assertSet("segments.$b.voice", 'second')
+        ->call('selectSpeaker', 'not-authorized')->assertSet("segments.$b.voice", 'second');
+    expect(MlJob::count())->toBe(0);
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('run')->once()->with('test-omni', Mockery::on(function ($input) use ($b, $a) {
+        expect($input['model'])->toBe('model_2')->and($input['mode'])->toBe('builtin_ref_batch')
+            ->and(array_column($input['segments'], 'id'))->toBe([$b, $a])
+            ->and(array_column($input['segments'], 'ref_audio'))->toBe(['real/second.wav', 'real/first.wav'])
+            ->and(array_column($input['segments'], 'text'))->toBe(['جیهان', 'سڵاو'])
+            ->and(array_column($input['segments'], 'pause_after_ms'))->toBe([1000, 0]);
+
+        return true;
+    }), Mockery::any())->andReturn(['id' => 'zeta-ui']);
+    app()->instance(RunPodProvider::class, $provider);
+    $page->set("segments.$a.text", 'سڵاو')->set("segments.$b.text", 'جیهان')
+        ->set("segments.$b.pause_after_ms", 1000)->call('reorderSegments', [$b, $a])
+        ->call('submitProject')->assertHasNoErrors()->assertSet('submissionError', '');
+    expect(MlJob::count())->toBe(1);
+});
+
+it('allows Zeta-only customers to preview shared voice assets and rejects customers without access', function () {
+    $voice = Voice::where('code', 'first')->firstOrFail();
+    $voice->update(['meta' => $voice->meta + ['avatar' => 'metkurd_audio_data/fixtures/avatar.png', 'preview_audio' => 'metkurd_audio_data/fixtures/preview.wav']]);
+    Storage::disk('s3')->put('metkurd_audio_data/fixtures/avatar.png', 'avatar');
+    Storage::disk('s3')->put('metkurd_audio_data/fixtures/preview.wav', multiSpeakerWav());
+    $setAccess = function (string $code, bool $allowed) {
+        $actions = DB::table('tool_actions')->where('full_code', 'like', $code.'.%')->pluck('id');
+        foreach ($actions as $id) {
+            \App\Models\CustomerEntitlement::updateOrCreate(
+                ['customer_id' => $this->customer->id, 'tool_action_id' => $id, 'entitlement_channel' => 'app'],
+                ['allowed' => $allowed]
+            );
+        }
+        $this->actingAs($this->customer->fresh(), 'app');
+    };
+    $setAccess('xomni', false);
+    $setAccess('zeta', true);
+    foreach (['preview', 'avatar'] as $asset) {
+        $this->get(route('app.xomni.speaker.'.$asset, ['locale' => 'en', 'voiceCode' => 'first', 'proxy' => 1]))->assertOk();
+    }
+    $setAccess('zeta', false);
+    foreach (['preview', 'avatar'] as $asset) {
+        $this->get(route('app.xomni.speaker.'.$asset, ['locale' => 'en', 'voiceCode' => 'first', 'proxy' => 1]))->assertForbidden();
+    }
+    $setAccess('xomni', true);
+    foreach (['preview', 'avatar'] as $asset) {
+        $this->get(route('app.xomni.speaker.'.$asset, ['locale' => 'en', 'voiceCode' => 'first', 'proxy' => 1]))->assertOk();
+    }
+    expect(MlJob::count())->toBe(0)->and(CreditLedger::where('direction', 'debit')->count())->toBe(0);
+});
+
+it('refreshes Theta references after upload and submits reordered shared references without transcripts', function () {
+    $probe = Mockery::mock(AudioProbeService::class);
+    $probe->shouldReceive('probeUploadedFile')->andReturn(['duration_sec' => 1.0]);
+    app()->instance(AudioProbeService::class, $probe);
+    Storage::disk('s3')->buildTemporaryUrlsUsing(fn ($path) => 'https://storage.test/'.$path.'?signed=fixture');
+    $page = Livewire::test('app::v2.pages.tools.multi-speaker', ['service' => 'clone-text-to-speech', 'tool' => 'theta-1']);
+    $page->call('addSegment')->call('addSegment');
+    [$a, $b, $c] = $page->get('segmentOrder');
+    expect($page->get('references'))->toBe([]);
+    $page->set('referenceAudio', UploadedFile::fake()->createWithContent('reference-a.wav', multiSpeakerWav(1)))
+        ->assertHasNoErrors()->assertSet('referenceAudio', null)->assertSet('referenceRevision', 1)
+        ->assertSee('reference-a.wav')->assertSee('v2-ctts-reference-preview', false);
+    $refA = CustomerFile::firstOrFail()->id;
+    $page->call('editSegmentVoice', $c)->call('selectReference', $refA)->assertSet("segments.$a.reference_id", $refA)
+        ->assertSet("segments.$c.reference_id", $refA)
+        ->set('referenceAudio', UploadedFile::fake()->createWithContent('reference-b.wav', multiSpeakerWav(2)))
+        ->assertHasNoErrors()->assertSet('referenceRevision', 2)->assertSee('reference-b.wav');
+    $refB = CustomerFile::latest('id')->firstOrFail()->id;
+    $page->assertSet("segments.$b.reference_id", $refB)
+        ->assertDontSee('Reference transcript (optional)')->assertDontSee('wire:model.blur="segments.', false);
+    expect($page->get('references'))->toHaveCount(2);
+    foreach ([$a, $b, $c] as $index => $id) {
+        $page->set("segments.$id.text", ['سڵاو', 'جیهان', 'دەنگ'][$index])->set("segments.$id.pause_after_ms", [500, 1000, 2000][$index]);
+    }
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('run')->once()->with('test-omni', Mockery::on(function ($input) use ($c, $b, $a) {
+        expect($input['model'])->toBe('model_2')->and($input['mode'])->toBe('audio_url_batch')
+            ->and(array_column($input['segments'], 'id'))->toBe([$c, $b, $a])
+            ->and(array_column($input['segments'], 'text'))->toBe(['دەنگ', 'جیهان', 'سڵاو'])
+            ->and(array_column($input['segments'], 'pause_after_ms'))->toBe([2000, 1000, 0])
+            ->and($input['segments'][0]['audio_url'])->toBe($input['segments'][2]['audio_url'])
+            ->and($input['segments'][1]['audio_url'])->not->toBe($input['segments'][0]['audio_url'])
+            ->and($input['segments'][0]['ref_text'] ?? '')->toBe('');
+
+        return true;
+    }), Mockery::any())->andReturn(['id' => 'theta-ui']);
+    app()->instance(RunPodProvider::class, $provider);
+    $page->call('reorderSegments', [$c, $b, $a])->call('submitProject')->assertHasNoErrors()->assertSet('submissionError', '');
+    expect(CustomerFile::count())->toBe(2)->and(MlJob::count())->toBe(1);
+});
 
 it('blocks unowned expired and deleted references with one safe correction and no dispatch', function (string $state) {
     [, , $segments] = multiSpeakerProject($this, true);
@@ -298,7 +423,9 @@ it('localizes both pages and keeps storage product filtering separate', function
     foreach (['zeta' => 'text-to-speech', 'theta' => 'clone-text-to-speech'] as $code => $service) {
         foreach (['en' => 'ltr', 'ar' => 'rtl', 'ku' => 'rtl'] as $locale => $direction) {
             $this->get(route('app.v2.tool', ['locale' => $locale, 'service' => $service, 'tool' => $code.'-1']))
-                ->assertOk()->assertSee('dir="'.$direction.'"', false)->assertDontSee('Multi Speaker 1.0v');
+                ->assertOk()->assertSee('dir="'.$direction.'"', false)->assertDontSee('Multi Speaker 1.0v')
+                ->assertSee(str_replace(':number', '1', json_decode(file_get_contents(resource_path("lang/app/$locale.json")), true)['Choose a voice for segment :number']))
+                ->assertDontSee('Reference transcript (optional)');
         }
         $file = CustomerFile::create(['customer_id' => $this->customer->id, 'purpose' => 'render', 'tool_code' => $code, 'disk' => 's3', 'path' => $code.'/output.wav', 'status' => 'active', 'size_bytes' => 10, 'mime' => 'audio/wav']);
         expect(app(\App\Support\CustomerStorageLibrary::class)->identity($file)['key'])->toBe($code.'-1');

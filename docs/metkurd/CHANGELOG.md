@@ -1,5 +1,28 @@
 # Architectural and behavioral decisions
 
+## 2026-09-21 — Zeta / Theta UI identity and reference selection
+
+- Replaced positional Livewire field bindings with UUID-keyed draft fields and a
+  separate validated order list. Native drag sends IDs and drops before its target;
+  the existing ordered submission payload and final zero pause remain unchanged.
+- Reused one Apollo voice panel per Zeta workspace and Vector's reference history
+  with existing audio previews for Theta, targeting a selected segment.
+  The shared Omni preview/avatar routes also recognize Zeta access, preserving
+  existing Apollo access and rejecting customers with neither permission.
+- Completed Theta uploads invoke the existing save path and invalidate reference
+  reads/options in the same response. Multiple segments retain one stored file.
+  Removed the customer transcript editor while retaining empty `ref_text` behavior.
+- No provider, pricing, billing, storage-service or job-lifecycle changes. User
+  reports generation working. Automated tests use isolated SQLite, fake storage
+  and mocked providers; browser interaction remains unverified because both UI
+  automation runtimes failed to initialize. See V2-NAVIGATION for details.
+- Verification: 25 Multi-Speaker tests / 238 assertions and 23 Apollo/Vector
+  regression tests / 159 assertions passed serially; all 46 frontend tests passed.
+  The subsequent preview/avatar access test passed with 8 assertions, covering
+  Zeta-only access, existing Apollo access, denial and no job/debit creation.
+  Asset build, focused PHP lint/Pint, diff whitespace checks and 55 UI message
+  keys/placeholders in each EN/AR/KU catalog passed.
+
 ## 2026-09-20 — Native Zeta / Theta Multi-Speaker App services
 
 - Replaced the staged Multi Speaker card with Zeta 1.0v and added Theta 1.0v.

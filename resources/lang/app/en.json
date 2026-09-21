@@ -1815,5 +1815,8 @@
     "The project exceeds the total character limit.": "The project exceeds the total character limit.",
     "The audio project failed. No partial audio was saved.": "The audio project failed. No partial audio was saved.",
     "The project references exceed the size limit.": "The project references exceed the size limit.",
-    "Your concurrent job limit has been reached. Wait for the current project to finish.": "Your concurrent job limit has been reached. Wait for the current project to finish."
+    "Your concurrent job limit has been reached. Wait for the current project to finish.": "Your concurrent job limit has been reached. Wait for the current project to finish.",
+    "Choose a voice for segment :number": "Choose a voice for segment :number",
+    "Add a segment to choose its voice.": "Add a segment to choose its voice.",
+    "Preview and choose a voice": "Preview and choose a voice"
 }

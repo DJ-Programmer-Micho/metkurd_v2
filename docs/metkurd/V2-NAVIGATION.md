@@ -1,5 +1,32 @@
 # V2 navigation lifecycle
 
+## Multi-Speaker draft identity and reference selection — 2026-09-21
+
+Segment fields now bind to `segments.<uuid>.<field>` with a separate locked
+`segmentOrder` list. Reordering changes only that list; the submission boundary
+reconstructs the existing ordered array. Numeric field bindings previously
+survived keyed Livewire morphs with their old position, allowing edits to target
+another row. Final/ordinary pause controls have separate keys. Native HTML drag
+drops before the target ID and waits for the reorder request before another drag.
+
+One shared Apollo reference panel targets the active Zeta segment. Theta reuses
+Vector's paginated history/preview panel and owned preview routes. Preview plays
+existing audio through MetKurdSpeakerPreview. A completed Theta temporary upload
+immediately invokes the existing save method, invalidates reference reads, resets
+reference pagination and advances a selector revision so options refresh in the
+same response. FilePond still uses the existing scoped upload/clear/disposal path.
+The transcript editor is hidden; the unchanged submission contract permits empty
+`ref_text` for the worker's automatic behavior.
+
+The two shared Omni preview/avatar routes accept existing Apollo access or Zeta
+access. This lets a Zeta-only customer use the reused panel without granting
+generation access to Apollo; customers with neither permission remain blocked.
+
+Automated controller and Livewire tests cover repeated reorder, add/delete,
+navigation remount, upload refresh, shared references, ordered submission and
+EN/AR/KU rendering. Interactive drag, preview playback and visual RTL acceptance
+remain pending: both computer-use runtimes failed to initialize in this session.
+
 ## Zeta / Theta — 2026-09-20
 
 The native `multi-speaker` Livewire page serves explicit Zeta/Theta routes before

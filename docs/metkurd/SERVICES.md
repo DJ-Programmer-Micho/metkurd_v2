@@ -2,6 +2,14 @@
 
 ## Zeta / Theta Multi-Speaker — 2026-09-20
 
+2026-09-21 UI follow-up: the user reports Zeta/Theta generation working. This is
+user-reported acceptance, not an independent live GPU test. The draft uses stable
+UUID field bindings and a separate order list; services still receive the same
+ordered segment array. Zeta reuses Apollo's voice panel; Theta reuses Vector's
+reference previews and saves completed uploads immediately through the existing
+save path. The Theta transcript field is hidden and defaults to empty. See
+[V2 navigation](V2-NAVIGATION.md) for UI behavior and verification limits.
+
 Verification: the broader isolated regression run passed 141 tests / 988 assertions
 (Apollo/Vector, V2 workspaces, storage, API V2 and Admin P1). The final focused
 batch run passed 23 tests / 158 assertions, including four subsequently added

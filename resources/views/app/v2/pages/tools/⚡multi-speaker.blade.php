@@ -26,7 +26,12 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     #[Locked] public array $serviceDefinition = [];
     #[Locked] public string $submissionKey;
     #[Locked] public ?string $currentJobId = null;
+    // Field paths stay tied to identity; only this separate list is reordered.
     public array $segments = [];
+    #[Locked] public array $segmentOrder = [];
+    #[Locked] public ?string $activeSegmentId = null;
+    #[Locked] public int $referenceRevision = 0;
+    public string $expandedSpeakerGroup = '';
     public $referenceAudio = null;
     public string $submissionError = '';
 
@@ -47,38 +52,86 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 
     #[Computed] public function isClone(): bool { return $this->definition['kind'] === 'omni_clone_batch'; }
     #[Computed] public function voices(): array { return app(OmniSpeakerCatalog::class)->forCustomer(auth('app')->user(), app()->getLocale()); }
-    #[Computed] public function references(): array { return app(CttsWorkspaceCache::class)->references((int) auth('app')->id()); }
-    #[Computed] public function totalChars(): int { return array_sum(array_map(fn ($s) => is_string($s['text'] ?? null) ? mb_strlen(trim($s['text'])) : 0, $this->segments)); }
+    #[Computed] public function references(): array
+    {
+        return array_map(fn ($reference) => $reference + [
+            'when' => $reference['updated_at'] ? \Illuminate\Support\Carbon::parse($reference['updated_at'])->diffForHumans() : '',
+            'preview_url' => route('app.ctts-references.stream', ['locale' => app()->getLocale(), 'file' => $reference['id']]),
+        ], app(CttsWorkspaceCache::class)->references((int) auth('app')->id()));
+    }
+    #[Computed] public function referencePage(): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        $references = collect($this->references);
+        return new \Illuminate\Pagination\LengthAwarePaginator($references->forPage($this->getPage('multiReferences'), 6)->values(), $references->count(), 6, $this->getPage('multiReferences'), ['path' => request()->url(), 'pageName' => 'multiReferences']);
+    }
+    #[Computed] public function voiceOptions(): array { return collect($this->voices)->pluck('speakers')->flatten(1)->keyBy('code')->all(); }
+    #[Computed] public function orderedSegments(): array
+    {
+        return array_map(fn ($id) => array_replace($this->segments[$id], ['id' => $id]), $this->segmentOrder);
+    }
+    public function previousReferencePage(): void { $this->previousPage('multiReferences'); }
+    public function nextReferencePage(): void { $this->nextPage('multiReferences'); }
+    public function editSegmentVoice(string $id): void
+    {
+        if (! in_array($id, $this->segmentOrder, true)) return;
+        $this->activeSegmentId = $id;
+        if (! $this->isClone && $this->expandedSpeakerGroup === '') $this->expandedSpeakerGroup = array_key_first($this->voices) ?? '';
+        $this->dispatch('multi-speaker-voice-picker');
+    }
+    public function toggleSpeakerGroup(string $group): void
+    {
+        if (isset($this->voices[$group])) $this->expandedSpeakerGroup = $this->expandedSpeakerGroup === $group ? '' : $group;
+    }
+    public function selectSpeaker(string $code): void
+    {
+        if ($this->isClone || ! $this->activeSegmentId || ! isset($this->segments[$this->activeSegmentId], $this->voiceOptions[$code])) return;
+        $this->segments[$this->activeSegmentId]['voice'] = $code;
+    }
+    public function selectReference(int $id): void
+    {
+        if (! $this->isClone || ! $this->activeSegmentId || ! isset($this->segments[$this->activeSegmentId]) || ! collect($this->references)->contains('id', $id)) return;
+        $this->segments[$this->activeSegmentId]['reference_id'] = $id;
+    }
+    #[Computed] public function totalChars(): int { return array_sum(array_map(fn ($s) => is_string($s['text'] ?? null) ? mb_strlen(trim($s['text'])) : 0, $this->orderedSegments)); }
     #[Computed] public function creditsCost(): int
     {
-        return app(MultiSpeakerSubmissionService::class)->quote(auth('app')->user(), $this->definition['legacy_action'], ['segments' => $this->segments, 'total_chars' => $this->totalChars]);
+        return app(MultiSpeakerSubmissionService::class)->quote(auth('app')->user(), $this->definition['legacy_action'], ['segments' => $this->orderedSegments, 'total_chars' => $this->totalChars]);
     }
     #[Computed] public function currentJob(): ?MlJob { return $this->currentJobId ? $this->jobs()->find($this->currentJobId) : null; }
     #[Computed] public function presentation(): array { return app(MetKurdV2JobStatusPresentation::class)->for($this->currentJob?->status ?? 'idle'); }
 
     public function addSegment(): void
     {
-        if (count($this->segments) >= config('metkurd_v2.multi_speaker.max_segments')) return;
-        $this->segments[] = ['id' => (string) Str::uuid(), 'voice' => '', 'reference_id' => '', 'ref_text' => '', 'text' => '', 'language' => 'ckb', 'pause_after_ms' => 0];
+        if (count($this->segmentOrder) >= config('metkurd_v2.multi_speaker.max_segments')) return;
+        $id = (string) Str::uuid();
+        $this->segments[$id] = ['id' => $id, 'voice' => '', 'reference_id' => '', 'ref_text' => '', 'text' => '', 'language' => 'ckb', 'pause_after_ms' => 0];
+        $this->segmentOrder[] = $id;
+        $this->activeSegmentId = $id;
+        if (! $this->isClone && $this->expandedSpeakerGroup === '') $this->expandedSpeakerGroup = array_key_first($this->voices) ?? '';
     }
     public function deleteSegment(string $id): void
     {
-        $this->segments = array_values(array_filter($this->segments, fn ($segment) => ($segment['id'] ?? '') !== $id));
+        unset($this->segments[$id]);
+        $this->segmentOrder = array_values(array_filter($this->segmentOrder, fn ($current) => $current !== $id));
+        if ($this->activeSegmentId === $id) $this->activeSegmentId = $this->segmentOrder[0] ?? null;
     }
     public function moveSegment(string $id, int $direction): void
     {
         if (! in_array($direction, [-1, 1], true)) return;
-        $index = array_search($id, array_column($this->segments, 'id'), true);
-        if ($index === false || ! isset($this->segments[$index + $direction])) return;
-        [$this->segments[$index], $this->segments[$index + $direction]] = [$this->segments[$index + $direction], $this->segments[$index]];
+        $index = array_search($id, $this->segmentOrder, true);
+        if ($index === false || ! isset($this->segmentOrder[$index + $direction])) return;
+        [$this->segmentOrder[$index], $this->segmentOrder[$index + $direction]] = [$this->segmentOrder[$index + $direction], $this->segmentOrder[$index]];
     }
     public function reorderSegments(array $ids): void
     {
-        if (! array_is_list($ids) || count($ids) > config('metkurd_v2.multi_speaker.max_segments') || collect($ids)->contains(fn ($id) => ! is_string($id))) return;
-        $current = array_column($this->segments, 'id');
-        if (count($ids) !== count($current) || count(array_unique($ids, SORT_REGULAR)) !== count($current) || array_diff($ids, $current)) return;
-        $byId = array_column($this->segments, null, 'id');
-        $this->segments = array_map(fn ($id) => $byId[$id], $ids);
+        if (! array_is_list($ids) || count($ids) !== count($this->segmentOrder) || collect($ids)->contains(fn ($id) => ! is_string($id))) return;
+        if (count(array_unique($ids)) !== count($ids) || array_diff($ids, $this->segmentOrder)) return;
+        $this->segmentOrder = $ids;
+    }
+    public function updatedReferenceAudio(): void
+    {
+        // A completed temporary upload enters the existing save path immediately.
+        if ($this->referenceAudio) $this->saveReference();
     }
     public function removeReferenceAudio(): void
     {
@@ -91,12 +144,14 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         $this->validate(['referenceAudio' => 'required|file|max:20480']);
         try {
             $file = app(MultiSpeakerReferences::class)->upload(auth('app')->user(), $this->referenceAudio);
-            foreach ($this->segments as &$segment) {
-                if (empty($segment['reference_id'])) { $segment['reference_id'] = $file->id; break; }
+            foreach ($this->segmentOrder as $id) {
+                if (empty($this->segments[$id]['reference_id'])) { $this->segments[$id]['reference_id'] = $file->id; break; }
             }
-            unset($segment);
             $this->removeReferenceAudio();
-            unset($this->references);
+            app(CttsWorkspaceCache::class)->forgetReferences((int) auth('app')->id());
+            unset($this->references, $this->referencePage);
+            $this->referenceRevision++;
+            $this->resetPage('multiReferences');
             $this->submissionError = '';
             $this->dispatch('app-header-refresh');
         } catch (\Illuminate\Validation\ValidationException $e) { throw $e;
@@ -107,7 +162,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         if ($this->currentJob?->isActive()) return;
         $this->submissionError = '';
         try {
-            $job = app(MultiSpeakerSubmissionService::class)->submit(auth('app')->user(), $this->serviceSlug, $this->toolSlug, $this->submissionKey, $this->segments);
+            $job = app(MultiSpeakerSubmissionService::class)->submit(auth('app')->user(), $this->serviceSlug, $this->toolSlug, $this->submissionKey, $this->orderedSegments);
             $this->currentJobId = (string) $job->id;
             unset($this->currentJob, $this->presentation, $this->recentRenders);
             if ($job->provider_job_id || $job->status === 'failed') $this->submissionKey = (string) Str::uuid();
@@ -157,55 +212,62 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     <nav class="v2-breadcrumb"><a wire:navigate href="{{ route('app.v2.home', ['locale' => app()->getLocale()]) }}">{{ __('MetKurd AI') }}</a><span>/</span><a wire:navigate href="{{ route('app.v2.service', ['locale' => app()->getLocale(), 'service' => $serviceSlug]) }}">{{ __($serviceDefinition['name']) }}</a><span>/</span><span>{{ __($definition['name']) }}</span></nav>
     <header class="v2-tool-context"><div class="v2-tool-identity d-flex align-items-center gap-3"><img class="v2-service-icon" src="{{ asset($serviceDefinition['icon_asset']) }}" alt=""><div><span>{{ __($serviceDefinition['name']) }}</span><h1>{{ __($definition['name']) }}</h1></div></div>@livewire('app::v2.components.shared.account-resources')</header>
     <div class="v2-workspace {{ $this->isClone ? 'v2-theta-workspace' : '' }}">
-        <aside class="v2-workspace-panel p-3">
-            <div class="v2-panel-heading"><span>{{ __('Project voices') }}</span></div>
+        <div class="v2-project-voices" id="multi-speaker-voice-picker">
+            <div class="v2-workspace-panel">
+                <div class="v2-panel-heading"><span>{{ __('Project voices') }}</span></div>
+                @if($activeSegmentId)
+                    <p class="mt-2" role="status">{{ __('Choose a voice for segment :number', ['number' => array_search($activeSegmentId, $segmentOrder, true) + 1]) }}</p>
+                @else
+                    <p>{{ __('Add a segment to choose its voice.') }}</p>
+                @endif
+                @if($this->isClone)
+                    <p>{{ __('Save a reference once, then select it in any segment.') }}</p>
+                    <div wire:ignore><input type="file" id="v2-theta-reference-pond" aria-label="{{ __('Reference audio') }}" data-upload-error="{{ __('Upload failed') }}" data-label-idle="{{ __('Drop a reference audio file') }} &lt;span class=&quot;filepond--label-action&quot;&gt;{{ __('Browse') }}&lt;/span&gt;" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,audio/*"></div>
+                    <div wire:loading wire:target="referenceAudio,saveReference" class="v2-muted mt-2">{{ __('Uploading reference audio…') }}</div>
+                    @if($referenceAudio)<button type="button" class="btn btn-danger" wire:click="saveReference" wire:loading.attr="disabled">{{ __('Save reference') }}</button>@endif
+                    <p class="v2-muted mt-2">{{ __('Saved references remain in your storage until you delete them.') }}</p>
+                @endif
+                <p class="v2-muted">{{ __('Up to :segments segments, :per characters each and :total characters per project.', ['segments' => config('metkurd_v2.multi_speaker.max_segments'), 'per' => config('metkurd_v2.multi_speaker.max_segment_chars'), 'total' => config('metkurd_v2.multi_speaker.max_total_chars')]) }}</p>
+            </div>
             @if($this->isClone)
-                <p>{{ __('Save a reference once, then select it in any segment.') }}</p>
-                <div wire:ignore><input type="file" id="v2-theta-reference-pond" aria-label="{{ __('Reference audio') }}" data-upload-error="{{ __('Upload failed') }}" data-label-idle="{{ __('Drop a reference audio file') }} &lt;span class=&quot;filepond--label-action&quot;&gt;{{ __('Browse') }}&lt;/span&gt;" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,audio/*"></div>
-                <button type="button" class="btn btn-danger" wire:click="saveReference" wire:loading.attr="disabled" @disabled(!$referenceAudio)>{{ __('Save reference') }}</button>
-                <p class="v2-muted mt-2">{{ __('Saved references remain in your storage until you delete them.') }}</p>
-                @foreach(collect($this->references)->whereIn('id', array_column($segments, 'reference_id')) as $reference)
-                    <div class="v2-render-item" wire:key="pool-reference-{{ $reference['id'] }}">
-                        <p dir="auto">{{ $reference['name'] }}</p>
-                        <div wire:ignore data-metkurd-waveform data-accent="danger" data-job="theta-reference-{{ $reference['id'] }}" data-url="{{ route('app.ctts-references.stream', ['locale' => app()->getLocale(), 'file' => $reference['id']]) }}">
-                            <button type="button" class="v2-waveform-toggle" data-metkurd-waveform-toggle aria-label="{{ __('Play or pause audio') }}"><i class="ri-play-fill" data-metkurd-waveform-icon></i></button>
-                            <span class="v2-waveform-time" data-metkurd-waveform-time>00:00 / --:--</span><div class="v2-waveform-canvas" data-metkurd-waveform-canvas></div>
-                        </div>
-                    </div>
-                @endforeach
+                @include('app.v2.components.ctts.reference-history', ['references' => $this->referencePage, 'selectedId' => $activeSegmentId ? ($segments[$activeSegmentId]['reference_id'] ?? null) : null])
             @else
-                <p>{{ __('Choose an existing voice for each segment. Segments play in the order shown.') }}</p>
+                @include('app.v2.components.xomni-tts.speaker-picker', ['groups' => $this->voices, 'selected' => $activeSegmentId ? ($segments[$activeSegmentId]['voice'] ?? '') : '', 'expanded' => $expandedSpeakerGroup])
             @endif
-            <p class="v2-muted">{{ __('Up to :segments segments, :per characters each and :total characters per project.', ['segments' => config('metkurd_v2.multi_speaker.max_segments'), 'per' => config('metkurd_v2.multi_speaker.max_segment_chars'), 'total' => config('metkurd_v2.multi_speaker.max_total_chars')]) }}</p>
-        </aside>
+        </div>
         <main class="v2-workspace-panel v2-create-panel">
             <div class="v2-panel-heading"><span>{{ __('Create audio project') }}</span></div>
             <div data-multi-segments>
-                @foreach($segments as $index => $segment)
-                    <article class="v2-segment border rounded p-3 mb-3" wire:key="segment-{{ $segment['id'] }}" data-segment-id="{{ $segment['id'] }}">
+                @foreach($segmentOrder as $index => $segmentId)
+                    @php($segment = $segments[$segmentId])
+                    <article class="v2-segment border rounded p-3 mb-3 {{ $activeSegmentId === $segmentId ? 'is-voice-target' : '' }}" wire:key="segment-{{ $segmentId }}" data-segment-id="{{ $segmentId }}">
                         <div class="d-flex align-items-center gap-2 mb-3">
                             <button type="button" draggable="true" data-segment-handle class="btn btn-sm btn-outline-light" aria-label="{{ __('Drag to reorder') }}">☰</button>
                             <strong>{{ __('Segment :number', ['number' => $index + 1]) }}</strong>
-                            <button type="button" class="btn btn-sm btn-outline-light" wire:click="moveSegment('{{ $segment['id'] }}', -1)" @disabled($index === 0) aria-label="{{ __('Move up') }}">↑</button>
-                            <button type="button" class="btn btn-sm btn-outline-light" wire:click="moveSegment('{{ $segment['id'] }}', 1)" @disabled($loop->last) aria-label="{{ __('Move down') }}">↓</button>
-                            <button type="button" class="btn btn-sm btn-outline-danger" wire:click="deleteSegment('{{ $segment['id'] }}')">{{ __('Delete') }}</button>
+                            <button type="button" class="btn btn-sm btn-outline-light" wire:click="moveSegment('{{ $segmentId }}', -1)" @disabled($index === 0) aria-label="{{ __('Move up') }}">↑</button>
+                            <button type="button" class="btn btn-sm btn-outline-light" wire:click="moveSegment('{{ $segmentId }}', 1)" @disabled($loop->last) aria-label="{{ __('Move down') }}">↓</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" wire:click="deleteSegment('{{ $segmentId }}')">{{ __('Delete') }}</button>
                         </div>
                         <div class="row g-2 mb-2"><div class="col-sm-7">
-                            <label class="form-label" for="voice-{{ $segment['id'] }}">{{ __('Reference voice') }}</label>
+                            <label class="form-label" for="voice-{{ $segmentId }}">{{ __('Reference voice') }}</label>
                             @if($this->isClone)
-                                <select id="voice-{{ $segment['id'] }}" class="form-select v2-control" wire:model.change="segments.{{ $index }}.reference_id"><option value="">{{ __('Choose a reference') }}</option>@foreach($this->references as $reference)<option value="{{ $reference['id'] }}">{{ $reference['name'] }}</option>@endforeach</select>
+                                <select wire:key="theta-selector-{{ $segmentId }}-{{ $referenceRevision }}" id="voice-{{ $segmentId }}" class="form-select v2-control" wire:model.change="segments.{{ $segmentId }}.reference_id"><option value="">{{ __('Choose a reference') }}</option>@foreach($this->references as $reference)<option value="{{ $reference['id'] }}">{{ $reference['name'] }}</option>@endforeach</select>
+                                <button type="button" class="btn btn-sm btn-outline-light mt-2" wire:click="editSegmentVoice('{{ $segmentId }}')" aria-controls="multi-speaker-voice-picker" aria-pressed="{{ $activeSegmentId === $segmentId ? 'true' : 'false' }}">{{ __('Preview and choose a voice') }}</button>
                             @else
-                                <select id="voice-{{ $segment['id'] }}" class="form-select v2-control" wire:model.change="segments.{{ $index }}.voice"><option value="">{{ __('Choose a voice') }}</option>@foreach($this->voices as $group)<optgroup label="{{ $group['label'] }}">@foreach($group['speakers'] as $voice)<option value="{{ $voice['code'] }}">{{ $voice['name'] }} {{ $voice['style'] }}</option>@endforeach</optgroup>@endforeach</select>
+                                @php($voice = $this->voiceOptions[$segment['voice'] ?? ''] ?? null)
+                                <button id="voice-{{ $segmentId }}" type="button" class="v2-speaker-select v2-segment-voice" wire:click="editSegmentVoice('{{ $segmentId }}')" aria-controls="multi-speaker-voice-picker" aria-pressed="{{ $activeSegmentId === $segmentId ? 'true' : 'false' }}">
+                                    <span class="omni-voice-avatar">@if($voice && $voice['avatar_url'])<img class="omni-voice-avatar-image" src="{{ $voice['avatar_url'] }}" alt="" loading="lazy">@else<span class="omni-voice-avatar-fallback">{{ $voice['initials'] ?? '♪' }}</span>@endif</span>
+                                    <span class="v2-speaker-copy"><strong>{{ $voice['name'] ?? __('Choose a voice') }}</strong><small>{{ __('Preview and choose a voice') }}</small></span>
+                                </button>
                             @endif
-                        </div><div class="col-sm-5"><label class="form-label" for="language-{{ $segment['id'] }}">{{ __('Generation language') }}</label><select id="language-{{ $segment['id'] }}" class="form-select v2-control" wire:model.change="segments.{{ $index }}.language"><option value="ckb">{{ __('Kurdish / Sorani') }}</option><option value="en">{{ __('English') }}</option><option value="ar">{{ __('Arabic') }}</option></select></div></div>
-                        @if($this->isClone)<label class="form-label" for="reference-text-{{ $segment['id'] }}">{{ __('Reference transcript (optional)') }}</label><textarea id="reference-text-{{ $segment['id'] }}" class="form-control v2-control mb-2" dir="auto" maxlength="4000" rows="2" wire:model.blur="segments.{{ $index }}.ref_text"></textarea>@endif
-                        <label class="form-label" for="text-{{ $segment['id'] }}">{{ __('Text') }}</label>
-                        <textarea id="text-{{ $segment['id'] }}" class="v2-audio-editor" dir="auto" rows="4" maxlength="{{ config('metkurd_v2.multi_speaker.max_segment_chars') }}" wire:model.live.debounce.400ms="segments.{{ $index }}.text"></textarea>
-                        <label class="form-label" for="pause-{{ $segment['id'] }}">{{ __('Pause after') }}</label>
+                        </div><div class="col-sm-5"><label class="form-label" for="language-{{ $segmentId }}">{{ __('Generation language') }}</label><select id="language-{{ $segmentId }}" class="form-select v2-control" wire:model.change="segments.{{ $segmentId }}.language"><option value="ckb">{{ __('Kurdish / Sorani') }}</option><option value="en">{{ __('English') }}</option><option value="ar">{{ __('Arabic') }}</option></select></div></div>
+                        <label class="form-label" for="text-{{ $segmentId }}">{{ __('Text') }}</label>
+                        <textarea id="text-{{ $segmentId }}" class="v2-audio-editor" dir="auto" rows="4" maxlength="{{ config('metkurd_v2.multi_speaker.max_segment_chars') }}" wire:model.live.debounce.400ms="segments.{{ $segmentId }}.text"></textarea>
+                        <label class="form-label" for="pause-{{ $segmentId }}">{{ __('Pause after') }}</label>
                         @if($loop->last)
-                            <select id="pause-{{ $segment['id'] }}" class="form-select v2-control" disabled><option value="0">{{ __('No pause') }}</option></select>
+                            <select wire:key="final-pause-{{ $segmentId }}" id="pause-{{ $segmentId }}" class="form-select v2-control" disabled><option value="0">{{ __('No pause') }}</option></select>
                         @else
-                            <select id="pause-{{ $segment['id'] }}" class="form-select v2-control" wire:model.change="segments.{{ $index }}.pause_after_ms"><option value="0">{{ __('No pause') }}</option><option value="500">{{ __('0.5 seconds') }}</option><option value="1000">{{ __('1 second') }}</option><option value="2000">{{ __('2 seconds') }}</option></select>
+                            <select wire:key="editable-pause-{{ $segmentId }}" id="pause-{{ $segmentId }}" class="form-select v2-control" wire:model.change="segments.{{ $segmentId }}.pause_after_ms"><option value="0">{{ __('No pause') }}</option><option value="500">{{ __('0.5 seconds') }}</option><option value="1000">{{ __('1 second') }}</option><option value="2000">{{ __('2 seconds') }}</option></select>
                         @endif
                         @if($loop->last)<small class="v2-muted">{{ __('The final segment has no trailing pause.') }}</small>@endif
                     </article>
@@ -228,6 +290,13 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 @push('styles')
     @if($this->isClone)<link href="{{ asset('app/libs/filepond/filepond.min.css') }}" rel="stylesheet">@endif
     <style>
+        .metkurd-v2 .v2-project-voices { min-width: 0; }
+        .metkurd-v2 .v2-segment.is-voice-target { border-color: rgba(var(--v2-accent-rgb),.7) !important; }
+        .metkurd-v2 .v2-segment-voice { width: 100%; border: 1px solid rgba(var(--v2-accent-rgb),.35); border-radius: .6rem; background: rgba(2,6,23,.42); padding: .5rem; color: inherit; }
+        .metkurd-v2 .v2-segment-voice .omni-voice-avatar { flex: 0 0 2.25rem; overflow: hidden; border-radius: 50%; }
+        .metkurd-v2 .v2-segment-voice .omni-voice-avatar-image { display: block; width: 100%; height: 100%; object-fit: cover; }
+        .metkurd-v2 .v2-segment-voice .v2-speaker-copy { text-align: start; }
+        @media (max-width: 767.98px) { .metkurd-v2 .v2-project-voices { order: 2; } }
         .metkurd-v2 .v2-multi-speaker-page .v2-audio-editor { min-height: 8rem; border: 1px solid rgba(var(--v2-accent-rgb),.35); border-radius: .6rem; margin-bottom: .75rem; }
         .metkurd-v2 .v2-multi-speaker-page .v2-segment > .d-flex { flex-wrap: wrap; }
         .metkurd-v2 .v2-multi-speaker-page [data-segment-handle] { cursor: grab; }
