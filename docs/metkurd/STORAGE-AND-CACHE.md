@@ -1,5 +1,18 @@
 # Storage, cache and history
 
+## Multi-Speaker storage — 2026-09-20
+
+Zeta and Theta final WAVs are ordinary CustomerFiles under their own tool folders.
+CustomerStorageLibrary and V2 Storage filters classify them in TTS/CTTS respectively.
+Theta's customer-owned reference pool uses existing upload/quota storage and CTTS
+reference caching; identical Theta content is reused rather than stored for each
+segment. InputBoundary validates ownership, active status, expiry, size and actual
+audio before use. Reference previews also reject expired records. The project
+stores reference IDs, not duplicate copies or signed URLs. Scoped reference/render
+caches invalidate on upload, completion/failure and existing deletion reconciliation.
+Deleting an output does not cascade to the reusable pool. Storage deletion remains
+behind the existing operator gate and customer confirmation; no gate was enabled.
+
 ## Effective subscription cache boundary — 2026-09-14
 
 Customer current-plan reads no longer reuse a partial or stale plan relation. Tool

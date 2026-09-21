@@ -69,6 +69,7 @@ class OmniSpeakerCatalog
                     'subtitle' => $this->subtitle($meta),
                     'style' => $this->styleLabel($meta),
                     'ref_audio' => $reference,
+                    'ref_text' => (string) data_get($meta, 'ref_text', ''),
                     'avatar_url' => trim((string) data_get($meta, 'avatar_path', data_get($meta, 'avatar', ''))) !== ''
                         ? route('app.xomni.speaker.avatar', ['locale' => $locale, 'voiceCode' => $voice->code])
                         : null,

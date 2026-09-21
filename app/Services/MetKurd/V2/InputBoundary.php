@@ -65,7 +65,7 @@ class InputBoundary
     public function reference(Customer $customer, int $id): CustomerFile
     {
         $file = CustomerFile::query()->where('customer_id', $customer->id)->where('status', 'active')->where('purpose', 'reference')
-            ->whereIn('tool_code', ['clone_tts', 'clone_xomni', 'vector-v2'])->find($id);
+            ->whereIn('tool_code', ['clone_tts', 'clone_xomni', 'vector-v2', 'theta'])->find($id);
         if (! $file || ($file->expires_at && $file->expires_at->isPast()) || ! Storage::disk($file->disk)->exists($file->path)) {
             throw ValidationException::withMessages(['reference_id' => __('That saved reference voice is no longer available.')]);
         }

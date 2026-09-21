@@ -15,6 +15,8 @@ class CustomerStorageLibrary
         $model = (string) ($job?->model_key ?: data_get($file->meta, 'model_key', ''));
 
         return match ((string) $file->tool_code) {
+            'zeta' => $this->definition('zeta-1', 'text-to-speech', 'Text-to-Speech', 'Zeta 1.0v', 'TTS.png', 'blue'),
+            'theta' => $this->definition('theta-1', 'clone-text-to-speech', 'Clone Text-to-Speech', 'Theta 1.0v', 'CTTS.png', 'rose'),
             'xomni' => $model === 'model_2'
                 ? $this->definition('apollo-2', 'text-to-speech', 'Text-to-Speech', 'Apollo 2.0v', 'TTS.png', 'blue')
                 : $this->definition('apollo-1', 'text-to-speech', 'Text-to-Speech', 'Apollo 1.5v', 'TTS.png', 'blue'),

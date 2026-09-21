@@ -307,7 +307,7 @@ Route::prefix('{locale}')
             ->name('app.renders.vector-v2.download');
 
         Route::get('/app/ctts/references/{file}/stream', CttsReferenceStreamController::class)
-            ->middleware('app.tool.access:any,clone_tts,clone_xomni,vector-v2')
+            ->middleware('app.tool.access:any,clone_tts,clone_xomni,vector-v2,theta')
             ->name('app.ctts-references.stream');
 
         Route::get('/app/renders/wasr/{jobId}/txt', [WasrRenderController::class, 'downloadTxt'])
@@ -444,6 +444,16 @@ Route::prefix('{locale}')
         Route::livewire('/app-v2/stem/{mode}-stem', 'app::v2.pages.tools.app-stem')
             ->whereIn('mode', ['2', '4'])
             ->middleware('app.tool.access:stem')->name('app.v2.stem');
+        Route::livewire('/app-v2/text-to-speech/zeta-1', 'app::v2.pages.tools.multi-speaker')
+            ->defaults('service', 'text-to-speech')->defaults('tool', 'zeta-1')
+            ->middleware('app.tool.access:zeta.generate')->name('app.v2.zeta');
+        Route::livewire('/app-v2/clone-text-to-speech/theta-1', 'app::v2.pages.tools.multi-speaker')
+            ->defaults('service', 'clone-text-to-speech')->defaults('tool', 'theta-1')
+            ->middleware('app.tool.access:theta.generate')->name('app.v2.theta');
+        Route::get('/app-v2/zeta/renders/{jobId}/stream', [\App\Http\Controllers\App\Services\ZetaRenderController::class, 'stream'])->middleware('app.tool.access:zeta.generate')->name('app.renders.zeta.stream');
+        Route::get('/app-v2/zeta/renders/{jobId}/download', [\App\Http\Controllers\App\Services\ZetaRenderController::class, 'download'])->middleware('app.tool.access:zeta.generate')->name('app.renders.zeta.download');
+        Route::get('/app-v2/theta/renders/{jobId}/stream', [\App\Http\Controllers\App\Services\ThetaRenderController::class, 'stream'])->middleware('app.tool.access:theta.generate')->name('app.renders.theta.stream');
+        Route::get('/app-v2/theta/renders/{jobId}/download', [\App\Http\Controllers\App\Services\ThetaRenderController::class, 'download'])->middleware('app.tool.access:theta.generate')->name('app.renders.theta.download');
         Route::livewire('/app-v2/{service}', 'app::v2.pages.services.app-service')
             ->whereIn('service', ['text-to-speech', 'clone-text-to-speech', 'speech-to-text', 'ocr', 'stem'])
             ->name('app.v2.service');

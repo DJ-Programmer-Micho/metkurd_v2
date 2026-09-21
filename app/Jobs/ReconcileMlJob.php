@@ -35,7 +35,7 @@ class ReconcileMlJob implements ShouldQueue
         if ($job->isActive() && $job->provider_job_id) {
             $code = strtolower((string) ($job->tool?->code ?: $job->job_kind));
             match ($code) {
-                'tts', 'xomni', 'xomni-v2', 'ftts', 'clone_tts', 'clone_xomni', 'vector-v2' => $job->tool ? app(XttsJobSyncService::class)->sync($job, $job->tool) : null,
+                'tts', 'xomni', 'xomni-v2', 'ftts', 'clone_tts', 'clone_xomni', 'vector-v2', 'zeta', 'theta' => $job->tool ? app(XttsJobSyncService::class)->sync($job, $job->tool) : null,
                 'asr', 'wasr' => $job->tool ? app(AsrJobSyncService::class)->sync($job, $job->tool) : null,
                 'qasr', 'leo', 'caption' => $job->tool ? app(QasrJobSyncService::class)->sync($job, $job->tool) : null,
                 'tran' => $job->tool ? app(TranJobSyncService::class)->sync($job, $job->tool) : null,

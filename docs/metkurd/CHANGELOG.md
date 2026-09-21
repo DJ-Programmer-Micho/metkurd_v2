@@ -1,5 +1,24 @@
 # Architectural and behavioral decisions
 
+## 2026-09-20 — Native Zeta / Theta Multi-Speaker App services
+
+- Replaced the staged Multi Speaker card with Zeta 1.0v and added Theta 1.0v.
+  Both use model_2 on the existing Omni endpoint, with builtin_ref_batch and
+  audio_url_batch respectively; Apollo/Vector actions and payloads are unchanged.
+- Added one-project submission/billing/polling/output integration, ordered segment
+  editing, bounded pauses with no trailing pause, owned reusable reference uploads,
+  exact URL reuse and sanitized all-or-nothing failure handling.
+- Added an additive catalog migration copying initial Apollo 2/Vector 2 pricing
+  and plan entitlements, plus existing storage classification and localized V2 UI.
+  No public API service/scope expansion, application migration, deployment, worker
+  change or live provider call was performed. Migration execution is an operator step.
+- Verification: 141 tests / 988 assertions in the broad regression run; final
+  batch suite 23 tests / 158 assertions (overlapping coverage), 46 frontend tests,
+  build, scoped PHP lint/Pint and localization checks passed. Tests use isolated
+  SQLite, fake storage and mocked providers. See SERVICES
+  for contracts/operator steps; real worker/GPU and interactive browser acceptance
+  remain separate from source and automated test acceptance.
+
 ## Shared V2 navigation ownership — 2026-09-16
 
 Centralize page boot/cleanup and destination progress colors in a small registry.

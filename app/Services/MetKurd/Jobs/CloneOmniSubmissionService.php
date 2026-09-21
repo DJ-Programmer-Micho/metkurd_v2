@@ -167,7 +167,7 @@ class CloneOmniSubmissionService
     private function ownedReference(Customer $customer, int $referenceFileId): CustomerFile
     {
         $reference = CustomerFile::query()->whereKey($referenceFileId)->where('customer_id', $customer->id)->where('status', 'active')
-            ->where('purpose', 'reference')->whereIn('tool_code', ['clone_tts', 'clone_xomni', 'vector-v2'])->first();
+            ->where('purpose', 'reference')->whereIn('tool_code', ['clone_tts', 'clone_xomni', 'vector-v2', 'theta'])->first();
         if (! $reference || ! $this->isReferenceFile($reference) || ! Storage::disk((string) $reference->disk)->exists((string) $reference->path)) {
             throw new \RuntimeException('That saved reference voice is no longer available.');
         }
@@ -193,7 +193,16 @@ class CloneOmniSubmissionService
      * validated legacy objects onto the private S3 disk before creating the
      * worker URL; browser values and arbitrary keys never take part here.
      */
-    private function ensurePermanentS3Reference(Customer $customer, MlJob $job, string $toolCode, CustomerFile $reference): CustomerFile
+    public function prepareReusableReference(Customer $customer, CustomerFile $reference): CustomerFile
+    {
+        return DB::transaction(function () use ($customer, $reference) {
+            $reference = CustomerFile::query()->where('customer_id', $customer->id)->where('status', 'active')->lockForUpdate()->findOrFail($reference->id);
+
+            return $this->ensurePermanentS3Reference($customer, 'reference-'.$reference->id, 'theta', $reference);
+        }, 3);
+    }
+
+    private function ensurePermanentS3Reference(Customer $customer, MlJob|string $job, string $toolCode, CustomerFile $reference): CustomerFile
     {
         if ((string) $reference->disk === 's3') {
             return $reference;
@@ -202,7 +211,7 @@ class CloneOmniSubmissionService
         $sourceDisk = (string) $reference->disk;
         $sourcePath = (string) $reference->path;
         $extension = strtolower((string) pathinfo($sourcePath, PATHINFO_EXTENSION)) ?: 'wav';
-        $targetPath = $this->storage->inputPath($customer, $toolCode, (string) $job->id, $extension, 'reference');
+        $targetPath = $this->storage->inputPath($customer, $toolCode, is_string($job) ? $job : (string) $job->id, $extension, 'reference');
         $stream = Storage::disk($sourceDisk)->readStream($sourcePath);
 
         if (! is_resource($stream)) {

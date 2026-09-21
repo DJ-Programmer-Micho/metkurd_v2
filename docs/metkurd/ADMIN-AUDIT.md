@@ -1,5 +1,16 @@
 # MetKurd Admin engineering audit
 
+## Multi-Speaker catalog follow-up — 2026-09-20
+
+Zeta/Theta are current V2 App catalog tools (`zeta.generate`, `theta.generate`).
+Admin tool classification now reads the web catalog as well as existing API
+variants so App-only additions are not mislabeled as historical/unmapped.
+The additive operator-run migration copies initial Apollo 2/Vector 2 pricing and
+plan entitlement rows; existing Admin pricing/entitlement editors operate on the
+new native records. This does not add public API variants, derived API scopes or
+API effectiveness-preview rows. No Admin capabilities, historical identities or
+application database records were changed by this source task.
+
 ## Recurring cancellation operational reads — 2026-09-14
 
 The payment-review queue now includes durable pending remote cancellations even

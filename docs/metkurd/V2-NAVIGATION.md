@@ -1,5 +1,21 @@
 # V2 navigation lifecycle
 
+## Zeta / Theta — 2026-09-20
+
+The native `multi-speaker` Livewire page serves explicit Zeta/Theta routes before
+the generic tool route. Existing catalog links still resolve those URLs.
+`v2-multi-speaker.js` registers drag sorting through MetKurdV2Pages and ctx.listen;
+it sends one ordered ID list to the current Livewire owner, with server-side
+permutation validation. Move-up/down buttons provide keyboard/touch alternatives.
+`v2-upload.js` registers `theta-upload` through the same filePond readiness,
+temporary token, current-component lookup, cancellation and disposePond lifecycle
+as Vector. Saved reference state clears FilePond without another upload/revert.
+No new document navigation handler or Bootstrap reload is added. Reference pool
+previews and final results use the existing waveform controller. Both pages use
+App EN/AR/KU messages, automatic text direction and existing TTS/CTTS colors.
+Automated navigation/controller coverage passes; interactive browser acceptance
+with deployed catalog records remains a release check.
+
 Source and local browser verification: 2026-09-16. This is not production acceptance.
 
 ## Ownership

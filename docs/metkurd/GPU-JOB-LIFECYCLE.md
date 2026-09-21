@@ -1,5 +1,29 @@
 # GPU job lifecycle
 
+## Multi-Speaker project lifecycle — 2026-09-20
+
+Zeta/Theta use one DurableUploadSubmission intent and one RunPodV2Adapter batch
+call through `omni_v2`. All segment inference and assembly remain inside that
+worker job. Local model/mode are explicit (`model_2` plus builtin_ref_batch or
+audio_url_batch). Submission metadata contains one ordered segment list and
+owned reference IDs; job-local signed URLs are prepared only for dispatch.
+The attempt marker is committed immediately before dispatch, after local URL and
+endpoint validation. Known rejection/preparation failure uses the existing durable
+refund path; timeout/missing provider ID/unknown acceptance is never replayed or
+automatically refunded. Same-key submissions cannot create additional work, and
+a changed project/financial context cannot reuse that identity.
+
+ReconcileMlJob and XttsJobSyncService process the new tool codes. Batch completion
+requires explicit success=true, matching model/mode and full segment_count, a WAV
+mime and valid RIFF/WAVE envelope, followed by successful CustomerOutputStorage
+persistence. A partial result or success=false never becomes customer output.
+Worker failures retain bounded completed_segments, a whitelisted stage, and the
+failed index/ID resolved from the local request. Raw provider text, paths, URLs
+and untrusted segment IDs are excluded. Storage failures remain retryable polling
+of the same accepted job; they do not create a second generation or premature
+success/refund. Terminal polling is inert, and known failure refunds remain
+idempotent. Deleting final output does not delete reusable Theta references.
+
 ## Admin P2 operational inspection — 2026-09-06
 
 Admin histories read local MlJob and owned-file evidence only. Local lifecycle,

@@ -45,7 +45,7 @@ class DeletedResultReconciliation
         }
         app(CaptionWorkspaceCache::class)->forgetCaptions((int) $file->customer_id);
         app(LeoWorkspaceCache::class)->forgetTranscriptions((int) $file->customer_id);
-        if (in_array($file->tool_code, ['clone_tts', 'clone_xomni', 'vector-v2'], true)) {
+        if (in_array($file->tool_code, ['clone_tts', 'clone_xomni', 'vector-v2', 'zeta', 'theta'], true)) {
             app(CttsWorkspaceCache::class)->forgetRenders((int) $file->customer_id, $file->tool_code);
             if ($file->purpose === 'reference') {
                 app(CttsWorkspaceCache::class)->forgetReferences((int) $file->customer_id);

@@ -115,6 +115,13 @@ class AdminV2Catalog
 
     public function classification(Tool $tool): string
     {
+        foreach (app(\App\Support\MetKurdV2ToolCatalog::class)->services() as $service) {
+            foreach ($service['tools'] ?? [] as $definition) {
+                if (! ($definition['coming_soon'] ?? false) && ($definition['legacy_tool'] ?? null) === $tool->code) {
+                    return 'current';
+                }
+            }
+        }
         if (in_array($tool->code, array_column(array_column(app(ApiCatalog::class)->variants(), 'tool'), 'legacy_tool'), true)) {
             return 'current';
         }

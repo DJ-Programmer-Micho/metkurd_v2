@@ -33,7 +33,7 @@ class XttsJobSyncService
 
         $toolCode = strtolower(trim((string) $tool->code));
         $endpointKey = trim((string) $job->endpoint_key);
-        if ($endpointKey === '' && (in_array($toolCode, ['xomni-v2', 'vector-v2'], true) || $job->model_key)) {
+        if ($endpointKey === '' && (in_array($toolCode, ['xomni-v2', 'vector-v2', 'zeta', 'theta'], true) || $job->model_key)) {
             $endpointKey = 'omni_v2';
         }
         $endpointId = $endpointKey !== ''
@@ -63,7 +63,22 @@ class XttsJobSyncService
             $rawStatus = 'FAILED';
         }
         $out = (array) data_get($st, 'output', []);
+        $batch = in_array($toolCode, ['zeta', 'theta'], true);
+        if ($batch && in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true)
+            && (($out['success'] ?? null) !== true || ($out['segment_count'] ?? null) !== (int) data_get($job->input, 'segment_count')
+                || ($out['model'] ?? null) !== 'model_2' || ($out['mode'] ?? null) !== data_get($job->input, 'mode')
+                || ($out['mime_type'] ?? null) !== 'audio/wav')) {
+            $rawStatus = 'FAILED';
+        }
         $wavB64 = $this->extractAudioBase64($out, $st);
+        if ($batch && in_array($rawStatus, ['COMPLETED', 'SUCCESS'], true)) {
+            $audio = base64_decode($wavB64, true);
+            if ($audio === false || strlen($audio) < 44 || substr($audio, 0, 4) !== 'RIFF' || substr($audio, 8, 4) !== 'WAVE'
+                || unpack('Vsize', substr($audio, 4, 4))['size'] + 8 !== strlen($audio)) {
+                $rawStatus = 'FAILED';
+            }
+            unset($audio);
+        }
 
         $progress = (int) (data_get($out, 'progress', 0) ?: data_get($st, 'output.progress', 0));
 
@@ -80,6 +95,19 @@ class XttsJobSyncService
         }
 
         if ($mapped === 'failed') {
+            if ($batch) {
+                $index = data_get($out, 'failed_segment.index');
+                $count = (int) data_get($job->input, 'segment_count');
+                $validIndex = is_int($index) && $index >= 0 && $index < $count;
+                $completed = $out['completed_segments'] ?? 0;
+                $stage = $out['stage'] ?? '';
+
+                return $this->failJob($job, __('The audio project failed. No partial audio was saved.'), $toolCode, [
+                    'failed_segment' => $validIndex ? ['index' => $index, 'id' => data_get($job->input, "segments.$index.id")] : null,
+                    'completed_segments' => is_int($completed) ? max(0, min($count, $completed)) : 0,
+                    'stage' => in_array($stage, ['validation', 'reference', 'inference', 'assembly', 'encoding', 'output', 'model'], true) ? $stage : 'processing',
+                ]);
+            }
             $err = $this->normalizeProviderFailureMessage(
                 (string) (data_get($st, 'error') ?: data_get($out, 'error') ?: ''),
                 $toolCode
@@ -146,7 +174,7 @@ class XttsJobSyncService
             }
 
             $outputFilename = $providerOutputFilename;
-            if (in_array((string) $tool->code, ['xomni', 'xomni-v2', 'clone_xomni', 'vector-v2'], true)) {
+            if (in_array((string) $tool->code, ['xomni', 'xomni-v2', 'clone_xomni', 'vector-v2', 'zeta', 'theta'], true)) {
                 $outputFilename = $this->normalizeOmniOutputFilename(
                     toolCode: (string) $tool->code,
                     workerFilename: $providerOutputFilename,
@@ -182,6 +210,10 @@ class XttsJobSyncService
                 'provider_success' => (bool) data_get($providerOutput, 'success', true),
                 'provider_mode' => (string) data_get($providerOutput, 'mode', ''),
             ];
+            if (in_array((string) $tool->code, ['zeta', 'theta'], true)) {
+                $output['segment_count'] = (int) data_get($fresh->input, 'segment_count');
+                $output['total_chars'] = (int) data_get($fresh->input, 'total_chars');
+            }
 
             if ((string) $tool->code === 'ftts') {
                 $output['audio_file'] = (string) data_get($providerOutput, 'audio_file', '');
@@ -207,11 +239,11 @@ class XttsJobSyncService
         }, 3);
     }
 
-    protected function failJob(MlJob $job, string $message, string $toolCode = ''): array
+    protected function failJob(MlJob $job, string $message, string $toolCode = '', array $details = []): array
     {
         MlJob::query()->where('id', $job->id)->active()->update([
             'status' => 'failed',
-            'error' => ['message' => $message],
+            'error' => ['message' => $message] + $details,
             'finished_at' => now(),
         ]);
 
@@ -303,7 +335,7 @@ class XttsJobSyncService
 
     private function forgetCttsRenderCache(MlJob $job, string $toolCode): void
     {
-        if (in_array($toolCode, ['clone_tts', 'clone_xomni', 'vector-v2'], true)) {
+        if (in_array($toolCode, ['clone_tts', 'clone_xomni', 'vector-v2', 'zeta', 'theta'], true)) {
             $this->workspaceCache->forgetRenders((int) $job->customer_id, $toolCode);
         }
     }
@@ -320,6 +352,7 @@ class XttsJobSyncService
     protected function outputFolderForTool(string $toolCode): string
     {
         return match (strtolower(trim($toolCode))) {
+            'zeta', 'theta' => $toolCode,
             'clone_tts' => 'clone-tts',
             'xomni' => 'xomni',
             'xomni-v2' => 'xomni-v2',
@@ -333,6 +366,7 @@ class XttsJobSyncService
     protected function normalizeOmniOutputFilename(string $toolCode, ?string $workerFilename, ?string $mimeType = null): string
     {
         $prefix = match (strtolower(trim($toolCode))) {
+            'zeta', 'theta' => $toolCode,
             'xomni' => 'xomni',
             'xomni-v2' => 'xomni-v2',
             'clone_xomni' => 'clone_xomni',

@@ -1,6 +1,7 @@
 import './v2-navigation';
 import './v2-assets';
 import './v2-upload';
+import './v2-multi-speaker';
 import './v2-shell';
 import './metkurd-waveform';
 import './v2-account';

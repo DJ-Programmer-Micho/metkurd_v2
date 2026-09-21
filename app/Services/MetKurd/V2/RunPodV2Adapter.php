@@ -18,6 +18,34 @@ class RunPodV2Adapter
         private readonly MetKurdV2ToolCatalog $catalog,
     ) {}
 
+    /** Receives server-resolved segments, never client-provided URLs or model settings. */
+    public function omniBatch(string $service, string $tool, string $jobId, array $segments, ?callable $beforeDispatch = null): array
+    {
+        $definition = $this->toolForKind($service, $tool, ['omni_tts_batch', 'omni_clone_batch']);
+        if (! $segments || ! array_is_list($segments)) {
+            throw new \InvalidArgumentException('An ordered project is required.');
+        }
+        $clone = $definition['kind'] === 'omni_clone_batch';
+        foreach ($segments as &$segment) {
+            if ($clone) {
+                $segment['audio_url'] = $this->requiredTrustedUrl($segment, 'audio_url');
+            }
+        }
+        unset($segment);
+        if (trim((string) config('runpod.endpoints.'.$definition['endpoint'])) === '') {
+            throw new \RuntimeException('The configured GPU endpoint is unavailable.');
+        }
+        if ($beforeDispatch) {
+            $beforeDispatch();
+        }
+
+        return $this->run($definition, [
+            'job_id' => $jobId, 'model' => 'model_2',
+            'mode' => $clone ? 'audio_url_batch' : 'builtin_ref_batch',
+            'output_format' => 'wav', 'return_base64' => true, 'segments' => $segments,
+        ]);
+    }
+
     /** @param array<string, mixed> $options */
     public function omni(string $service, string $tool, array $options): array
     {
@@ -105,8 +133,8 @@ class RunPodV2Adapter
             'file_url' => $this->requiredTrustedUrl($options, 'file_url'),
             'file_name' => basename($this->requiredString($options, 'file_name')),
             'options' => [
-            'task' => 'layout_text',
-            'pages' => $this->stringOption($options, 'pages', 'all'),
+                'task' => 'layout_text',
+                'pages' => $this->stringOption($options, 'pages', 'all'),
                 'dpi' => 160,
                 'max_pixels' => 1_000_000,
                 'max_tokens' => 4_000,

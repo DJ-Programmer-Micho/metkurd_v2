@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Cache;
 /** Customer-scoped read cache for the CTTS workspace. */
 class CttsWorkspaceCache
 {
-    private const REFERENCE_CODES = ['clone_tts', 'clone_xomni', 'vector-v2'];
+    private const REFERENCE_CODES = ['clone_tts', 'clone_xomni', 'vector-v2', 'theta'];
 
     /** @return array<int, array<string, mixed>> */
     public function references(int $customerId): array
@@ -19,6 +19,7 @@ class CttsWorkspaceCache
                 ->where('customer_id', $customerId)
                 ->where('status', 'active')
                 ->where('purpose', 'reference')
+                ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
                 ->whereIn('tool_code', self::REFERENCE_CODES)
                 ->latest('updated_at')
                 ->get(['id', 'disk', 'path', 'size_bytes', 'mime', 'meta', 'updated_at'])

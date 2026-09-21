@@ -54,8 +54,14 @@ export function mountUpload(ctx, options, win = window) {
     return {update: () => { update(); options.preview?.sync(); }, destroy: () => { destroy(); options.preview?.destroy(); }};
 }
 
+export function mountThetaUpload(ctx, win = window) {
+    return mountUpload(ctx, {input: '#v2-theta-reference-pond', property: 'referenceAudio', maxSize: '20MB', remove: 'removeReferenceAudio', clear: 'theta-reference-audio-cleared'}, win);
+}
+
 if (typeof window !== 'undefined') {
     const register = definition => (window.MetKurdV2Pages ||= []).push(definition);
+    register({key: 'theta-upload', selector: '.v2-theta-workspace', prepare: filePond,
+        boot: ctx => mountThetaUpload(ctx)});
     register({key: 'vector-upload', selector: '.v2-ctts-workspace', prepare: filePond,
         boot: ctx => mountUpload(ctx, {input: '#v2-ctts-reference-pond', property: 'referenceAudio', maxSize: '20MB', remove: 'removeReferenceAudio', clear: 'ctts-reference-audio-cleared'})});
     for (const kind of ['leo', 'caption']) {

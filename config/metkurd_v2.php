@@ -13,6 +13,13 @@ return [
     */
     'enabled' => (bool) env('FEATURE_APP_V2', false),
     'ocr_pdfinfo_binary' => env('OCR_PDFINFO_BINARY', 'pdfinfo'),
+    // Match the worker's conservative batch envelope; do not exceed worker limits.
+    'multi_speaker' => [
+        'max_segments' => 25,
+        'max_segment_chars' => 500,
+        'max_total_chars' => 5000,
+        'max_reference_bytes' => 100 * 1024 * 1024,
+    ],
 
     'cache' => [
         // Voice artwork/reference metadata is shared per plan and locale; jobs remain canonical.
@@ -74,9 +81,14 @@ return [
                     'provider_model' => 'model_2',
                     'kind' => 'omni_tts',
                 ],
-                'multi-speaker-1' => [
-                    'name' => 'Multi Speaker 1.0v',
-                    'coming_soon' => true,
+                'zeta-1' => [
+                    'name' => 'Zeta 1.0v',
+                    'legacy_tool' => 'zeta',
+                    'legacy_action' => 'zeta.generate',
+                    'access_action' => 'zeta.generate',
+                    'endpoint' => 'omni_v2',
+                    'provider_model' => 'model_2',
+                    'kind' => 'omni_tts_batch',
                 ],
             ],
         ],
@@ -103,6 +115,15 @@ return [
                     'endpoint' => 'omni_v2',
                     'provider_model' => 'model_2',
                     'kind' => 'omni_clone',
+                ],
+                'theta-1' => [
+                    'name' => 'Theta 1.0v',
+                    'legacy_tool' => 'theta',
+                    'legacy_action' => 'theta.generate',
+                    'access_action' => 'theta.generate',
+                    'endpoint' => 'omni_v2',
+                    'provider_model' => 'model_2',
+                    'kind' => 'omni_clone_batch',
                 ],
             ],
         ],

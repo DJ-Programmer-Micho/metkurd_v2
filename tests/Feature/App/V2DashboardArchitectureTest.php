@@ -90,8 +90,8 @@ it('renders V2 root and maps the OCR correction switch in the V2 leaf state', fu
     Livewire::test('app::v2.pages.services.app-service', ['service' => 'text-to-speech'])
         ->assertSee('Apollo 1.5v')
         ->assertSee('Apollo 2.0v')
-        ->assertSee('Multi Speaker 1.0v')
-        ->assertSee('Coming soon');
+        ->assertSee('Zeta 1.0v')
+        ->assertDontSee('Coming soon');
 
     Livewire::test('app::v2.pages.tools.app-ocr')
         ->assertSee('OCR Scanner 2.0')
