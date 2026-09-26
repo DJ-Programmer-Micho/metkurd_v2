@@ -1,5 +1,41 @@
 # V1 → V2 production launch runbook
 
+## Customer application flags — 2026-09-26
+
+These switches are independent and read through Laravel configuration:
+
+| Flag | Config | Source default | Boundary |
+| --- | --- | --- | --- |
+| `FEATURE_APP_V1` | `customer_app.v1_enabled` | true | Legacy customer workspace pages; shared auth/media/payment controls stay available |
+| `FEATURE_APP_V2` | `metkurd_v2.enabled` | false | V2 customer pages; disabled behavior remains 404 |
+| `FEATURE_API_V2` | `customer_api.v2_enabled` | false | REST API V2 |
+| `FEATURE_MCP_V2` | `mcp.enabled` | false | MCP transport/OAuth; portal also uses the V2 shell |
+
+| V1 | V2 | Default customer login | Direct legacy page |
+| --- | --- | --- | --- |
+| true | true | V2 home | Available |
+| false | true | V2 home | Explicit V2 equivalent, otherwise V2 home |
+| true | false | V1 home | Available |
+| false | false | Localized landing home | Localized landing home |
+
+A valid intended customer destination takes priority over the default. Disabled
+V1 intentions are mapped safely; disabled V2 intentions use the enabled fallback.
+The localized landing route renders without redirecting to login, avoiding loops
+when both apps are disabled. Shared login/logout, recovery and verification remain
+available. Existing legacy Livewire actions fail closed after V1 is disabled.
+
+Recommended local development: both App flags true. Recommended production target,
+after deployment acceptance: `FEATURE_APP_V1=false`, `FEATURE_APP_V2=true`.
+API and MCP require their own rollout decisions. Keep APP_URL set to the exact
+trusted public origin so intended URL validation agrees with browser entry.
+
+Flag changes require the target deployment's normal config refresh/rebuild
+(`php artisan config:cache`) and restart/reload of long-lived app processes as
+applicable. Routes stay registered regardless of flags, so flag changes alone do
+not require rebuilding route cache. Deploying the new middleware does require
+the normal route-cache refresh for the new source. This task does not change
+deployment flags, run migrations, refresh live caches or deploy.
+
 ## Independently gated MCP addition — 2026-09-26
 
 MCP source adds six reviewed OAuth/connection migration files to the earlier

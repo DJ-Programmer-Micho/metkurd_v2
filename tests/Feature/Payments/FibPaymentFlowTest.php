@@ -55,6 +55,7 @@ afterEach(function () {
 function fibFlowConfigure(): void
 {
     app()->setLocale('en');
+    config(['customer_app.v1_enabled' => true, 'metkurd_v2.enabled' => true]);
 
     config()->set('payments.providers.fib.enabled', true);
     config()->set('fib.enabled', true);
@@ -646,7 +647,7 @@ it('retries local fulfillment for paid but unapplied plan checkouts from the sha
         ->assertJsonPath('status', PaymentStatus::PAID->value)
         ->assertJsonPath('internal_status', 'applied')
         ->assertJsonPath('is_success', true)
-        ->assertJsonPath('redirect_url', route('app.home', ['locale' => 'en']));
+        ->assertJsonPath('redirect_url', route('app.v2.home', ['locale' => 'en']));
 
     expect($payment->fresh()->fulfilled_at)->not->toBeNull()
         ->and($customer->fresh()->currentServicePlanId())->toBe($plan->id);
@@ -716,7 +717,7 @@ it('auto-updates addon checkout status through the shared fib status endpoint wi
             'is_terminal' => true,
             'is_success' => true,
         ])
-        ->assertJsonPath('redirect_url', route('app.home', ['locale' => 'en']));
+        ->assertJsonPath('redirect_url', route('app.v2.home', ['locale' => 'en']));
 
     $payment = $payment->fresh();
 
@@ -756,7 +757,7 @@ it('auto-updates storage subscription checkout status through the shared fib sta
             'is_terminal' => true,
             'is_success' => true,
         ])
-        ->assertJsonPath('redirect_url', route('app.home', ['locale' => 'en']));
+        ->assertJsonPath('redirect_url', route('app.v2.home', ['locale' => 'en']));
 
     expect(CustomerStorageSubscription::query()
         ->where('payment_id', $payment->id)
@@ -813,7 +814,7 @@ it('auto-updates plan subscription checkout status quickly via status polling ev
             'is_terminal' => true,
             'is_success' => true,
         ])
-        ->assertJsonPath('redirect_url', route('app.home', ['locale' => 'en']));
+        ->assertJsonPath('redirect_url', route('app.v2.home', ['locale' => 'en']));
 
     $payment = $payment->fresh();
 
@@ -2472,8 +2473,8 @@ it('renders a localized app home redirect after successful subscription confirma
     $this->actingAs($customer, 'app')
         ->get(route('payments.fib.show', ['locale' => 'ar', 'payment' => $payment]))
         ->assertOk()
-        ->assertSee(route('app.home', ['locale' => 'ar']))
-        ->assertSee('Redirecting you to your app home');
+        ->assertSee(route('app.v2.home', ['locale' => 'ar']))
+        ->assertSee(__('Redirecting you to your app home...'));
 });
 
 it('stops automatic polling once the fib checkout reaches a terminal state', function () {

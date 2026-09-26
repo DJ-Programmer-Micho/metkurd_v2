@@ -107,7 +107,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
         if ($user->phone_verify) {
             $this->dispatch('alert', type: 'info', message: __('Phone already verified.'));
-            return redirect()->to(route('app.home',['locale' => app()->getLocale()]));
+            return redirect()->to(\App\Support\CustomerAppDestination::afterAuthentication());
         }
 
         $this->syncState();
@@ -287,7 +287,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                 return redirect()->to($redirectUrl);
             }
 
-            return redirect()->to(route('app.home',['locale' => app()->getLocale()]));
+            return redirect()->to(\App\Support\CustomerAppDestination::afterAuthentication());
         }
 
         $attempts = (int) Cache::get($this->attemptsKey(), 0) + 1;
@@ -511,23 +511,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
 
     private function sanitizeLocalRedirect(?string $candidate): ?string
     {
-        $candidate = trim((string) $candidate);
-
-        if ($candidate === '') {
-            return null;
-        }
-
-        $appUrl = rtrim((string) config('app.url'), '/');
-
-        if ($appUrl !== '' && str_starts_with($candidate, $appUrl)) {
-            return $candidate;
-        }
-
-        if (str_starts_with($candidate, '/')) {
-            return url($candidate);
-        }
-
-        return null;
+        return \App\Support\CustomerAppDestination::intended($candidate);
     }
 };
 

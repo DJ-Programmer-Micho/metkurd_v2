@@ -86,7 +86,7 @@ new class extends Component
     if (auth('admin')->check()) {
         $platformLinks[] = ['label' => LandingContent::text('nav.admin_panel'), 'href' => route('admin.home', ['locale' => $locale])];
     } elseif (auth('app')->check()) {
-        $platformLinks[] = ['label' => LandingContent::text('nav.dashboard'), 'href' => route('app.home', ['locale' => $locale])];
+        $platformLinks[] = ['label' => LandingContent::text('nav.dashboard'), 'href' => \App\Support\CustomerAppDestination::home($locale)];
         $platformLinks[] = ['label' => LandingContent::text('nav.profile'), 'href' => route('app.profile', ['locale' => $locale])];
     } else {
         $platformLinks[] = ['label' => LandingContent::text('nav.get_started'), 'href' => route('app.signup')];

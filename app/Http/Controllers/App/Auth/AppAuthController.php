@@ -21,7 +21,7 @@ class AppAuthController extends Controller
     {
         // If already logged in, redirect to dashboard
         if (Auth::guard('app')->check()) {
-            return redirect()->route('app.home');
+            return redirect()->to(\App\Support\CustomerAppDestination::afterAuthentication());
         }
 
         return view('app.auth.signin-one');
@@ -50,7 +50,7 @@ class AppAuthController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Welcome back!',
-                'redirect' => route('app.home'),
+                'redirect' => \App\Support\CustomerAppDestination::afterAuthentication(),
             ]);
         }
 
@@ -66,9 +66,11 @@ class AppAuthController extends Controller
 
     public function logout(Request $request)
     {
+        $locale = \App\Support\CustomerAppDestination::locale();
         Auth::guard('app')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+        $request->session()->put('applocale', $locale);
 
         return redirect()->route('app.signin');
     }

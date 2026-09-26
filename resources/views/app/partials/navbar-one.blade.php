@@ -11,7 +11,7 @@
             'title' => __('General'),
             'items' => [
                 [
-                    'route' => 'app.home',
+                    'route' => \App\Support\CustomerAppDestination::homeRoute(),
                     'icon' => 'ri-dashboard-line',
                     'label' => __('Dashboard'),
                     'enabled' => true,

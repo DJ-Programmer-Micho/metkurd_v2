@@ -452,7 +452,7 @@ class extends Component
             ? __('Congrats! Your subscription was confirmed successfully. We sent the confirmation by email.')
             : __('Congrats! Your payment was confirmed successfully. We sent the confirmation by email.');
     }
-    $homeUrl = route('app.home', ['locale' => app()->getLocale()]);
+    $homeUrl = \App\Support\CustomerAppDestination::home();
     $shouldAutoRedirectHome = $payment->isApplied();
     $isSubscriptionCheckout = $payment->isProviderSubscriptionObject();
     $providerObjectLabel = $isSubscriptionCheckout ? __('Subscription') : __('Payment');

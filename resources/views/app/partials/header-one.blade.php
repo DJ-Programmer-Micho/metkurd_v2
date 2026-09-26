@@ -6,7 +6,7 @@
             {{-- <audio id="notificationSound" src="{{ asset('dashboard/audio/notification.mp3') }}" preload="auto" allow="autoplay"></audio> --}}
             <!-- LOGO -->
             <div class="navbar-brand-box horizontal-logo">
-                <a href="/" class="logo logo-dark">
+                <a href="{{ \App\Support\CustomerAppDestination::home() }}" class="logo logo-dark">
                     <span class="logo-sm mt-2">
                         <img src="{{ asset(app('logo_1024_tran')) }}" alt="{{ __('METKURD') }}" height="25">
                     </span>
@@ -20,7 +20,7 @@
                     </span>
                 </a>
                 <!-- Light Logo-->
-                <a href="/" class="logo logo-light">
+                <a href="{{ \App\Support\CustomerAppDestination::home() }}" class="logo logo-light">
                     <span class="logo-sm mt-0">
                         <img src="{{ asset(app('logo_1024_tran_black')) }}" alt="{{ __('METKURD') }}" height="40">
                     </span>

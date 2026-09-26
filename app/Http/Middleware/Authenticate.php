@@ -16,6 +16,10 @@ class Authenticate extends Middleware
             return null;
         }
 
+        if (! $request->routeIs('admin.*') && $request->hasSession()) {
+            $request->session()->put('applocale', \App\Support\CustomerAppDestination::locale());
+        }
+
         return route($request->routeIs('admin.*') ? 'admin.signin' : 'app.signin');
     }
 }

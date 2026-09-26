@@ -1,5 +1,41 @@
 # MetKurd architecture
 
+## Customer application entry and V1 retirement gate — 2026-09-26
+
+`CustomerAppDestination` owns customer navigation after password/social login,
+verification, already-authenticated guest routes and generic dashboard links.
+It consumes a valid local intended URL first, then prefers `app.v2.home`
+(`/{locale}/app-v2`), falls back to `app.home` only if V1 is enabled, and uses
+the localized landing home if both applications are disabled. EN/AR/KU are
+preserved through guest entry and logout. Intended absolute URLs must match
+the configured APP_URL origin exactly; only registered customer GET routes
+are accepted. Login/logout loops, external URLs and ambiguous paths are rejected.
+Local OAuth authorization intentions retain their query without changing MCP.
+
+`FEATURE_APP_V1` defaults true in `config/customer_app.php`. The `app.v1.enabled`
+middleware gates legacy workspace/account/purchase/payment pages and is persistent
+on signed Livewire updates, blocking stale actions after disabling V1. Safe GETs
+redirect to explicit V2 equivalents (profile, storage, billing, API, purchase/payment,
+Apollo 1.5, Vector 1.5, Caption, OCR and STEM selection); other legacy pages use
+V2 home. Disabling V2 retains its existing 404 boundary. V1-specific service links
+remain V1 when enabled; generic dashboard/logo links prefer the current app.
+
+Shared authentication/verification, payment status/refresh/cancel/return controls,
+owned media/reference downloads and voice assets retain their existing protection
+outside the V1 workspace gate because V2 also consumes them. Admin, REST API and
+MCP boundaries are unchanged. No billing fulfillment or schema changes are involved.
+See the [deployment matrix](V1-TO-V2-PRODUCTION-RUNBOOK.md#customer-application-flags--2026-09-26).
+
+Verification: 167 distinct focused PHP tests passed across the destination, auth,
+profile/onboarding, V2 payment/dashboard and affected legacy payment-return runs;
+18 navigation/account/payment frontend tests also passed. The flag matrix exercises
+EN/AR/KU, real Laravel/Livewire HTTP login, remember-me, intended URLs, logout,
+social callback, password recovery, verification and stale signed V1 updates.
+Completed-payment status checks preserve payment/wallet/ledger snapshots. Fixtures
+used SQLite `:memory:`, array cache/session and mocked external services. PHP syntax,
+focused Pint and whitespace checks passed. Interactive browser/deployment acceptance
+was not performed; no asset source changed and no rollout flags were applied.
+
 ## Remote MCP external client — 2026-09-26
 
 The independently disabled `/mcp` interface uses the official PHP MCP SDK and

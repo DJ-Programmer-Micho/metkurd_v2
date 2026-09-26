@@ -72,7 +72,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         }
 
         $this->dispatch('alert', type: 'success', message: __('Welcome back!'));
-        return redirect()->to(route('app.home',['locale' => app()->getLocale()]));
+        return redirect()->to(\App\Support\CustomerAppDestination::afterAuthentication());
     }
 
     public function updatedCfTurnstileResponse(): void
@@ -256,4 +256,3 @@ document.addEventListener('click', function (e) {
     }
 });
 </script>
-

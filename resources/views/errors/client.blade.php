@@ -2,7 +2,7 @@
     $locale = request()->route('locale') ?: app()->getLocale();
     $appUserAuthenticated = auth('app')->check();
     $primaryUrl = $primaryUrl ?? ($appUserAuthenticated
-        ? route('app.home', ['locale' => $locale])
+        ? \App\Support\CustomerAppDestination::home($locale)
         : url('/'));
     $primaryLabel = $primaryLabel ?? ($appUserAuthenticated ? 'Back to App' : 'Go Home');
     $secondaryUrl = $secondaryUrl ?? ($appUserAuthenticated

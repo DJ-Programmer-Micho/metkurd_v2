@@ -164,58 +164,61 @@ Route::prefix('{locale}')
     ->middleware(['auth:app', 'app.active', 'app.verified', LocalizationMainMiddleware::class])
     ->group(function () {
         // pages
-        Route::livewire('/app/home', 'app::pages.home.app-home')->name('app.home');
-        Route::livewire('/app/profile', 'app::pages.profile.app-profile')->name('app.profile');
-        Route::livewire('/app/my-storage', 'app::pages.my-storage.app-storage')->name('app.storage');
-        Route::livewire('/app/my-billing', 'app::pages.billing.app-billing')->name('app.billing');
-        Route::livewire('/app/api', 'app::pages.api.app-api-access')->name('app.api-access');
+        Route::middleware('app.v1.enabled')->group(function () {
+            Route::livewire('/app/home', 'app::pages.home.app-home')->name('app.home');
+            Route::livewire('/app/profile', 'app::pages.profile.app-profile')->name('app.profile');
+            Route::livewire('/app/my-storage', 'app::pages.my-storage.app-storage')->name('app.storage');
+            Route::livewire('/app/my-billing', 'app::pages.billing.app-billing')->name('app.billing');
+            Route::livewire('/app/api', 'app::pages.api.app-api-access')->name('app.api-access');
 
-        Route::livewire('/app/xtts', 'app::pages.xtts.app-xtts')
-            ->middleware('app.tool.access:tts.standard')
-            ->name('app.xtts');
-        Route::livewire('/app/xomni', 'app::pages.omni.app-xomni')
-            ->middleware('app.tool.access:xomni.generate')
-            ->name('app.xomni');
-        Route::livewire('/app/f5tts', 'app::pages.f5tts.app-f5tts')
-            ->middleware('app.tool.access:ftts.standard')
-            ->name('app.f5tts');
-        Route::livewire('/app/clone-xtts', 'app::pages.clone-xtts.app-clone-xtts')
-            ->middleware('app.tool.access:clone_tts.standard')
-            ->name('app.clone-xtts');
-        Route::livewire('/app/clone-xomni', 'app::pages.omni.app-clone-xomni')
-            ->middleware('app.tool.access:clone_xomni.generate')
-            ->name('app.clone-xomni');
-        Route::livewire('/app/wasr', 'app::pages.wasr.app-wasr')
-            ->middleware('app.tool.access:asr.standard')
-            ->name('app.wasr');
-        Route::livewire('/app/qasr', 'app::pages.qasr.app-qasr')
-            ->middleware('app.tool.access:qasr.standard')
-            ->name('app.qasr');
-        Route::livewire('/app/caption', 'app::pages.qasr.app-caption')
-            ->middleware('app.tool.access:caption.standard')
-            ->name('app.caption');
-        Route::livewire('/app/tran', 'app::pages.tran.app-tran')
-            ->middleware('app.tool.access:tran.standard')
-            ->name('app.tran');
-        Route::livewire('/app/stem', 'app::pages.stem.app-stem')
-            ->middleware('app.tool.access:stem')
-            ->name('app.stem');
-        Route::livewire('/app/ocr', 'app::pages.ocr.app-ocr')
-            ->middleware('app.tool.access:ocr.standard')
-            ->name('app.ocr');
-        Route::livewire('/app/youtube', 'app::pages.youtube.app-youtube-downloader')
-            ->middleware('app.tool.access:any,youtube_audio,youtube_video')
-            ->name('app.youtube');
+            Route::livewire('/app/xtts', 'app::pages.xtts.app-xtts')
+                ->middleware('app.tool.access:tts.standard')
+                ->name('app.xtts');
+            Route::livewire('/app/xomni', 'app::pages.omni.app-xomni')
+                ->middleware('app.tool.access:xomni.generate')
+                ->name('app.xomni');
+            Route::livewire('/app/f5tts', 'app::pages.f5tts.app-f5tts')
+                ->middleware('app.tool.access:ftts.standard')
+                ->name('app.f5tts');
+            Route::livewire('/app/clone-xtts', 'app::pages.clone-xtts.app-clone-xtts')
+                ->middleware('app.tool.access:clone_tts.standard')
+                ->name('app.clone-xtts');
+            Route::livewire('/app/clone-xomni', 'app::pages.omni.app-clone-xomni')
+                ->middleware('app.tool.access:clone_xomni.generate')
+                ->name('app.clone-xomni');
+            Route::livewire('/app/wasr', 'app::pages.wasr.app-wasr')
+                ->middleware('app.tool.access:asr.standard')
+                ->name('app.wasr');
+            Route::livewire('/app/qasr', 'app::pages.qasr.app-qasr')
+                ->middleware('app.tool.access:qasr.standard')
+                ->name('app.qasr');
+            Route::livewire('/app/caption', 'app::pages.qasr.app-caption')
+                ->middleware('app.tool.access:caption.standard')
+                ->name('app.caption');
+            Route::livewire('/app/tran', 'app::pages.tran.app-tran')
+                ->middleware('app.tool.access:tran.standard')
+                ->name('app.tran');
+            Route::livewire('/app/stem', 'app::pages.stem.app-stem')
+                ->middleware('app.tool.access:stem')
+                ->name('app.stem');
+            Route::livewire('/app/ocr', 'app::pages.ocr.app-ocr')
+                ->middleware('app.tool.access:ocr.standard')
+                ->name('app.ocr');
+            Route::livewire('/app/youtube', 'app::pages.youtube.app-youtube-downloader')
+                ->middleware('app.tool.access:any,youtube_audio,youtube_video')
+                ->name('app.youtube');
 
-        /*
-        |--------------------------------------------------------------------------
-        | Billing Route
-        |--------------------------------------------------------------------------
-        */
-        Route::livewire('/app/subscription-plans', 'app::pages.subscription-plan.subscription-plan')->name('subscription-plan');
-        Route::livewire('/app/storage-plans', 'app::pages.storage-plan.storage-plan')->name('storage-plan');
-        Route::livewire('/app/addon-credits', 'app::pages.addon-credits.addon-credits')->name('addon-credits');
-        Route::livewire('/app/payments/fib/{payment}', 'app::pages.payments.fib-payment')->name('payments.fib.show');
+            /*
+            |--------------------------------------------------------------------------
+            | Billing Route
+            |--------------------------------------------------------------------------
+            */
+            Route::livewire('/app/subscription-plans', 'app::pages.subscription-plan.subscription-plan')->name('subscription-plan');
+            Route::livewire('/app/storage-plans', 'app::pages.storage-plan.storage-plan')->name('storage-plan');
+            Route::livewire('/app/addon-credits', 'app::pages.addon-credits.addon-credits')->name('addon-credits');
+            Route::livewire('/app/payments/fib/{payment}', 'app::pages.payments.fib-payment')->name('payments.fib.show');
+        });
+        // Shared payment controls and owned media remain available to V2 callers.
         Route::get('/app/payments/fib/{payment}/status', [FibPaymentController::class, 'status'])->name('payments.fib.status');
         Route::post('/app/payments/fib/{payment}/refresh', [FibPaymentController::class, 'refresh'])->name('payments.fib.refresh');
         Route::post('/app/payments/fib/{payment}/cancel', [FibPaymentController::class, 'cancel'])->name('payments.fib.cancel');
@@ -405,7 +408,7 @@ Route::prefix('{locale}')
 
 /*
 |--------------------------------------------------------------------------
-| App V2 preview (isolated from the stable V1 route tree)
+| App V2 (independently gated customer application)
 |--------------------------------------------------------------------------
 */
 Route::prefix('{locale}')

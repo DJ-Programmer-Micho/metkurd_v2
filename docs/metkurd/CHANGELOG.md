@@ -1,5 +1,15 @@
 # Architectural and behavioral decisions
 
+## V2-first customer entry with independent V1 gate — 2026-09-26
+
+Added `FEATURE_APP_V1` (default true) and one customer destination resolver.
+Validated local intended routes take priority; default entry prefers V2, then
+enabled V1, then localized landing. Disabled V1 workspaces redirect through a
+small explicit map while stale Livewire actions are blocked. Shared auth, owned
+media and payment controls remain reachable for V2. Generic navigation and payment
+success destinations use the resolver; financial behavior, Admin, API and MCP
+are unchanged. No application flags or deployment state were changed.
+
 ## MCP effective-plan eligibility correction — 2026-09-26
 
 MCP now consumes the authoritative current active non-Free plan without adding a

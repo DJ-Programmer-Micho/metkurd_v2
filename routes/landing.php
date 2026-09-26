@@ -20,7 +20,7 @@ Route::get('/', function () {
     }
 
     if (auth('app')->check()) {
-        return redirect()->route('app.home', ['locale' => $locale]);
+        return redirect()->to(\App\Support\CustomerAppDestination::home($locale));
     }
 
     return redirect()->route('landing.home', ['locale' => $locale]);

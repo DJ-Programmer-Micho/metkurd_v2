@@ -41,7 +41,7 @@ new class extends Component
     } elseif (auth('app')->check()) {
         $primaryAction = [
             'label' => LandingContent::text('nav.dashboard'),
-            'href' => route('app.home', ['locale' => $locale]),
+            'href' => \App\Support\CustomerAppDestination::home($locale),
         ];
 
         $secondaryAction = [

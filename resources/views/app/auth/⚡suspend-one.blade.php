@@ -10,7 +10,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
         $customer = auth('app')->user();
 
         if ($customer && $customer->status != 0) {
-            $this->redirectRoute('app.home');
+            $this->redirect(\App\Support\CustomerAppDestination::afterAuthentication());
         }
     }
 };

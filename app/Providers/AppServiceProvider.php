@@ -163,6 +163,7 @@ class AppServiceProvider extends ServiceProvider
 
         Livewire::addPersistentMiddleware([
             LocalizationMainMiddleware::class,
+            \App\Http\Middleware\EnsureAppV1Enabled::class,
         ]);
     }
 

@@ -20,7 +20,7 @@ class CustomerEmailNotifier
                 'billingCycle' => (string) ($payload['billing_cycle'] ?? 'Monthly'),
                 'creditsIncluded' => number_format((int) ($payload['monthly_credits'] ?? 0)),
                 'activatedOn' => (string) ($payload['activated_on'] ?? now()->format('F d, Y')),
-                'actionUrl' => static::appRoute('app.home'),
+                'actionUrl' => CustomerAppDestination::home(),
                 'actionLabel' => 'Open Dashboard',
             ]),
             $logContext

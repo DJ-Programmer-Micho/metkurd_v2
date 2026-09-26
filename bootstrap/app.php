@@ -45,6 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'app.verified' => EnsureCustomerVerificationIsComplete::class,
             'app.tool.access' => EnsureCustomerCanAccessTool::class,
             'app.v2.enabled' => EnsureV2DashboardEnabled::class,
+            'app.v1.enabled' => \App\Http\Middleware\EnsureAppV1Enabled::class,
         ]);
 
         // $middleware->redirectGuestsTo(function ($request) {
@@ -66,10 +67,10 @@ return Application::configure(basePath: dirname(__DIR__))
                 return route('admin.home', ['locale' => app()->getLocale()]);
             }
             if (auth('app')->check()) {
-                return route('app.home', ['locale' => app()->getLocale()]);
+                return \App\Support\CustomerAppDestination::afterAuthentication();
             }
 
-            return route('app.home', ['locale' => app()->getLocale()]);
+            return \App\Support\CustomerAppDestination::home();
         });
     })
     ->withExceptions(function (Exceptions $exceptions): void {

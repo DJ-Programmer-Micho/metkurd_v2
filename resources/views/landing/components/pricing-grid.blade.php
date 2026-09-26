@@ -131,7 +131,7 @@ new class extends Component
         }
 
         if (auth('app')->check()) {
-            return route('app.home', ['locale' => app()->getLocale()]);
+            return \App\Support\CustomerAppDestination::home();
         }
 
         return route('app.signup');

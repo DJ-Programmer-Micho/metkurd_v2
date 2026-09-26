@@ -53,7 +53,7 @@ class FibPaymentController extends Controller
             'is_success' => $isSuccess,
             'can_retry' => in_array($checkoutState, ['failed', 'canceled', 'expired'], true),
             'redirect_url' => $isSuccess && $payment->fulfilled_at !== null
-                ? route('app.home', ['locale' => $locale])
+                ? \App\Support\CustomerAppDestination::home($locale)
                 : null,
             'message' => $message,
             'provider_status' => $payment->providerStatusLabel(),

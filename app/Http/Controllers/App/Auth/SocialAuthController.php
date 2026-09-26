@@ -103,7 +103,7 @@ class SocialAuthController extends Controller
             return redirect()->route($nextVerificationRoute);
         }
 
-        return redirect()->route('app.home', ['locale' => app()->getLocale()])
+        return redirect()->to(\App\Support\CustomerAppDestination::afterAuthentication())
             ->with('status', 'Welcome back!');
     }
 }
