@@ -6,6 +6,7 @@ use App\Domain\Payments\Models\Payment;
 use App\Models\CreditOrder;
 use App\Models\ToolAction;
 use App\Services\Billing\BillingReportingBoundary;
+use App\Support\MetKurdV2ToolCatalog;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -30,7 +31,10 @@ class ProductionPreflight extends Command
                 'admin_schema' => Schema::hasColumns('users', ['status', 'admin_capabilities']) && Schema::hasTable('admin_operations') && Schema::hasTable('admin_audit_events'),
                 'allocation_schema' => Schema::hasTable('subscription_credit_allocations'),
                 'agreement_schema' => Schema::hasTable('service_plan_agreements')];
-            $actions = ['xomni.generate', 'xomni-v2.generate', 'clone_xomni.generate', 'vector-v2.generate', 'leo.transcribe', 'caption.standard', 'ocr.standard', 'stem.sep2', 'stem.sep4'];
+            $actions = collect(app(MetKurdV2ToolCatalog::class)->services())
+                ->flatMap(fn (array $service) => array_values($service['tools'] ?? []))
+                ->reject(fn (array $tool) => $tool['coming_soon'] ?? false)
+                ->pluck('legacy_action')->filter()->unique();
             foreach ($actions as $code) {
                 $checks['action:'.$code] = Schema::hasTable('tool_actions') && ToolAction::where('full_code', $code)->where('is_active', true)
                     ->whereHas('tool', fn ($q) => $q->where('is_active', true))->exists();

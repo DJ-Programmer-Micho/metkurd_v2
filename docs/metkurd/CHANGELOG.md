@@ -1,5 +1,31 @@
 # Architectural and behavioral decisions
 
+## Current V2 release inventory and catalog preflight — 2026-09-26
+
+ProductionPreflight now derives required active Tool/ToolAction identities from
+MetKurdV2ToolCatalog, excluding coming-soon entries. Its former nine-action list
+could report success without Zeta, Theta or Harakat. No catalog rows, prices,
+entitlements, rollout gates or production state are changed by the command.
+The isolated regression checks all twelve actions and each new service's missing
+identity, inactive action and inactive tool without repairing them.
+
+The [current-state review](CURRENT-STATE-PRODUCTION-REVIEW.md) and refreshed
+[production runbook](V1-TO-V2-PRODUCTION-RUNBOOK.md) distinguish source/local/user
+reports from production acceptance, record 78 repository migrations and five
+endpoint configurations, and retain the historical cutover evidence. Native RDS,
+actual catalog economics, live workers/storage/FIB and interactive acceptance
+remain operator-only release checks; the committed local cutover must not repeat.
+
+## Branded pre-rendered maintenance with JSON negotiation — 2026-09-26
+
+Use a self-contained `errors.503` document, with embedded local logo/CSS and static
+EN/AR/KU maintenance copy. Detect locale and Landing/App/Admin style in the browser
+so artisan pre-rendering cannot freeze command-time request context. Wrap Laravel's
+unchanged early maintenance output for API JSON 503; retain native secret/cookie,
+exclusion, redirect and Retry-After behavior. Plain down uses the same presentation
+before auth-dependent exception handlers. Recommend the file-driver pre-render
+command in the production runbook; do not change cutover logic or deploy here.
+
 ## 2026-09-26 — Global V2 Process Queue
 
 - Replace V2's lock-filtered legacy slots with a bounded customer/App MlJob read

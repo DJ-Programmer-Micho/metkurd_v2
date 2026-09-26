@@ -1,6 +1,89 @@
 # V1 → V2 production launch runbook
 
-Status: **BLOCKED for production execution**, updated 2026-09-15. This is the
+## Current-state review — 2026-09-26
+
+Status: **SOURCE REVIEWED; PRODUCTION ACCEPTANCE REQUIRED**. The current
+[release review](CURRENT-STATE-PRODUCTION-REVIEW.md) supplies the complete twelve-product
+matrix, 78-file migration inventory, endpoint/worker requirements, verification
+record and ordered operator acceptance checklist. This update supersedes the old
+service and migration counts below; dated historical evidence is retained.
+
+- **SOURCE VERIFIED:** Apollo 1.5/2.0, Vector 1.5/2.0, Zeta 1.0, Theta 1.0,
+  Leo, Caption, OCR Scanner, Harakat 1.0, STEM 2 and STEM 4 are current V2 products.
+  Production preflight now derives required active Tool/ToolAction checks from
+  the current V2 catalog instead of its former nine-action list.
+- **SOURCE VERIFIED:** five endpoint configurations cover V2:
+  `RUNPOD_ENDPOINT_ID_OMNI_V2`, `RUNPOD_ENDPOINT_ID_QASR_V2`,
+  `RUNPOD_ENDPOINT_ID_KOCR_V2`, `RUNPOD_ENDPOINT_ID_STEM`, and
+  `RUNPOD_ENDPOINT_ID_TASHKEEL_V1`. See the review for shared transport/storage
+  configuration. Never print their values in release evidence.
+- Zeta = `model_2 + builtin_ref_batch`; Theta = `model_2 + audio_url_batch`.
+  Keep ONE Omni endpoint, multiple Serverless workers for concurrency, one model
+  session per project and one final WAV. The deployed worker needs
+  **`OMNI_BATCH_ENABLED=true`**; its source default stays false. Verify worker
+  image/models/reference files, limits, pauses, all-or-nothing failures and warm
+  cleanup before launch. Laravel/worker defaults are documented in the review;
+  they are not production capacity certification.
+- Harakat = `harakat.diacritize`, dedicated `tashkeel_v1`, text-only App/API,
+  `HARAKAT_MAX_TEXT_CHARS=5000` default, private TXT persisted before done.
+- Two catalog migrations follow the old snapshot:
+  `2026_09_20_000001_register_multi_speaker_tools` and
+  `2026_09_21_000001_register_harakat_tool`. They copy initial source-action
+  pricing/plan entitlements into independent new actions, preserving existing
+  target economics. Source actions and active pricing are prerequisites.
+  No generic seeders. The former 11-pending original-snapshot count is now
+  **13 only for that unchanged snapshot** (old R1 10 becomes 12). Actual target
+  `migrate:status` always wins; do not infer today's pending count from this text.
+- API V2 now has nine generation routes: speech, voice-clone, transcriptions,
+  captions, ocr, stem, zeta, theta, harakat. Auxiliary references, voices,
+  services, jobs and private downloads remain behind independent API authorization.
+  Zeta shares `v2:speech`, Theta shares `v2:voice-clone`, Harakat uses
+  `v2:harakat`. Copied entitlements do not automatically grant scopes. API OCR
+  accepts multipart local bytes, not a customer-supplied worker URL.
+- The global [Process Queue](PROCESS-QUEUE.md) reads one bounded local query,
+  never provider/storage/billing operations. Verify 8-second active/60-second
+  idle reads, hidden-tab pause, immediate submission event, status colors and
+  session-only acknowledgement across navigation/Back/Forward/locale changes.
+  All twelve result links require owned authorized workspace selection. No new
+  migration. Scheduler/queue workers must persist results with browser closed.
+- The current topbar has V2 Plans links in its profile dropdown, but **no
+  standalone plan badge/Subscribe CTA**. Shared effective-plan data/cache authority
+  exists; do not certify an absent UI feature. Mobile/RTL/browser acceptance remains open.
+- **LOCAL VERIFIED:** see the current review's exact test/build record, separately
+  from historical counts below: 681 broad PHP cases passed, then 11 focused
+  preflight/epoch cases passed (682 distinct cases); 65 frontend tests and Vite
+  build passed, as did focused PHP syntax/Pint. Isolated SQLite does not certify
+  RDS DDL/locks. Concurrent maintenance work requires its own acceptance and a
+  frozen final release; no production cache compilation was performed here.
+- **USER-REPORTED WORKER ACCEPTANCE:** successful services, specifically Zeta/Theta,
+  Harakat and repaired STEM playback, are user reports rather than independent
+  verification of the production image, endpoint configuration or load capacity.
+- The user reports the local migration/capability/preflight/cutover rehearsal
+  already committed. **Do not rerun that local cutover.** The later Sep15 section
+  describing an unexecuted fresh-copy dry-run is historical, not today's instruction.
+- **PRODUCTION UNVERIFIED:** immutable release, actual twelve-action catalog and
+  App/API prices/access, native RDS identity/migrations/preservation, backups/restore,
+  provider disposition, live endpoint capability, private storage, workers/scheduler,
+  public callbacks/FIB lifecycle and interactive locale/mobile acceptance.
+
+Current smoke additions to section 10: test both Apollo/Vector versions, Zeta's
+different catalog voices, Theta's repeated owned reference/order/0/500/1000/2000
+pauses/no trailing silence, batch failure without partial success, Harakat mixed
+UTF-8/max-length/TXT, and all three API routes with independent API wallet settlement.
+Test voice discovery and OCR multipart uploads; STEM same-origin seeks/Range;
+Process Queue with browser hidden, navigation and persisted background completion.
+Read-only metadata/private downloads validate storage without enabling deletion.
+
+Production cutover still uses `--target=production` and
+`--confirm=RESET-V2-PRODUCTION-BILLING-DOMAIN`, with backup/restore confirmations,
+fresh review hash and all safeguards in section 6. Migrations/catalog/pricing
+changes affect whole-database fingerprints: obtain the final hash after approved
+changes with writers stopped. If the target already has an epoch, verify it;
+do not repeat cutover. No production operation or gate activation is authorized here.
+
+## Historical baseline — 2026-09-15
+
+Historical status: **BLOCKED for production execution**, updated 2026-09-15. This is the
 ordered operator checklist and source-backed command inventory, not launch approval.
 No production connection, deployment, migration, provider request or cutover was
 performed while writing it. Do not promote the local rehearsal database to production.
@@ -37,8 +120,36 @@ Unfilled deployment evidence is a launch blocker, not permission to improvise.
    maintenance on every serving instance:
 
    ```sh
-   php artisan down --retry=60
+   php artisan down --retry=60 --render="errors.503"
    ```
+
+   Maintenance presentation follow-up (2026-09-26): use Laravel's **file**
+   maintenance driver (`APP_MAINTENANCE_DRIVER=file`) for this service-independent
+   response, and apply down/up on every serving instance. Confirm the active
+   configuration before the window; do not change the driver while already down.
+   The view embeds its logo, CSS and EN/AR/KU copy when the command runs. The
+   visitor's pathname selects Landing versus App/Admin styling and locale; no
+   authenticated layout, DB, Redis, Vite manifest or network polling is needed to
+   serve the resulting document. Plain `down` is also branded, but still needs
+   Laravel to boot and is not the recommended option when dependencies are stopped.
+
+   `public/index.php` wraps Laravel's **unchanged** generated maintenance script
+   with response negotiation: blocked `/api/*` and JSON-preferring requests receive
+   the stable `service_unavailable` JSON envelope at HTTP 503, preserving Retry-After.
+   Laravel still owns exclusions, secret/cookie checks and redirects. Do not use
+   `--redirect` (it changes the destination and JSON behavior), `--status=200`, or
+   `--refresh` for this procedure. A private operator `--secret` remains supported;
+   it is not an Admin exemption and never goes in docs or public links. The cache
+   maintenance driver and alternate HTTP entry points need separate verification;
+   the generated early-response script checks the local `storage/framework/down`.
+
+   Package the view, `resources/lang/maintenance.json`, local logo and
+   `app/Support/MaintenanceResponse.php` with the release. Generate the response
+   while Laravel can boot, before stopping dependencies. Preserve the maintenance
+   files across release switches; regenerating the view requires another successful
+   down command. `php artisan up` removes Laravel's maintenance marker/response;
+   Retry reloads the visitor's exact URL. See [MAINTENANCE.md](MAINTENANCE.md) for
+   verification scope. This does not change cutover approval or stopped-writer rules.
 
 3. Stop scheduler launchers, queue consumers and separate reconciliation launchers
    with the **confirmed manager commands from section 1**. Drain or stop in-flight

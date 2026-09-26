@@ -73,6 +73,19 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (\Throwable $exception, Request $request) {
+            // Handle 503 before any area/authentication handler can touch session services.
+            if ($exception instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface
+                && $exception->getStatusCode() === 503) {
+                $headers = array_merge($exception->getHeaders(), [
+                    'Cache-Control' => 'no-store, private',
+                    'X-Robots-Tag' => 'noindex, nofollow',
+                    'X-Content-Type-Options' => 'nosniff',
+                ]);
+
+                return \App\Support\MaintenanceResponse::wantsJson($request->server->all())
+                    ? response(\App\Support\MaintenanceResponse::JSON, 503, $headers)->header('Content-Type', 'application/json; charset=UTF-8')
+                    : response()->view('errors.503', [], 503, $headers);
+            }
             $adminSurface = $request->routeIs('admin.*') || ($request->is('livewire/*') && auth('admin')->check());
             if ($adminSurface && ! $exception instanceof \Illuminate\Validation\ValidationException
                 && ! $exception instanceof \Illuminate\Auth\AuthenticationException) {

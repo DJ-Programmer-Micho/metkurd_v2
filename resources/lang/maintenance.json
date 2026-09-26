@@ -1,0 +1,32 @@
+{
+    "en": {
+        "status": "Scheduled maintenance",
+        "landingTitle": "A little pause.\nA better MetKurd.",
+        "landingMessage": "We're making improvements to MetKurd. The service will be available again shortly.",
+        "appTitle": "Maintenance in progress",
+        "appMessage": "MetKurd is temporarily unavailable while scheduled maintenance is being completed.",
+        "hint": "Please try again shortly.",
+        "retry": "Try Again",
+        "footer": "MetKurd AI"
+    },
+    "ar": {
+        "status": "صيانة مجدولة",
+        "landingTitle": "توقف قصير.\nميت كورد أفضل.",
+        "landingMessage": "نعمل على تحسين ميت كورد. ستكون الخدمة متاحة مجددًا قريبًا.",
+        "appTitle": "الصيانة جارية",
+        "appMessage": "ميت كورد غير متاح مؤقتًا ريثما تكتمل أعمال الصيانة المجدولة.",
+        "hint": "يرجى المحاولة مجددًا بعد قليل.",
+        "retry": "حاول مجددًا",
+        "footer": "ميت كورد AI"
+    },
+    "ku": {
+        "status": "چاکسازیی پلاندانراو",
+        "landingTitle": "وەستانێکی کورت.\nمێتکوردێکی باشتر.",
+        "landingMessage": "کار لە باشترکردنی مێتکورد دەکەین. خزمەتگوزارییەکە بەم زووانە دووبارە بەردەست دەبێتەوە.",
+        "appTitle": "چاکسازی بەڕێوە دەچێت",
+        "appMessage": "مێتکورد بۆ ماوەیەکی کاتی بەردەست نییە تا چاکسازییە پلاندانراوەکان تەواو دەبن.",
+        "hint": "تکایە کەمێکی تر دووبارە هەوڵ بدەرەوە.",
+        "retry": "دووبارە هەوڵ بدەرەوە",
+        "footer": "مێتکورد AI"
+    }
+}

@@ -1,5 +1,15 @@
 # MetKurd architecture
 
+## Service-independent maintenance presentation — 2026-09-26
+
+The standalone 503 view pre-renders local artwork and all maintenance translations.
+Browser pathname selects Landing/App/Admin appearance and EN/AR/KU without normal
+route localization. A dependency-free wrapper at the public entry point negotiates
+JSON only after Laravel's native early script decides the response is maintenance.
+It preserves the original bypass/redirect/status checks. The booted 503 exception
+handler runs before auth-dependent area handlers. See [MAINTENANCE.md](MAINTENANCE.md)
+and the updated runbook for the file-driver, pre-rendered operator procedure.
+
 ## Global V2 Process Queue — 2026-09-26
 
 The V2 shell's Process Queue now has a bounded, read-only MlJob projection and
