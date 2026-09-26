@@ -1,5 +1,122 @@
 # Service implementation map
 
+## Shared voice discovery and previews — 2026-09-26
+
+API voice discovery and the developer portal reuse OmniSpeakerCatalog with stable
+Voice.code IDs. Apollo and Zeta documentation link to a session-backed available
+voice list. Malformed references are excluded using Zeta's existing validation
+rules. Existing xomni previews/avatars now check catalog membership plus App or
+API Apollo/Zeta access, including API-only customers. Preview remains saved audio
+without inference, jobs or charges. See [Voice discovery](API-V2.md#voice-discovery--2026-09-26).
+
+## API access for Zeta / Theta / Harakat — 2026-09-26
+
+These native tools now have additive `/api/v2/zeta`, `/api/v2/theta` and
+`/api/v2/harakat` routes through ApiSubmission and SubmissionContext. They reuse
+one API reservation, one MlJob and one provider submission, with server-counted
+characters and existing persistence/settlement/recovery. Scopes are `v2:speech`,
+`v2:voice-clone` and `v2:harakat`, plus independent API action entitlements/prices.
+App behavior is unchanged.
+
+Theta's new `/api/v2/references` multipart upload reuses the owned-reference
+uploader with API authorization; existing Vector references work too. It returns
+reference_id/MIME/size/expiry, counts permanent storage quota and creates no
+generation or reservation. Preflight validates references before claims; native
+dispatch signs each object once. Harakat is direct text only. Public results
+expose one audio or inline text/TXT through authenticated application downloads.
+
+See [API-V2.md](API-V2.md#zeta-theta-and-harakat--2026-09-26) for JSON, limits,
+portal, scope policy and operator prerequisites. This supersedes the dated
+App-only/API exclusions below. No new migration, deployment, feature activation,
+automatic scope grant or GPU change is part of this extension.
+
+Verification: final API/Admin suite 97 passed, 71 App/localization cases passed
+in the broader run, and four focused follow-ups passed (overlapping coverage).
+Build, scoped Pint and Blade syntax passed. See API-V2 for assertion counts,
+the resolved mixed-source test-run failure and outstanding live/browser checks.
+
+## Harakat 1.0 — 2026-09-21
+
+Native Tool `harakat`, ToolAction `harakat.diacritize`, metric `character`, route
+`/{locale}/app-v2/ocr/harakat-1`. Harakat shares the OCR presentation/color family;
+Scanner retains `ocr.standard` and its existing worker contract. Harakat exclusively
+uses `runpod.endpoints.tashkeel_v1` / `RUNPOD_ENDPOINT_ID_TASHKEEL_V1`. This App
+release is text-only: no file upload, URL input, FilePond or document preview.
+
+`HarakatInput` accepts UTF-8 text, trims surrounding Unicode whitespace and counts
+accepted code points server-side, including internal spaces/punctuation and
+diacritics. Mixed text is accepted like the worker. `HARAKAT_MAX_TEXT_CHARS`
+defaults to 5,000 and must stay aligned with worker configuration. Browser counts
+are previews, not billing authority. HarakatSubmissionService quotes the independent
+action with character count, channel and `language=ar`, then uses the existing
+DurableUploadSubmission transaction for one job/debit. Its hash binds text and
+trusted financial context; replay cannot double-submit or change the request.
+App concurrency, API wallet separation and ambiguous-outcome review are retained.
+No public API route or scope is added.
+
+The complete transport request is exactly:
+
+```json
+{
+  "input": {
+    "job_id": "<MlJob UUID>",
+    "source_mode": "text",
+    "text": "<trimmed accepted text>"
+  }
+}
+```
+
+RunPodV2Adapter constructs the three inner fields; RunPodProvider supplies `input`.
+HarakatJobSyncService runs through JobPollCoordinator from both the workspace and
+ReconcileMlJob. It requires explicit success, matching job_id/text mode, bounded
+nonempty UTF-8 text and positive chunks. Worker/SDK envelope errors or malformed
+results fail safely. Raw provider errors, URLs and payloads are not stored.
+Character/word/line counts are calculated locally; chunks come from the worker.
+
+CustomerOutputStorage saves private `renders/{customer-folder}/harakat/{job}/harakat.txt`
+with existing file/quota registration before MlJob becomes done. Inline text is
+persisted on the same job. Storage failures retry the same accepted provider job,
+without new generation or premature refund. Known failures use the existing
+idempotent refund policy; unknown submission outcomes remain for review.
+
+One history item shows created time, accepted input count and status. Preview,
+copy and TXT download require owned active, unexpired CustomerFile metadata;
+download additionally verifies the object exists. The shared Storage UI owns
+deletion and its existing destructive gate. The workspace uses escaped text,
+automatic direction, EN/AR/KU translations and the OCR theme. Editing a terminal
+draft clears the displayed result and creates a new intent; history selection
+does not. Active identity survives remounts. No new navigation handler is added.
+
+Migration `2026_09_21_000001_register_harakat_tool.php` copies initial Apollo 2
+(`xomni-v2.generate`) prices and plan entitlements, including channels and denies,
+into independent Harakat rows. Replay never overwrites target economics. Customer
+overrides and API scopes are not expanded. Rollback retains identities referenced
+by financial/job history. Source Apollo 2 registration/pricing is a prerequisite;
+there is no generic production seeder dependency.
+
+Operator command, **not executed against an application database in this task**:
+
+```sh
+php artisan migrate --path=database/migrations/2026_09_21_000001_register_harakat_tool.php
+```
+
+Refresh configuration/routes/views and catalog caches through the usual release
+process. Feature gates remain unchanged. The user reports successful direct-text
+worker testing. Local integration verification uses isolated SQLite, fake storage
+and mocked HTTP; actual endpoint/S3, native concurrency and browser/clipboard
+acceptance remain separate. The Tashkeel worker and its existing long-text
+chunking behavior were not changed by this Laravel task.
+
+Verification: the Harakat/OCR/persistence/durable-submission/Admin run passed
+75 tests / 455 assertions, including 27 Harakat cases. The expanded V2/speech run
+passed 92 of 93 tests; its sole failure was the old JSON-only localization checker
+misclassifying existing PHP catalog keys/dynamic prefixes. That checker now tests
+complete literal keys against JSON or Laravel's locale-specific PHP loader; all
+17 localization tests passed on rerun (11,091 assertions). These runs overlap.
+All 52 frontend tests, the Vite build, scoped PHP lint/Pint, clipboard expression
+syntax and Harakat EN/AR/KU key/placeholder checks passed. No interactive browser,
+live provider, application-database migration or deployment acceptance is claimed.
+
 ## Zeta / Theta Multi-Speaker — 2026-09-20
 
 2026-09-21 UI follow-up: the user reports Zeta/Theta generation working. This is
@@ -235,6 +352,13 @@ Submission and synchronization invalidate the request's computed job/result
 values immediately, so a previous result cannot label a newly submitted scan.
 
 ## STEM 2 and STEM 4
+
+2026-09-21 player follow-up: user reports GPU separation and generated stems are
+correct. Result playback now retains WaveSurfer views and uses a shared Web Audio
+transport with gain-only Mute/Solo. V2 streams stay same-origin and honor ranges.
+See [navigation](V2-NAVIGATION.md) and [storage](STORAGE-AND-CACHE.md) for behavior,
+memory/transfer tradeoffs and the remaining browser/listening acceptance. Generation,
+job lifecycle, billing and output ownership were not changed.
 
 Both use `htdemucs_ft` by default with MP3/192k outputs. Pricing context includes
 `stem_output`, number of outputs, separation mode, seconds and minutes. Source

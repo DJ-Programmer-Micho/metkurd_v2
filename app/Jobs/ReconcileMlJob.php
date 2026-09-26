@@ -40,6 +40,7 @@ class ReconcileMlJob implements ShouldQueue
                 'qasr', 'leo', 'caption' => $job->tool ? app(QasrJobSyncService::class)->sync($job, $job->tool) : null,
                 'tran' => $job->tool ? app(TranJobSyncService::class)->sync($job, $job->tool) : null,
                 'ocr' => app(OcrJobSyncService::class)->sync($job),
+                'harakat' => app(\App\Services\Harakat\HarakatJobSyncService::class)->sync($job),
                 'stem' => app(StemJobSyncService::class)->sync($job),
                 default => null,
             };

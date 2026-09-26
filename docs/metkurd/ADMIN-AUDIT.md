@@ -1,5 +1,27 @@
 # MetKurd Admin engineering audit
 
+## Additional API tool projection — 2026-09-26
+
+ApiCatalog now supplies Zeta/Theta/Harakat as API variants, replacing Harakat's
+separate App-only row. Twelve variants map to seven unique scopes. Zeta shares
+`v2:speech`, Theta shares `v2:voice-clone`, and Harakat uses `v2:harakat`.
+The plan form's scope hints use the same mapping and do not invent per-product
+scopes. Existing audited explicit/derived entitlement synchronization is retained;
+reading/deploying this change never grants scopes or rewrites existing keys/plans.
+No capability or mutation confirmation rule changed. Earlier App-only notes below
+describe the original launch. See API-V2 for operator prerequisites.
+
+## Harakat catalog — 2026-09-21
+
+Harakat 1.0 is a current App-only tool, `harakat.diacritize`, presented under OCR.
+The additive migration snapshots Apollo 2 prices/plan entitlements into independent
+records. Existing capability/reason/audit-based pricing and entitlement editors
+manage it normally. AdminV2Catalog adds an App projection with character quotes
+and Arabic pricing context; its API scope is empty and API effectiveness false.
+Route details omit a public API URL for this row. No public API catalog, derived
+scope, capability, customer override or historical identity changes. Operator
+migration/native acceptance remain separate from isolated tests.
+
 ## Multi-Speaker catalog follow-up — 2026-09-20
 
 Zeta/Theta are current V2 App catalog tools (`zeta.generate`, `theta.generate`).

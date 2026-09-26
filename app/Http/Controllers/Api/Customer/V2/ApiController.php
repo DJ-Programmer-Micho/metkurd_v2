@@ -48,7 +48,22 @@ class ApiController extends Controller
     {
         $this->authorizeRequest($request, 'v2:jobs:read');
 
-        return response()->json(['services' => ApiCatalog::SERVICES, 'speech_models' => ['1.5', '2.0'], 'stem_modes' => [2, 4]]);
+        return response()->json(['services' => ApiCatalog::SERVICES, 'speech_models' => ['1.5', '2.0'], 'stem_modes' => [2, 4],
+            'service_details' => app(ApiCatalog::class)->additionalServices()]);
+    }
+
+    public function uploadReference(Request $request)
+    {
+        app(ApiCatalog::class)->authorize($request->user(), $request->attributes->get('customerApiKey'), 'v2:voice-clone', 'theta.generate');
+        \Illuminate\Support\Facades\Validator::make(['input' => $request->all()], ['input' => 'required|array:file'])->validate();
+        $file = $request->file('file');
+        if (! $file instanceof \Illuminate\Http\UploadedFile) {
+            throw new ApiProblem('invalid_file');
+        }
+        $reference = app(\App\Services\MetKurd\V2\MultiSpeakerReferences::class)->upload($request->user(), $file, 'api');
+
+        return response()->json(['reference_id' => $reference->id, 'mime_type' => $reference->mime,
+            'size_bytes' => $reference->size_bytes, 'expires_at' => $reference->expires_at?->toIso8601String()], 201);
     }
 
     public function download(Request $request, string $id)
@@ -118,6 +133,18 @@ class ApiController extends Controller
         }
         if ($service === 'ocr') {
             $result['text'] = (string) data_get($output, 'text.inline', '');
+        }
+        if ($service === 'harakat' && $resultFiles !== []) {
+            $result['text'] = is_string($output['text'] ?? null) ? $output['text'] : '';
+            foreach (['characters', 'words', 'lines', 'chunks'] as $field) {
+                $result[$field] = (int) ($output[$field] ?? 0);
+            }
+        }
+        if (in_array($service, ['zeta', 'theta'], true)) {
+            $result['segment_count'] = (int) data_get($job->mlJob?->input, 'segment_count', 0);
+            $result['total_chars'] = (int) data_get($job->mlJob?->input, 'total_chars', 0);
+            $duration = (float) ($output['duration'] ?? 0);
+            $result['duration'] = is_finite($duration) ? max(0, $duration) : 0;
         }
         $payload['result'] = $result;
 

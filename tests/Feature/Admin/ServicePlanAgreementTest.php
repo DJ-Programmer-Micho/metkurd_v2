@@ -270,7 +270,7 @@ it('saves only explicitly approved API scopes with fresh authorization and retai
     $this->admin->forceFill(['admin_capabilities' => ['admin.read', 'admin.pricing']])->save();
     $before = $this->plan->fresh()->getRawOriginal();
     $legacy = ['tts:apollo-1-5v'];
-    $scopes = [...$legacy, ...array_map(fn ($service) => 'v2:'.$service, \App\Services\CustomerApi\V2\ApiCatalog::SERVICES)];
+    $scopes = [...$legacy, ...app(\App\Services\CustomerApi\V2\ApiCatalog::class)->serviceScopes()];
     $component = Livewire::test('admin::pages.payments.adm-payments-plans')->assertOk()
         ->call('openEditPlanModal', $this->plan->id)->assertOk()->assertSet('editingPlanId', $this->plan->id)->set('apiAllowedToolsText', implode("\n", $scopes))
         ->set('priceIqdMonthly', 1)->set('appMonthlyCredits', 1)->set('adminChangeReason', 'Approved V2 API service scope configuration')->call('saveApiScopes')->assertOk()->assertHasNoErrors()->assertDispatched('alert', type: 'success', message: __('admin_p1.scopes_saved'));

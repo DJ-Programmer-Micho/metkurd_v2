@@ -135,6 +135,7 @@ Route::prefix('v2')->name('api.customer.v2.')->middleware([
 ])->group(function () {
     Route::get('/services', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'services'])->name('services');
     Route::get('/voices', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'voices'])->name('voices');
+    Route::post('/references', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'uploadReference'])->name('references.store');
     Route::get('/jobs/{id}', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'show'])->name('jobs.show');
     Route::get('/files/{id}/download', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'download'])->name('files.download');
     Route::post('/{service}', [\App\Http\Controllers\Api\Customer\V2\ApiController::class, 'submit'])

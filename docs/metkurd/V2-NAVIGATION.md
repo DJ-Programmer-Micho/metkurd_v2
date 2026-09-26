@@ -1,5 +1,59 @@
 # V2 navigation lifecycle
 
+## Global Process Queue — 2026-09-26
+
+The V2 topbar uses a customer/locale-keyed queue component and a single
+MetKurdV2Navigation controller. It reads a bounded local MlJob projection at an
+adaptive cadence, preserves per-customer visual acknowledgements across shell
+remounts, and serializes outgoing/incoming reads. Workspace submission dispatches
+`metkurd:job-submitted`; opening a result uses the existing workspace with an
+authorized `queue_job` selection. See [Process Queue](PROCESS-QUEUE.md) for read
+boundaries, limits and verification. GPU reconciliation ownership is unchanged.
+
+## STEM result mixer — 2026-09-21
+
+`v2-stem-player.js` owns each keyed, `wire:ignore` result. The existing STEM
+controller mounts it once per DOM node and destroys it only when that result
+is removed or navigation disposes the workspace. Its listeners, animation frame,
+buffer sources, gains, decoded references and AudioContext are released together.
+The shared navigation registry and FilePond/source-upload controller are unchanged.
+
+Source investigation found Mute/Solo already used client listeners, not Livewire
+actions. Reconciliation already preserved connected result nodes. The problematic
+paths were repeated 50 ms drift-correction seeks, abrupt volume changes, and the
+cross-origin error fallback that destroyed/recreated players. The original also
+played together with the stems, doubling the mix. These are source findings;
+the reported production stack/audio was not independently reproduced.
+
+WaveSurfer still fetches/draws each track once. Its full-rate decoded buffer is
+reused on one AudioContext: every source starts at the same scheduled time and
+offset. Mute and multiple Solo controls only change gain, with a 5 ms exponential
+time constant; muted preferences survive Solo. Audio continues advancing for
+inaudible tracks. Play/Pause/Stop and explicit seek operate on the transport;
+normal drawing never corrects audible playback with seeks. Seeking the shared
+slider commits on release. WaveSurfer's silent media follows the display cursor.
+The original is available for explicit comparison, excluded from normal Play All.
+
+No mixer interaction generates a Livewire request, a new signed URL or another
+load. All displayed tracks load initially (two/four stems plus the original when
+present). Loading/error states gate transport instead of rebuilding players.
+The browser decodes at its AudioContext output sample rate, preserving playback
+bandwidth; waveform normalization affects the drawing only. Full-rate PCM costs
+approximately seconds × sample rate × channels × 4 bytes per track, in addition
+to compressed data and waveform resources. Long-result memory/listening acceptance
+is still required; no upload limits or worker output settings were changed.
+
+Automated STEM2/STEM4 tests cover rapid Mute/Solo, identical scheduling, explicit
+seek, Stop/Play, morph preservation, navigation/remount, readiness and errors.
+Both browser-control runtimes failed initialization in this session, so audible
+playback, real Network-tab counts and the existing completed result remain manual
+acceptance checks. `reportAllChanges` was not found in repository or installed JS;
+the `startTime` error cannot be attributed without its actual script URL/stack.
+The user subsequently reported smooth playback and no current error. This is
+user-reported browser acceptance; exact Network-tab counts and long-result memory
+usage were not independently measured. Final automated checks: 27 PHP tests / 232
+assertions, all 52 frontend tests, build and scoped PHP lint/Pint passed.
+
 ## Multi-Speaker draft identity and reference selection — 2026-09-21
 
 Segment fields now bind to `segments.<uuid>.<field>` with a separate locked

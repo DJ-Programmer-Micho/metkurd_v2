@@ -47,14 +47,14 @@ function p1Entitlement(ServicePlan $plan, string $action, string $channel = 'api
         'entitlement_channel' => $channel, 'allowed' => true]);
 }
 
-it('projects all nine native identities and groups sibling models without writes', function () {
+it('projects all native API identities without writes', function () {
     $before = PricingRule::orderBy('id')->get()->toArray();
     $rows = app(AdminV2Catalog::class)->rows(p1Plan());
-    expect(array_column($rows, 'action'))->toBe(['xomni.generate', 'xomni-v2.generate',
-        'clone_xomni.generate', 'vector-v2.generate', 'leo.transcribe', 'caption.standard', 'ocr.standard', 'stem.sep2', 'stem.sep4']);
-    expect(array_column($rows, 'family'))->toBe(['Apollo', 'Apollo', 'Vector', 'Vector', 'Leo', 'Caption', 'OCR', 'STEM', 'STEM'])
-        ->and(array_unique(array_column($rows, 'scope')))->toHaveCount(6)
-        ->and(array_filter(array_column($rows, 'action_id')))->toHaveCount(9)
+    expect(array_column($rows, 'action'))->toBe(['xomni.generate', 'xomni-v2.generate', 'zeta.generate',
+        'clone_xomni.generate', 'vector-v2.generate', 'theta.generate', 'leo.transcribe', 'caption.standard', 'ocr.standard', 'harakat.diacritize', 'stem.sep2', 'stem.sep4']);
+    expect(array_column($rows, 'family'))->toBe(['Apollo', 'Apollo', 'Zeta', 'Vector', 'Vector', 'Theta', 'Leo', 'Caption', 'OCR', 'OCR', 'STEM', 'STEM'])
+        ->and(array_unique(array_filter(array_column($rows, 'scope'))))->toHaveCount(7)
+        ->and(array_filter(array_column($rows, 'action_id')))->toHaveCount(12)
         ->and(PricingRule::orderBy('id')->get()->toArray())->toBe($before);
 });
 
@@ -96,13 +96,15 @@ it('keeps a family scope until the last sibling entitlement is disabled', functi
     ['xomni.generate', 'xomni-v2.generate', 'v2:speech'],
     ['clone_xomni.generate', 'vector-v2.generate', 'v2:voice-clone'],
     ['stem.sep2', 'stem.sep4', 'v2:stem'],
+    ['xomni-v2.generate', 'zeta.generate', 'v2:speech'],
+    ['vector-v2.generate', 'theta.generate', 'v2:voice-clone'],
 ]);
 
 it('derives single service scopes from ApiCatalog', function (string $action, string $scope) {
     $plan = p1Plan();
     p1Entitlement($plan, $action);
     expect($plan->fresh()->api_allowed_tools)->toBe([$scope]);
-})->with([['leo.transcribe', 'v2:transcriptions'], ['caption.standard', 'v2:captions'], ['ocr.standard', 'v2:ocr']]);
+})->with([['leo.transcribe', 'v2:transcriptions'], ['caption.standard', 'v2:captions'], ['ocr.standard', 'v2:ocr'], ['harakat.diacritize', 'v2:harakat']]);
 
 it('handles plan action and channel moves and preserves deliberate broad scopes', function () {
     $old = p1Plan(['api_allowed_tools' => ['v2:*', 'tts:*', 'v2:ocr']]);

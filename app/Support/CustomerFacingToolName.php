@@ -33,6 +33,7 @@ class CustomerFacingToolName
     public static function labelKey(?string $toolCode): string
     {
         return match (self::canonical($toolCode)) {
+            'harakat' => 'Harakat 1.0',
             'zeta' => 'Zeta 1.0v',
             'theta' => 'Theta 1.0v',
             'tts' => 'Apollo 1.0v',
@@ -67,7 +68,7 @@ class CustomerFacingToolName
     public static function filterCodes(?string $toolCode): array
     {
         return match (self::canonical($toolCode)) {
-            'zeta', 'theta' => [self::canonical($toolCode)],
+            'zeta', 'theta', 'harakat' => [self::canonical($toolCode)],
             'tts' => ['tts', 'xtts'],
             'xomni' => ['xomni', 'omni', 'omnivoice'],
             'xomni-v2' => ['xomni-v2'],

@@ -40,6 +40,7 @@ return [
         'omni_v2' => env('RUNPOD_ENDPOINT_ID_OMNI_V2'),
         'qasr_v2' => env('RUNPOD_ENDPOINT_ID_QASR_V2'),
         'kocr_v2' => env('RUNPOD_ENDPOINT_ID_KOCR_V2'),
+        'tashkeel_v1' => env('RUNPOD_ENDPOINT_ID_TASHKEEL_V1'),
     ],
 
     'timeout' => (int) env('RUNPOD_TIMEOUT', 60),

@@ -282,6 +282,10 @@ class StemRenderController extends Controller
 
         abort_if($path === '', 404, 'Audio track missing.');
 
+        if ($request->routeIs('app.v2.stem.stream')) {
+            return app(\App\Services\Media\StemAudioStream::class)->response($request, $disk, $path, $mime);
+        }
+
         try {
             abort_unless(Storage::disk($disk)->exists($path), 404, 'Audio track not found.');
             $bytes = max(0, (int) Storage::disk($disk)->size($path));

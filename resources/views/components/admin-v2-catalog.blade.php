@@ -35,10 +35,10 @@
                 <tbody>
                 @foreach($preview['rows'] as $row)
                     <tr wire:key="v2-catalog-{{ $row['action'] }}">
-                        <td><strong>{{ $row['family'] }}</strong><br>{{ $row['name'] }}<br><span class="badge bg-info">{{ __('admin_p1.current') }}</span> <span class="badge bg-{{ $row['active'] ? 'success' : 'secondary' }}">{{ $row['active'] ? __('Active') : __('Inactive') }}</span></td>
+                        <td><strong>{{ $row['family'] }}</strong><br>{{ __($row['name']) }}<br><span class="badge bg-info">{{ __('admin_p1.current') }}</span> <span class="badge bg-{{ $row['active'] ? 'success' : 'secondary' }}">{{ $row['active'] ? __('Active') : __('Inactive') }}</span></td>
                         <td><details><summary>{{ __('admin_p3.technical') }}</summary><code dir="ltr">{{ $row['tool_code'] }} / {{ $row['action'] }}</code><br>
                             <small dir="ltr">Tool #{{ $row['tool_id'] ?? '—' }} · Action #{{ $row['action_id'] ?? '—' }} · {{ $row['metric'] ?? '—' }}</small>
-                            <details><summary>{{ __('admin_p1.routes') }}</summary><div dir="ltr"><code>{{ $row['route'] }}</code><br><code>{{ $row['path'] }}</code><br><code>/api/v2/{{ $row['service'] }}</code><br><code>{{ $row['scope'] }}</code></div></details>
+                            <details><summary>{{ __('admin_p1.routes') }}</summary><div dir="ltr"><code>{{ $row['route'] }}</code><br><code>{{ $row['path'] }}</code>@if($row['scope'])<br><code>/api/v2/{{ $row['service'] }}</code><br><code>{{ $row['scope'] }}</code>@endif</div></details>
                         </details></td>
                         @foreach(['app', 'api'] as $channel)
                             <td><bdi dir="ltr">{{ $row['channels'][$channel]['price_exists'] ? number_format($row['channels'][$channel]['credits']) : '—' }}</bdi>

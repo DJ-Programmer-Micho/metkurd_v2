@@ -1818,5 +1818,21 @@
     "Your concurrent job limit has been reached. Wait for the current project to finish.": "Your concurrent job limit has been reached. Wait for the current project to finish.",
     "Choose a voice for segment :number": "Choose a voice for segment :number",
     "Add a segment to choose its voice.": "Add a segment to choose its voice.",
-    "Preview and choose a voice": "Preview and choose a voice"
+    "Preview and choose a voice": "Preview and choose a voice",
+    "Unable to play this audio. Please reopen the result.": "Unable to play this audio. Please reopen the result.",
+    "Harakat 1.0": "Harakat 1.0",
+    "Arabic Diacritization": "Arabic Diacritization",
+    "Input Text": "Input Text",
+    "Diacritize": "Diacritize",
+    "Diacritized Output": "Diacritized Output",
+    "Enter text to diacritize.": "Enter text to diacritize.",
+    "Text must not exceed :count characters.": "Text must not exceed :count characters.",
+    "Up to :count characters.": "Up to :count characters.",
+    "Add Arabic diacritics to your text. Mixed text is supported.": "Add Arabic diacritics to your text. Mixed text is supported.",
+    "Copy failed. Select the text and copy it manually.": "Copy failed. Select the text and copy it manually.",
+    "Your diacritized text will appear here.": "Your diacritized text will appear here.",
+    ":count input characters": ":count input characters",
+    "View result": "View result",
+    "No diacritization history yet.": "No diacritization history yet.",
+    "Arabic diacritization could not be completed. Please try again.": "Arabic diacritization could not be completed. Please try again."
 }

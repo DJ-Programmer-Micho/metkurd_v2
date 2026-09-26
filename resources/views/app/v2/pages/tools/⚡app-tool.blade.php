@@ -22,6 +22,17 @@ use Livewire\Component;
 new #[Layout('app::v2.layouts.app')] class extends Component {
     use WithPagination;
     use WithFileUploads;
+    use \App\Support\OpensProcessQueueJob;
+
+    protected function processQueueAction(): string { return $this->toolDefinition['legacy_action']; }
+    protected function selectProcessQueueJob(MlJob $job): void
+    {
+        $this->currentJobId = (string) $job->id;
+        $this->syncCurrentJobState();
+        $history = MlJob::query()->where('customer_id', auth('app')->id())->where('tool_id', $job->tool_id)
+            ->whereIn('status', ['queued', 'submitting', 'running', 'saving', 'done', 'failed', 'cancelled', 'canceled']);
+        $this->processQueueHistoryPage($history, $job, $this->toolDefinition['kind'] === 'omni_clone' ? 'v2CttsRendersPage' : 'v2ApolloRendersPage');
+    }
 
     protected $paginationTheme = 'bootstrap';
 
@@ -68,6 +79,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                 $this->speakerId = (string) data_get($this->speakerGroups, "{$this->expandedSpeakerGroup}.speakers.0.code", '');
             }
         }
+        $this->openProcessQueueJob();
     }
 
     #[Computed]
@@ -161,6 +173,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             $input = app(\App\Services\MetKurd\V2\InputBoundary::class)->text(auth('app')->user(), (string) $this->toolDefinition['legacy_action'], ['text' => $this->text, 'voice' => $this->speakerId, 'language' => $this->language], true);
             $job = $submissions->submit(auth('app')->user(), $this->serviceSlug, $this->toolSlug, $this->submissionKey, $input);
             $this->currentJobId = (string) $job->id;
+            $this->dispatch('metkurd:job-submitted');
             if ($job->provider_job_id) $this->submissionKey = (string) Str::uuid();
             $this->queuedSince = null;
             $this->syncCurrentJobState();
@@ -186,6 +199,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             elseif ($this->selectedReferenceId) $boundary->reference(auth('app')->user(), $this->selectedReferenceId);
             $job = $submissions->submit(auth('app')->user(), $this->serviceSlug, $this->toolSlug, $this->submissionKey, $input, $this->referenceAudio, $this->selectedReferenceId);
             $this->currentJobId = (string) $job->id;
+            $this->dispatch('metkurd:job-submitted');
             $this->queuedSince = null;
             $this->syncCurrentJobState();
             if ((string) $job->status === 'failed') {
@@ -284,6 +298,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             ->whereIn('tool_id', $toolIds)
             ->whereIn('status', ['queued', 'submitting', 'running', 'saving', 'done', 'failed', 'cancelled', 'canceled'])
             ->latest('updated_at')
+            ->orderByDesc('id')
             ->paginate(3, ['id', 'tool_id', 'status', 'input', 'output', 'error', 'created_at', 'updated_at', 'finished_at', 'model_key'], $pageName);
         $paginator = $isClone
             ? app(CttsWorkspaceCache::class)->recentRenders((int) $customerId, $toolCode, $this->getPage($pageName), $hasActiveJobs, $resolvePage)

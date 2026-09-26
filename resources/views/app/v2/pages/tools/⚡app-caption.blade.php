@@ -16,6 +16,10 @@ use Livewire\WithPagination;
 
 new #[Layout('app::v2.layouts.app')] class extends Component {
     use WithFileUploads, WithPagination;
+    use \App\Support\OpensProcessQueueJob;
+
+    protected function processQueueAction(): string { return 'caption.standard'; }
+    protected function selectProcessQueueJob(MlJob $job): void { $this->currentJobId = (string) $job->id; }
 
     public $audioFile = null;
     public string $modelVariant = 'fine_tuned';
@@ -32,7 +36,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     #[\Livewire\Attributes\Locked] public string $submissionKey = '';
     public string $submissionError = '';
 
-    public function mount(): void { $this->submissionKey = (string) \Illuminate\Support\Str::uuid(); $this->hydrateCurrentJob(); }
+    public function mount(): void { $this->submissionKey = (string) \Illuminate\Support\Str::uuid(); $this->hydrateCurrentJob(); $this->openProcessQueueJob(); }
 
     public function updatedAudioFile(AudioProbeService $probe): void
     {
@@ -73,6 +77,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                 'audio_name' => (string) $this->audioName, 'audio_mime' => (string) $this->audioMime,
             ]);
             $this->currentJobId = (string) $job->id;
+            $this->dispatch('metkurd:job-submitted');
             if ((string) $job->status === 'failed') $this->submissionError = (string) data_get($job->error, 'message', __('Caption could not be completed.'));
             $this->resetPage('captionRendersPage');
             $this->dispatch('header:refresh');

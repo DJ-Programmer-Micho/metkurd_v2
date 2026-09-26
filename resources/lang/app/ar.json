@@ -1818,5 +1818,21 @@
     "Your concurrent job limit has been reached. Wait for the current project to finish.": "تم بلوغ حد المهام المتزامنة. انتظر انتهاء المشروع الحالي.",
     "Choose a voice for segment :number": "اختر صوتًا للمقطع :number",
     "Add a segment to choose its voice.": "أضف مقطعًا لاختيار صوته.",
-    "Preview and choose a voice": "استمع إلى الصوت واختره"
+    "Preview and choose a voice": "استمع إلى الصوت واختره",
+    "Unable to play this audio. Please reopen the result.": "تعذّر تشغيل هذا الصوت. يُرجى فتح النتيجة مجددًا.",
+    "Harakat 1.0": "حركات 1.0",
+    "Arabic Diacritization": "تشكيل النص العربي",
+    "Input Text": "النص المدخل",
+    "Diacritize": "تشكيل النص",
+    "Diacritized Output": "النص المشكّل",
+    "Enter text to diacritize.": "أدخل نصاً لتشكيله.",
+    "Text must not exceed :count characters.": "يجب ألا يتجاوز النص :count حرفاً.",
+    "Up to :count characters.": "حتى :count حرفاً.",
+    "Add Arabic diacritics to your text. Mixed text is supported.": "أضف التشكيل العربي إلى نصك. يمكن أن يحتوي النص على لغات أخرى أيضاً.",
+    "Copy failed. Select the text and copy it manually.": "تعذر النسخ. حدد النص وانسخه يدوياً.",
+    "Your diacritized text will appear here.": "سيظهر النص المشكّل هنا.",
+    ":count input characters": ":count حرفاً في النص المدخل",
+    "View result": "عرض النتيجة",
+    "No diacritization history yet.": "لا توجد عمليات تشكيل سابقة بعد.",
+    "Arabic diacritization could not be completed. Please try again.": "تعذر إكمال تشكيل النص العربي. يرجى المحاولة مجدداً."
 }

@@ -8,7 +8,19 @@ use App\Services\CustomerApi\CustomerApiAccessService;
 
 class ApiCatalog
 {
-    public const SERVICES = ['speech', 'voice-clone', 'transcriptions', 'captions', 'ocr', 'stem'];
+    public const SERVICES = ['speech', 'voice-clone', 'transcriptions', 'captions', 'ocr', 'stem', 'zeta', 'theta', 'harakat'];
+
+    public function scopeForService(string $service): string
+    {
+        return 'v2:'.match ($service) {
+            'zeta' => 'speech', 'theta' => 'voice-clone', default => $service,
+        };
+    }
+
+    public function serviceScopes(): array
+    {
+        return array_values(array_unique(array_map($this->scopeForService(...), self::SERVICES)));
+    }
 
     /** Project the web catalog through the same API definition used for submissions. */
     public function variants(): array
@@ -30,9 +42,9 @@ class ApiCatalog
                         continue;
                     }
                     if ($definition[0] === $webService && $definition[1] === $slug) {
-                        $variants[] = ['service' => $service, 'scope' => 'v2:'.$service,
+                        $variants[] = ['service' => $service, 'scope' => $this->scopeForService($service),
                             'web_service' => $webService, 'slug' => $slug, 'action' => $definition[2],
-                            'input' => $input, 'tool' => $tool];
+                            'input' => in_array($service, ['zeta', 'theta', 'harakat'], true) ? [] : $input, 'tool' => $tool];
                     }
                 }
             }
@@ -52,6 +64,24 @@ class ApiCatalog
         return null;
     }
 
+    /** Additive public discovery metadata; no worker or database identifiers. */
+    public function additionalServices(): array
+    {
+        $batch = ['max_segments' => (int) config('metkurd_v2.multi_speaker.max_segments'),
+            'max_segment_chars' => (int) config('metkurd_v2.multi_speaker.max_segment_chars'),
+            'max_total_chars' => (int) config('metkurd_v2.multi_speaker.max_total_chars'),
+            'languages' => ['ckb', 'ar', 'en'], 'pause_after_ms' => [0, 500, 1000, 2000], 'final_pause_ms' => 0];
+
+        return [
+            'zeta' => ['name' => 'Zeta 1.0', 'endpoint' => '/api/v2/zeta', 'scope' => 'v2:speech', 'billing_unit' => 'character', 'limits' => $batch],
+            'theta' => ['name' => 'Theta 1.0', 'endpoint' => '/api/v2/theta', 'scope' => 'v2:voice-clone', 'billing_unit' => 'character',
+                'reference_upload_endpoint' => '/api/v2/references', 'limits' => $batch + ['max_reference_bytes' => 20 * 1024 * 1024,
+                    'max_project_reference_bytes' => (int) config('metkurd_v2.multi_speaker.max_reference_bytes')]],
+            'harakat' => ['name' => 'Harakat 1.0', 'endpoint' => '/api/v2/harakat', 'scope' => 'v2:harakat', 'billing_unit' => 'character',
+                'limits' => ['max_chars' => app(\App\Services\MetKurd\V2\HarakatInput::class)->limit()]],
+        ];
+    }
+
     public function definition(string $service, array $input): array
     {
         if (isset($input['model']) && ! is_scalar($input['model']) || isset($input['mode']) && ! is_scalar($input['mode'])) {
@@ -69,6 +99,9 @@ class ApiCatalog
             'transcriptions' => ['speech-to-text', 'leo', 'leo.transcribe'],
             'captions' => ['speech-to-text', 'caption', 'caption.standard'],
             'ocr' => ['ocr', 'scanner', 'ocr.standard'],
+            'zeta' => ['text-to-speech', 'zeta-1', 'zeta.generate'],
+            'theta' => ['clone-text-to-speech', 'theta-1', 'theta.generate'],
+            'harakat' => ['ocr', 'harakat-1', 'harakat.diacritize'],
             'stem' => match ((string) ($input['mode'] ?? '')) {
                 '2' => ['stem', '2-stem', 'stem.sep2'], '4' => ['stem', '4-stem', 'stem.sep4'],
                 default => throw new ApiProblem('invalid_request'),
@@ -105,7 +138,8 @@ class ApiCatalog
     public function scopesForConfiguration(array $configured): array
     {
         $scopes = [];
-        foreach (self::SERVICES as $service) {
+        foreach ($this->serviceScopes() as $scope) {
+            $service = substr($scope, 3);
             $family = match ($service) {
                 'speech', 'voice-clone' => 'tts', 'transcriptions' => 'asr', 'captions' => 'caption', default => $service
             };

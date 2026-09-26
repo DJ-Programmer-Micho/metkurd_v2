@@ -1,5 +1,80 @@
 # Architectural and behavioral decisions
 
+## 2026-09-26 — Global V2 Process Queue
+
+- Replace V2's lock-filtered legacy slots with a bounded customer/App MlJob read
+  model and one navigation-owned adaptive updater; leave V1's component intact.
+- Use local done for Ready, with per-session terminal acknowledgement, visible
+  failure notices, a generic submission event and owned existing result links.
+- Keep plan enforcement, provider reconciliation and storage/financial mutations
+  outside the shell. No schema, deployment or API change. See PROCESS-QUEUE.md.
+
+## 2026-09-26 — API voice discovery and developer previews
+
+- Preserve GET /api/v2/voices and Voice.code identifiers; present customer-specific
+  allowed IDs in the portal with copy/sample controls and translated GET examples.
+- Keep Apollo/Zeta on one plan-scoped catalog; exclude malformed references already
+  rejected by Zeta instead of advertising unusable IDs.
+- Reuse xomni asset routes with catalog membership and App-or-API entitlement
+  checks, allowing API-only previews without granting generation access or billing.
+- No new API, cache, voice IDs, plan grants, pricing, worker or rollout changes.
+
+## 2026-09-26 — Native API access for Zeta, Theta and Harakat
+
+- Extend API V2 with three public routes, strict public fields and native
+  SubmissionContext reservations. Preserve existing endpoints, App billing,
+  one project/job/submission and ambiguous-outcome handling.
+- Share speech/voice-clone scopes for Zeta/Theta; add independent Harakat scope.
+  Admin uses the same catalog for twelve variants and seven scopes. No plan/key
+  mutation or scope backfill accompanies deployment or reads.
+- Add reference upload through the existing owned-reference uploader. Return IDs
+  rather than accepting arbitrary URLs; keep private quota-counted references and
+  identical signed URLs per object within each Theta dispatch.
+- Allowlist final audio metadata or Harakat text/counts/TXT in normal results.
+  Add safe discovery and EN/AR/KU portal documentation with placeholder-only
+  cURL/PHP/Python/Node examples. See API-V2 for operator steps.
+- No feature activation, application database migration, deployment or GPU change.
+
+## 2026-09-21 — Harakat 1.0 text-only Arabic diacritization
+
+- Add independent `harakat` / `harakat.diacritize` registration and OCR-family
+  workspace `/app-v2/ocr/harakat-1`, preserving Scanner's identity and contract.
+- Bill trimmed server-counted characters through durable job/debit handling;
+  dispatch one text-only job using `RUNPOD_ENDPOINT_ID_TASHKEEL_V1`. Initial prices
+  and plan entitlements snapshot Apollo 2 through an additive operator migration,
+  with independent future pricing and no production seeder or public API expansion.
+- Persist text and private TXT through existing storage/quota/history boundaries
+  before completion. Retain replay protection, ambiguous dispatch review, refunds,
+  coordinated polling and App/API wallet separation.
+- Add EN/AR/KU text/result/history, RTL, copy/download, Admin projection and focused
+  regressions. No application migration, deployment, worker change or live provider
+  submission was performed. See SERVICES for the operator command and acceptance.
+- Verification passed for Harakat/OCR/Admin lifecycle coverage, frontend/build and
+  scoped lint/localization. Updated the shared localization test to recognize the
+  existing PHP catalogs as well as JSON and exclude incomplete dynamic prefixes;
+  application translations outside Harakat were not rewritten. See SERVICES for
+  exact overlapping test counts and remaining live/browser acceptance.
+
+## 2026-09-21 — V2 STEM playback stability and same-origin delivery
+
+- Preserved the keyed result UI and navigation owner; removed corrective playback
+  seeks and CORS-triggered player recreation. One AudioContext schedules reusable
+  decoded tracks together; gain-only Mute/Solo preserves mute preferences. Normal
+  Play All excludes the original comparison recording to avoid doubling the mix.
+- Routed only V2 STEM playback through a bounded same-origin stream with proper
+  ranges, upstream S3 range reads and the existing private immutable cache policy.
+  No generation, billing, storage ownership, MlJob or provider changes.
+- Source did not support the reported Mute/Solo-to-Livewire action chain: controls
+  were already client-side and result DOM was ignored. The live stutter/console
+  stack remains unverified because both browser-control runtimes failed to start.
+  `reportAllChanges` was not found locally; its script URL is needed for attribution.
+- See V2-NAVIGATION and STORAGE-AND-CACHE for transport, browser memory and initial
+  proxy-transfer tradeoffs, automated coverage and remaining acceptance checks.
+- Verification: 27 isolated PHP tests / 232 assertions and all 52 frontend tests
+  passed, along with build, scoped lint/Pint and EN/AR/KU rendering. The user then
+  reported smooth playback with no current error. This is user-reported browser
+  acceptance; the earlier `startTime` source remains unidentified.
+
 ## 2026-09-21 — Zeta / Theta UI identity and reference selection
 
 - Replaced positional Livewire field bindings with UUID-keyed draft fields and a

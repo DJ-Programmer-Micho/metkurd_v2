@@ -1,5 +1,22 @@
 # MetKurd architecture
 
+## Global V2 Process Queue — 2026-09-26
+
+The V2 shell's Process Queue now has a bounded, read-only MlJob projection and
+one navigation-managed adaptive updater. It observes locally persisted terminal
+state and retains visual acknowledgement per customer/browser session; it never
+performs provider reconciliation or storage probes. All current V2 App services
+reuse their existing authorized workspace results. See [Process Queue](PROCESS-QUEUE.md).
+
+## Harakat text service — 2026-09-21
+
+OCR presentation now contains Scanner and Harakat 1.0, with independent actions
+and worker contracts. Harakat uses existing durable submission, financial context,
+poll coordination, reconciliation and CustomerOutputStorage. Its text-only page
+submits one Tashkeel job and persists inline text plus private TXT before completion.
+No separate storage/billing subsystem or public API route is introduced. See the
+[Harakat contract and migration](SERVICES.md#harakat-10--2026-09-21).
+
 ## V2 browser navigation lifecycle — 2026-09-16
 
 `resources/js/v2-navigation.js` owns page mounting, morph reconciliation and

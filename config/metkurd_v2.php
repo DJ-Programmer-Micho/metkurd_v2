@@ -13,6 +13,10 @@ return [
     */
     'enabled' => (bool) env('FEATURE_APP_V2', false),
     'ocr_pdfinfo_binary' => env('OCR_PDFINFO_BINARY', 'pdfinfo'),
+    'harakat' => [
+        // Keep aligned with the deployed Tashkeel direct-text limit.
+        'max_chars' => (int) env('HARAKAT_MAX_TEXT_CHARS', 5000),
+    ],
     // Match the worker's conservative batch envelope; do not exceed worker limits.
     'multi_speaker' => [
         'max_segments' => 25,
@@ -168,6 +172,14 @@ return [
                     'access' => 'ocr.standard',
                     'endpoint' => 'kocr_v2',
                     'kind' => 'kocr',
+                ],
+                'harakat-1' => [
+                    'name' => 'Harakat 1.0',
+                    'legacy_tool' => 'harakat',
+                    'legacy_action' => 'harakat.diacritize',
+                    'access' => 'harakat.diacritize',
+                    'endpoint' => 'tashkeel_v1',
+                    'kind' => 'harakat',
                 ],
             ],
         ],

@@ -1,5 +1,51 @@
 # Storage, cache and history
 
+## API Theta references and Harakat results — 2026-09-26
+
+`POST /api/v2/references` uses the existing MultiSpeakerReferences uploader with
+API-channel Theta authorization. References remain private, permanent,
+quota-counted and deduplicated by active owned content hash. No second storage
+system or generation job is introduced. The returned reference ID can be reused
+with the existing owned-reference path; expired/deleted/foreign objects fail.
+Theta validates distinct references before reservation and again before signing
+one URL per object at native dispatch. No URL is exposed publicly or persisted
+in batch input. Batch/Harakat API outputs use existing temporary/permanent result
+retention. Unavailable Harakat TXT metadata also hides its inline API text.
+
+## Harakat text output — 2026-09-21
+
+Harakat stores private `harakat.txt` through CustomerOutputStorage with purpose
+`render`, role `diacritized_text` and the existing MlJob source identity. Inline
+text/counts belong to MlJob; completion follows file/quota registration. The library
+classifies Harakat separately within OCR. History reads owned local records, with
+no new persistent cache/provider query. Preview/copy/download require active,
+unexpired owned file metadata; download checks object existence. Shared deletion
+of the last render marks the job deleted and removes output, preserving financial
+history. No signed provider URLs or new storage/deletion subsystem is introduced.
+
+## V2 STEM same-origin audio — 2026-09-21
+
+V2 STEM playback now always uses `StemAudioStream` after the existing job ownership
+and entitlement checks. The UI's stable `?proxy=1` URLs avoid old cached redirects.
+There is no object-storage redirect for this route and no bucket CORS dependency.
+This follows the existing private proxy convention; bucket settings and other
+tools' delivery paths are unchanged. Downloads, ZIPs and V1 playback are unchanged.
+
+GET supports a single bounded/open/suffix byte range, returning exact 206,
+Content-Range, Content-Length, Content-Type and Accept-Ranges headers. Unsatisfiable
+ranges return 416; malformed/multipart ranges are ignored with a full 200 response.
+HEAD returns metadata without opening a body; If-Range conservatively returns
+the full representation because this response has no validator. S3 reads forward
+Range to GetObject with streaming enabled and verify the upstream Content-Range.
+Local/test disks seek their streams. Bodies copy in at most 64 KiB chunks and close
+on completion/disconnect; complete files are never read into PHP strings.
+
+The existing private one-year immutable audio cache policy is retained. Mixer
+actions do not reach this route. Same-origin delivery occupies an application
+worker during initial transfer; actual storage/reverse-proxy throughput remains
+a deployment check. No storage ownership, metadata, persistence or deletion rule
+changed. Automated tests use fake storage and a mocked S3 client, not live objects.
+
 ## Multi-Speaker storage — 2026-09-20
 
 Zeta and Theta final WAVs are ordinary CustomerFiles under their own tool folders.

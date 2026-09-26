@@ -12,9 +12,9 @@ use Illuminate\Support\Str;
 
 class MultiSpeakerReferences
 {
-    public function upload(Customer $customer, UploadedFile $file): CustomerFile
+    public function upload(Customer $customer, UploadedFile $file, string $channel = 'app'): CustomerFile
     {
-        abort_unless($customer->isAllowed('theta.generate', 'app'), 403);
+        abort_unless(in_array($channel, ['app', 'api'], true) && $customer->isAllowed('theta.generate', $channel), 403);
         $info = app(InputBoundary::class)->audio($file, true);
         $record = DB::transaction(function () use ($customer, $file, $info) {
             Customer::query()->whereKey($customer->id)->lockForUpdate()->firstOrFail();
@@ -43,17 +43,10 @@ class MultiSpeakerReferences
     {
         $urls = [];
         $objects = [];
-        $bytes = 0;
-        foreach (array_unique($ids) as $id) {
-            $file = app(InputBoundary::class)->reference($customer, (int) $id);
+        foreach ($this->validate($customer, $ids) as $id => $file) {
             $key = $file->disk.':'.$file->path;
             if (! isset($objects[$key])) {
-                $bytes += (int) $file->size_bytes;
-                if ($bytes > config('metkurd_v2.multi_speaker.max_reference_bytes')) {
-                    throw new \RuntimeException('The project references exceed the size limit.');
-                }
-                // Existing S3 references need no second object. Legacy references are
-                // secured using the same materialization path as Vector.
+                // Keep the shared Vector materialization path for legacy objects.
                 $file = app(\App\Services\MetKurd\Jobs\CloneOmniSubmissionService::class)->prepareReusableReference($customer, $file);
                 $objects[$key] = app(CustomerOutputStorage::class)->temporaryUrl($file->path, 120, ['ResponseContentType' => $file->mime]);
             }
@@ -61,5 +54,27 @@ class MultiSpeakerReferences
         }
 
         return $urls;
+    }
+
+    /** Check every distinct owned reference before an API job is reserved. */
+    public function validate(Customer $customer, array $ids): array
+    {
+        $files = [];
+        $objects = [];
+        $bytes = 0;
+        foreach (array_unique($ids) as $id) {
+            $file = app(InputBoundary::class)->reference($customer, (int) $id);
+            $key = $file->disk.':'.$file->path;
+            if (! isset($objects[$key])) {
+                $bytes += (int) $file->size_bytes;
+                if ($bytes > config('metkurd_v2.multi_speaker.max_reference_bytes')) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['segments' => __('The project references exceed the size limit.')]);
+                }
+                $objects[$key] = true;
+            }
+            $files[(int) $id] = $file;
+        }
+
+        return $files;
     }
 }

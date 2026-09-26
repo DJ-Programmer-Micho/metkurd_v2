@@ -58,7 +58,8 @@ class OmniSpeakerCatalog
             ->each(function (Voice $voice) use (&$groups, $locale): void {
                 $meta = (array) $voice->meta;
                 $reference = $this->referencePath((string) data_get($meta, 'ref_audio', data_get($meta, 'runpod_ref_audio', '')));
-                if ($reference === '') {
+                // Keep discovery aligned with Zeta's existing reference safety boundary.
+                if ($reference === '' || str_contains($reference, '..') || preg_match('~^(?:/|[a-z]+:)~i', $reference) || str_contains($reference, "\0")) {
                     return;
                 }
 

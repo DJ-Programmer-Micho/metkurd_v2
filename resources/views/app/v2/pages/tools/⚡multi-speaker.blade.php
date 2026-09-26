@@ -19,6 +19,15 @@ use Livewire\WithPagination;
 
 new #[Layout('app::v2.layouts.app')] class extends Component {
     use WithFileUploads, WithPagination;
+    use \App\Support\OpensProcessQueueJob;
+
+    protected function processQueueAction(): string { return $this->definition['legacy_action']; }
+    protected function selectProcessQueueJob(MlJob $job): void
+    {
+        $this->currentJobId = (string) $job->id;
+        unset($this->currentJob, $this->presentation, $this->recentRenders);
+        $this->processQueueHistoryPage($this->jobs()->whereNotIn('status', ['deleted', 'deleting']), $job, 'multiRenders', 'created_at');
+    }
 
     #[Locked] public string $serviceSlug;
     #[Locked] public string $toolSlug;
@@ -48,6 +57,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         $this->submissionKey = (string) Str::uuid();
         $this->addSegment();
         $this->currentJobId = $this->jobs()->active()->latest()->value('id');
+        $this->openProcessQueueJob();
     }
 
     #[Computed] public function isClone(): bool { return $this->definition['kind'] === 'omni_clone_batch'; }
@@ -164,6 +174,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         try {
             $job = app(MultiSpeakerSubmissionService::class)->submit(auth('app')->user(), $this->serviceSlug, $this->toolSlug, $this->submissionKey, $this->orderedSegments);
             $this->currentJobId = (string) $job->id;
+            $this->dispatch('metkurd:job-submitted');
             unset($this->currentJob, $this->presentation, $this->recentRenders);
             if ($job->provider_job_id || $job->status === 'failed') $this->submissionKey = (string) Str::uuid();
             $this->resetPage('multiRenders');
@@ -187,7 +198,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     {
         $active = $this->jobs()->active()->exists();
         $page = clone app(CttsWorkspaceCache::class)->recentRenders((int) auth('app')->id(), $this->definition['legacy_tool'], $this->getPage('multiRenders'), $active,
-            fn () => $this->jobs()->whereNotIn('status', ['deleted', 'deleting'])->latest()->paginate(3, pageName: 'multiRenders'));
+            fn () => $this->jobs()->whereNotIn('status', ['deleted', 'deleting'])->latest()->orderByDesc('id')->paginate(3, pageName: 'multiRenders'));
         $files = CustomerFile::query()->where('customer_id', auth('app')->id())->whereIn('path', $page->getCollection()->pluck('output.path')->filter())->get()->keyBy('path');
         $page->setCollection($page->getCollection()->map(function ($job) use ($files) {
             $status = app(MetKurdV2JobStatusPresentation::class)->for($job->status);

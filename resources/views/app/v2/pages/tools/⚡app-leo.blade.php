@@ -16,6 +16,10 @@ use Livewire\WithPagination;
 
 new #[Layout('app::v2.layouts.app')] class extends Component {
     use WithFileUploads, WithPagination;
+    use \App\Support\OpensProcessQueueJob;
+
+    protected function processQueueAction(): string { return 'leo.transcribe'; }
+    protected function selectProcessQueueJob(MlJob $job): void { $this->currentJobId = (string) $job->id; }
 
     public $audioFile = null;
     public string $language = 'ckb';
@@ -32,7 +36,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     #[\Livewire\Attributes\Locked] public string $submissionKey = '';
     public string $submissionError = '';
 
-    public function mount(): void { $this->submissionKey = (string) \Illuminate\Support\Str::uuid(); $this->hydrateCurrentJob(); }
+    public function mount(): void { $this->submissionKey = (string) \Illuminate\Support\Str::uuid(); $this->hydrateCurrentJob(); $this->openProcessQueueJob(); }
 
     public function updatedAudioFile(AudioProbeService $probe): void
     {
@@ -73,6 +77,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                 'audio_name' => (string) $this->audioName, 'audio_mime' => (string) $this->audioMime,
             ]);
             $this->currentJobId = (string) $job->id;
+            $this->dispatch('metkurd:job-submitted');
             if ((string) $job->status === 'failed') $this->submissionError = (string) data_get($job->error, 'message', __('Transcription could not be started.'));
             $this->resetPage('leoRendersPage');
             $this->dispatch('header:refresh');
@@ -152,9 +157,9 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             <div class="v2-panel-heading"><span>{{ __('Transcribed Text') }}</span><small>{{ __('Latest result') }}</small></div>
             @if($this->currentJob && $presentation['is_active'])<div class="v2-leo-processing"><span class="spinner-border spinner-border-sm"></span>{{ __('Processing your transcription…') }}</div>
             @elseif($this->currentJob && $this->currentJob->status === 'failed')<div class="v2-leo-failed">{{ \App\Support\CustomerFacingError::message(data_get($this->currentJob->error, 'message', __('Transcription could not be completed.'))) }}</div>
-            @elseif($this->currentTranscript)<div class="v2-leo-transcript" dir="auto">{{ $this->currentTranscript }}</div><div class="d-flex gap-2 mt-2"><button wire:click="copyTranscript" class="btn btn-sm btn-outline-success">{{ __('Copy') }}</button>@if(data_get($this->currentJob?->output, 'path'))<a href="{{ route('app.v2.leo.txt', ['locale' => app()->getLocale(), 'jobId' => $currentJobId]) }}" class="btn btn-sm btn-outline-light">{{ __('Download') }}</a>@endif</div>
+            @elseif($this->currentTranscript)<div class="v2-leo-transcript" dir="auto" style="font-family: Arial, Helvetica, sans-serif">{{ $this->currentTranscript }}</div><div class="d-flex gap-2 mt-2"><button wire:click="copyTranscript" class="btn btn-sm btn-outline-success">{{ __('Copy') }}</button>@if(data_get($this->currentJob?->output, 'path'))<a href="{{ route('app.v2.leo.txt', ['locale' => app()->getLocale(), 'jobId' => $currentJobId]) }}" class="btn btn-sm btn-outline-light">{{ __('Download') }}</a>@endif</div>
             @else<div class="v2-empty-state v2-leo-empty">{{ __('Your transcription will appear here.') }}</div>@endif
-            <div class="v2-leo-history"><div class="v2-panel-heading"><span>{{ __('Recent Transcriptions') }}</span><small>{{ __('Leo only') }}</small></div>@forelse($this->recentTranscriptions as $render)<article class="v2-render-item is-{{ $render['status'] }}" wire:key="leo-render-{{ $render['id'] }}"><div class="d-flex justify-content-between gap-2"><strong dir="auto">{{ $render['name'] }}</strong><span class="v2-render-status is-{{ $render['status'] === 'done' ? 'success' : ($render['status'] === 'failed' ? 'danger' : 'info') }}">{{ app(\App\Support\MetKurdV2JobStatusPresentation::class)->for($render['status'])['label'] }}</span></div><p dir="auto">{{ $render['text'] ?: __('Transcription is still processing.') }}</p><small class="v2-muted">{{ $render['when'] }} @if($render['duration']) · {{ number_format($render['duration'], 1) }}s @endif</small>@if($render['audio_url'])<div class="v2-leo-recent-waveform" wire:ignore data-metkurd-waveform data-job="leo-audio-{{ $render['id'] }}" data-accent="success" data-url="{{ $render['audio_url'] }}"><div class="v2-render-player-controls"><button type="button" class="v2-waveform-toggle" data-metkurd-waveform-toggle aria-label="{{ __('Play or pause original audio') }}"><i class="ri-play-fill" data-metkurd-waveform-icon></i></button><span class="v2-waveform-time" data-metkurd-waveform-time>00:00 / --:--</span></div><div class="v2-waveform-canvas" data-metkurd-waveform-canvas></div></div>@endif<div class="d-flex flex-wrap gap-2 mt-2">@if($render['download_url'])<a class="btn btn-sm btn-outline-success" href="{{ $render['download_url'] }}">{{ __('Download') }}</a>@endif@if($render['status'] === 'done')<button type="button" wire:click="showTranscript('{{ $render['id'] }}')" class="btn btn-sm btn-outline-success">{{ __('View Transcript') }}</button>@endif</div></article>@empty<div class="v2-empty-state">{{ __('Your recent Leo transcriptions will appear here.') }}</div>@endforelse
+            <div class="v2-leo-history"><div class="v2-panel-heading"><span>{{ __('Recent Transcriptions') }}</span><small>{{ __('Leo only') }}</small></div>@forelse($this->recentTranscriptions as $render)<article class="v2-render-item is-{{ $render['status'] }}" style="font-family: Arial, Helvetica, sans-serif" wire:key="leo-render-{{ $render['id'] }}"><div class="d-flex justify-content-between gap-2"><strong dir="auto">{{ $render['name'] }}</strong><span class="v2-render-status is-{{ $render['status'] === 'done' ? 'success' : ($render['status'] === 'failed' ? 'danger' : 'info') }}">{{ app(\App\Support\MetKurdV2JobStatusPresentation::class)->for($render['status'])['label'] }}</span></div><p dir="auto">{{ $render['text'] ?: __('Transcription is still processing.') }}</p><small class="v2-muted">{{ $render['when'] }} @if($render['duration']) · {{ number_format($render['duration'], 1) }}s @endif</small>@if($render['audio_url'])<div class="v2-leo-recent-waveform" wire:ignore data-metkurd-waveform data-job="leo-audio-{{ $render['id'] }}" data-accent="success" data-url="{{ $render['audio_url'] }}"><div class="v2-render-player-controls"><button type="button" class="v2-waveform-toggle" data-metkurd-waveform-toggle aria-label="{{ __('Play or pause original audio') }}"><i class="ri-play-fill" data-metkurd-waveform-icon></i></button><span class="v2-waveform-time" data-metkurd-waveform-time>00:00 / --:--</span></div><div class="v2-waveform-canvas" data-metkurd-waveform-canvas></div></div>@endif<div class="d-flex flex-wrap gap-2 mt-2">@if($render['download_url'])<a class="btn btn-sm btn-outline-success" href="{{ $render['download_url'] }}">{{ __('Download') }}</a>@endif@if($render['status'] === 'done')<button type="button" wire:click="showTranscript('{{ $render['id'] }}')" class="btn btn-sm btn-outline-success">{{ __('View Transcript') }}</button>@endif</div></article>@empty<div class="v2-empty-state">{{ __('Your recent Leo transcriptions will appear here.') }}</div>@endforelse
             @if($this->recentTranscriptions->hasPages())<nav class="v2-render-pagination"><button wire:click="previousRecentTranscriptionsPage" @disabled($this->recentTranscriptions->onFirstPage())>{{ __('Previous') }}</button><span>{{ $this->recentTranscriptions->currentPage() }} / {{ $this->recentTranscriptions->lastPage() }}</span><button wire:click="nextRecentTranscriptionsPage" @disabled(! $this->recentTranscriptions->hasMorePages())>{{ __('Next') }}</button></nav>@endif</div>
         </aside>
     </div>

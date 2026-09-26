@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Process;
 
 class OcrDocumentProbe
 {
+    public const MAX_PAGES = 3888;
+
     public function pageCount(UploadedFile $file): int
     {
         if (strtolower($file->getClientOriginalExtension()) !== 'pdf' && $file->getMimeType() !== 'application/pdf') {
@@ -34,7 +36,7 @@ class OcrDocumentProbe
             ]);
             if ($result->successful() && preg_match('/^Pages:\s+(\d+)\s*$/m', $result->output(), $match)) {
                 $pages = (int) $match[1];
-                if ($pages > 0 && $pages <= 3888) {
+                if ($pages > 0 && $pages <= self::MAX_PAGES) {
                     return $pages;
                 }
             }

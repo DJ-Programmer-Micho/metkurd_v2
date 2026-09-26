@@ -362,7 +362,7 @@ class extends Component
                             <div class="col-12">
                                 <label class="form-label" for="admin-field-adm-payments-plans-12">{{ __('API Allowed Tools / Scopes') }}</label>
                                 <textarea class="form-control font-monospace @error('apiAllowedToolsText') is-invalid @enderror" rows="4" wire:model.defer="apiAllowedToolsText" dir="ltr" placeholder="v2:*" id="admin-field-adm-payments-plans-12"></textarea>
-                                <div class="form-text">{{ __('admin_p1.scope_help') }} <bdi dir="ltr">{{ collect(\App\Services\CustomerApi\V2\ApiCatalog::SERVICES)->map(fn ($service) => 'v2:'.$service)->join(', ') }}</bdi></div>
+                                <div class="form-text">{{ __('admin_p1.scope_help') }} <bdi dir="ltr">{{ implode(', ', app(\App\Services\CustomerApi\V2\ApiCatalog::class)->serviceScopes()) }}</bdi></div>
                                 @error('apiAllowedToolsText') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                 @if($editingPlanId)
                                     <button type="button" class="btn btn-outline-info mt-2" data-admin-method="saveApiScopes" data-admin-args="[]" data-admin-target="{{ $name }}" data-admin-impact="{{ __('admin_p1.scopes_impact') }}" @disabled(! \App\Support\Admin\AdminUiAccess::can('admin.pricing'))>{{ __('admin_p1.save_scopes') }}</button>

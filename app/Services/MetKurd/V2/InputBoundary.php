@@ -15,6 +15,10 @@ use Illuminate\Validation\ValidationException;
 /** Authoritative input preparation shared by web and API; no billing supplied by clients. */
 class InputBoundary
 {
+    public const DOCUMENT_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff'];
+
+    public const DOCUMENT_MAX_KIB = 102400;
+
     public const AUDIO_MIMES = 'audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac,audio/x-flac';
 
     public function characterLimit(Customer $customer, string $action): int
@@ -106,7 +110,7 @@ class InputBoundary
 
     public function document(UploadedFile $file, array $options): array
     {
-        Validator::make(['documentFile' => $file], ['documentFile' => 'required|file|mimes:pdf,jpg,jpeg,png,webp,bmp,gif,tif,tiff|max:102400'])->validate();
+        Validator::make(['documentFile' => $file], ['documentFile' => 'required|file|mimes:'.implode(',', self::DOCUMENT_EXTENSIONS).'|max:'.self::DOCUMENT_MAX_KIB])->validate();
         $probe = app(OcrDocumentProbe::class);
         try {
             $pages = $probe->selectedPages($probe->pageCount($file), (string) ($options['pages'] ?? 'all'));

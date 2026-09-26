@@ -267,11 +267,9 @@ Route::prefix('{locale}')
             ->name('app.xtts.speaker.avatar');
 
         Route::get('/app/xomni/speakers/{voiceCode}/preview', [XomniSpeakerAssetController::class, 'preview'])
-            ->middleware('app.tool.access:any,xomni,zeta')
             ->name('app.xomni.speaker.preview');
 
         Route::get('/app/xomni/speakers/{voiceCode}/avatar', [XomniSpeakerAssetController::class, 'avatar'])
-            ->middleware('app.tool.access:any,xomni,zeta')
             ->name('app.xomni.speaker.avatar');
 
         Route::get('/app/f5tts/speakers/{voiceCode}/preview', [F5ttsSpeakerAssetController::class, 'preview'])
@@ -432,6 +430,9 @@ Route::prefix('{locale}')
         Route::get('/app-v2/caption/renders/{jobId}/audio', [\App\Http\Controllers\App\Services\CaptionV2RenderController::class, 'inputAudio'])->middleware('app.tool.access:caption.standard')->name('app.v2.caption.audio');
         Route::livewire('/app-v2/speech-to-text/caption', 'app::v2.pages.tools.app-caption')->middleware('app.tool.access:caption.standard')->name('app.v2.caption');
         Route::livewire('/app-v2/ocr/scanner', 'app::v2.pages.tools.app-ocr')->middleware('app.tool.access:ocr.standard')->name('app.v2.ocr');
+        Route::livewire('/app-v2/ocr/harakat-1', 'app::v2.pages.tools.app-harakat')->middleware('app.tool.access:harakat.diacritize')->name('app.v2.harakat');
+        Route::get('/app-v2/harakat/renders/{jobId}/txt', [\App\Http\Controllers\App\Services\HarakatRenderController::class, 'downloadTxt'])
+            ->middleware('app.tool.access:harakat.diacritize')->name('app.v2.harakat.txt');
         Route::get('/app-v2/ocr/renders/{jobId}/{format}', [OcrRenderController::class, 'downloadArtifact'])
             ->whereIn('format', ['docx', 'markdown', 'html', 'zip'])
             ->middleware('app.tool.access:ocr.standard')->name('app.v2.ocr.artifact');

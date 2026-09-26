@@ -29,7 +29,7 @@
 
             <a wire:navigate href="{{ $apiRoute }}" class="btn btn-sm {{ $apiAccessEnabled ? 'btn-info' : 'btn-outline-secondary' }} v2-topbar-control" aria-label="{{ __('Open API Access') }}"><i class="mdi mdi-api"></i><span class="d-none d-md-inline ms-1">{{ __('API') }}</span></a>
 
-            <div class="v2-process-slots"><livewire:partials.process-slots /></div>
+            @livewire('app::v2.components.shared.process-queue', [], key('v2-process-queue-'.auth('app')->id().'-'.app()->getLocale()))
 
             <div class="dropdown" wire:ignore>
                 <button type="button" class="btn btn-sm btn-outline-light border-0 d-flex align-items-center gap-2 v2-topbar-control" data-bs-toggle="dropdown" aria-expanded="false" aria-label="{{ __('account_v2.account') }}">

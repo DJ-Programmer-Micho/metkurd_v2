@@ -38,7 +38,8 @@ class AdminV2Catalog
         $scopes = $catalog->scopesForConfiguration($config['allowed_tools']);
         $customer = $this->planCustomer($plan);
         $rows = [];
-        foreach ($catalog->variants() as $variant) {
+        $variants = $catalog->variants();
+        foreach ($variants as $variant) {
             $definition = $variant['tool'];
             $tool = Tool::where('code', $definition['legacy_tool'])->first();
             $action = ToolAction::where('full_code', $variant['action'])->first();
@@ -68,6 +69,9 @@ class AdminV2Catalog
                 'pages' => (int) ($sample['pages'] ?? 1), 'seconds' => $seconds,
                 'minutes' => max(1, (int) ceil($seconds / 60))]);
             $context['metric_code'] = $action?->default_metric_code;
+            if ($variant['service'] === 'harakat') {
+                $context['language'] = 'ar';
+            }
             if ($variant['service'] === 'captions') {
                 $context['output_format'] = 'srt';
             }
@@ -94,11 +98,11 @@ class AdminV2Catalog
             }
             $route = match ($variant['service']) {
                 'transcriptions' => 'app.v2.leo', 'captions' => 'app.v2.caption', 'ocr' => 'app.v2.ocr',
-                'stem' => 'app.v2.stem', default => 'app.v2.tool',
+                'stem' => 'app.v2.stem', 'harakat' => 'app.v2.harakat', default => 'app.v2.tool',
             };
             $rows[] = array_merge($variant, ['name' => $definition['name'],
                 'family' => match ($variant['service']) {
-                    'speech' => 'Apollo', 'voice-clone' => 'Vector', 'transcriptions' => 'Leo', 'captions' => 'Caption', 'ocr' => 'OCR', default => 'STEM'
+                    'speech' => 'Apollo', 'zeta' => 'Zeta', 'voice-clone' => 'Vector', 'theta' => 'Theta', 'transcriptions' => 'Leo', 'captions' => 'Caption', 'ocr', 'harakat' => 'OCR', default => 'STEM'
                 },
                 'tool_code' => $definition['legacy_tool'], 'tool_id' => $tool?->id, 'action_id' => $action?->id,
                 'metric' => $action?->default_metric_code, 'route' => $route,

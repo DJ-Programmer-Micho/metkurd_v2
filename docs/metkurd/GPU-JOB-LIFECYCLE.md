@@ -1,5 +1,25 @@
 # GPU job lifecycle
 
+## Process Queue observation — 2026-09-26
+
+The global V2 queue reads MlJob only. Queued/running/saving remain active even
+after an execution lock expires; only local done becomes Ready. Provider success
+cannot bypass persistence through this UI. Reconciliation still belongs to the
+existing scheduler, queued jobs and workspace synchronizers; no shell read calls
+them. See [Process Queue](PROCESS-QUEUE.md) for polling and result navigation.
+
+## Harakat — 2026-09-21
+
+Harakat uses DurableUploadSubmission with a content/channel hash and one character
+quote/debit. An attempt marker precedes text-only dispatch to `tashkeel_v1`.
+Same-key replay cannot create another job; changed input cannot reuse the key.
+HarakatJobSyncService requires success=true, matching identity/mode and valid
+text/chunks, then persists private TXT and local output before done. No raw provider
+payload/error is retained. JobPollCoordinator handles page/scheduler coordination
+and the existing terminal App refund policy. Missing endpoint configuration or
+storage failure preserves accepted work for reconciliation; ambiguous dispatch
+never automatically replays/refunds. See SERVICES for operator/acceptance details.
+
 ## Multi-Speaker project lifecycle — 2026-09-20
 
 Zeta/Theta use one DurableUploadSubmission intent and one RunPodV2Adapter batch

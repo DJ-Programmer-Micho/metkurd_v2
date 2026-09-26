@@ -8,12 +8,17 @@ use App\Models\CustomerApiKey;
 use App\Services\CustomerApi\CustomerApiAccessService;
 use App\Services\MetKurd\Jobs\CaptionSubmissionService;
 use App\Services\MetKurd\Jobs\CloneOmniSubmissionService;
+use App\Services\MetKurd\Jobs\HarakatSubmissionService;
 use App\Services\MetKurd\Jobs\LeoSubmissionService;
+use App\Services\MetKurd\Jobs\MultiSpeakerSubmissionService;
 use App\Services\MetKurd\Jobs\OcrV2SubmissionService;
 use App\Services\MetKurd\Jobs\OmniSubmissionService;
 use App\Services\MetKurd\Jobs\StemV2SubmissionService;
 use App\Services\MetKurd\Jobs\SubmissionContext;
+use App\Services\MetKurd\V2\HarakatInput;
 use App\Services\MetKurd\V2\InputBoundary;
+use App\Services\MetKurd\V2\MultiSpeakerInput;
+use App\Services\MetKurd\V2\MultiSpeakerReferences;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -21,6 +26,10 @@ use Illuminate\Support\Str;
 
 class ApiSubmission
 {
+    public const OCR_EXPORTS = ['txt', 'docx', 'markdown', 'html', 'zip'];
+
+    public const OCR_DEFAULT_EXPORTS = ['txt', 'docx'];
+
     public function submit(Request $request, string $service): array
     {
         /** @var Customer $customer */
@@ -29,7 +38,7 @@ class ApiSubmission
         $key = $request->attributes->get('customerApiKey');
         $input = array_merge(['language' => 'ckb', 'intelligent' => false, 'storage_mode' => 'temporary'], $request->all());
         [$group, $tool, $action] = app(ApiCatalog::class)->definition($service, $input);
-        app(ApiCatalog::class)->authorize($customer, $key, 'v2:'.$service, $action);
+        app(ApiCatalog::class)->authorize($customer, $key, app(ApiCatalog::class)->scopeForService($service), $action);
         $identity = trim((string) $request->header('Idempotency-Key'));
         if ($identity === '' || strlen($identity) > 128) {
             throw new ApiProblem('invalid_request');
@@ -42,15 +51,16 @@ class ApiSubmission
             $rules['mode'] = 'required|in:2,4';
         }
         if ($service === 'ocr') {
-            $rules += ['pages' => 'sometimes|string|max:255', 'exports' => 'sometimes|array', 'exports.*' => 'in:txt,docx,markdown,html,zip'];
+            $rules += ['pages' => 'sometimes|string|max:255', 'exports' => 'sometimes|array', 'exports.*' => 'in:'.implode(',', self::OCR_EXPORTS)];
         }
-        $data = Validator::make($input, $rules)->validate();
+        $newTool = in_array($service, ['zeta', 'theta', 'harakat'], true);
+        $data = $newTool ? app(ToolInput::class)->validate($service, $request->all()) : Validator::make($input, $rules)->validate();
         $file = $request->file('file');
         if ($file !== null && ! $file instanceof \Illuminate\Http\UploadedFile) {
             throw new ApiProblem('invalid_file');
         }
         if ($file !== null) {
-            if ($service === 'speech') {
+            if ($service === 'speech' || $newTool) {
                 throw new ApiProblem('invalid_request');
             }
             // Bound hashing cost before reading the file for its retry fingerprint.
@@ -68,6 +78,14 @@ class ApiSubmission
         }
 
         $options = [];
+        if (in_array($service, ['zeta', 'theta'], true)) {
+            app(MultiSpeakerInput::class)->prepare($customer, $data['segments'], $service === 'theta');
+            if ($service === 'theta') {
+                app(MultiSpeakerReferences::class)->validate($customer, array_column($data['segments'], 'reference_id'));
+            }
+        } elseif ($service === 'harakat') {
+            $data['text'] = app(HarakatInput::class)->prepare($data['text'])['text'];
+        }
         if (in_array($service, ['speech', 'voice-clone'], true)) {
             $data = array_merge($data, $boundary->text($customer, $action, $data, $service === 'speech'));
         }
@@ -90,8 +108,8 @@ class ApiSubmission
                 throw new ApiProblem('invalid_file');
             }
             $options = $boundary->document($file, ['pages' => $data['pages'] ?? 'all']);
-            foreach (['txt', 'docx', 'markdown', 'html', 'zip'] as $export) {
-                $options['export_'.$export] = in_array($export, $data['exports'] ?? ['txt', 'docx'], true);
+            foreach (self::OCR_EXPORTS as $export) {
+                $options['export_'.$export] = in_array($export, $data['exports'] ?? self::OCR_DEFAULT_EXPORTS, true);
             }
             $options['run_llm_corrector'] = (bool) $data['intelligent'];
         }
@@ -119,9 +137,11 @@ class ApiSubmission
         }
         $context = new SubmissionContext($api);
         $submissionKey = hash('sha256', 'api-v2:'.$api->id);
-        $options = array_merge($options, ['submission_key' => $submissionKey, 'language' => $data['language'], 'intelligent' => (bool) $data['intelligent'], 'model_variant' => 'fine_tuned']);
+        $options = array_merge($options, ['submission_key' => $submissionKey, 'language' => $data['language'] ?? 'ckb', 'intelligent' => (bool) ($data['intelligent'] ?? false), 'model_variant' => 'fine_tuned']);
         try {
             $job = match ($service) {
+                'zeta', 'theta' => app(MultiSpeakerSubmissionService::class)->submit($customer, $group, $tool, $submissionKey, $data['segments'], $context),
+                'harakat' => app(HarakatSubmissionService::class)->submit($customer, $submissionKey, $data['text'], $context),
                 'speech' => app(OmniSubmissionService::class)->submit($customer, $group, $tool, $submissionKey, $data, $context),
                 'voice-clone' => app(CloneOmniSubmissionService::class)->submit($customer, $group, $tool, $submissionKey, $data, $file, $data['reference_id'] ?? null, $context),
                 'transcriptions' => app(LeoSubmissionService::class)->submit($customer, $file, $options, $context),

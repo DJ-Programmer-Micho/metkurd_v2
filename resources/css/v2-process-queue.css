@@ -1,0 +1,9 @@
+.v2-queue-toggle{border:1px solid #687386;color:#cbd5e1;background:rgba(100,116,139,.12)}
+.v2-queue-toggle[data-state="active"]{color:#ffdf77;border-color:#e8b94d;background:rgba(234,179,8,.15)}
+.v2-queue-toggle[data-state="ready"]{color:#80edac;border-color:#36b779;background:rgba(34,197,94,.15)}
+.v2-queue-toggle[data-state="failed"]{color:#ff9da7;border-color:#ed697b;background:rgba(239,68,68,.15)}
+.v2-queue-panel{width:min(380px,calc(100vw - 24px));max-height:70vh;overflow-y:auto}
+.v2-queue-job{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;color:inherit;text-decoration:none;border-bottom:1px solid rgba(128,140,160,.2)}
+.v2-queue-job>span{min-width:0}.v2-queue-job strong,.v2-queue-job small{display:block}.v2-queue-job small{font-size:11px;opacity:.75}.v2-queue-job [data-queue-status]{font-size:12px}.v2-queue-job:hover{color:var(--bs-info)}
+.v2-queue-job[data-status="done"] [data-queue-status]{color:var(--bs-success)}.v2-queue-job[data-status="failed"] [data-queue-status]{color:var(--bs-danger)}.v2-queue-job[data-status="running"] [data-queue-status],.v2-queue-job[data-status="queued"] [data-queue-status],.v2-queue-job[data-status="saving"] [data-queue-status]{color:var(--bs-warning)}
+@media(max-width:575.98px){.v2-queue-toggle [data-queue-indicator]{position:absolute;width:1px;height:1px;padding:0;margin:-1px!important;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}

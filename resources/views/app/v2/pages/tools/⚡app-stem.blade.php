@@ -18,6 +18,17 @@ use Livewire\WithPagination;
 
 new #[Layout('app::v2.layouts.app')] class extends Component {
     use WithFileUploads, WithPagination;
+    use \App\Support\OpensProcessQueueJob;
+
+    protected function processQueueAction(): string { return 'stem.sep'.$this->stems; }
+    protected function selectProcessQueueJob(MlJob $job): void
+    {
+        if (! $this->workspaceJobs()->whereKey($job->id)->exists()) return;
+        if ($job->status === 'done') $this->selectedRenderId = (string) $job->id;
+        else $this->currentJobId = (string) $job->id;
+        unset($this->currentJob, $this->currentPresentation, $this->selectedRender, $this->recentRenders);
+        $this->processQueueHistoryPage($this->workspaceJobs(), $job, 'stemV2RendersPage', 'updated_at', 6);
+    }
 
     #[\Livewire\Attributes\Locked] public string $submissionKey = '';
     #[\Livewire\Attributes\Locked] public int $stems = 4;
@@ -38,6 +49,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         $this->submissionKey = (string) Str::uuid();
         $this->stems = (int) $mode;
         $this->hydrateWorkspace();
+        $this->openProcessQueueJob();
     }
 
     protected function rules(): array
@@ -96,6 +108,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                 'stem_bitrate' => '192k',
             ]);
             $this->currentJobId = (string) $job->id;
+            $this->dispatch('metkurd:job-submitted');
             unset($this->currentJob, $this->currentPresentation, $this->recentRenders);
             if ($job->error) $this->submissionError = (string) data_get($job->error, 'message', '');
             $this->removeAudio();
@@ -185,14 +198,8 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             'name' => (string) data_get($job->input, 'audio_name', __('Untitled audio')),
             'tracks' => $tracks,
             'download_all_url' => route('app.v2.stem.zip', ['locale' => $locale, 'jobId' => $job->id]),
-            // Let the authenticated stream endpoint issue a short-lived direct
-            // object-storage URL. This keeps long audio transfers out of the
-            // PHP worker, so WaveSurfer can load all stems concurrently.
-            'stream_urls' => collect($tracks)->mapWithKeys(fn (string $track) => [$track => route('app.v2.stem.stream', ['locale' => $locale, 'jobId' => $job->id, 'track' => $track])])->all(),
-            // Some legacy buckets may not yet allow the browser origin for
-            // WaveSurfer fetches. Only use the slower PHP proxy if direct
-            // delivery fails for an individual track.
-            'proxy_stream_urls' => collect($tracks)->mapWithKeys(fn (string $track) => [$track => route('app.v2.stem.stream', ['locale' => $locale, 'jobId' => $job->id, 'track' => $track]).'?proxy=1'])->all(),
+            // Stable same-origin playback URL; no object-storage redirect/CORS fetch.
+            'stream_urls' => collect($tracks)->mapWithKeys(fn (string $track) => [$track => route('app.v2.stem.stream', ['locale' => $locale, 'jobId' => $job->id, 'track' => $track]).'?proxy=1'])->all(),
             'download_urls' => collect($tracks)->mapWithKeys(fn (string $track) => [$track => route('app.v2.stem.download', ['locale' => $locale, 'jobId' => $job->id, 'track' => $track])])->all(),
         ];
     }
@@ -201,7 +208,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     public function recentRenders()
     {
         $locale = app()->getLocale();
-        return $this->workspaceJobs()->latest('updated_at')->paginate(6, pageName: 'stemV2RendersPage')->through(function (MlJob $job) use ($locale): array {
+        return $this->workspaceJobs()->latest('updated_at')->orderByDesc('id')->paginate(6, pageName: 'stemV2RendersPage')->through(function (MlJob $job) use ($locale): array {
             $status = (string) $job->status;
             $presentation = app(MetKurdV2JobStatusPresentation::class)->for($status);
             return [
@@ -272,7 +279,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     $icons = ['original' => 'ri-disc-line', 'vocals' => 'ri-mic-2-line', 'instrumental' => 'ri-guitar-line', 'drums' => 'ri-equalizer-line', 'bass' => 'ri-music-2-line', 'other' => 'ri-sound-module-line'];
 @endphp
 
-<section class="v2-tool-page v2-stem-page" data-stem-messages="{{ json_encode(['Audio uploaded' => __('Audio uploaded'), 'Upload failed' => __('Upload failed'), 'Pause All' => __('Pause All'), 'Play All' => __('Play All'), 'Uploaded' => __('Uploaded'), 'Uploading…' => __('Uploading…'), 'Upload audio' => __('Upload audio'), 'Pause' => __('Pause'), 'Play' => __('Play'), 'Pause source preview' => __('Pause source preview'), 'Play source preview' => __('Play source preview'), 'Ready to review' => __('Ready to review'), 'Ready to retry upload' => __('Ready to retry upload'), 'Uploaded and ready to separate' => __('Uploaded and ready to separate'), 'Uploading audio…' => __('Uploading audio…')]) }}">
+<section class="v2-tool-page v2-stem-page" data-stem-messages="{{ json_encode(['Loading audio preview…' => __('Loading audio preview…'), 'Unable to play this audio. Please reopen the result.' => __('Unable to play this audio. Please reopen the result.'), 'Audio uploaded' => __('Audio uploaded'), 'Upload failed' => __('Upload failed'), 'Pause All' => __('Pause All'), 'Play All' => __('Play All'), 'Uploaded' => __('Uploaded'), 'Uploading…' => __('Uploading…'), 'Upload audio' => __('Upload audio'), 'Pause' => __('Pause'), 'Play' => __('Play'), 'Pause source preview' => __('Pause source preview'), 'Play source preview' => __('Play source preview'), 'Ready to review' => __('Ready to review'), 'Ready to retry upload' => __('Ready to retry upload'), 'Uploaded and ready to separate' => __('Uploaded and ready to separate'), 'Uploading audio…' => __('Uploading audio…')]) }}">
     <nav class="v2-breadcrumb"><a wire:navigate href="{{ route('app.v2.home', ['locale' => app()->getLocale()]) }}">{{ __('MetKurd AI') }}</a><span>/</span><a wire:navigate href="{{ route('app.v2.service', ['locale' => app()->getLocale(), 'service' => 'stem']) }}">{{ __('STEM') }}</a><span>/</span><span>{{ $stems }} {{ __('Stem Separation') }}</span></nav>
     <header class="v2-tool-context"><div class="v2-tool-identity d-flex align-items-center gap-3"><img class="v2-service-icon" src="{{ asset('app/services_icons/STEM.png') }}" alt=""><div><span>{{ __('STEM') }}</span><h1>{{ $stems }}-{{ __('Stem Separation') }}</h1></div></div>@livewire('app::v2.components.shared.account-resources')</header>
     <div class="v2-workspace v2-stem-workspace">
@@ -297,7 +304,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         <main class="v2-workspace-panel v2-stem-player-panel">
             <div class="v2-panel-heading"><span>{{ __('STEM Player') }}</span><small>{{ $presentation['is_active'] ? data_get($this->currentJob->input, 'audio_name', __('Untitled audio')) : ($render ? $render['name'] : __('Select a completed separation')) }}</small></div>
             @if($this->currentJob && $presentation['is_active'])<div class="v2-stem-processing" wire:key="stem-status-{{ $currentJobId }}" wire:poll.5s="pollStem" role="status" aria-live="polite"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><div class="d-grid gap-1"><strong>{{ __('Current job') }} · {{ $presentation['label'] }}</strong><span dir="auto">{{ data_get($this->currentJob->input, 'audio_name', __('Untitled audio')) }}</span><small>{{ __('Separating your audio…') }}</small></div></div>
-            @elseif($render)<div wire:ignore wire:key="stem-player-{{ $render['id'] }}-{{ implode('-', $render['tracks']) }}" class="v2-stem-player" data-v2-stem-player data-job="{{ $render['id'] }}"><div class="v2-stem-transport"><button type="button" class="btn btn-warning" data-stem-play-all><i class="ri-play-fill"></i> <span>{{ __('Play All') }}</span></button><button type="button" class="btn btn-outline-light" data-stem-stop-all><i class="ri-stop-fill"></i> {{ __('Stop All') }}</button><a href="{{ $render['download_all_url'] }}" class="btn btn-outline-warning ms-auto"><i class="ri-download-2-line"></i> {{ __('Download all') }}</a></div><div class="v2-stem-timeline"><span data-stem-current>00:00</span><input type="range" min="0" max="0" value="0" step="0.01" data-stem-timeline aria-label="{{ __('Shared timeline') }}"><span data-stem-duration>--:--</span></div><div class="v2-stem-track-list">@foreach($render['tracks'] as $track)<article class="v2-stem-track" data-stem-track="{{ $track }}"><div class="v2-stem-track-identity"><i class="{{ $icons[$track] ?? 'ri-music-line' }}"></i><strong>{{ $labels[$track] ?? Str::headline($track) }}</strong><small data-stem-track-time>00:00</small></div><div class="v2-stem-track-actions"><button type="button" data-stem-toggle aria-label="{{ __('Play or pause :track', ['track' => $labels[$track] ?? $track]) }}"><i class="ri-play-fill"></i></button><button type="button" data-stem-mute aria-pressed="false">{{ __('Mute') }}</button><button type="button" data-stem-solo aria-pressed="false">{{ __('Solo') }}</button><a href="{{ $render['download_urls'][$track] }}" aria-label="{{ __('Download :track', ['track' => $labels[$track] ?? $track]) }}"><i class="ri-download-2-line"></i></a></div><div class="v2-stem-wave" wire:ignore data-stem-wave data-url="{{ $render['stream_urls'][$track] }}" data-fallback-url="{{ $render['proxy_stream_urls'][$track] }}"></div><audio preload="none" data-stem-audio data-src="{{ $render['stream_urls'][$track] }}"></audio><div class="v2-stem-track-meter"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>@endforeach</div></div>
+            @elseif($render)<div wire:ignore wire:key="stem-player-{{ $render['id'] }}-{{ implode('-', $render['tracks']) }}" class="v2-stem-player" data-v2-stem-player data-job="{{ $render['id'] }}"><div class="v2-stem-transport"><button type="button" class="btn btn-warning" data-stem-play-all><i class="ri-play-fill"></i> <span>{{ __('Play All') }}</span></button><button type="button" class="btn btn-outline-light" data-stem-stop-all><i class="ri-stop-fill"></i> {{ __('Stop All') }}</button><a href="{{ $render['download_all_url'] }}" class="btn btn-outline-warning ms-auto"><i class="ri-download-2-line"></i> {{ __('Download all') }}</a></div><p data-stem-player-status role="status" class="v2-muted mt-2" hidden></p><div class="v2-stem-timeline"><span data-stem-current>00:00</span><input type="range" min="0" max="0" value="0" step="0.01" data-stem-timeline aria-label="{{ __('Shared timeline') }}"><span data-stem-duration>--:--</span></div><div class="v2-stem-track-list">@foreach($render['tracks'] as $track)<article class="v2-stem-track" data-stem-track="{{ $track }}"><div class="v2-stem-track-identity"><i class="{{ $icons[$track] ?? 'ri-music-line' }}"></i><strong>{{ $labels[$track] ?? Str::headline($track) }}</strong><small data-stem-track-time>00:00</small></div><div class="v2-stem-track-actions"><button type="button" data-stem-toggle aria-label="{{ __('Play or pause :track', ['track' => $labels[$track] ?? $track]) }}"><i class="ri-play-fill"></i></button><button type="button" data-stem-mute aria-pressed="false">{{ __('Mute') }}</button><button type="button" data-stem-solo aria-pressed="false">{{ __('Solo') }}</button><a href="{{ $render['download_urls'][$track] }}" aria-label="{{ __('Download :track', ['track' => $labels[$track] ?? $track]) }}"><i class="ri-download-2-line"></i></a></div><div class="v2-stem-wave" wire:ignore data-stem-wave data-url="{{ $render['stream_urls'][$track] }}"></div><audio preload="none" data-stem-audio data-src="{{ $render['stream_urls'][$track] }}"></audio><div class="v2-stem-track-meter"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>@endforeach</div></div>
             @else<div class="v2-empty-state v2-stem-empty"><i class="ri-music-2-line"></i><span>{{ __('Your separated stems will be ready to mix and compare here.') }}</span></div>@endif
         </main>
     </div>
@@ -344,62 +351,12 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     const format = seconds => { seconds = Math.max(0, Math.floor(seconds || 0)); return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`; };
     const mountedPlayers = new Set();
     const bootPlayer = root => {
-        if (!root || root.dataset.stemBound || !window.WaveSurfer) return;
-        root.dataset.stemBound = '1';
+        if (!root || mountedPlayers.has(root) || !window.WaveSurfer) return;
         mountedPlayers.add(root);
-        const controller = new AbortController();
-        const listen = (target, name, callback, options = {}) => target?.addEventListener(name, callback, {...options, signal: controller.signal});
-        const rows = [...root.querySelectorAll('[data-stem-track]')].map(row => ({
-            row, wave: row.querySelector('[data-stem-wave]'), audio: row.querySelector('[data-stem-audio]'),
-            url: row.querySelector('[data-stem-wave]')?.dataset.url || row.querySelector('[data-stem-audio]')?.dataset.src,
-            fallbackUrl: row.querySelector('[data-stem-wave]')?.dataset.fallbackUrl || null, proxyTried: false,
-            toggle: row.querySelector('[data-stem-toggle]'), mute: row.querySelector('[data-stem-mute]'),
-            solo: row.querySelector('[data-stem-solo]'), time: row.querySelector('[data-stem-track-time]'), player: null,
-        })).filter(track => track.url);
-        const timeline = root.querySelector('[data-stem-timeline]'), current = root.querySelector('[data-stem-current]'), duration = root.querySelector('[data-stem-duration]'), playAll = root.querySelector('[data-stem-play-all]'), stopAll = root.querySelector('[data-stem-stop-all]');
-        let master = rows[0], seeking = false, destroyed = false;
-        const isPlaying = track => track.player ? track.player.isPlaying() : !track.audio.paused;
-        const timeOf = track => track.player ? track.player.getCurrentTime() : track.audio.currentTime;
-        const durationOf = track => track.player ? track.player.getDuration() : track.audio.duration;
-        const seek = (track, time) => { try { track.player ? track.player.setTime(time) : (track.audio.currentTime = time); } catch (_) {} };
-        const pause = track => { try { track.player ? track.player.pause() : track.audio.pause(); } catch (_) {} };
-        const play = track => track.player ? track.player.play() : track.audio.play();
-        const maxDuration = () => Math.max(0, ...rows.map(track => Number.isFinite(durationOf(track)) ? durationOf(track) : 0));
-        const updateDuration = () => { const max = maxDuration(); if (timeline) timeline.max = String(max); if (duration) duration.textContent = format(max); };
-        const updateVolumes = () => { const soloed = rows.filter(track => track.solo.getAttribute('aria-pressed') === 'true'); rows.forEach(track => { const muted = track.mute.getAttribute('aria-pressed') === 'true'; const volume = muted || (soloed.length && !soloed.includes(track)) ? 0 : 1; try { track.player ? track.player.setVolume(volume) : (track.audio.muted = volume === 0); } catch (_) {} track.row.classList.toggle('is-muted', muted); track.row.classList.toggle('is-solo', soloed.includes(track)); }); };
-        const sync = time => rows.forEach(track => { if (Math.abs(timeOf(track) - time) > .04) seek(track, time); });
-        const update = () => { if (destroyed || !master || seeking) return; const time = timeOf(master) || 0; if (timeline) timeline.value = String(time); if (current) current.textContent = format(time); rows.forEach(track => { if (isPlaying(track) && Math.abs(timeOf(track) - time) > .05) seek(track, time); track.row.classList.toggle('is-playing', isPlaying(track)); track.toggle.querySelector('i').className = isPlaying(track) ? 'ri-pause-fill' : 'ri-play-fill'; if (track.time) track.time.textContent = format(timeOf(track)); }); const playing = rows.some(isPlaying); if (playAll) { playAll.querySelector('span').textContent = playing ? t('Pause All') : t('Play All'); playAll.querySelector('i').className = playing ? 'ri-pause-fill' : 'ri-play-fill'; } };
-        const bindPlayer = track => {
-            const ready = () => { if (destroyed) return; updateDuration(); seek(track, timeOf(master) || 0); update(); };
-            const tick = () => { if (track === master) update(); };
-            const finished = () => { if (track === master) { rows.forEach(pause); sync(maxDuration()); update(); } };
-            try {
-                track.player = window.WaveSurfer.create({ container: track.wave, url: track.url, height: 58, waveColor: 'rgba(249,115,22,.36)', progressColor: '#f97316', cursorColor: '#fed7aa', cursorWidth: 2, barWidth: 2, barGap: 2, barRadius: 2, normalize: true, interact: true, autoScroll: false });
-                track.player.on('ready', ready); track.player.on('timeupdate', tick); track.player.on('play', update); track.player.on('pause', update); track.player.on('finish', finished);
-                track.player.on('interaction', time => { master = track; seeking = true; sync(Number(time) || timeOf(track)); seeking = false; update(); });
-                track.player.on('error', () => {
-                    if (destroyed) return;
-                    // WaveSurfer needs CORS for direct object-storage fetches.
-                    // Retain a per-track proxy fallback for installations whose
-                    // bucket CORS has not been configured yet.
-                    if (!track.proxyTried && track.fallbackUrl) {
-                        try { track.player.destroy(); } catch (_) {}
-                        track.player = null; track.proxyTried = true; track.url = track.fallbackUrl;
-                        bindPlayer(track); return;
-                    }
-                    try { track.player.destroy(); } catch (_) {} track.player = null; track.audio.src = track.url; listen(track.audio, 'loadedmetadata', ready, { once: true }); listen(track.audio, 'timeupdate', tick); listen(track.audio, 'play', update); listen(track.audio, 'pause', update); listen(track.audio, 'ended', finished); track.audio.load();
-                });
-            } catch (_) { track.audio.src = track.url; listen(track.audio, 'loadedmetadata', ready, { once: true }); listen(track.audio, 'timeupdate', tick); track.audio.load(); }
-        };
-        rows.forEach(track => { bindPlayer(track); listen(track.toggle, 'click', async () => { master = track; if (isPlaying(track)) pause(track); else { sync(timeOf(track) || 0); await play(track).catch(() => {}); } update(); }); listen(track.mute, 'click', () => { track.mute.setAttribute('aria-pressed', track.mute.getAttribute('aria-pressed') !== 'true'); updateVolumes(); }); listen(track.solo, 'click', () => { track.solo.setAttribute('aria-pressed', track.solo.getAttribute('aria-pressed') !== 'true'); updateVolumes(); }); });
-        listen(playAll, 'click', async () => { const active = rows.some(isPlaying); if (active) rows.forEach(pause); else { master ||= rows[0]; const time = timeOf(master) || 0; sync(time); await Promise.all(rows.map(track => play(track).catch(() => {}))); } update(); });
-        listen(stopAll, 'click', () => { rows.forEach(track => pause(track)); sync(0); update(); });
-        listen(timeline, 'input', () => { seeking = true; const time = Number(timeline.value); sync(time); if (current) current.textContent = format(time); }); listen(timeline, 'change', () => { seeking = false; update(); });
-        root.__stemDestroy = () => { destroyed = true; controller.abort(); mountedPlayers.delete(root); rows.forEach(track => { pause(track); try { track.player?.destroy(); } catch (_) {} }); delete root.dataset.stemBound; delete root.__stemDestroy; };
-        updateVolumes();
+        root.__stemDestroy = window.MetKurdStemPlayer.mount(root, t, format);
     };
-    const destroyPlayers = () => [...mountedPlayers].forEach(root => root.__stemDestroy?.());
-    const boot = () => { [...mountedPlayers].filter(root => !root.isConnected).forEach(root => root.__stemDestroy?.()); ctx.root.querySelectorAll('[data-v2-stem-player]').forEach(bootPlayer); };
+    const destroyPlayers = () => { [...mountedPlayers].forEach(root => root.__stemDestroy?.()); mountedPlayers.clear(); };
+    const boot = () => { [...mountedPlayers].filter(root => !root.isConnected).forEach(root => { root.__stemDestroy?.(); mountedPlayers.delete(root); }); ctx.root.querySelectorAll('[data-v2-stem-player]').forEach(bootPlayer); };
     let pond, pondHost, uploading = false, clearing = false, sourcePreviewUrl = null, sourcePreviewWave = null;
     const componentRoot = () => ctx.root.closest('[wire\\:id]');
     const component = ctx.component;

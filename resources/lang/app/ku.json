@@ -1818,5 +1818,21 @@
     "Your concurrent job limit has been reached. Wait for the current project to finish.": "گەیشتوویتە سنووری کارە هاوکاتەکان. چاوەڕێی تەواوبوونی پڕۆژەی ئێستا بکە.",
     "Choose a voice for segment :number": "دەنگێک بۆ بەشی :number هەڵبژێرە",
     "Add a segment to choose its voice.": "بەشێک زیاد بکە بۆ هەڵبژاردنی دەنگەکەی.",
-    "Preview and choose a voice": "گوێ لە دەنگ بگرە و هەڵیبژێرە"
+    "Preview and choose a voice": "گوێ لە دەنگ بگرە و هەڵیبژێرە",
+    "Unable to play this audio. Please reopen the result.": "نەتوانرا ئەم دەنگە پەخش بکرێت. تکایە ئەنجامەکە دووبارە بکەرەوە.",
+    "Harakat 1.0": "حەرەکات 1.0",
+    "Arabic Diacritization": "حەرەکەدانانی دەقی عەرەبی",
+    "Input Text": "دەقی تێکراو",
+    "Diacritize": "حەرەکە دابنێ",
+    "Diacritized Output": "دەقی حەرەکەدار",
+    "Enter text to diacritize.": "دەقێک بنووسە بۆ حەرەکەدانان.",
+    "Text must not exceed :count characters.": "دەقەکە نابێت لە :count پیت زیاتر بێت.",
+    "Up to :count characters.": "تا :count پیت.",
+    "Add Arabic diacritics to your text. Mixed text is supported.": "حەرەکەی عەرەبی بۆ دەقەکەت زیاد بکە. دەقی تێکەڵ بە زمانەکانی تریش پشتگیری دەکرێت.",
+    "Copy failed. Select the text and copy it manually.": "کۆپیکردن سەرکەوتوو نەبوو. دەقەکە هەڵبژێرە و بە دەستی کۆپی بکە.",
+    "Your diacritized text will appear here.": "دەقە حەرەکەدارەکەت لێرە دەردەکەوێت.",
+    ":count input characters": ":count پیتی تێکراو",
+    "View result": "بینینی ئەنجام",
+    "No diacritization history yet.": "هێشتا مێژووی حەرەکەدانان نییە.",
+    "Arabic diacritization could not be completed. Please try again.": "حەرەکەدانانی دەقی عەرەبی تەواو نەبوو. تکایە دووبارە هەوڵ بدەوە."
 }

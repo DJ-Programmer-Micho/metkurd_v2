@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 @php
-    $v2ServiceSlug = (string) (request()->route('service') ?: (request()->routeIs('app.v2.leo') || request()->routeIs('app.v2.caption') ? 'speech-to-text' : (request()->routeIs('app.v2.ocr') ? 'ocr' : (request()->routeIs('app.v2.stem') ? 'stem' : ''))));
+    $v2ServiceSlug = (string) (request()->route('service') ?: (request()->routeIs('app.v2.leo') || request()->routeIs('app.v2.caption') ? 'speech-to-text' : (request()->routeIs('app.v2.ocr', 'app.v2.harakat') ? 'ocr' : (request()->routeIs('app.v2.stem') ? 'stem' : ''))));
     $v2ServiceTheme = (string) (config("metkurd_v2.services.{$v2ServiceSlug}.color") ?: 'primary');
     // STEM uses the warm orange/red palette of public/app/services_icons/STEM.png.
     if ($v2ServiceSlug === 'stem') $v2ServiceTheme = 'stem';

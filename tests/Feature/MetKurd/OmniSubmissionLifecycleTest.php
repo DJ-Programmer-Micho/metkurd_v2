@@ -209,7 +209,8 @@ it('submits Apollo from the native V2 leaf through the shared lifecycle', functi
     $this->get(route('app.v2.tool', ['locale' => 'en', 'service' => 'text-to-speech', 'tool' => 'apollo-2']))
         ->assertOk()
         ->assertSee('API')
-        ->assertSee('of');
+        ->assertSee('data-process-queue', false)
+        ->assertSee(__('process_queue.limit'));
 });
 
 it('loads the shared app catalogue and document direction for every V2 locale', function () {

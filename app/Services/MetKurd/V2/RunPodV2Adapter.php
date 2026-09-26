@@ -13,6 +13,17 @@ use Illuminate\Support\Facades\Log;
  */
 class RunPodV2Adapter
 {
+    public function harakat(string $jobId, string $text, callable $beforeDispatch): array
+    {
+        $definition = $this->toolForKind('ocr', 'harakat-1', ['harakat']);
+        if (trim((string) config('runpod.endpoints.'.$definition['endpoint'])) === '') {
+            throw new \RuntimeException('The configured GPU endpoint is unavailable.');
+        }
+        $beforeDispatch();
+
+        return $this->run($definition, ['job_id' => $jobId, 'source_mode' => 'text', 'text' => $text]);
+    }
+
     public function __construct(
         private readonly RunPodProvider $runpod,
         private readonly MetKurdV2ToolCatalog $catalog,

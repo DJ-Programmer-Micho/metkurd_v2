@@ -21,6 +21,9 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
+    expect(config('database.default'))->toBe('sqlite');
+    expect(config('database.connections.sqlite.database'))->toBe(':memory:');
+    Illuminate\Support\Facades\Http::preventStrayRequests();
     $this->seed();
     $this->seed(\Database\Seeders\OmniToolSeeder::class);
     config()->set('customer_api.v2_enabled', true);
@@ -33,7 +36,7 @@ beforeEach(function () {
     $this->customer = Customer::create(['username' => 'api-v2-owner', 'email' => 'api-v2@example.test', 'password' => 'Secret123!', 'status' => 1, 'email_verify' => true, 'phone_verify' => true]);
     app(PlanSwitcher::class)->switchServicePlan($this->customer, $plan->id, ['provider' => 'fake', 'billing_cycle' => 'monthly']);
     $this->customer = $this->customer->fresh();
-    foreach (ToolAction::whereIn('full_code', ['xomni.generate', 'xomni-v2.generate', 'clone_xomni.generate', 'vector-v2.generate', 'leo.transcribe', 'caption.standard', 'ocr.standard', 'stem.sep2', 'stem.sep4'])->get() as $action) {
+    foreach (ToolAction::whereIn('full_code', ['xomni.generate', 'xomni-v2.generate', 'clone_xomni.generate', 'vector-v2.generate', 'leo.transcribe', 'caption.standard', 'ocr.standard', 'stem.sep2', 'stem.sep4', 'zeta.generate', 'theta.generate', 'harakat.diacritize'])->get() as $action) {
         $action->update(['is_active' => true]);
         $action->tool->update(['is_active' => true]);
         PlanEntitlement::updateOrCreate(['service_plan_id' => $plan->id, 'tool_action_id' => $action->id, 'entitlement_channel' => 'api'], ['allowed' => true]);
@@ -61,6 +64,137 @@ it('requires an active hashed customer key', function () {
     expect($this->key->toArray())->not->toHaveKey('key_hash');
     app(CustomerApiKeyService::class)->revoke($this->key);
     $this->getJson('/api/v2/services', $this->headers)->assertUnauthorized();
+});
+
+it('discovers stable safe voice codes with effective plan access and shared invalidation', function () {
+    $planId = $this->customer->currentServicePlanId();
+    $otherPlan = ServicePlan::where('id', '!=', $planId)->where('is_free', false)->where('is_active', true)->firstOrFail();
+    $create = fn ($code, $extra = []) => Voice::create(array_replace_recursive([
+        'code' => $code, 'name' => 'Friendly '.$code, 'is_public' => false, 'is_active' => true,
+        'meta' => ['engine' => 'xomni', 'ref_audio' => 'voices/private-file.wav', 'ref_text' => 'PRIVATE TRANSCRIPT', 'provider' => 'PRIVATE PROVIDER', 'preview_audio' => 'https://example.test/private?signature=secret'],
+    ], $extra));
+    $allowed = $create('plan-allowed');
+    $foreign = $create('other-plan-only');
+    $denied = $create('inactive-grant');
+    $create('inactive-voice', ['is_public' => true, 'is_active' => false]);
+    $create('wrong-engine', ['is_public' => true, 'meta' => ['engine' => 'xtts']]);
+    $create('missing-reference', ['is_public' => true, 'meta' => ['ref_audio' => '']]);
+    $create('unsafe-reference', ['is_public' => true, 'meta' => ['ref_audio' => '../private.wav']]);
+    $grant = App\Models\PlanVoiceAccess::create(['service_plan_id' => $planId, 'voice_id' => $allowed->id, 'is_active' => true]);
+    App\Models\PlanVoiceAccess::create(['service_plan_id' => $otherPlan->id, 'voice_id' => $foreign->id, 'is_active' => true]);
+    App\Models\PlanVoiceAccess::create(['service_plan_id' => $planId, 'voice_id' => $denied->id, 'is_active' => false]);
+
+    $response = $this->getJson('/api/v2/voices', $this->headers)->assertOk();
+    expect(array_keys($response->json()))->toBe(['voices']);
+    foreach ($response->json('voices') as $voice) {
+        expect(array_keys($voice))->toBe(['id', 'name'])->and($voice['id'])->toBeString();
+    }
+    expect(array_column($response->json('voices'), 'id'))->toContain('api-v2-voice', 'plan-allowed')
+        ->not->toContain('other-plan-only', 'inactive-grant', 'inactive-voice', 'wrong-engine', 'missing-reference', 'unsafe-reference');
+    foreach (['ref_audio', 'ref_text', 'private-file.wav', 'PRIVATE TRANSCRIPT', 'PRIVATE PROVIDER', 'signature=', 'preview_url', 'model'] as $private) {
+        $response->assertDontSee($private);
+    }
+    $this->postJson('/api/v2/speech', array_merge($this->speech, ['voice' => 'other-plan-only']), $this->headers)->assertUnprocessable();
+    $project = apiV2Project('zeta');
+    $project['segments'][0]['voice'] = 'other-plan-only';
+    $this->postJson('/api/v2/zeta', $project, $this->headers)->assertUnprocessable();
+    expect(MlJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0);
+    $grant->update(['is_active' => false]);
+    expect(array_column($this->getJson('/api/v2/voices', $this->headers)->assertOk()->json('voices'), 'id'))->not->toContain('plan-allowed');
+    $allowed->update(['is_public' => true]);
+    expect(array_column($this->getJson('/api/v2/voices', $this->headers)->assertOk()->json('voices'), 'id'))->toContain('plan-allowed');
+
+    $otherPlan->update(['api_enabled' => true, 'api_allowed_tools' => ['v2:speech'], 'api_requests_per_minute' => 100]);
+    app(PlanSwitcher::class)->switchServicePlan($this->customer->fresh(), $otherPlan->id, ['provider' => 'fake', 'billing_cycle' => 'monthly']);
+    expect(array_column($this->getJson('/api/v2/voices', $this->headers)->assertOk()->json('voices'), 'id'))->toContain('other-plan-only');
+    $this->key->update(['scopes' => ['v2:jobs:read']]);
+    $this->getJson('/api/v2/voices', $this->headers)->assertForbidden();
+    $this->getJson('/api/v2/voices')->assertUnauthorized();
+});
+
+it('accepts discovered voice IDs for Apollo and Zeta without changing native resolution', function (string $service, ?string $model) {
+    $voices = $this->getJson('/api/v2/voices', $this->headers)->assertOk()->json('voices');
+    $voice = collect($voices)->firstWhere('id', 'api-v2-voice')['id'];
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('run')->once()->with('test-omni', Mockery::on(function ($input) use ($service, $model) {
+        expect($input['model'])->toBe($model === '1.5' ? 'model_1' : 'model_2');
+        expect($input['mode'])->toBe($service === 'zeta' ? 'builtin_ref_batch' : 'builtin_ref');
+        expect($service === 'zeta' ? $input['segments'][0]['ref_audio'] : $input['ref_audio'])->toBe('voices/test.wav');
+
+        return true;
+    }), Mockery::type('int'))->andReturn(['id' => 'discovered-voice-job']);
+    app()->instance(RunPodProvider::class, $provider);
+    $payload = $service === 'zeta' ? ['segments' => [['voice' => $voice, 'text' => 'سڵاو', 'language' => 'ckb', 'pause_after_ms' => 0]]]
+        : array_merge($this->speech, ['voice' => $voice, 'model' => $model]);
+    $this->postJson('/api/v2/'.$service, $payload, $this->headers)->assertAccepted();
+    expect(MlJob::count())->toBe(1);
+})->with([['speech', '1.5'], ['speech', '2.0'], ['zeta', null]]);
+
+it('rejects an unknown Zeta Voice ID before jobs or credit reservations', function () {
+    $payload = apiV2Project('zeta');
+    $payload['segments'][0]['voice'] = 'not-a-voice';
+    $this->postJson('/api/v2/zeta', $payload, $this->headers)->assertUnprocessable()->assertJsonPath('error.code', 'invalid_request');
+    expect(MlJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0);
+});
+
+it('shows only customer voice display data with copy controls and existing previews in every locale', function (string $locale) {
+    config()->set('metkurd_v2.enabled', true);
+    $this->customer->forceFill(['phone_verified_at' => now()])->save();
+    $voice = Voice::where('code', 'api-v2-voice')->firstOrFail();
+    $voice->update(['meta' => ['engine' => 'xomni', 'ref_audio' => 'secret-reference.wav', 'ref_text' => 'SECRET TRANSCRIPT', 'avatar' => 'private-avatar.png', 'preview_audio' => 'private-preview.wav']]);
+    Voice::create(['code' => 'hidden-from-portal', 'name' => 'Restricted voice', 'is_public' => false, 'is_active' => true, 'meta' => ['engine' => 'xomni', 'ref_audio' => 'secret-other.wav']]);
+    $response = $this->actingAs($this->customer, 'app')->get('/'.$locale.'/app-v2/api')->assertOk();
+    $response->assertSee('api-v2-voice')->assertSee('id="available-voices"', false)
+        ->assertSee(__('api_v2.your_voices'))->assertSee(__('api_v2.copy_voice_id'))
+        ->assertSee('preload="none"', false)->assertSee('dir="'.($locale === 'en' ? 'ltr' : 'rtl').'"', false)
+        ->assertSee('/'.$locale.'/app/xomni/speakers/api-v2-voice/preview?proxy=1', false)
+        ->assertSee('copy(', false)->assertSee('YOUR_API_KEY');
+    foreach (['hidden-from-portal', 'secret-reference.wav', 'SECRET TRANSCRIPT', 'private-avatar.png', 'private-preview.wav', $this->headers['Authorization']] as $private) {
+        $response->assertDontSee($private);
+    }
+    $component = Livewire\Livewire::actingAs($this->customer, 'app')->test('app::v2.pages.api.app-api');
+    foreach ($component->instance()->availableVoices as $publicVoice) {
+        expect(array_keys($publicVoice))->toBe(['code', 'name', 'avatar_url', 'preview_url']);
+    }
+    expect(MlJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0);
+})->with(['en', 'ar', 'ku']);
+
+it('previews existing samples for API-only customers without jobs or credits and blocks other-plan assets', function () {
+    $this->customer->forceFill(['phone_verified_at' => now()])->save();
+    $voice = Voice::where('code', 'api-v2-voice')->firstOrFail();
+    $voice->update(['meta' => ['engine' => 'xomni', 'ref_audio' => 'voices/test.wav', 'preview_audio' => 'sample.wav', 'avatar' => 'avatar.png']]);
+    Storage::disk('s3')->put('metkurd_audio_data/omni/sample.wav', apiV2Wav());
+    Storage::disk('s3')->put('metkurd_audio_data/avatar.png', 'test-avatar');
+    foreach (ToolAction::whereIn('full_code', ['xomni.generate', 'xomni-v2.generate', 'zeta.generate'])->get() as $action) {
+        PlanEntitlement::updateOrCreate(['service_plan_id' => $this->customer->currentServicePlanId(), 'tool_action_id' => $action->id, 'entitlement_channel' => 'app'], ['allowed' => false]);
+    }
+    $this->customer = $this->customer->fresh();
+    expect($this->customer->canAccessTool('xomni'))->toBeFalse()->and($this->customer->canAccessTool('zeta'))->toBeFalse();
+    $wallets = CreditWallet::where('customer_id', $this->customer->id)->pluck('balance_credits', 'wallet_type')->all();
+    foreach (['preview', 'avatar'] as $asset) {
+        $this->actingAs($this->customer, 'app')->get('/en/app/xomni/speakers/api-v2-voice/'.$asset.'?proxy=1')->assertOk();
+    }
+    $voice->update(['is_public' => false]);
+    foreach (['preview', 'avatar'] as $asset) {
+        $this->get('/en/app/xomni/speakers/api-v2-voice/'.$asset.'?proxy=1')->assertNotFound();
+    }
+    $voice->update(['is_public' => true]);
+    ServicePlan::whereKey($this->customer->currentServicePlanId())->update(['api_allowed_tools' => ['v2:ocr']]);
+    $this->get('/en/app/xomni/speakers/api-v2-voice/preview?proxy=1')->assertForbidden();
+    expect(MlJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0)
+        ->and(CreditWallet::where('customer_id', $this->customer->id)->pluck('balance_credits', 'wallet_type')->all())->toBe($wallets);
+    Illuminate\Support\Facades\Http::assertNothingSent();
+});
+
+it('documents the stable voices response and authenticated GET in four languages', function () {
+    $docs = app(App\Services\CustomerApi\V2\ApiDocumentation::class);
+    $examples = $docs->voiceExamples();
+    expect(array_keys($examples))->toBe(['cURL', 'PHP', 'Python', 'JavaScript']);
+    foreach ($examples as $example) {
+        expect($example)->toContain('/api/v2/voices', 'YOUR_API_KEY')->not->toContain('Idempotency-Key', 'POST', 'ref_audio');
+    }
+    $response = json_decode($docs->voiceResponseExample(), true, flags: JSON_THROW_ON_ERROR);
+    expect(array_keys($response))->toBe(['voices'])->and(array_keys($response['voices'][0]))->toBe(['id', 'name']);
 });
 
 it('submits through native OMNI once charges only the API wallet and persists without a client polling', function (string $model) {
@@ -155,6 +289,95 @@ it('counts OCR pages on the server validates ranges and preserves requested expo
     expect(ApiCreditReservation::first()->amount)->toBe($this->customer->priceCreditsFor('ocr.standard', ['channel' => 'api', 'metric_code' => 'page', 'pages' => 3, 'page_count' => 3, 'files' => 1, 'file_count' => 1]));
 });
 
+it('documents OCR local uploads in five clients using authoritative formats and limits', function () {
+    $docs = app(App\Services\CustomerApi\V2\ApiDocumentation::class);
+    $contract = $docs->ocrContract();
+    expect($contract['extensions'])->toBe(App\Services\MetKurd\V2\InputBoundary::DOCUMENT_EXTENSIONS)
+        ->and($contract['max_mib'])->toBe(App\Services\MetKurd\V2\InputBoundary::DOCUMENT_MAX_KIB / 1024)
+        ->and($contract['max_pages'])->toBe(App\Services\OCR\OcrDocumentProbe::MAX_PAGES)
+        ->and($contract['exports'])->toBe(App\Services\CustomerApi\V2\ApiSubmission::OCR_EXPORTS)
+        ->and($contract['default_exports'])->toBe(['txt', 'docx']);
+    config()->set('customer_api.temporary_file_ttl_days', 11);
+    expect($docs->ocrContract()['temporary_days'])->toBe(11);
+    $examples = $docs->examples($docs->services()['ocr']);
+    expect(array_keys($examples))->toBe(['cURL', 'PowerShell', 'PHP', 'Python', 'JavaScript']);
+    foreach ($examples as $example) {
+        expect($example)->toContain('/api/v2/ocr', 'YOUR_API_KEY', 'UNIQUE_REQUEST_ID', 'document.pdf')
+            ->not->toContain('file_url', 'Content-Type:', 'runpod', 'options', 'export_formats');
+    }
+    expect($examples['cURL'])->toContain('file=@./document.pdf', 'exports[]=txt', 'exports[]=docx', 'intelligent=1', 'storage_mode=temporary');
+    expect($examples['PowerShell'])->toStartWith('curl.exe ')->toContain("`\n", 'file=@C:\\Documents\\document.pdf')->not->toContain("\\\n");
+    expect($examples['PHP'])->toContain("new CURLFile(__DIR__ . '/document.pdf', 'application/pdf', 'document.pdf')", 'CURLOPT_POSTFIELDS => $data');
+    expect($examples['Python'])->toContain("open('document.pdf', 'rb')", "('document.pdf', f, 'application/pdf')", "'exports[]': ['txt', 'docx']", 'files=files');
+    expect($examples['JavaScript'])->toContain("await readFile('./document.pdf')", 'new FormData()', 'new Blob(', "body.append('exports[]', 'txt')");
+    foreach ($docs->ocrFollowupExamples() as $example) {
+        expect($example)->toContain('Authorization: Bearer YOUR_API_KEY')->not->toContain('file_url');
+    }
+});
+
+it('renders a localized OCR walkthrough with local uploads and an isolated five-language picker', function (string $locale) {
+    config()->set('metkurd_v2.enabled', true);
+    $this->customer->forceFill(['phone_verified_at' => now()])->save();
+    $response = $this->actingAs($this->customer, 'app')->get('/'.$locale.'/app-v2/api')->assertOk();
+    foreach (['ocr_upload_intro', 'ocr_quick', 'ocr_local_explanation', 'ocr_internal_note', 'ocr_async_help', 'ocr_pages_help', 'ocr_exports_help'] as $key) {
+        $response->assertSee(__('api_v2.'.$key))->assertDontSee('api_v2.'.$key);
+    }
+    $response->assertSee('data-api-ocr-documentation', false)->assertSee('data-api-ocr-examples', false)
+        ->assertSee('multipart/form-data')->assertSee('file=@./document.pdf')->assertSee('curl.exe')
+        ->assertSee('x-model="ocrLanguage"', false)->assertSee('<option>PowerShell</option>', false)
+        ->assertSee('dir="ltr"', false)->assertSee('dir="'.($locale === 'en' ? 'ltr' : 'rtl').'"', false)
+        ->assertSee('GET /api/v2/jobs/{id}')->assertSee('result.files')->assertSee('/api/v2/files/file_YOUR_FILE_ID/download')
+        ->assertDontSee('file_url')->assertDontSee('RunPod')->assertDontSee(substr($this->headers['Authorization'], 7));
+})->with(['en', 'ar', 'ku']);
+
+it('rejects OCR remote URLs as a substitute for a multipart file before jobs or charges', function (string $url) {
+    $wallets = CreditWallet::where('customer_id', $this->customer->id)->pluck('balance_credits', 'wallet_type')->all();
+    $this->postJson('/api/v2/ocr', ['file_url' => $url, 'pages' => '1'], $this->headers)
+        ->assertUnprocessable()->assertJsonPath('error.code', 'invalid_file');
+    expect(MlJob::count())->toBe(0)->and(ApiJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0)
+        ->and(CreditWallet::where('customer_id', $this->customer->id)->pluck('balance_credits', 'wallet_type')->all())->toBe($wallets);
+    Illuminate\Support\Facades\Http::assertNothingSent();
+})->with(['https://untrusted.example.test/document.pdf', 'http://169.254.169.254/latest/meta-data/']);
+
+it('keeps OCR uploaded bytes server signed URLs billing and persisted authenticated result flow', function () {
+    config()->set('runpod.endpoints.kocr_v2', 'test-ocr');
+    Illuminate\Support\Facades\Process::fake(['*' => Illuminate\Support\Facades\Process::result(output: "Pages: 4\n", exitCode: 0)]);
+    $appBefore = CreditWallet::where('customer_id', $this->customer->id)->where('wallet_type', 'app')->value('balance_credits');
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('runWithPolicy')->once()->with('test-ocr', Mockery::on(function ($input) {
+        expect($input['file_url'])->toBe('https://storage.example.test/input?test=1');
+        expect($input['options']['pages'])->toBe('1')->and($input['options']['intelligent'])->toBe(1)
+            ->and($input['options']['dpi'])->toBe(160);
+        expect(json_encode($input))->not->toContain('untrusted.example', 'foreign-job');
+
+        return true;
+    }), ['executionTimeout' => 900000, 'ttl' => 1200000], Mockery::type('int'))->andReturn(['id' => 'remote-ocr-docs']);
+    $provider->shouldReceive('status')->once()->andReturn(['status' => 'COMPLETED', 'output' => ['text' => 'Extracted document text']]);
+    app()->instance(RunPodProvider::class, $provider);
+    $file = UploadedFile::fake()->create('document.pdf', 1, 'application/pdf');
+    $payload = ['file' => $file, 'pages' => '1', 'exports' => ['txt'], 'intelligent' => '1', 'storage_mode' => 'temporary',
+        'file_url' => 'https://untrusted.example/document.pdf', 'job_id' => 'foreign-job', 'options' => ['dpi' => 999]];
+    $accepted = $this->postJson('/api/v2/ocr', $payload, $this->headers)->assertAccepted()->assertJsonPath('result', null);
+    $id = $accepted->json('id');
+    $this->postJson('/api/v2/ocr', $payload, $this->headers)->assertOk()->assertJsonPath('id', $id);
+    $job = MlJob::firstOrFail();
+    Storage::disk('s3')->assertExists($job->input['file_path']);
+    expect(Storage::disk('s3')->get($job->input['file_path']))->toBe(file_get_contents($file->getRealPath()));
+    expect(MlJob::count())->toBe(1)->and(ApiCreditReservation::count())->toBe(1)
+        ->and(ApiCreditReservation::first()->amount)->toBe($this->customer->priceCreditsFor('ocr.standard', ['channel' => 'api', 'metric_code' => 'page', 'pages' => 1, 'page_count' => 1, 'files' => 1, 'file_count' => 1]));
+    (new ReconcileMlJob($job->id))->handle();
+    $result = $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk()->assertJsonPath('status', 'completed')
+        ->assertJsonPath('result.text', 'Extracted document text')->assertDontSee('file_url')->assertDontSee('storage.example.test');
+    $download = $result->json('result.files.0.download_url');
+    expect($download)->toContain('/api/v2/files/');
+    $this->getJson($download)->assertUnauthorized();
+    $this->get($download, $this->headers)->assertOk();
+    $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk()->assertJsonPath('status', 'completed');
+    $output = CustomerFile::where('purpose', 'render')->firstOrFail();
+    expect($output->retention_mode)->toBe('temporary')->and($output->counts_toward_quota)->toBeFalse()
+        ->and(CreditWallet::where('customer_id', $this->customer->id)->where('wallet_type', 'app')->value('balance_credits'))->toBe($appBefore);
+});
+
 it('validates Vector reference ownership and probes saved audio before dispatch', function () {
     $bytes = 'RIFF'.pack('V', 40).'WAVEfmt '.pack('VvvVVvv', 16, 1, 1, 8000, 16000, 2, 16).'data'.pack('V', 4).str_repeat("\0", 4);
     Storage::disk('s3')->put('reference.wav', $bytes);
@@ -220,7 +443,11 @@ it('renders the localized V2 portal with placeholder LTR examples and one-time s
     config()->set('metkurd_v2.enabled', true);
     ServicePlan::where('code', 'pro')->update(['api_allowed_tools' => ['v2:speech']]);
     $this->customer->forceFill(['phone_verified_at' => now()])->save();
-    $this->actingAs($this->customer, 'app')->get('/'.$locale.'/app-v2/api')->assertOk()->assertSee('dir="ltr"', false)->assertSee('YOUR_API_KEY')->assertDontSee('RunPod');
+    $response = $this->actingAs($this->customer, 'app')->get('/'.$locale.'/app-v2/api')->assertOk()->assertSee('dir="ltr"', false)->assertSee('YOUR_API_KEY')->assertDontSee('RunPod');
+    foreach (['zeta', 'theta', 'harakat'] as $service) {
+        $response->assertSee('/api/v2/'.$service)->assertSee(__('api_v2.'.$service.'_description'))->assertDontSee('api_v2.'.$service.'_description');
+    }
+    $response->assertSee('v2:harakat')->assertSee('/api/v2/references')->assertSee('reference_id')->assertSee('pause_after_ms');
     app()->setLocale($locale);
     $component = Livewire\Livewire::actingAs($this->customer, 'app')->test('app::v2.pages.api.app-api');
     $component->set('keyName', 'My server')->call('createKey')->assertHasNoErrors()->assertDispatched('api-key-created');
@@ -280,4 +507,296 @@ it('returns safe malformed JSON errors and rejects oversized uploads before hash
     $this->postJson('/api/v2/transcriptions', ['file' => UploadedFile::fake()->create('too-large.wav', 102401, 'audio/wav')], $this->headers)
         ->assertUnprocessable()->assertJsonPath('error.code', 'invalid_file');
     expect(ApiJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0);
+});
+
+function apiV2Project(string $service, ?int $reference = null): array
+{
+    return ['segments' => array_map(fn ($i) => [
+        'text' => $i === 0 ? '  سڵاو  ' : 'جیهان', 'language' => 'ckb', 'pause_after_ms' => $i === 0 ? 500 : 2000,
+    ] + ($service === 'theta' ? ['reference_id' => $reference, 'reference_text' => 'سڵاو'] : ['voice' => 'api-v2-voice']), [0, 1])];
+}
+
+function apiV2Reference($test): CustomerFile
+{
+    Storage::disk('s3')->put('owned.wav', apiV2Wav());
+
+    return CustomerFile::create(['customer_id' => $test->customer->id, 'tool_code' => 'vector-v2', 'disk' => 's3',
+        'path' => 'owned.wav', 'mime' => 'audio/wav', 'size_bytes' => strlen(apiV2Wav()), 'purpose' => 'reference', 'status' => 'active']);
+}
+
+function apiV2Wav(): string
+{
+    return 'RIFF'.pack('V', 40).'WAVEfmt '.pack('VvvVVvv', 16, 1, 1, 8000, 16000, 2, 16).'data'.pack('V', 4).str_repeat("\0", 4);
+}
+
+it('submits and serializes one multi-speaker API project with one reservation and reusable references', function (string $service) {
+    $reference = $service === 'theta' ? apiV2Reference($this) : null;
+    if ($reference) {
+        $probe = Mockery::mock(AudioProbeService::class);
+        // Preflight plus the native pre-dispatch recheck, once per distinct ID each time.
+        $probe->shouldReceive('probeUploadedFile')->twice()->andReturn(['duration_sec' => 1]);
+        app()->instance(AudioProbeService::class, $probe);
+    }
+    $signatures = 0;
+    Storage::disk('s3')->buildTemporaryUrlsUsing(function () use (&$signatures) {
+        return 'https://storage.example.test/reference?signature='.(++$signatures);
+    });
+    $mode = $service === 'theta' ? 'audio_url_batch' : 'builtin_ref_batch';
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('run')->once()->with('test-omni', Mockery::on(function ($input) use ($service, $mode) {
+        expect($input['model'])->toBe('model_2')->and($input['mode'])->toBe($mode)
+            ->and(array_column($input['segments'], 'pause_after_ms'))->toBe([500, 0])
+            ->and(array_column($input['segments'], 'text'))->toBe(['سڵاو', 'جیهان']);
+        if ($service === 'theta') {
+            expect($input['segments'][0]['audio_url'])->toBe($input['segments'][1]['audio_url'])
+                ->and($input['segments'][0]['ref_text'])->toBe('سڵاو');
+        } else {
+            expect($input['segments'][0]['ref_audio'])->toBe('voices/test.wav');
+        }
+
+        return true;
+    }), Mockery::any())->andReturn(['id' => 'batch-remote']);
+    $provider->shouldReceive('status')->once()->andReturn(['status' => 'COMPLETED', 'output' => [
+        'success' => true, 'model' => 'model_2', 'mode' => $mode, 'segment_count' => 2,
+        'duration' => 3.5, 'mime_type' => 'audio/wav', 'audio_base64' => base64_encode(apiV2Wav()),
+    ]]);
+    app()->instance(RunPodProvider::class, $provider);
+    $before = CreditWallet::where('customer_id', $this->customer->id)->where('wallet_type', 'app')->value('balance_credits');
+    $data = apiV2Project($service, $reference?->id);
+    $id = $this->postJson('/api/v2/'.$service, $data, $this->headers)->assertAccepted()->json('id');
+    $this->postJson('/api/v2/'.$service, $data, $this->headers)->assertOk()->assertJsonPath('id', $id);
+    $reorderedKeys = $data;
+    $reorderedKeys['segments'] = array_map(fn ($segment) => array_reverse($segment, true), $data['segments']);
+    $this->postJson('/api/v2/'.$service, $reorderedKeys, $this->headers)->assertOk()->assertJsonPath('id', $id);
+    $changed = $data;
+    $changed['segments'][1]['text'] = 'different';
+    $this->postJson('/api/v2/'.$service, $changed, $this->headers)->assertStatus(409);
+    expect(ApiJob::count())->toBe(1)->and(MlJob::count())->toBe(1)->and(ApiCreditReservation::count())->toBe(1)
+        ->and($signatures)->toBe($reference ? 1 : 0);
+    $chars = mb_strlen('سڵاوجیهان');
+    expect(ApiCreditReservation::first()->amount)->toBe($this->customer->priceCreditsFor($service.'.generate', ['channel' => 'api', 'metric_code' => 'character', 'chars' => $chars, 'language' => 'ckb']));
+    $job = MlJob::firstOrFail();
+    expect(json_encode($job->input))->not->toContain('signature=');
+    (new ReconcileMlJob($job->id))->handle();
+    $response = $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk()->assertJsonPath('status', 'completed')
+        ->assertJsonPath('result.segment_count', 2)->assertJsonPath('result.total_chars', $chars)->assertJsonPath('result.duration', 3.5)
+        ->assertJsonCount(1, 'result.files')->assertDontSee('model_2')->assertDontSee('batch-remote')->assertDontSee('signature=');
+    $this->get($response->json('result.files.0.download_url'), $this->headers)->assertOk();
+    $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk();
+    expect(ApiCreditReservation::first()->status)->toBe('settled')
+        ->and(CreditWallet::where('customer_id', $this->customer->id)->where('wallet_type', 'app')->value('balance_credits'))->toBe($before);
+})->with(['zeta', 'theta']);
+
+it('validates new tool fields and batch limits before claiming or reserving', function (string $case) {
+    $service = 'zeta';
+    $data = apiV2Project($service);
+    switch ($case) {
+        case 'empty': $data['segments'] = [];
+            break;
+        case 'many': $data['segments'] = array_fill(0, 26, $data['segments'][0]);
+            break;
+        case 'long': $data['segments'][0]['text'] = str_repeat('a', 501);
+            break;
+        case 'total': $data['segments'] = array_fill(0, 11, array_merge($data['segments'][0], ['text' => str_repeat('a', 500)]));
+            break;
+        case 'language': $data['segments'][0]['language'] = 'invalid';
+            break;
+        case 'pause': $data['segments'][1]['pause_after_ms'] = 300;
+            break;
+        case 'voice': $data['segments'][0]['voice'] = 'foreign';
+            break;
+        case 'private_voice':
+            Voice::where('code', 'api-v2-voice')->update(['is_public' => false]);
+            break;
+        case 'worker_field': $data['segments'][0]['ref_audio'] = 'private/path';
+            break;
+        case 'model': $data['model'] = 'model_2';
+            break;
+        case 'url': $service = 'theta';
+            $data = apiV2Project($service, 1);
+            $data['segments'][0]['audio_url'] = 'https://example.test/a.wav';
+            break;
+        case 'harakat_empty': $service = 'harakat';
+            $data = ['text' => '   '];
+            break;
+        case 'harakat_long': $service = 'harakat';
+            $data = ['text' => str_repeat('ع', 5001)];
+            break;
+        case 'harakat_type': $service = 'harakat';
+            $data = ['text' => ['bad']];
+            break;
+        case 'source_mode': $service = 'harakat';
+            $data = ['text' => 'مرحبا', 'source_mode' => 'text'];
+            break;
+        case 'harakat_file': $service = 'harakat';
+            $data = ['text' => 'مرحبا', 'file_url' => 'https://example.test/a.txt'];
+            break;
+    }
+    $this->postJson('/api/v2/'.$service, $data, $this->headers)->assertUnprocessable();
+    expect(ApiJob::count())->toBe(0)->and(MlJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0);
+})->with(['empty', 'many', 'long', 'total', 'language', 'pause', 'voice', 'private_voice', 'worker_field', 'model', 'url', 'harakat_empty', 'harakat_long', 'harakat_type', 'source_mode', 'harakat_file']);
+
+it('rejects unavailable or invalid Theta references before charging', function (string $case) {
+    $reference = apiV2Reference($this);
+    match ($case) {
+        'foreign' => $reference->update(['customer_id' => Customer::create(['username' => 'foreign-ref', 'email' => 'foreign-ref@example.test', 'password' => 'test'])->id]),
+        'expired' => $reference->update(['expires_at' => now()->subDay()]),
+        'inactive' => $reference->update(['status' => 'deleted']),
+        'missing' => Storage::disk('s3')->delete($reference->path),
+        'not_audio' => Storage::disk('s3')->put($reference->path, 'plain text'),
+        'project_limit' => config(['metkurd_v2.multi_speaker.max_reference_bytes' => 1]),
+    };
+    if ($case === 'project_limit') {
+        $probe = Mockery::mock(AudioProbeService::class);
+        $probe->shouldReceive('probeUploadedFile')->once()->andReturn(['duration_sec' => 1]);
+        app()->instance(AudioProbeService::class, $probe);
+    }
+    $this->postJson('/api/v2/theta', apiV2Project('theta', $reference->id), $this->headers)->assertUnprocessable();
+    expect(ApiJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0);
+})->with(['foreign', 'expired', 'inactive', 'missing', 'not_audio', 'project_limit']);
+
+it('uploads reusable Theta references through shared storage without generation or credits', function () {
+    $probe = Mockery::mock(AudioProbeService::class);
+    $probe->shouldReceive('probeUploadedFile')->twice()->andReturn(['duration_sec' => 1]);
+    app()->instance(AudioProbeService::class, $probe);
+    $wallets = CreditWallet::where('customer_id', $this->customer->id)->pluck('balance_credits', 'wallet_type')->all();
+    $data = ['file' => UploadedFile::fake()->createWithContent('reference.wav', apiV2Wav())];
+    $id = $this->postJson('/api/v2/references', $data, $this->headers)->assertCreated()->assertDontSee('path')->json('reference_id');
+    $this->postJson('/api/v2/references', $data, $this->headers)->assertCreated()->assertJsonPath('reference_id', $id);
+    expect(CustomerFile::count())->toBe(1)->and(CustomerFile::first()->purpose)->toBe('reference')
+        ->and(CustomerFile::first()->counts_toward_quota)->toBeTrue()
+        ->and(ApiJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0)
+        ->and(CreditWallet::where('customer_id', $this->customer->id)->pluck('balance_credits', 'wallet_type')->all())->toBe($wallets);
+    $this->postJson('/api/v2/references', ['file' => UploadedFile::fake()->create('large.wav', 20481, 'audio/wav')], $this->headers)->assertUnprocessable();
+});
+
+it('maps Harakat to its endpoint and returns owned text metadata and TXT after persistence', function () {
+    config(['runpod.endpoints.tashkeel_v1' => 'test-tashkeel']);
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('run')->once()->with('test-tashkeel', Mockery::on(fn ($input) => array_keys($input) === ['job_id', 'source_mode', 'text'] && $input['source_mode'] === 'text' && $input['text'] === 'مرحبا بكم'), Mockery::any())->andReturn(['id' => 'text-remote']);
+    $provider->shouldReceive('status')->once()->andReturnUsing(fn () => ['status' => 'COMPLETED', 'output' => [
+        'success' => true, 'job_id' => MlJob::first()->id, 'source_mode' => 'text', 'text' => 'مَرْحَبًا بِكُمْ', 'chunks' => 1,
+    ]]);
+    app()->instance(RunPodProvider::class, $provider);
+    $before = CreditWallet::where('customer_id', $this->customer->id)->where('wallet_type', 'app')->value('balance_credits');
+    $data = ['text' => '  مرحبا بكم  '];
+    $id = $this->postJson('/api/v2/harakat', $data, $this->headers)->assertAccepted()->json('id');
+    $this->postJson('/api/v2/harakat', $data, $this->headers)->assertOk()->assertJsonPath('id', $id);
+    expect(ApiJob::count())->toBe(1)->and(MlJob::count())->toBe(1)->and(ApiCreditReservation::count())->toBe(1)
+        ->and(ApiCreditReservation::first()->amount)->toBe($this->customer->priceCreditsFor('harakat.diacritize', ['channel' => 'api', 'metric_code' => 'character', 'chars' => mb_strlen('مرحبا بكم'), 'language' => 'ar']));
+    (new ReconcileMlJob(MlJob::first()->id))->handle();
+    $response = $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk()->assertJsonPath('status', 'completed')
+        ->assertJsonPath('result.text', 'مَرْحَبًا بِكُمْ')->assertJsonPath('result.characters', mb_strlen('مَرْحَبًا بِكُمْ'))
+        ->assertJsonPath('result.words', 2)->assertJsonPath('result.lines', 1)->assertJsonPath('result.chunks', 1)->assertJsonCount(1, 'result.files');
+    $this->get($response->json('result.files.0.download_url'), $this->headers)->assertOk();
+    expect(ApiCreditReservation::first()->status)->toBe('settled')
+        ->and(CreditWallet::where('customer_id', $this->customer->id)->where('wallet_type', 'app')->value('balance_credits'))->toBe($before);
+    CustomerFile::query()->update(['expires_at' => now()->subDay()]);
+    $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk()->assertJsonMissingPath('result.text')->assertJsonCount(0, 'result.files');
+});
+
+it('requires both the new service family scope and its independent API entitlement', function (string $service, string $scope, string $action) {
+    $data = $service === 'harakat' ? ['text' => 'مرحبا'] : apiV2Project($service, 1);
+    $this->key->update(['scopes' => ['v2:jobs:read']]);
+    $this->postJson('/api/v2/'.$service, $data, $this->headers)->assertForbidden();
+    $this->key->update(['scopes' => [$scope]]);
+    PlanEntitlement::where('service_plan_id', ServicePlan::where('code', 'pro')->value('id'))
+        ->where('tool_action_id', ToolAction::where('full_code', $action)->value('id'))->where('entitlement_channel', 'api')->update(['allowed' => false]);
+    $this->postJson('/api/v2/'.$service, $data, $this->headers)->assertForbidden();
+    expect(ApiJob::count())->toBe(0);
+})->with([['zeta', 'v2:speech', 'zeta.generate'], ['theta', 'v2:voice-clone', 'theta.generate'], ['harakat', 'v2:harakat', 'harakat.diacritize']]);
+
+it('keeps ambiguous new submissions reserved and releases known failures once', function (string $service, bool $ambiguous) {
+    config(['runpod.endpoints.tashkeel_v1' => 'test-tashkeel']);
+    $provider = Mockery::mock(RunPodProvider::class);
+    $error = $ambiguous ? new RuntimeException('private timeout') : new Illuminate\Http\Client\RequestException(new Illuminate\Http\Client\Response(new GuzzleHttp\Psr7\Response(422)));
+    $provider->shouldReceive('run')->once()->andThrow($error);
+    app()->instance(RunPodProvider::class, $provider);
+    $wallets = CreditWallet::where('customer_id', $this->customer->id)->pluck('balance_credits', 'wallet_type')->all();
+    $data = $service === 'harakat' ? ['text' => 'مرحبا'] : apiV2Project('zeta');
+    $id = $this->postJson('/api/v2/'.$service, $data, $this->headers)->assertAccepted()->json('id');
+    $this->postJson('/api/v2/'.$service, $data, $this->headers)->assertOk()->assertJsonPath('id', $id);
+    $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertJsonPath('status', $ambiguous ? 'processing' : 'failed');
+    expect(ApiCreditReservation::count())->toBe(1)->and(ApiCreditReservation::first()->status)->toBe($ambiguous ? 'reserved' : 'released')
+        ->and(CreditWallet::where('customer_id', $this->customer->id)->where('wallet_type', 'app')->value('balance_credits'))->toBe($wallets['app']);
+    if (! $ambiguous) {
+        expect(CreditWallet::where('customer_id', $this->customer->id)->pluck('balance_credits', 'wallet_type')->all())->toBe($wallets);
+    }
+})->with([['zeta', true], ['zeta', false], ['harakat', true], ['harakat', false]]);
+
+it('discovers new tools safely without rewriting plan or existing key scopes', function () {
+    $plan = ServicePlan::where('code', 'pro')->firstOrFail();
+    $plan->update(['api_allowed_tools' => ['v2:speech', 'v2:voice-clone', 'v2:ocr']]);
+    $this->key->update(['scopes' => ['v2:speech', 'v2:jobs:read']]);
+    $response = $this->getJson('/api/v2/services', $this->headers)->assertOk()
+        ->assertJsonPath('service_details.zeta.scope', 'v2:speech')->assertJsonPath('service_details.theta.scope', 'v2:voice-clone')
+        ->assertJsonPath('service_details.harakat.scope', 'v2:harakat')->assertDontSee('model_2')->assertDontSee('builtin_ref_batch')->assertDontSee('tashkeel');
+    expect($response->json('services'))->toContain('zeta', 'theta', 'harakat');
+    $catalog = app(App\Services\CustomerApi\V2\ApiCatalog::class);
+    expect($catalog->scopes($this->customer))->not->toContain('v2:harakat', 'v2:zeta', 'v2:theta');
+    $this->postJson('/api/v2/harakat', ['text' => 'مرحبا'], $this->headers)->assertForbidden();
+    expect($plan->fresh()->api_allowed_tools)->toBe(['v2:speech', 'v2:voice-clone', 'v2:ocr'])
+        ->and($this->key->fresh()->scopes)->toBe(['v2:speech', 'v2:jobs:read']);
+});
+
+it('releases failed new processing jobs without publishing partial results', function (string $service) {
+    config(['runpod.endpoints.tashkeel_v1' => 'test-tashkeel']);
+    $reference = $service === 'theta' ? apiV2Reference($this) : null;
+    if ($reference) {
+        $probe = Mockery::mock(AudioProbeService::class);
+        $probe->shouldReceive('probeUploadedFile')->twice()->andReturn(['duration_sec' => 1]);
+        app()->instance(AudioProbeService::class, $probe);
+    }
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('run')->once()->andReturn(['id' => 'failed-remote']);
+    $provider->shouldReceive('status')->once()->andReturn(['status' => 'COMPLETED', 'output' => [
+        'success' => false, 'completed_segments' => 1, 'failed_segment' => ['index' => 1],
+        'error' => 'private provider path', 'audio_base64' => base64_encode(apiV2Wav()), 'text' => 'partial',
+    ]]);
+    app()->instance(RunPodProvider::class, $provider);
+    $before = CreditWallet::where('customer_id', $this->customer->id)->pluck('balance_credits', 'wallet_type')->all();
+    $data = $service === 'harakat' ? ['text' => 'مرحبا'] : apiV2Project($service, $reference?->id);
+    $id = $this->postJson('/api/v2/'.$service, $data, $this->headers)->assertAccepted()->json('id');
+    (new ReconcileMlJob(MlJob::first()->id))->handle();
+    $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertJsonPath('status', 'failed')->assertJsonPath('result', null)->assertDontSee('private provider');
+    $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk();
+    expect(ApiCreditReservation::first()->status)->toBe('released')->and(CustomerFile::where('purpose', 'render')->count())->toBe(0)
+        ->and(CreditWallet::where('customer_id', $this->customer->id)->pluck('balance_credits', 'wallet_type')->all())->toBe($before);
+})->with(['zeta', 'theta', 'harakat']);
+
+it('applies existing API concurrency and wallet limits to new tools', function (string $service) {
+    $data = $service === 'harakat' ? ['text' => 'مرحبا'] : apiV2Project('zeta');
+    ServicePlan::where('code', 'pro')->update(['api_concurrent_jobs' => 0]);
+    $this->postJson('/api/v2/'.$service, $data, $this->headers)->assertStatus(429)->assertJsonPath('error.code', 'concurrency_limit_exceeded');
+    expect(ApiJob::count())->toBe(0);
+    ServicePlan::where('code', 'pro')->update(['api_concurrent_jobs' => 10]);
+    CreditWallet::where('customer_id', $this->customer->id)->where('wallet_type', 'api')->update(['balance_credits' => 0, 'subscription_balance_credits' => 0, 'addon_balance_credits' => 0]);
+    $this->postJson('/api/v2/'.$service, $data, $this->headers)->assertUnprocessable()->assertJsonPath('error.code', 'insufficient_credits');
+    expect(MlJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0);
+})->with(['zeta', 'harakat']);
+
+it('documents valid nested requests and localized field contracts without real secrets', function () {
+    $docs = app(App\Services\CustomerApi\V2\ApiDocumentation::class);
+    foreach (['zeta', 'theta', 'harakat'] as $name) {
+        $service = $docs->services()[$name];
+        $examples = $docs->examples($service);
+        expect(array_keys($examples))->toBe(['cURL', 'PHP', 'Python', 'JavaScript']);
+        foreach ($examples as $example) {
+            expect($example)->toContain('YOUR_API_KEY', '/api/v2/'.$name)->not->toContain('model_2', 'ref_audio', 'audio_url_batch');
+        }
+        preg_match("/-d '(.*)'/s", $examples['cURL'], $match);
+        $input = json_decode($match[1], true, 512, JSON_THROW_ON_ERROR);
+        expect(app(App\Services\CustomerApi\V2\ToolInput::class)->validate($name, $input))->toHaveKey('storage_mode');
+        expect(json_decode($docs->responseExample($name), true, 512, JSON_THROW_ON_ERROR))->toHaveKeys(['id', 'status', 'service', 'result']);
+    }
+    $english = require resource_path('lang/en/api_v2.php');
+    foreach (['ar', 'ku'] as $locale) {
+        $translated = require resource_path('lang/'.$locale.'/api_v2.php');
+        expect(array_keys($translated))->toBe(array_keys($english));
+        foreach ($english as $key => $value) {
+            preg_match_all('/:[a-z_]+/', $value, $source);
+            preg_match_all('/:[a-z_]+/', $translated[$key], $target);
+            expect($target[0])->toBe($source[0]);
+        }
+    }
 });

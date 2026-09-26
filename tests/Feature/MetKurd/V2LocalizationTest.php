@@ -32,7 +32,7 @@ it('localizes known errors and hides arbitrary provider details', function (stri
 
 it('covers literal V2 copy and configured service labels in every customer locale', function () {
     $pattern = <<<'REGEX'
-~__\(\s*'((?:\\.|[^'\\])*)'~
+~__\(\s*'((?:\\.|[^'\\])*)'\s*(?=[,)])~
 REGEX;
     $keys = [];
     foreach (File::allFiles(resource_path('views/app/v2')) as $file) {
@@ -50,7 +50,11 @@ REGEX;
     }
     foreach (['en', 'ar', 'ku'] as $locale) {
         $catalog = AreaJsonTranslations::all('app', $locale);
-        expect(array_values(array_diff(array_unique($keys), array_keys($catalog))))->toBe([]);
+        // Complete literal keys may live in App JSON or the existing PHP catalogs.
+        // Concatenated dynamic prefixes are not complete translation keys.
+        $missing = array_filter(array_unique($keys), fn ($key) => ! array_key_exists($key, $catalog)
+            && ! \Illuminate\Support\Facades\Lang::hasForLocale($key, $locale));
+        expect(array_values($missing))->toBe([]);
         foreach ($catalog as $value) {
             expect($value)->toBeString()->not->toMatch('/runpod|PH_\d+__/i');
         }

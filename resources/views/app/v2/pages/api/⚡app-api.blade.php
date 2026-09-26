@@ -7,6 +7,7 @@ use App\Services\CustomerApi\CustomerApiAccessService;
 use App\Services\CustomerApi\CustomerApiKeyService;
 use App\Services\CustomerApi\V2\ApiCatalog;
 use App\Services\CustomerApi\V2\ApiDocumentation;
+use App\Services\MetKurd\Omni\OmniSpeakerCatalog;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -23,6 +24,15 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
 
     #[Computed]
     public function keyAccessMessage(): ?string { return app(ApiCatalog::class)->keyAccessMessage(auth('app')->user()); }
+
+    #[Computed]
+    public function availableVoices(): array
+    {
+        // Project only public display fields; never hydrate reference metadata into the page.
+        return collect(app(OmniSpeakerCatalog::class)->forCustomer(auth('app')->user(), app()->getLocale()))
+            ->pluck('speakers')->flatten(1)
+            ->map(fn (array $voice) => \Illuminate\Support\Arr::only($voice, ['code', 'name', 'avatar_url', 'preview_url']))->values()->all();
+    }
 
     public function createKey(): void
     {
@@ -56,16 +66,16 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     }
 };
 ?>
-<div class="v2-api" x-data="{ section: 'overview', language: 'cURL', secret: '', copied: false, async copy(value) { try { await navigator.clipboard.writeText(value); this.copied = true; setTimeout(() => this.copied = false, 2000); } catch { $dispatch('alert', {type: 'warning', message: @js(__('Copy failed. Select and copy the text manually.'))}); } } }"
+<div class="v2-api" x-data="{ section: window.location.hash === '#available-voices' ? 'voices' : 'overview', language: 'cURL', secret: '', copied: false, async copy(value) { try { await navigator.clipboard.writeText(value); this.copied = true; setTimeout(() => this.copied = false, 2000); } catch { $dispatch('alert', {type: 'warning', message: @js(__('Copy failed. Select and copy the text manually.'))}); } } }"
      @api-key-created.window="secret = $event.detail.secret" x-on:livewire:navigating.window="secret = ''">
     @php
         $documentation = app(ApiDocumentation::class);
         $services = $documentation->services();
-        $sections = ['overview' => __('Overview'), 'authentication' => __('Authentication'), 'keys' => __('API Keys'), 'quickstart' => __('Quickstart')];
+        $sections = ['overview' => __('Overview'), 'authentication' => __('Authentication'), 'keys' => __('API Keys'), 'quickstart' => __('Quickstart'), 'voices' => __('api_v2.available_voices')];
         foreach ($services as $id => $service) $sections[$id] = $service['name'];
         $sections += ['jobs' => __('Jobs'), 'errors' => __('Errors'), 'idempotency' => __('Idempotency'), 'limits' => __('Limits'), 'retention' => __('Result retention')];
     @endphp
-    <header class="api-header"><div><span class="api-eyebrow">{{ __('Developer portal') }}</span><h1>MetKurd API <small>V2</small></h1><p>{{ __('Build with speech, text and audio services through one asynchronous API.') }}</p></div><div class="api-header-actions"><button class="btn btn-primary" @click="section = 'keys'">{{ __('API Keys') }}</button><button class="btn btn-outline-secondary" @click="section = 'limits'">{{ __('Usage and limits') }}</button></div></header>
+    <header class="api-header"><div><span class="api-eyebrow">{{ __('Developer portal') }}</span><h1>MetKurd API <small>V2</small></h1><p>{{ __('Build with speech, text and audio services through one asynchronous API.') }}</p></div><div class="api-header-actions"><a class="btn btn-outline-primary" href="#available-voices" @click="section = 'voices'">{{ __('api_v2.available_voices') }}</a><button class="btn btn-primary" @click="section = 'keys'">{{ __('API Keys') }}</button><button class="btn btn-outline-secondary" @click="section = 'limits'">{{ __('Usage and limits') }}</button></div></header>
     @if(!config('customer_api.v2_enabled'))<div class="alert alert-info">{{ __('API V2 is not enabled in this environment yet.') }}</div>@endif
     <div class="api-mobile-nav"><label for="api-section">{{ __('Documentation') }}</label><select id="api-section" class="form-select" x-model="section">@foreach($sections as $id => $label)<option value="{{ $id }}">{{ $label }}</option>@endforeach</select></div>
     <div class="api-grid">
@@ -74,19 +84,30 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             <section x-show="section === 'overview'"><h2>{{ __('Overview') }}</h2><p>{{ __('Build with speech, text and audio services through one asynchronous API.') }}</p><div class="api-service-grid">@foreach($services as $id => $service)<button class="api-service" @click="section = @js($id)"><strong>{{ $service['name'] }}</strong><span>{{ __($service['description']) }}</span></button>@endforeach</div><p class="mt-4">{{ __('Submit a request, keep the job ID, then check its status. Processing continues without an open connection.') }}</p><code dir="ltr">{{ url('/api/v2') }}</code></section>
             <section x-cloak x-show="section === 'authentication'"><h2>{{ __('Authentication') }}</h2><p>{{ __('Send your API key in the Authorization header on every request, including file downloads.') }}</p><pre dir="ltr">Authorization: Bearer YOUR_API_KEY</pre><p>{{ __('Keep keys on your server. Never embed them in public browser code or mobile applications.') }}</p><p>{{ __('Keys use your current plan permissions. Revoking a key immediately prevents new requests with it.') }}</p></section>
             <section x-cloak x-show="section === 'keys'"><h2>{{ __('API Keys') }}</h2><p>{{ __('The full secret is shown only once. Copy it now and store it securely.') }}</p>
-                @if($this->keyAccessMessage)<p class="alert alert-info" role="status">{{ $this->keyAccessMessage }}</p>@endif
+                @if($this->keyAccessMessage)<p class="alert alert-danger" role="status">{{ $this->keyAccessMessage }}</p>@endif
                 <form wire:submit="createKey" class="api-key-form"><label for="api-key-name">{{ __('Key name') }}</label><input id="api-key-name" dir="auto" class="form-control" wire:model="keyName" maxlength="100" autocomplete="off"><button class="btn btn-primary" wire:loading.attr="disabled" wire:target="createKey">{{ __('Create API key') }}</button>@error('keyName')<span class="text-danger">{{ $message }}</span>@enderror</form>
                 <div class="api-new-key" x-cloak x-show="secret"><p>{{ __('The full secret is shown only once. Copy it now and store it securely.') }}</p><code dir="ltr" x-text="secret"></code><div><button class="btn btn-sm btn-primary" @click="copy(secret)">{{ __('Copy') }}</button><button class="btn btn-sm btn-outline-secondary" @click="secret = ''">{{ __('Dismiss secret') }}</button></div></div>
                 <div class="api-table"><table><thead><tr><th>{{ __('Name') }}</th><th>{{ __('Prefix') }}</th><th>{{ __('Created') }}</th><th>{{ __('Last used') }}</th><th>{{ __('Status') }}</th><th>{{ __('Actions') }}</th></tr></thead><tbody>@forelse($this->keys as $key)<tr wire:key="api-key-{{ $key->id }}"><td dir="auto">{{ $key->name }}</td><td><code dir="ltr">{{ $key->key_prefix }}…</code></td><td>{{ $key->created_at->format('Y-m-d') }}</td><td>{{ $key->last_used_at?->diffForHumans() ?? __('Never') }}</td><td>{{ $key->status === 'active' ? __('Active') : __('Revoked') }}</td><td>@if($key->status === 'active')<button class="btn btn-sm btn-outline-danger" data-v2-confirm="{{ __('Revoke this API key? Applications using it will lose access immediately.') }}" wire:click="revokeKey({{ $key->id }})" @click="secret = ''">{{ __('Revoke') }}</button>@endif</td></tr>@empty<tr><td colspan="6">{{ __('No API keys yet. Create one to get started.') }}</td></tr>@endforelse</tbody></table></div>
             </section>
-            <section x-cloak x-show="section === 'quickstart'"><h2>{{ __('Quickstart') }}</h2><ol><li>{{ __('Create and securely save an API key.') }}</li><li>{{ __('Fetch available voices and replace VOICE_ID in the Apollo example.') }} <code dir="ltr">GET /api/v2/voices</code></li><li>{{ __('Choose a new Idempotency-Key for each new request. Keep the same key when retrying that request.') }}</li><li>{{ __('Send the request, then use its ID to check the shared jobs endpoint.') }}</li></ol><button class="btn btn-primary" @click="section = 'apollo'">{{ __('Open Apollo example') }}</button></section>
+            <section x-cloak x-show="section === 'quickstart'"><h2>{{ __('Quickstart') }}</h2><ol><li>{{ __('Create and securely save an API key.') }}</li><li>{{ __('Fetch available voices and replace VOICE_ID in the Apollo example.') }} <a href="#available-voices" @click="section = 'voices'"><code dir="ltr">GET /api/v2/voices</code></a></li><li>{{ __('Choose a new Idempotency-Key for each new request. Keep the same key when retrying that request.') }}</li><li>{{ __('Send the request, then use its ID to check the shared jobs endpoint.') }}</li></ol><button class="btn btn-primary" @click="section = 'apollo'">{{ __('Open Apollo example') }}</button></section>
+            @include('app::v2.partials.api-voices')
             @foreach($services as $id => $service)
             <section x-cloak x-show="section === @js($id)"><h2>{{ $service['name'] }}</h2><p>{{ __($service['description']) }}</p><div class="api-endpoint" dir="ltr"><b>POST</b> /api/v2/{{ $service['endpoint'] }}</div><p>{{ $service['file'] ? __('Upload one file using multipart/form-data. Do not set the multipart boundary manually.') : __('Send a JSON request with Content-Type: application/json.') }}</p>
-                <div class="api-table"><table><thead><tr><th>{{ __('Field') }}</th><th>{{ __('Example') }}</th></tr></thead><tbody>@foreach($service['data'] as $field => $value)<tr><td><code dir="ltr">{{ $field }}</code></td><td><code dir="ltr">{{ $value }}</code></td></tr>@endforeach @if($service['file'])<tr><td><code dir="ltr">file</code></td><td>{{ __('Required upload') }}</td></tr>@endif</tbody></table></div>
+                @if($id === 'ocr') @include('app::v2.partials.api-ocr') @else
+                <div class="api-table"><table><thead><tr><th>{{ __('Field') }}</th><th>{{ __('Example') }}</th></tr></thead><tbody>@foreach($service['data'] as $field => $value)<tr><td><code dir="ltr">{{ $field }}</code></td><td><code dir="ltr">{{ is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $value }}</code></td></tr>@endforeach @if($service['file'])<tr><td><code dir="ltr">file</code></td><td>{{ __('Required upload') }}</td></tr>@endif</tbody></table></div>
+                @endif
+                @if(in_array($id, ['apollo', 'zeta']))
+                    <p>{{ __('api_v2.voice_discovery_link') }} <a href="#available-voices" @click="section = 'voices'">{{ __('api_v2.available_voices') }}</a></p>
+                    <p>{{ __('api_v2.voice_placeholder') }}</p>
+                    @if($id === 'zeta')<p>{{ __('api_v2.zeta_voice_ids') }}</p>@endif
+                @endif
+                @if($contract = $documentation->contract($service))
+                    @include('app::v2.partials.api-tool-contract', ['contract' => $contract, 'serviceId' => $id])
+                @endif
                 @if(in_array($id, ['apollo', 'vector']))<p>{{ __('Supported models: 1.5 and 2.0. The default is 2.0. Text is limited to 400 characters.') }}</p>@endif
                 @if($id === 'vector')<p>{{ __('Upload a reference up to 20 MiB, or use reference_id for an active saved reference you own. Use exactly one. Processing uses up to the first 20 seconds.') }}</p><p>{{ __('Optional reference_text describes the reference audio and accepts up to 4000 characters.') }}</p>@endif
-                @if($id === 'ocr')<p>{{ __('PDF, JPEG, PNG, WebP, BMP, GIF and TIFF are supported. Use all or a range such as 1-3,5. The server counts PDF pages. Export choices are txt, docx, markdown, html and zip.') }}</p>@endif
-                <p>{{ __('Supported language values are ckb, ar and en; the default is ckb. Intelligent processing defaults to false and applies to Leo, Caption and OCR.') }}</p><p>{{ __('All submissions require Idempotency-Key. Optional storage_mode accepts temporary or permanent; temporary is the default.') }}</p><p>{{ __('A new submission returns HTTP 202. Repeating the same request returns HTTP 200 with the same job ID.') }}</p>
+
+                @unless($contract || $id === 'ocr')<p>{{ __('Supported language values are ckb, ar and en; the default is ckb. Intelligent processing defaults to false and applies to Leo, Caption and OCR.') }}</p>@endunless<p>{{ __('All submissions require Idempotency-Key. Optional storage_mode accepts temporary or permanent; temporary is the default.') }}</p><p>{{ __('A new submission returns HTTP 202. Repeating the same request returns HTTP 200 with the same job ID.') }}</p>
             </section>
             @endforeach
             <section x-cloak x-show="section === 'jobs'"><h2>{{ __('Jobs') }}</h2><p>{{ __('Submit a request, keep the job ID, then check its status. Processing continues without an open connection.') }}</p><div class="api-endpoint" dir="ltr">GET /api/v2/jobs/{id}</div><p>{{ __('Poll about every 10 seconds while queued or processing. Stop when completed, failed or cancelled. Respect Retry-After on HTTP 429.') }}</p><p>{{ __('Completed responses include private download links in result.files. Authenticate each download. Transcript, subtitle and OCR text appear when available.') }}</p><p>{{ __('File expiry does not remove the job record. An expired result returns expired: true and an empty files list.') }}</p></section>
@@ -96,8 +117,17 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             <section x-cloak x-show="section === 'retention'"><h2>{{ __('Result retention') }}</h2><p>{{ __('Temporary API files expire :days days after submission and do not count toward permanent storage quota.', ['days' => config('customer_api.temporary_file_ttl_days', 7)]) }}</p><p>{{ __('Permanent API files count toward your customer storage quota and remain until deleted. Web storage behavior is unchanged. Download important temporary results before expires_at.') }}</p><p>{{ __('Expiry stops API access immediately; physical cleanup follows the configured cleanup schedule.') }}</p></section>
         </main>
         <aside class="api-code-panel"><div class="api-code-heading"><strong>{{ __('Code example') }}</strong><span role="status" x-show="copied" x-cloak>{{ __('Copied') }}</span></div>
-            @foreach($services as $id => $service)<div x-cloak x-show="section === @js($id)"><p class="api-code-note">{{ __('Examples use cURL, PHP cURL, Python requests or Node.js 20+. Replace placeholders before running.') }}</p><label class="visually-hidden" for="api-code-{{ $id }}">{{ __('Example language') }}</label><select id="api-code-{{ $id }}" class="form-select mb-3" x-model="language"><option>cURL</option><option>PHP</option><option>Python</option><option>JavaScript</option></select>@foreach($documentation->examples($service) as $language => $example)<div x-show="language === @js($language)"><button class="api-copy" @click="copy($refs['code-{{ $id }}-{{ $loop->index }}'].textContent)">{{ __('Copy') }}</button><pre dir="ltr"><code x-ref="code-{{ $id }}-{{ $loop->index }}">{{ $example }}</code></pre></div>@endforeach</div>@endforeach
-            <div x-show="!{{ \Illuminate\Support\Js::from(array_keys($services)) }}.includes(section)"><p>{{ __('Check a job') }}</p><button class="api-copy" @click="copy($refs.jobExample.textContent)">{{ __('Copy') }}</button><pre dir="ltr"><code x-ref="jobExample">curl '{{ url('/api/v2/jobs/job_YOUR_JOB_ID') }}' \
+            <div x-cloak x-show="section === 'voices'">
+                <p class="api-code-note">{{ __('Examples use cURL, PHP cURL, Python requests or Node.js 20+. Replace placeholders before running.') }}</p>
+                <label class="visually-hidden" for="api-code-voices">{{ __('Example language') }}</label>
+                <select id="api-code-voices" class="form-select mb-3" x-model="language"><option>cURL</option><option>PHP</option><option>Python</option><option value="JavaScript">Node.js</option></select>
+                @foreach($documentation->voiceExamples() as $language => $example)
+                    <div x-show="language === @js($language)"><button class="api-copy" @click="copy($refs['code-voices-{{ $loop->index }}'].textContent)">{{ __('Copy') }}</button><pre dir="ltr"><code x-ref="code-voices-{{ $loop->index }}">{{ $example }}</code></pre></div>
+                @endforeach
+            </div>
+            @include('app::v2.partials.api-ocr-examples')
+            @foreach($services as $id => $service) @continue($id === 'ocr') <div x-cloak x-show="section === @js($id)"><p class="api-code-note">{{ __('Examples use cURL, PHP cURL, Python requests or Node.js 20+. Replace placeholders before running.') }}</p><label class="visually-hidden" for="api-code-{{ $id }}">{{ __('Example language') }}</label><select id="api-code-{{ $id }}" class="form-select mb-3" x-model="language"><option>cURL</option><option>PHP</option><option>Python</option><option>JavaScript</option></select>@foreach($documentation->examples($service) as $language => $example)<div x-show="language === @js($language)"><button class="api-copy" @click="copy($refs['code-{{ $id }}-{{ $loop->index }}'].textContent)">{{ __('Copy') }}</button><pre dir="ltr"><code x-ref="code-{{ $id }}-{{ $loop->index }}">{{ $example }}</code></pre></div>@endforeach</div>@endforeach
+            <div x-show="!{{ \Illuminate\Support\Js::from(['voices', ...array_keys($services)]) }}.includes(section)"><p>{{ __('Check a job') }}</p><button class="api-copy" @click="copy($refs.jobExample.textContent)">{{ __('Copy') }}</button><pre dir="ltr"><code x-ref="jobExample">curl '{{ url('/api/v2/jobs/job_YOUR_JOB_ID') }}' \
   -H 'Authorization: Bearer YOUR_API_KEY' \
   -H 'Accept: application/json'</code></pre><p>{{ __('Accepted response') }}</p><pre dir="ltr">{
   "id": "job_YOUR_JOB_ID",
