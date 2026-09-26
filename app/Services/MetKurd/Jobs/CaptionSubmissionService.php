@@ -102,7 +102,7 @@ class CaptionSubmissionService
             MlJob::query()->whereKey($jobId)->update(['status' => 'running', 'provider_job_id' => $providerJobId, 'started_at' => now()]);
             $this->workspaceCache->forgetCaptions((int) $customer->id);
         } catch (\Throwable $exception) {
-            Log::warning('CAPTION_V2_SUBMISSION_FAILED', ['job_id' => $jobId, 'customer_id' => (int) $customer->id, 'exception' => $exception::class, 'message' => $exception->getMessage()]);
+            Log::warning('CAPTION_V2_SUBMISSION_FAILED', ['job_id' => $jobId, 'customer_id' => (int) $customer->id, 'exception' => $exception::class]);
             $this->locks->releaseLock($jobId);
             if ($failedJob = MlJob::find($jobId)) {
                 app(DurableUploadSubmission::class)->failed($failedJob, $exception);

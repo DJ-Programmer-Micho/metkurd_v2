@@ -1,5 +1,55 @@
 # Architectural and behavioral decisions
 
+## MCP effective-plan eligibility correction — 2026-09-26
+
+MCP now consumes the authoritative current active non-Free plan without adding a
+payment-provenance condition. Configured manual/complimentary grants and custom
+plans qualify; no plan names are hardcoded. Free (including retained API credits),
+expired/inactive plans and suspended accounts remain denied. Runtime OAuth consent,
+family/action authorization, pricing and API-wallet checks remain independent.
+BillingSubscriptionAuthority, payment/history/agreement semantics and REST behavior
+are unchanged. EN/AR/KU eligibility wording and isolated regression coverage follow
+this clarified business policy. Customer 1 passes the corrected local eligibility
+check without financial mutations. See MCP.md for live acceptance limitations.
+
+## Focused MCP hardening — 2026-09-26
+
+MCP job tools/resources now share a pure persisted-state projection. Durable API
+reconciliation owns artifact links and settlement; REST retains existing behavior.
+CIMD keeps exact URL identities in Passport, with bounded pinned public-only
+metadata discovery and consent invalidation on relevant changes. Public UUID
+preregistration remains supported; DCR is deferred. Dedicated web/native redirect
+policies enable IP loopback ephemeral ports and fixed localhost callbacks without
+relaxing web HTTPS matching. An additive identity-widening migration is prepared,
+not run against the application. `mcp:readiness` reports configuration read-only:
+all three local paid tiers still lack recognized V2 scopes. No scopes, prices,
+credits, keys or gates changed. SDK stays pinned to 0.8.1. See MCP.md for verification
+and required native DB, real-client and production acceptance.
+
+## Paid V2 MCP external-client interface — 2026-09-26
+
+Added official PHP MCP SDK 0.8.1 and Passport 13.7.6 with preregistered public
+OAuth/PKCE, resource-bound short access/rotating refresh tokens, runtime commercial
+eligibility and immediate connection revocation. Fourteen strict tools share
+REST's native API submission, financial reservation and persisted result services.
+Required per-intent UUIDs preserve paid retries across transport reconnects.
+Private owned browser uploads replace assumptions about AI chat attachments.
+Added EN/AR/KU portal, protected resources/downloads, isolated protocol/security
+tests and [MCP.md](MCP.md). API job key linkage becomes nullable for MCP without
+manufacturing API credentials. No prices, credits, worker contracts or rollout
+gates changed; no application migrations or external OAuth registration ran.
+Local paid plans have API allowances but no recognized V2 scopes and need operator
+review. Claude Code's default localhost callback conflicts with the required
+production policy; Codex requires a reachable reviewed HTTPS callback. External
+host/native DB/browser acceptance and inherited dependency advisories remain open.
+
+Verification: 215 distinct focused PHP tests (MCP + REST API V2 + App/core,
+localization, maintenance and privacy), 67 frontend tests, Vite build, changed-file
+lint/Pint and Composer validation passed. Legacy SDK session values are encrypted
+using Laravel Crypt while preserving the SDK response-delivery queue; arbitrary
+client metadata is excluded. Native Leo/Caption diagnostic logs no longer include
+arbitrary exception messages. No application database or rollout change ran.
+
 ## Current V2 release inventory and catalog preflight — 2026-09-26
 
 ProductionPreflight now derives required active Tool/ToolAction identities from

@@ -12,7 +12,8 @@ final class MaintenanceResponse
         $path = parse_url($server['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
         $accept = strtolower($server['HTTP_ACCEPT'] ?? '');
 
-        return preg_match('#^/api(?:/|$)#', $path) === 1
+        return preg_match('#^/(?:api|mcp)(?:/|$)#', $path) === 1
+            || $path === '/oauth/token' || str_starts_with($path, '/.well-known/oauth-')
             || str_contains($accept, '/json') || str_contains($accept, '+json')
             || (strtolower($server['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest'
                 && ($accept === '' || $accept === '*/*'));

@@ -1,5 +1,13 @@
 # MetKurd API V2 engineering contract
 
+## Shared MCP external-client entry point — 2026-09-26
+
+The independently gated MCP interface shares ApiSubmission and ApiJobResult via
+ExternalClientPrincipal (`ApiKeyPrincipal` / `McpConnectionPrincipal`). REST
+authentication, payloads and API billing remain unchanged. MCP stores no fabricated
+API key: api_jobs.api_key_id is nullable, with its connection identity in metadata.
+See [MCP](MCP.md) for configured non-Free plan OAuth access, owned uploads and operator acceptance.
+
 ## OCR local-file upload documentation — 2026-09-26
 
 The public contract is `POST /api/v2/ocr` with one local PDF/image in multipart

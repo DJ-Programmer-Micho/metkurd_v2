@@ -30,15 +30,16 @@ class ApiSubmission
 
     public const OCR_DEFAULT_EXPORTS = ['txt', 'docx'];
 
-    public function submit(Request $request, string $service): array
+    public function submit(Request $request, string $service, ?ExternalClientPrincipal $principal = null, array $clientMetadata = []): array
     {
         /** @var Customer $customer */
         $customer = $request->user();
         /** @var CustomerApiKey $key */
         $key = $request->attributes->get('customerApiKey');
+        $principal ??= new ApiKeyPrincipal($key);
         $input = array_merge(['language' => 'ckb', 'intelligent' => false, 'storage_mode' => 'temporary'], $request->all());
         [$group, $tool, $action] = app(ApiCatalog::class)->definition($service, $input);
-        app(ApiCatalog::class)->authorize($customer, $key, app(ApiCatalog::class)->scopeForService($service), $action);
+        $principal->authorize($customer, app(ApiCatalog::class)->scopeForService($service), $action);
         $identity = trim((string) $request->header('Idempotency-Key'));
         if ($identity === '' || strlen($identity) > 128) {
             throw new ApiProblem('invalid_request');
@@ -113,7 +114,8 @@ class ApiSubmission
             }
             $options['run_llm_corrector'] = (bool) $data['intelligent'];
         }
-        [$api, $created] = DB::transaction(function () use ($customer, $key, $identityHash, $fingerprint, $service, $action, $data) {
+        $clientMetadata = array_intersect_key($clientMetadata, array_flip(['mcp_connection_id', 'mcp_request_hash']));
+        [$api, $created] = DB::transaction(function () use ($customer, $principal, $clientMetadata, $identityHash, $fingerprint, $service, $action, $data) {
             Customer::query()->lockForUpdate()->findOrFail($customer->id);
             $existing = ApiJob::query()->where('customer_id', $customer->id)->where('idempotency_hash', $identityHash)->first();
             if ($existing) {
@@ -125,11 +127,11 @@ class ApiSubmission
             }
 
             return [ApiJob::create([
-                'id' => 'job_'.Str::lower((string) Str::ulid()), 'customer_id' => $customer->id, 'api_key_id' => $key->id,
+                'id' => 'job_'.Str::lower((string) Str::ulid()), 'customer_id' => $customer->id, 'api_key_id' => $principal->apiKeyId(),
                 'tool_code' => explode('.', $action)[0], 'tool_action' => $action, 'status' => 'accepted',
                 'input_hash' => $fingerprint, 'idempotency_hash' => $identityHash, 'storage_mode' => $data['storage_mode'],
                 'meta' => ['api_version' => 2, 'service' => $service, 'preparation' => 'started',
-                    'expires_at' => $data['storage_mode'] === 'temporary' ? now()->addDays((int) config('customer_api.temporary_file_ttl_days', 7))->toIso8601String() : null],
+                    'expires_at' => $data['storage_mode'] === 'temporary' ? now()->addDays((int) config('customer_api.temporary_file_ttl_days', 7))->toIso8601String() : null] + $clientMetadata,
             ]), true];
         }, 3);
         if (! $created) {
@@ -161,7 +163,11 @@ class ApiSubmission
             $code = $e->getMessage() === 'Not enough credits.' ? 'insufficient_credits' : 'server_error';
             $api->update(['status' => 'failed', 'error_code' => $code, 'completed_at' => now()]);
             if ($code === 'server_error') {
-                report($e);
+                if ($principal instanceof ApiKeyPrincipal) {
+                    report($e);
+                } else {
+                    \Illuminate\Support\Facades\Log::warning('EXTERNAL_SUBMISSION_FAILED', ['job_id' => $api->id, 'code' => $code]);
+                }
             }
             throw new ApiProblem($code, $code === 'insufficient_credits' ? 422 : 500);
         }

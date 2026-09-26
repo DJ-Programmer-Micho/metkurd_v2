@@ -23,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\App\Http\Middleware\McpRequestSize::class);
         $middleware->trustProxies(
             at: env('TRUSTED_PROXIES', '**'),
             headers: Request::HEADER_X_FORWARDED_FOR
@@ -72,6 +73,13 @@ return Application::configure(basePath: dirname(__DIR__))
         });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->report(function (\Throwable $exception) {
+            if (request()->is('mcp', 'mcp/*', 'oauth/*', '.well-known/oauth-*', '*/app-v2/mcp/uploads/*')) {
+                \Illuminate\Support\Facades\Log::warning('MCP_REQUEST_FAILED', ['type' => class_basename($exception)]);
+
+                return false; // Do not send request arguments or OAuth credentials to exception reporters.
+            }
+        });
         $exceptions->render(function (\Throwable $exception, Request $request) {
             // Handle 503 before any area/authentication handler can touch session services.
             if ($exception instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface
@@ -85,6 +93,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 return \App\Support\MaintenanceResponse::wantsJson($request->server->all())
                     ? response(\App\Support\MaintenanceResponse::JSON, 503, $headers)->header('Content-Type', 'application/json; charset=UTF-8')
                     : response()->view('errors.503', [], 503, $headers);
+            }
+            if ($request->is('mcp', 'mcp/*', 'oauth/*', '.well-known/oauth-*', '*/app-v2/mcp/uploads/*')) {
+                return app(\App\Http\Middleware\McpBoundary::class)->renderException($request, $exception);
             }
             $adminSurface = $request->routeIs('admin.*') || ($request->is('livewire/*') && auth('admin')->check());
             if ($adminSurface && ! $exception instanceof \Illuminate\Validation\ValidationException

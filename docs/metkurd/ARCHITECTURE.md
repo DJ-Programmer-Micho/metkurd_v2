@@ -1,5 +1,19 @@
 # MetKurd architecture
 
+## Remote MCP external client — 2026-09-26
+
+The independently disabled `/mcp` interface uses the official PHP MCP SDK and
+Passport public OAuth/PKCE. `McpConnectionPrincipal` and REST's `ApiKeyPrincipal`
+feed the same ApiSubmission, API wallet and native V2 jobs; ApiJobResult shares
+the existing local serializer. Current active non-Free effective-plan authority and scoped consent
+are rechecked at runtime. MCP serialization is persisted-state-only; durable API
+reconciliation owns settlement and artifact links, while REST keeps its existing
+sync behavior. CIMD retains the metadata URL as OAuth identity; preregistered
+public clients remain supported with separate web/native redirect policies.
+The separate customer MCP portal documents owned-file
+handoff and revocation. No worker, endpoint or MCP wallet is introduced. See
+[MCP contract and acceptance limits](MCP.md).
+
 ## Service-independent maintenance presentation — 2026-09-26
 
 The standalone 503 view pre-renders local artwork and all maintenance translations.

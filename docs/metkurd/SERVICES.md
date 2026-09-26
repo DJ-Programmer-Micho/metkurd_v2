@@ -1,5 +1,14 @@
 # Service implementation map
 
+## MCP access to existing V2 services — 2026-09-26
+
+Fourteen MCP tools expose discovery, Apollo/Vector, Zeta/Theta, Leo/Caption, OCR,
+Harakat, STEM, persisted job results and owned uploads. Processing directly reuses
+ApiSubmission and each native service with API financial context. This is an
+external-client interface, not an additional AI product/model. Feature rollout
+and paid commercial/API authorization are independent of App and REST gates.
+See [MCP mappings, scopes and limits](MCP.md#tool-contract).
+
 ## Shared voice discovery and previews — 2026-09-26
 
 API voice discovery and the developer portal reuse OmniSpeakerCatalog with stable

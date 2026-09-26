@@ -419,6 +419,9 @@ Route::prefix('{locale}')
         Route::livewire('/app-v2/addon-credits', 'app::v2.pages.account.addon-credits')->name('app.v2.addon-credits');
         Route::livewire('/app-v2/my-billing', 'app::v2.pages.account.app-billing')->name('app.v2.billing');
         Route::livewire('/app-v2/api', 'app::v2.pages.api.app-api')->name('app.v2.api');
+        Route::livewire('/app-v2/mcp', 'app::v2.pages.mcp.app-mcp')->name('app.v2.mcp');
+        Route::match(['GET', 'POST'], '/app-v2/mcp/uploads/{id}', [\App\Http\Controllers\Mcp\FileController::class, 'upload'])
+            ->middleware([\App\Http\Middleware\McpBoundary::class, 'throttle:20,1'])->name('app.v2.mcp.upload');
         Route::livewire('/app-v2/storage', 'app::v2.pages.storage.app-storage')->name('app.v2.storage');
         Route::get('/app-v2/storage/files/download', [V2StorageFileController::class, 'bulkDownload'])->name('app.v2.storage.bulk-download');
         Route::get('/app-v2/storage/files/{file}/download', [V2StorageFileController::class, 'download'])->name('app.v2.storage.download');

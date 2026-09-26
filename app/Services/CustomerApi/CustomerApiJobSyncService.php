@@ -64,6 +64,9 @@ class CustomerApiJobSyncService
                 $result = $fresh->resultFiles->first(fn ($resultFile): bool => $resultFile->deleted_at === null)
                     ?: $this->files->attachPrimaryResult($fresh);
                 $this->settleReservation($fresh, (int) $fresh->estimated_credits);
+                if ((int) data_get($fresh->meta, 'api_version') === 2) {
+                    $this->files->attachArtifacts($fresh);
+                }
 
                 if ($result !== null) {
                     $fresh->setRelation('resultFiles', collect([$result]));

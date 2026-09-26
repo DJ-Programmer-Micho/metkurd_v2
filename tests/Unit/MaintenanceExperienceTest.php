@@ -45,6 +45,9 @@ class MaintenanceExperienceTest extends TestCase
         $this->getJson('/api/v2/services')->assertStatus(503)->assertHeader('Retry-After', '60')
             ->assertExactJson(json_decode(MaintenanceResponse::JSON, true));
         $this->get('/api/v1/jobs')->assertStatus(503)->assertHeader('Content-Type', 'application/json; charset=UTF-8');
+        foreach (['/mcp', '/mcp/files/file_test', '/oauth/token', '/.well-known/oauth-authorization-server'] as $url) {
+            $this->get($url)->assertStatus(503)->assertExactJson(json_decode(MaintenanceResponse::JSON, true));
+        }
         Artisan::call('up');
         \Illuminate\Support\Facades\Route::get('/maintenance-test-ready', fn () => 'Application available');
         $this->get('/maintenance-test-ready')->assertOk()->assertSee('Application available');

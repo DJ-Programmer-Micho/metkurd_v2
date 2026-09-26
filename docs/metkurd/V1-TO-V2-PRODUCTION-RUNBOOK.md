@@ -1,5 +1,18 @@
 # V1 → V2 production launch runbook
 
+## Independently gated MCP addition — 2026-09-26
+
+MCP source adds six reviewed OAuth/connection migration files to the earlier
+78-file inventory (84 total), including CIMD identity widening and native client
+classification. No application migrations have been run for this
+addition. FEATURE_MCP_V2 remains false; neither App nor REST enablement activates
+it. Follow the [MCP operator sequence and rollback](MCP.md#configuration-and-operator-rollout)
+for explicit migration review, shared signing/session/cache configuration,
+commercial/API plan permissions and exact public client callbacks. Do not run
+seeders, passport:install, regenerate APP_KEY or assume a tested local fixture
+authorizes production changes. Resolve inherited dependency advisories and run
+native distributed/OAuth/client acceptance before production release.
+
 ## Current-state review — 2026-09-26
 
 Status: **SOURCE REVIEWED; PRODUCTION ACCEPTANCE REQUIRED**. The current

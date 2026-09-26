@@ -1,5 +1,24 @@
 # Infrastructure relationships
 
+## MCP transport and OAuth — 2026-09-26
+
+The Laravel process serves `/mcp` with the official SDK; no sidecar is required.
+Modern stateless requests and legacy SDK sessions share durable DB authority;
+legacy sessions require a shared cache (Redis by default). OAuth uses shared
+Passport keys and the existing stable APP_KEY, exact web HTTPS / native loopback
+callbacks, CIMD public metadata discovery, PKCE and independently disabled
+FEATURE_MCP_V2. There are six reviewed migration
+files, none applied to the application by this task. Existing queues, storage,
+probes and API financial limits remain authoritative. Native MySQL/Redis,
+trusted ingress and external clients need deployment acceptance. Follow
+[MCP operator steps](MCP.md#configuration-and-operator-rollout).
+
+CIMD requires cURL/TLS and controlled public DNS/HTTPS egress. Validated addresses
+are pinned, proxies/redirects disabled and metadata limited to 5 KiB. Configure
+bounded resolver timeouts and deny special-use egress as defense in depth. Shared
+metadata caching is bounded to five minutes. MCP job reads are pure; scheduler
+reconciliation owns settlement and artifact links independently of customer reads.
+
 ## Recurring cancellation recovery — 2026-09-14
 
 The existing FIB reconciliation scheduler gate also schedules

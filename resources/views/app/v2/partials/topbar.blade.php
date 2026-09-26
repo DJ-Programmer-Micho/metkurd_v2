@@ -28,6 +28,7 @@
             </div>
 
             <a wire:navigate href="{{ $apiRoute }}" class="btn btn-sm {{ $apiAccessEnabled ? 'btn-info' : 'btn-outline-secondary' }} v2-topbar-control" aria-label="{{ __('Open API Access') }}"><i class="mdi mdi-api"></i><span class="d-none d-md-inline ms-1">{{ __('API') }}</span></a>
+            <a wire:navigate href="{{ route('app.v2.mcp', ['locale' => app()->getLocale()]) }}" class="btn btn-sm btn-outline-info v2-topbar-control" aria-label="{{ __('mcp.connect') }}">MCP</a>
 
             @livewire('app::v2.components.shared.process-queue', [], key('v2-process-queue-'.auth('app')->id().'-'.app()->getLocale()))
 
