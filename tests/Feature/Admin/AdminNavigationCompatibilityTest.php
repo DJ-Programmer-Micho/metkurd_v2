@@ -34,18 +34,14 @@ it('renders nested Admin navigation destinations in each locale', function (stri
     @$dom->loadHTML($html);
     $xpath = new DOMXPath($dom);
 
-    foreach ([
-        'sidebarService' => ['services.tools', 'services.voices', 'services.pricing', 'services.entitlements'],
-        'sidebarCustomer' => ['customers.list', 'customers.ranking', 'customers.register', 'customers.phone-countries', 'customers.usage', 'customers.suspended'],
-        'sidebarPayments' => ['payments.plans', 'payments.addons', 'payments.storage', 'payments.coupons', 'payments.currencies', 'payments.methods'],
-        'sidebarLandingCms' => ['landing.translations', 'landing.tools', 'landing.contact', 'landing.meta'],
-    ] as $group => $destinations) {
-        expect($xpath->query('//a[@aria-controls="'.$group.'"]')->length)->toBe(1);
-        foreach ($destinations as $destination) {
-            $url = route('admin.'.$destination, ['locale' => $locale]);
-            expect($xpath->query('//*[@id="'.$group.'"]//a[@href="'.$url.'"]')->length)->toBe(1);
+    foreach (\App\Support\Admin\AdminNavigation::groups() as $group => $items) {
+        foreach ($items as $item) {
+            $url = route($item['route'], ['locale' => $locale] + $item['query']);
+            expect($xpath->query('//*[@id="admin-sidebar"]//a[@data-admin-nav and @href="'.$url.'"]')->length)->toBe(1);
         }
     }
+    expect($xpath->query('//details[contains(@class,"admin-nav-system") and not(@open)]')->length)->toBe(1)
+        ->and($xpath->query('//*[@id="admin-sidebar"]//a[@aria-current="page"]')->length)->toBe(1);
     expect($html)->toContain('lang="'.$locale.'" dir="'.($locale === 'en' ? 'ltr' : 'rtl').'"');
     Http::assertNothingSent();
 })->with(['en', 'ar', 'ku']);

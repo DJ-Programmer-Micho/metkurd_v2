@@ -243,7 +243,7 @@ it('renders the customer sync credits action through the Admin SweetAlert bridge
     $customer = billingCustomer();
     assignBillingPlan($customer, 'student');
     $this->actingAs($admin, 'admin');
-    $component = Livewire::test('admin::pages.customers.adm-customers-register')
+    $component = Livewire::test('admin::pages.customers.adm-customers-register')->call('focusCustomer', $customer->id)
         ->assertSee('Sync Credits To Plan')->assertSee('data-admin-method="syncCustomerCreditsToPlan"', false)
         ->assertDontSee('confirm(', false)->assertDontSee('wire:click="syncCustomerCreditsToPlan', false);
     $dom = new DOMDocument;

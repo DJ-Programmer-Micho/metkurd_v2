@@ -15,7 +15,7 @@ for (const file of [...sources]) {
 }
 sources.push('app/Support/Admin/InteractsWithCustomerAdmin.php','app/Support/Admin/InteractsWithPaymentAdmin.php');
 const catalogs = Object.fromEntries(['en','ar','ku'].map(locale=>[locale,JSON.parse(read('resources/lang/admin/'+locale+'.json'))]));
-const phpCatalogs = Object.fromEntries(['agreement','billing_epoch'].map(namespace=>[namespace,
+const phpCatalogs = Object.fromEntries(['agreement','billing_epoch','admin_shell','admin_customer','admin_service','admin_billing','admin_developer'].map(namespace=>[namespace,
  Object.fromEntries(['en','ar','ku'].map(locale=>[locale, JSON.parse(execFileSync('php', ['-r', 'echo json_encode(require $argv[1], JSON_THROW_ON_ERROR);', path.join(root, 'resources/lang', locale, namespace+'.php')], {encoding:'utf8'}))]))]));
 const tokens = value => [...value.matchAll(/:[a-zA-Z_]+/g)].map(m=>m[0]).sort();
 test('all literal scoped Admin JSON and PHP messages exist in EN AR KU with matching replacement tokens',()=>{
@@ -24,7 +24,7 @@ test('all literal scoped Admin JSON and PHP messages exist in EN AR KU with matc
   const text=read(file).replace(/{{--[\s\S]*?--}}/g,'');
   for(const m of text.matchAll(/(?:__|@lang)\(\s*'((?:\\.|[^'\\])*)'/g)) {
    const key=m[1].replace(/\\'/g,"'").replace(/\\\\/g,'\\');
-   if(!/^(admin_p|admin_ux\.|validation\.)/.test(key) && key !== 'agreement.' && !['subscription_lifecycle.', 'subscription_lifecycle.labels.'].includes(key)) keys.add(key);
+   if(!/^(admin_p|admin_cleanup\.|admin_ux\.|validation\.)/.test(key) && !['agreement.', 'admin_shell.', 'admin_customer.', 'admin_customer.jobs_', 'admin_service.', 'admin_service.decision_', 'admin_service.family_', 'admin_billing.', 'admin_developer.', 'billing_epoch.'].includes(key) && !['subscription_lifecycle.', 'subscription_lifecycle.labels.'].includes(key)) keys.add(key);
   }
  }
  for(const key of keys) for(const locale of ['en','ar','ku']) {
@@ -62,6 +62,55 @@ test('all annotated actions preserve explicit method arguments without inline Ja
    const surrounding=text.slice(Math.max(0,match.index-250),match.index+800);
    assert.match(surrounding,/data-admin-args=/,`${file}: ${match[1]}`);
    assert.match(surrounding,/data-admin-impact=/,`${file}: ${match[1]}`);
+  }
+ }
+});
+
+test('Admin cleanup translations use identical keys and interpolation tokens in EN AR KU',()=>{
+ const keys=Object.keys(catalogs.en).filter(k=>k.startsWith('admin_cleanup.') || k.startsWith('admin_shell.'));
+ for (const key of keys) for(const locale of ['ar','ku']) {
+  assert.ok(catalogs[locale][key]?.trim(),`${locale}: ${key}`);
+  assert.deepEqual(tokens(catalogs[locale][key]),tokens(catalogs.en[key]));
+ }
+});
+
+test('Admin shell catalogs cover every locale with matching keys and tokens',()=>{
+ const rows=phpCatalogs.admin_shell;
+ for(const locale of ['ar','ku']) {
+  assert.deepEqual(Object.keys(rows[locale]).sort(),Object.keys(rows.en).sort());
+  for(const [key,value] of Object.entries(rows.en)) {assert.ok(rows[locale][key].trim());assert.deepEqual(tokens(rows[locale][key]),tokens(value));}
+ }
+});
+
+test('Phase 2 customer copy has matching EN AR KU keys and tokens',()=>{const rows=phpCatalogs.admin_customer;for(const locale of ['ar','ku']){assert.deepEqual(Object.keys(rows[locale]).sort(),Object.keys(rows.en).sort());for(const [key,value] of Object.entries(rows.en)){assert.ok(rows[locale][key].trim());assert.deepEqual(tokens(rows[locale][key]),tokens(value));}}});
+
+
+test('service workspace copy has matching EN AR KU keys and tokens',()=>{
+ const rows=phpCatalogs.admin_service;
+ for(const locale of ['ar','ku']) {
+  assert.deepEqual(Object.keys(rows[locale]).sort(),Object.keys(rows.en).sort());
+  for(const [key,value] of Object.entries(rows.en)) {
+   assert.ok(rows[locale][key].trim(),`${locale}: ${key}`);
+   assert.deepEqual(tokens(rows[locale][key]),tokens(value),`${locale}: ${key}`);
+  }
+ }
+});
+
+test('Developer operations copy has matching EN AR KU keys and tokens',()=>{
+ const rows=phpCatalogs.admin_developer;
+ for(const locale of ['ar','ku']) {
+  assert.deepEqual(Object.keys(rows[locale]).sort(),Object.keys(rows.en).sort());
+  for(const [key,value] of Object.entries(rows.en)) {assert.ok(rows[locale][key].trim());assert.deepEqual(tokens(rows[locale][key]),tokens(value));}
+ }
+});
+
+test('billing workspace copy has matching EN AR KU keys and tokens',()=>{
+ const rows=phpCatalogs.admin_billing;
+ for(const locale of ['ar','ku']) {
+  assert.deepEqual(Object.keys(rows[locale]).sort(),Object.keys(rows.en).sort());
+  for(const [key,value] of Object.entries(rows.en)) {
+   assert.ok(rows[locale][key].trim(),`${locale}: ${key}`);
+   assert.deepEqual(tokens(rows[locale][key]),tokens(value),`${locale}: ${key}`);
   }
  }
 });

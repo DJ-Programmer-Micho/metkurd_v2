@@ -10,6 +10,7 @@ class ServicePlanAgreement extends Model
     protected $guarded = [];
 
     protected $casts = [
+        'concurrent_jobs_limit' => 'integer',
         'starts_at' => 'datetime', 'ends_at' => 'datetime',
         'app_monthly_credits' => 'integer', 'api_monthly_credits' => 'integer', 'agreed_amount_iqd' => 'integer',
     ];

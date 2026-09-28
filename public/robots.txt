@@ -1,4 +1,25 @@
 User-agent: *
 Allow: /
+Disallow: /app/signin
+Disallow: /app/register
+Disallow: /app/logout
+Disallow: /app/password
+Disallow: /app-v2/
+Disallow: /*/app/
+Disallow: /*/app$
+Disallow: /*/app-v2/
+Disallow: /*/app-v2$
+Disallow: /admin/
+Disallow: /adm/
+Disallow: /*/adm/
+Disallow: /oauth/
+Disallow: /mcp
+Disallow: /api/
+Disallow: /signin
+Disallow: /signup
+Disallow: /signout
+Disallow: /password/
+Disallow: /livewire/update
+Disallow: /payments/
 
 Sitemap: https://metkurd.ai/sitemap.xml

@@ -71,7 +71,12 @@ class CustomerApiAccessService
     {
         $plan = $this->planForCustomer($customer);
 
-        return $this->configForPlan($plan);
+        $config = $this->configForPlan($plan);
+        if ($config['api_enabled'] && $config['concurrent_jobs'] > 0) {
+            $config['concurrent_jobs'] = app(\App\Services\Plans\PlanConcurrencyService::class)->agreementOverride($customer) ?? $config['concurrent_jobs'];
+        }
+
+        return $config;
     }
 
     public function configForPlan(ServicePlan $plan): array

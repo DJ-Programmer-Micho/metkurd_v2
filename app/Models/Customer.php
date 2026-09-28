@@ -377,6 +377,18 @@ class Customer extends Authenticatable
         return $this->toolActionAllowanceCache[$cacheKey] = ($ent ? (bool) $ent->allowed : false);
     }
 
+    public function inputLimitFor(string $actionCode, string $key, string $channel = PlanEntitlement::CHANNEL_APP): mixed
+    {
+        $action = $this->resolveToolAction($actionCode);
+        if (! $action) {
+            return null;
+        }
+        $override = $this->resolveCustomerEntitlement((int) $action->id, $channel);
+        $plan = $this->resolvePlanEntitlement((int) $this->currentServicePlanId(), (int) $action->id, $channel);
+
+        return data_get($override?->limits, $key) ?? data_get($plan?->limits, $key);
+    }
+
     public function canAccessTool(
         string $toolCode,
         array|string|null $toolActionFullCodes = null,

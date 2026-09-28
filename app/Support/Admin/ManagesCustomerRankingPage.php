@@ -23,7 +23,12 @@ trait ManagesCustomerRankingPage
     #[Url(as: 'period', keep: true)]
     public string $periodFilter = '30';
 
-    public int $rankingLimit = 12;
+    public int $rankingLimit = 20;
+
+    public function boundedRankingLimit(): int
+    {
+        return in_array($this->rankingLimit, [20, 40, 60, 80, 100], true) ? $this->rankingLimit : 20;
+    }
 
     public function resetFilters(): void
     {
@@ -95,7 +100,7 @@ trait ManagesCustomerRankingPage
             ->orderByDesc('consumed_credits')
             ->orderByDesc('jobs_count')
             ->orderBy('customers.username')
-            ->limit($this->rankingLimit)
+            ->limit($this->boundedRankingLimit())
             ->get();
     }
 
@@ -106,7 +111,7 @@ trait ManagesCustomerRankingPage
             ->orderByDesc('paid_order_credits')
             ->orderByDesc('paid_order_amount')
             ->orderBy('customers.username')
-            ->limit($this->rankingLimit)
+            ->limit($this->boundedRankingLimit())
             ->get();
     }
 }

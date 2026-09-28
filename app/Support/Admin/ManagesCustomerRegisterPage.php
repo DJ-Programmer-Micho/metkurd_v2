@@ -47,7 +47,7 @@ trait ManagesCustomerRegisterPage
 
     protected function newCorrectionIdentities(): void
     {
-        foreach (['plan', 'addon', 'storage', 'credits', 'invalidate', 'reference', 'reconcile', 'non_revenue', 'agreement', 'agreement_retry'] as $action) {
+        foreach (['plan', 'addon', 'storage', 'credits', 'invalidate', 'reference', 'reconcile', 'non_revenue', 'agreement', 'agreement_retry', 'agreement_adjust'] as $action) {
             $this->adminIntentIds[$action] = (string) \Illuminate\Support\Str::uuid();
         }
     }
@@ -69,6 +69,21 @@ trait ManagesCustomerRegisterPage
 
     #[Url(as: 'customer', keep: true)]
     public string $customerFilter = 'all';
+
+    #[Url]
+    public string $billingPayment = '';
+
+    #[Computed]
+    public function billingPaymentContext(): ?array
+    {
+        AdminAccess::authorize('admin.read');
+        if ($this->billingPayment === '' || ! ctype_digit($this->billingPayment) || ! ctype_digit($this->customerFilter)) {
+            return null;
+        }
+        $payment = Payment::query()->currentBillingPeriod()->where('customer_id', (int) $this->customerFilter)->find($this->billingPayment);
+
+        return $payment ? app(\App\Services\Admin\AdminOperations::class)->row($payment) : null;
+    }
 
     public int $perPage = 12;
 
@@ -132,17 +147,62 @@ trait ManagesCustomerRegisterPage
 
     public string $agreementReason = '';
 
+    public string $agreementAppCredits = '';
+
+    public string $agreementApiCredits = '';
+
+    public string $agreementConcurrency = '';
+
+    #[\Livewire\Attributes\Locked]
+    public ?int $adjustingAgreementId = null;
+
+    public string $adjustAgreementApp = '';
+
+    public string $adjustAgreementApi = '';
+
+    public string $adjustAgreementConcurrency = '';
+
+    public string $adjustAgreementReason = '';
+
+    public function openAgreementAdjustment(int $id): void
+    {
+        AdminAccess::authorize('admin.finance');
+        $agreement = \App\Models\ServicePlanAgreement::where('customer_id', (int) $this->customerFilter)->findOrFail($id);
+        $this->resetValidation();
+        $this->adjustingAgreementId = $agreement->id;
+        $this->adjustAgreementApp = (string) $agreement->app_monthly_credits;
+        $this->adjustAgreementApi = (string) $agreement->api_monthly_credits;
+        $this->adjustAgreementConcurrency = (string) ($agreement->concurrent_jobs_limit ?? config('service_agreements.default_concurrency'));
+        $this->adjustAgreementReason = '';
+        $this->dispatch('admin:modal-show', id: 'agreement-adjust');
+    }
+
+    public function adjustServiceAgreement(): void
+    {
+        AdminAccess::authorize('admin.finance');
+        $this->validate([
+            'adjustAgreementApp' => 'required|integer|min:0|max:'.config('service_agreements.max_monthly_credits'),
+            'adjustAgreementApi' => 'required|integer|min:0|max:'.config('service_agreements.max_monthly_credits'),
+            'adjustAgreementConcurrency' => 'required|integer|min:1|max:'.config('service_agreements.max_concurrency'),
+            'adjustAgreementReason' => 'required|string|min:10|max:1000',
+        ]);
+        app(\App\Services\Admin\AdminServiceAgreements::class)->adjust($this->adminIntentIds['agreement_adjust'], (int) $this->customerFilter,
+            (int) $this->adjustingAgreementId, (int) $this->adjustAgreementApp, (int) $this->adjustAgreementApi, (int) $this->adjustAgreementConcurrency, trim($this->adjustAgreementReason));
+        unset($this->serviceAgreements, $this->selectedCustomer);
+        $this->dispatch('alert', type: 'success', message: __('admin_cleanup.agreement_adjusted'));
+    }
+
     #[Computed]
     public function agreementSchemaReady(): bool
     {
-        return \Illuminate\Support\Facades\Schema::hasTable('service_plan_agreements');
+        return \Illuminate\Support\Facades\Schema::hasColumn('service_plan_agreements', 'concurrent_jobs_limit');
     }
 
     #[Computed]
     public function serviceAgreements()
     {
         AdminAccess::authorize('admin.read');
-        if (! $this->agreementSchemaReady || $this->customerFilter === 'all') {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('service_plan_agreements') || $this->customerFilter === 'all') {
             return collect();
         }
 
@@ -157,13 +217,19 @@ trait ManagesCustomerRegisterPage
         if (! $customer) {
             return;
         }
-        $this->validate(['agreementPlanId' => 'required|integer', 'agreementStart' => 'required|date_format:Y-m-d',
+        $this->validate(['agreementPlanId' => 'required|integer|exists:service_plans,id', 'agreementStart' => 'required|date_format:Y-m-d',
+            'agreementAppCredits' => 'nullable|integer|min:0|max:'.config('service_agreements.max_monthly_credits'),
+            'agreementApiCredits' => 'nullable|integer|min:0|max:'.config('service_agreements.max_monthly_credits'),
+            'agreementConcurrency' => 'nullable|integer|min:1|max:'.config('service_agreements.max_concurrency'),
             'agreementExpiry' => 'required|date_format:Y-m-d|after_or_equal:agreementStart',
             'agreementAmount' => 'nullable|integer|min:0|max:1000000000000', 'agreementReference' => 'required|string|max:190',
             'agreementReason' => 'required|string|min:10|max:1000']);
         $result = app(\App\Services\Admin\AdminServiceAgreements::class)->record($this->adminIntentIds['agreement'], $customer->id,
             (int) $this->agreementPlanId, $this->agreementStart, $this->agreementExpiry,
-            $this->agreementAmount === '' ? null : (int) $this->agreementAmount, trim($this->agreementReference), trim($this->agreementReason));
+            $this->agreementAmount === '' ? null : (int) $this->agreementAmount, trim($this->agreementReference), trim($this->agreementReason),
+            $this->agreementAppCredits === '' ? null : (int) $this->agreementAppCredits,
+            $this->agreementApiCredits === '' ? null : (int) $this->agreementApiCredits,
+            $this->agreementConcurrency === '' ? null : (int) $this->agreementConcurrency);
         unset($this->selectedCustomer, $this->serviceAgreements);
         $this->dispatch('alert', type: $result['status'] === 'requires_review' ? 'warning' : 'success', message: __('agreement.'.$result['status']));
     }
@@ -545,6 +611,7 @@ trait ManagesCustomerRegisterPage
         $this->paidReconciliationMode = 'manual_correction_already_applied';
         $this->paidReconciliationReason = '';
         $this->paidReconciliationStatusOnlyConfirmation = false;
+        $this->dispatch('admin:modal-show', id: 'customer-action-2');
     }
 
     public function applyPaidSubscriptionReconciliation(): void
@@ -678,6 +745,7 @@ trait ManagesCustomerRegisterPage
         $this->reviewCorrectFibPaymentId = (string) ($payment->fib_payment_id ?? '');
         $this->reviewReconnectMode = 'manual_correction_already_applied';
         $this->reviewResolutionReason = '';
+        $this->dispatch('admin:modal-show', id: 'customer-payment-review');
     }
 
     public function attachCorrectReviewProviderReference(): void
@@ -864,7 +932,8 @@ trait ManagesCustomerRegisterPage
 
     protected function resetManualAdjustmentForms(): void
     {
-        $this->reset('agreementPlanId', 'agreementStart', 'agreementExpiry', 'agreementAmount', 'agreementReference', 'agreementReason');
+        $this->reset('adjustingAgreementId', 'adjustAgreementApp', 'adjustAgreementApi', 'adjustAgreementConcurrency', 'adjustAgreementReason');
+        $this->reset('agreementPlanId', 'agreementStart', 'agreementExpiry', 'agreementAmount', 'agreementReference', 'agreementReason', 'agreementAppCredits', 'agreementApiCredits', 'agreementConcurrency');
         unset($this->serviceAgreements);
         $this->servicePlanAdjustmentId = '';
         $this->servicePlanBillingCycle = 'monthly';

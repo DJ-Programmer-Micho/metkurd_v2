@@ -21,16 +21,16 @@ class InputBoundary
 
     public const AUDIO_MIMES = 'audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac,audio/x-flac';
 
-    public function characterLimit(Customer $customer, string $action): int
+    public function characterLimit(Customer $customer, string $action, string $channel = 'app'): int
     {
-        return max(1, (int) (method_exists($customer, 'entitlementLimitFor') ? ($customer->entitlementLimitFor($action, 'max_chars_per_submit') ?? 400) : 400));
+        return max(1, (int) ($customer->inputLimitFor($action, 'max_chars_per_submit', $channel) ?? 400));
     }
 
-    public function text(Customer $customer, string $action, array $input, bool $voice = false): array
+    public function text(Customer $customer, string $action, array $input, bool $voice = false, string $channel = 'app'): array
     {
         $input['text'] = is_string($input['text'] ?? null) ? trim($input['text']) : ($input['text'] ?? null);
         $data = Validator::make($input, [
-            'text' => ['required', 'string', 'max:'.$this->characterLimit($customer, $action)],
+            'text' => ['required', 'string', 'max:'.$this->characterLimit($customer, $action, $channel)],
             'language' => ['required', 'in:ckb,en,ar'],
             'voice' => $voice ? ['required', 'string'] : ['nullable', 'string'],
             'reference_text' => ['nullable', 'string', 'max:4000'],
@@ -112,14 +112,17 @@ class InputBoundary
     {
         Validator::make(['documentFile' => $file], ['documentFile' => 'required|file|mimes:'.implode(',', self::DOCUMENT_EXTENSIONS).'|max:'.self::DOCUMENT_MAX_KIB])->validate();
         $probe = app(OcrDocumentProbe::class);
+        $range = trim((string) ($options['pages'] ?? 'all'));
         try {
-            $pages = $probe->selectedPages($probe->pageCount($file), (string) ($options['pages'] ?? 'all'));
+            $pages = $probe->selectedPages($probe->pageCount($file), $range);
         } catch (\RuntimeException $e) {
             throw ValidationException::withMessages(['documentFile' => \App\Support\CustomerFacingError::message($e->getMessage())]);
         }
 
         return array_merge($options, [
-            'pages' => implode(',', $pages), 'estimated_pages' => count($pages), 'input_hash' => $this->hash($file),
+            // Keep the validated expression for submission's independent probe. Expanding
+            // it here turns valid "all" / compact ranges into over-255-character input.
+            'pages' => $range, 'estimated_pages' => count($pages), 'input_hash' => $this->hash($file),
             'file_name' => $file->getClientOriginalName(), 'file_mime' => $file->getMimeType(),
             'file_ext' => strtolower($file->getClientOriginalExtension()), 'file_bytes' => $file->getSize(),
         ]);

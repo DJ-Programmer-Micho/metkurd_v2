@@ -1,6 +1,7 @@
 {{-- resources/views/app/auth/âš¡signin-one.blade.php --}}
 <?php
 
+use App\Rules\ValidTurnstile;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Illuminate\Support\Facades\Auth;
@@ -11,6 +12,7 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
 {
     public string $login = '';
     public string $password = '';
+    public string $cfTurnstileResponse = '';
     public bool $remember = false;
 
     public function mount()
@@ -20,17 +22,27 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
 
     public function signIn()
     {
-        $this->validate([
-            'login'    => ['required', 'string', 'max:255'],
-            'password' => ['required', 'string', 'max:255'],
-            'remember' => ['boolean'],
-        ]);
+        try {
+            $this->validate([
+                'login'    => ['required', 'string', 'max:255'],
+                'password' => ['required', 'string', 'max:255'],
+                'cfTurnstileResponse' => ['bail', 'required', 'string', new ValidTurnstile()],
+                'remember' => ['boolean'],
+            ], [
+                'cfTurnstileResponse.required' => __('Please complete the human verification challenge.'),
+            ]);
+        } catch (ValidationException $e) {
+            $this->resetTurnstileChallenge();
+
+            throw $e;
+        }
 
         $key = 'admin_login:' . request()->ip() . ':' . strtolower($this->login);
 
         if (RateLimiter::tooManyAttempts($key, 8)) {
             $seconds = RateLimiter::availableIn($key);
             $this->dispatch('alert', type: 'error', message: __('Too many attempts. Try again in :seconds seconds.', ['seconds' => $seconds]));
+            $this->resetTurnstileChallenge();
             return;
         }
 
@@ -44,15 +56,28 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
 
         if (! $ok) {
             RateLimiter::hit($key, 60);
+            $this->resetTurnstileChallenge();
             throw ValidationException::withMessages(['login' => __('Invalid credentials.')]);
         }
 
         RateLimiter::clear($key);
+        $this->resetTurnstileChallenge();
         request()->session()->regenerate();
 
         $user = Auth::guard('admin')->user();
         $this->dispatch('alert', type: 'success', message: __('Welcome back!'));
         return redirect()->to(route('admin.home',['locale' => app()->getLocale()]));
+    }
+
+    public function updatedCfTurnstileResponse(): void
+    {
+        $this->resetValidation('cfTurnstileResponse');
+    }
+
+    protected function resetTurnstileChallenge(): void
+    {
+        $this->cfTurnstileResponse = '';
+        $this->dispatch('turnstile-reset');
     }
 };
 
@@ -133,6 +158,10 @@ new #[Layout('admin::layouts.app-auth')] class extends Component
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="remember" wire:model="remember">
                                     <label class="form-check-label" for="remember">{{ __('Remember me') }}</label>
+                                </div>
+
+                                <div class="mt-3">
+                                    <x-turnstile-widget model="cfTurnstileResponse" theme="dark" />
                                 </div>
 
                                 <div class="mt-4">

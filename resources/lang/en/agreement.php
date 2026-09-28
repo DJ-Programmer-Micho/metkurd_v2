@@ -21,7 +21,7 @@ return [
     'active' => 'Active',
     'ended' => 'Ended',
     'requires_review' => 'Requires review',
-    'review_help' => 'Activation is blocked by existing billing obligations or an unavailable plan. Review the customer records first. Enter a reason above before retrying.',
+    'review_help' => 'Activation is blocked by existing billing obligations or an unavailable plan. Review the customer records first. Provide the reason in the retry confirmation.',
     'empty' => 'No external service agreements recorded.',
     'migration' => 'The service agreement migration must be applied before this feature can be used.',
     'expired_dates' => 'The expiry date must include today or a future date. Historical terms cannot be activated.',

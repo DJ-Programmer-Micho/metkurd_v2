@@ -18,7 +18,7 @@ class extends Component
 
 <x-slot:title>{{ __('Services Entitlements') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div class="container-fluid">
+<div class="container-fluid admin-service-workspace">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-capability-notice :capabilities="['admin.pricing']" />
     <x-admin-change-reason />
@@ -77,7 +77,9 @@ class extends Component
         </div>
     </div>
 
+    <x-admin-entitlement-matrix />
     <x-admin-v2-catalog />
+    <details class="card admin-reference"><summary class="card-header fw-semibold">{{ __('admin_service.entitlement_records') }}</summary><div class="card-body">
     <div class="card">
         <div class="card-header border-0">
             <div class="row g-3 align-items-end">
@@ -102,7 +104,7 @@ class extends Component
                     <select class="form-select" wire:model.live="actionFilter" id="admin-field-adm-services-entitlements-3">
                         <option value="all">{{ __('All Actions') }}</option>
                         @foreach ($this->actionOptions as $action)
-                            <option value="{{ $action->id }}">{{ $action->full_code }}</option>
+                            <option value="{{ $action->id }}">{{ \App\Support\Admin\AdminServiceWorkspace::actionName($action) }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -118,7 +120,7 @@ class extends Component
                     <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-services-entitlements-5">{{ __('Channel') }}</label>
                     <select class="form-select" wire:model.live="channelFilter" id="admin-field-adm-services-entitlements-5">
                         <option value="all">{{ __('All Channels') }}</option>
-                        <option value="all">{{ __('admin_p1.all_channels') }}</option>
+
                                     <option value="app">{{ __('App') }}</option>
                         <option value="api">{{ __('API') }}</option>
                         <option value="mobile">{{ __('Mobile') }}</option>
@@ -132,7 +134,7 @@ class extends Component
         <div class="card-header border-0">
             <div>
                 <h5 class="card-title mb-1">{{ __('Plan Entitlements') }}</h5>
-                <p class="text-muted mb-0">{{ __('Use entitlements to grant or block tool actions per plan, with optional limits JSON.') }}</p>
+                <p class="text-muted mb-0">{{ __('admin_cleanup.limits_help') }}</p>
             </div>
         </div>
         <div class="card-body p-0">
@@ -155,8 +157,8 @@ class extends Component
                                 <td>{{ $entitlement->servicePlan?->name ?? __('Unknown Plan') }}</td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $entitlement->toolAction?->name ?? __('Unknown Action') }}</span>
-                                        <span class="text-muted small">{{ $entitlement->toolAction?->full_code ?? __('n/a') }}</span>
+                                        <span class="fw-semibold">{{ \App\Support\Admin\AdminServiceWorkspace::actionName($entitlement->toolAction) }}</span>
+                                        <details><summary>{{ __('admin_ux.configuration_reference') }}</summary><code dir="ltr">{{ $entitlement->toolAction?->full_code }}</code></details>
                                     </div>
                                 </td>
                                 <td>
@@ -167,9 +169,9 @@ class extends Component
                                 <td><span class="badge {{ $this->statusBadgeClasses((bool) $entitlement->allowed) }}">{{ $entitlement->allowed ? __('Allowed') : __('Blocked') }}</span></td>
                                 <td>
                                     @if ($entitlement->limits)
-                                        <details><summary>{{ __('admin_p3.advanced') }}</summary><code dir="ltr">{{ json_encode(\App\Support\Admin\AdminData::redact($entitlement->limits)) }}</code></details>
+                                        <details><summary>{{ __('admin_ux.configuration_reference') }}</summary><code dir="ltr">{{ json_encode(\App\Support\Admin\AdminData::redact($entitlement->limits)) }}</code></details>
                                     @else
-                                        <span class="text-muted">{{ __('No limits') }}</span>
+                                        <span class="text-muted">{{ __('admin_service.no_configured_limits') }}</span>
                                     @endif
                                 </td>
                                 <td class="text-muted">{{ $entitlement->updated_at?->diffForHumans() }}</td>
@@ -195,6 +197,7 @@ class extends Component
         </div>
     </div>
 
+    </div></details>
     <div wire:ignore.self class="modal fade" id="serviceEntitlementModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
@@ -206,10 +209,11 @@ class extends Component
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetEntitlementForm"></button>
                     </div>
                     <div class="modal-body">
+                        <x-admin-validation-summary />
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label" for="admin-field-adm-services-entitlements-6">{{ __('Service Plan') }}</label>
-                                <select class="form-select @error('entitlementServicePlanId') is-invalid @enderror" wire:model.defer="entitlementServicePlanId" id="admin-field-adm-services-entitlements-6">
+                                <select class="form-select @error('entitlementServicePlanId') is-invalid @enderror" wire:model.defer="entitlementServicePlanId" id="admin-field-adm-services-entitlements-6" data-admin-review>
                                     <option value="">{{ __('Choose plan...') }}</option>
                                     @foreach ($this->planOptions as $plan)
                                         <option value="{{ $plan->id }}">{{ $plan->name }}</option>
@@ -219,17 +223,18 @@ class extends Component
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="admin-field-adm-services-entitlements-7">{{ __('Tool Action') }}</label>
-                                <select class="form-select @error('entitlementToolActionId') is-invalid @enderror" wire:model.defer="entitlementToolActionId" id="admin-field-adm-services-entitlements-7">
+                                <select class="form-select @error('entitlementToolActionId') is-invalid @enderror" wire:model.live="entitlementToolActionId" id="admin-field-adm-services-entitlements-7" data-admin-review>
                                     <option value="">{{ __('Choose action...') }}</option>
                                     @foreach ($this->actionOptions as $action)
-                                        <option value="{{ $action->id }}">{{ $action->full_code }}</option>
+                                        <option value="{{ $action->id }}">{{ \App\Support\Admin\AdminServiceWorkspace::actionName($action) }}</option>
                                     @endforeach
                                 </select>
                                 @error('entitlementToolActionId') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-entitlements-8">{{ __('Entitlement Channel') }}</label>
-                                <select class="form-select @error('entitlementChannel') is-invalid @enderror" wire:model.defer="entitlementChannel" id="admin-field-adm-services-entitlements-8">
+                                <select class="form-select @error('entitlementChannel') is-invalid @enderror" wire:model.defer="entitlementChannel" id="admin-field-adm-services-entitlements-8" data-admin-review>
+                                    <option value="all">{{ __('admin_p1.all_channels') }}</option>
                                     <option value="app">{{ __('App Dashboard') }}</option>
                                     <option value="api">{{ __('Public API') }}</option>
                                     <option value="mobile">{{ __('Mobile API') }}</option>
@@ -239,14 +244,26 @@ class extends Component
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-entitlements-9">{{ __('Access') }}</label>
-                                <select class="form-select" wire:model.defer="entitlementAllowed" id="admin-field-adm-services-entitlements-9">
+                                <select class="form-select" wire:model.defer="entitlementAllowed" id="admin-field-adm-services-entitlements-9" data-admin-review>
                                     <option value="allowed">{{ __('Allowed') }}</option>
                                     <option value="blocked">{{ __('Blocked') }}</option>
                                 </select>
                             </div>
+                            <div class="col-12">
+                                @if ($this->supportsCharacterLimit)
+                                    <label class="form-label" for="entitlement-characters">{{ __('admin_cleanup.characters') }}</label>
+                                    <input id="entitlement-characters" type="number" min="1" class="form-control" wire:model="entitlementMaxCharacters" placeholder="{{ __('admin_cleanup.character_default') }}" data-admin-review>
+                                    @error('entitlementMaxCharacters')<div class="text-danger">{{ $message }}</div>@enderror
+                                @endif
+                                <p class="small text-muted mt-2">{{ __('admin_cleanup.shared_limits') }}</p>
+                                @foreach ($this->sharedServiceLimits as $label => $value)
+                                    <div>{{ __($label) }}: {{ number_format($value) }}</div>
+                                @endforeach
+                                <a wire:navigate href="{{ route('admin.payments.plans', ['locale' => app()->getLocale()]) }}">{{ __('admin_cleanup.plan_concurrency') }}</a>
+                            </div>
                             <div class="col-md-12">
-                                <label class="form-label">{{ __('Limits JSON') }}</label>
-                                <details><summary>{{ __('admin_p3.advanced') }}</summary><textarea dir="ltr" class="form-control font-monospace @error('entitlementLimitsJson') is-invalid @enderror" rows="4" wire:model.defer="entitlementLimitsJson"></textarea></details>
+                                <label class="form-label">{{ __('admin_ux.configuration_reference') }}</label>
+                                <details><summary>{{ __('admin_ux.configuration_reference') }}</summary><textarea dir="ltr" class="form-control font-monospace @error('entitlementLimitsJson') is-invalid @enderror" rows="4" wire:model.defer="entitlementLimitsJson"></textarea></details>
                                 @error('entitlementLimitsJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                         </div>
@@ -268,6 +285,7 @@ class extends Component
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetDeleteState"></button>
                 </div>
                 <div class="modal-body">
+                        <x-admin-validation-summary />
                     <p class="mb-0">{{ __('Delete') }} <span class="fw-semibold">{{ $deleteLabel }}</span>? {{ __('Historical usage rows keep their original recorded values.') }}</p>
                 </div>
                 <div class="modal-footer">
@@ -278,80 +296,5 @@ class extends Component
         </div>
     </div>
 
-    @push('scripts')
-        @once
-            <script>
-                (() => {
-                    if (window.__SERVICES_ENTITLEMENTS_MODAL_EVENTS__) {
-                        return;
-                    }
 
-                    window.__SERVICES_ENTITLEMENTS_MODAL_EVENTS__ = true;
-
-                    const modalIds = [
-                        'serviceEntitlementModal',
-                        'serviceEntitlementDeleteModal',
-                    ];
-
-                    const cleanupModalState = () => {
-                        if (typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        modalIds.forEach((id) => {
-                            const element = document.getElementById(id);
-
-                            if (!element) {
-                                return;
-                            }
-
-                            const instance = bootstrap.Modal.getInstance(element);
-
-                            if (instance) {
-                                instance.hide();
-                                instance.dispose();
-                            }
-
-                            element.classList.remove('show');
-                            element.style.display = 'none';
-                            element.removeAttribute('aria-modal');
-                            element.removeAttribute('role');
-                        });
-
-                        document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.removeProperty('padding-right');
-                        document.body.style.removeProperty('overflow');
-                    };
-
-                    const withModal = (id, callback) => {
-                        if (!id || typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById(id);
-
-                        if (!element) {
-                            return;
-                        }
-
-                        callback(bootstrap.Modal.getOrCreateInstance(element));
-                    };
-
-                    window.addEventListener('services-entitlements:modal-show', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.show());
-                    });
-
-                    window.addEventListener('services-entitlements:modal-hide', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.hide());
-                    });
-
-                    document.addEventListener('livewire:navigating', cleanupModalState);
-                    document.addEventListener('livewire:navigated', cleanupModalState);
-
-                    cleanupModalState();
-                })();
-            </script>
-        @endonce
-    @endpush
 </div>

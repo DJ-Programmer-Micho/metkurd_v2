@@ -18,7 +18,7 @@ class extends Component
 
 <x-slot:title>{{ __('Services Voices') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div class="container-fluid">
+<div class="container-fluid admin-service-workspace">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-capability-notice :capabilities="['admin.catalog', 'admin.pricing']" />
     <x-admin-change-reason />
@@ -128,7 +128,7 @@ class extends Component
         <div class="card-header border-0">
             <div>
                 <h5 class="card-title mb-1">{{ __('Voice Access Matrix') }}</h5>
-                <p class="text-muted mb-0">{{ __('Expand a voice row to review and manage plan-level access without leaving the page.') }}</p>
+                <p class="text-muted mb-0">{{ __('admin_service.voice_help') }}</p>
             </div>
         </div>
         <div class="card-body p-0">
@@ -146,11 +146,15 @@ class extends Component
                         </tr>
                     </thead>
                     <tbody>
+                        @php
+                            $voiceSummaries = app(\App\Support\Admin\AdminServiceWorkspace::class)->voiceSummaries($this->voices->getCollection());
+                        @endphp
                         @forelse ($this->voices as $voice)
                             @php
                                 $isExpanded = in_array($voice->id, $expandedVoices, true);
                                 $engine = data_get($voice->meta, 'engine', __('Not set'));
                                 $gender = data_get($voice->meta, 'gender');
+                                $voiceSummary = $voiceSummaries[$voice->id];
                             @endphp
                             <tr wire:key="voice-row-{{ $voice->id }}">
                                 <td>
@@ -164,17 +168,17 @@ class extends Component
                                             <span class="fw-semibold">{{ $voice->name }}</span>
                                             <span class="badge {{ $this->statusBadgeClasses((bool) $voice->is_active) }}">{{ $voice->is_active ? __('Active') : __('Maintenance') }}</span>
                                         </div>
-                                        <span class="text-muted small">{{ $voice->code }}</span>
+                                        <span class="text-muted small">{{ __('admin_service.voice_id') }}: <bdi>{{ $voice->code }}</bdi></span><small class="text-muted">{{ __('admin_service.'.($voiceSummary['preview'] ? 'preview_configured' : 'preview_missing')) }}</small>
                                         @if ($gender)
                                             <span class="text-muted small">{{ __('Gender: :value', ['value' => ucfirst($gender)]) }}</span>
                                         @endif
                                     </div>
                                 </td>
-                                <td>{{ $engine }}</td>
+                                <td><bdi>{{ $engine }}</bdi>@if($voiceSummary['omni'])<small class="d-block"><bdi>Apollo / Zeta</bdi></small>@endif</td>
                                 <td><span class="badge {{ $this->visibilityBadgeClasses((bool) $voice->is_public) }}">{{ $voice->is_public ? __('Public') : __('Private') }}</span></td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ __(':count plans', ['count' => number_format((int) ($voice->access_count ?? 0))]) }}</span>
+                                        <span class="small" dir="auto">{{ implode(' · ', $voiceSummary['plans']) ?: __('admin_service.no_voice_plans') }}</span>
                                         <span class="text-muted small">{{ __(':count active access rows', ['count' => number_format((int) ($voice->active_access_count ?? 0))]) }}</span>
                                     </div>
                                 </td>
@@ -267,10 +271,11 @@ class extends Component
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetVoiceForm"></button>
                     </div>
                     <div class="modal-body">
+                        <x-admin-validation-summary />
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-voices-6">{{ __('Voice Code') }}</label>
-                                <input type="text" class="form-control @error('voiceCode') is-invalid @enderror" wire:model.defer="voiceCode" placeholder="liza" {{ $editingVoiceId ? 'disabled' : '' }} id="admin-field-adm-services-voices-6" dir="ltr">
+                                <input type="text" class="form-control @error('voiceCode') is-invalid @enderror" wire:model.defer="voiceCode" placeholder="liza" {{ $editingVoiceId ? 'disabled' : '' }} id="admin-field-adm-services-voices-6" dir="ltr" data-admin-review>
                                 @error('voiceCode') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-5">
@@ -280,34 +285,34 @@ class extends Component
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label" for="admin-field-adm-services-voices-8">{{ __('Sort Order') }}</label>
-                                <input type="number" min="0" class="form-control @error('voiceSortOrder') is-invalid @enderror" wire:model.defer="voiceSortOrder" id="admin-field-adm-services-voices-8">
+                                <input type="number" min="0" class="form-control @error('voiceSortOrder') is-invalid @enderror" wire:model.defer="voiceSortOrder" id="admin-field-adm-services-voices-8" data-admin-review>
                                 @error('voiceSortOrder') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-voices-9">{{ __('Engine') }}</label>
-                                <input type="text" class="form-control" wire:model.defer="voiceEngine" placeholder="{{ __('xtts') }}" id="admin-field-adm-services-voices-9">
+                                <input type="text" class="form-control" wire:model.defer="voiceEngine" placeholder="{{ __('xtts') }}" id="admin-field-adm-services-voices-9" data-admin-review>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-voices-10">{{ __('Gender') }}</label>
-                                <input type="text" class="form-control" wire:model.defer="voiceGender" placeholder="{{ __('female') }}" id="admin-field-adm-services-voices-10">
+                                <input type="text" class="form-control" wire:model.defer="voiceGender" placeholder="{{ __('female') }}" id="admin-field-adm-services-voices-10" data-admin-review>
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label" for="admin-field-adm-services-voices-11">{{ __('Visibility') }}</label>
-                                <select class="form-select" wire:model.defer="voiceVisibility" id="admin-field-adm-services-voices-11">
+                                <select class="form-select" wire:model.defer="voiceVisibility" id="admin-field-adm-services-voices-11" data-admin-review>
                                     <option value="public">{{ __('Public') }}</option>
                                     <option value="private">{{ __('Private') }}</option>
                                 </select>
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label" for="admin-field-adm-services-voices-12">{{ __('Status') }}</label>
-                                <select class="form-select" wire:model.defer="voiceStatus" id="admin-field-adm-services-voices-12">
+                                <select class="form-select" wire:model.defer="voiceStatus" id="admin-field-adm-services-voices-12" data-admin-review>
                                     <option value="active">{{ __('Active') }}</option>
                                     <option value="maintenance">{{ __('Maintenance') }}</option>
                                 </select>
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="admin-field-adm-services-voices-13">{{ __('Admin Notes') }}</label>
-                                <textarea class="form-control @error('voiceNotes') is-invalid @enderror" rows="3" wire:model.defer="voiceNotes" id="admin-field-adm-services-voices-13" dir="auto"></textarea>
+                                <textarea class="form-control @error('voiceNotes') is-invalid @enderror" rows="3" wire:model.defer="voiceNotes" id="admin-field-adm-services-voices-13" dir="auto" data-admin-review></textarea>
                                 @error('voiceNotes') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
@@ -337,10 +342,11 @@ class extends Component
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetAccessForm"></button>
                     </div>
                     <div class="modal-body">
+                        <x-admin-validation-summary />
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label" for="admin-field-adm-services-voices-14">{{ __('Service Plan') }}</label>
-                                <select class="form-select @error('accessPlanId') is-invalid @enderror" wire:model.defer="accessPlanId" id="admin-field-adm-services-voices-14">
+                                <select class="form-select @error('accessPlanId') is-invalid @enderror" wire:model.defer="accessPlanId" id="admin-field-adm-services-voices-14" data-admin-review>
                                     <option value="">{{ __('Choose plan...') }}</option>
                                     @foreach ($this->planOptions as $plan)
                                         <option value="{{ $plan->id }}">{{ $plan->name }}</option>
@@ -350,7 +356,7 @@ class extends Component
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="admin-field-adm-services-voices-15">{{ __('Voice') }}</label>
-                                <select class="form-select @error('accessVoiceId') is-invalid @enderror" wire:model.defer="accessVoiceId" id="admin-field-adm-services-voices-15">
+                                <select class="form-select @error('accessVoiceId') is-invalid @enderror" wire:model.defer="accessVoiceId" id="admin-field-adm-services-voices-15" data-admin-review>
                                     <option value="">{{ __('Choose voice...') }}</option>
                                     @foreach ($this->voiceOptions as $voiceOption)
                                         <option value="{{ $voiceOption->id }}">{{ $voiceOption->name }} ({{ $voiceOption->code }})</option>
@@ -360,26 +366,26 @@ class extends Component
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-voices-16">{{ __('Visibility') }}</label>
-                                <select class="form-select" wire:model.defer="accessVisibility" id="admin-field-adm-services-voices-16">
+                                <select class="form-select" wire:model.defer="accessVisibility" id="admin-field-adm-services-voices-16" data-admin-review>
                                     <option value="public">{{ __('Public') }}</option>
                                     <option value="private">{{ __('Private') }}</option>
                                 </select>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-voices-17">{{ __('Status') }}</label>
-                                <select class="form-select" wire:model.defer="accessStatus" id="admin-field-adm-services-voices-17">
+                                <select class="form-select" wire:model.defer="accessStatus" id="admin-field-adm-services-voices-17" data-admin-review>
                                     <option value="active">{{ __('Active') }}</option>
                                     <option value="maintenance">{{ __('Maintenance') }}</option>
                                 </select>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-voices-18">{{ __('Sort Order') }}</label>
-                                <input type="number" min="0" class="form-control @error('accessSortOrder') is-invalid @enderror" wire:model.defer="accessSortOrder" id="admin-field-adm-services-voices-18">
+                                <input type="number" min="0" class="form-control @error('accessSortOrder') is-invalid @enderror" wire:model.defer="accessSortOrder" id="admin-field-adm-services-voices-18" data-admin-review>
                                 @error('accessSortOrder') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="admin-field-adm-services-voices-19">{{ __('Admin Notes') }}</label>
-                                <textarea class="form-control @error('accessNotes') is-invalid @enderror" rows="3" wire:model.defer="accessNotes" id="admin-field-adm-services-voices-19" dir="auto"></textarea>
+                                <textarea class="form-control @error('accessNotes') is-invalid @enderror" rows="3" wire:model.defer="accessNotes" id="admin-field-adm-services-voices-19" dir="auto" data-admin-review></textarea>
                                 @error('accessNotes') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
@@ -406,6 +412,7 @@ class extends Component
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetDeleteState"></button>
                 </div>
                 <div class="modal-body">
+                        <x-admin-validation-summary />
                     <p class="mb-0">{{ __('Delete') }} <span class="fw-semibold">{{ $deleteLabel }}</span>? {{ __('Related access rows will be removed automatically when a voice is deleted.') }}</p>
                 </div>
                 <div class="modal-footer">
@@ -416,81 +423,5 @@ class extends Component
         </div>
     </div>
 
-    @push('scripts')
-        @once
-            <script>
-                (() => {
-                    if (window.__SERVICES_VOICES_MODAL_EVENTS__) {
-                        return;
-                    }
 
-                    window.__SERVICES_VOICES_MODAL_EVENTS__ = true;
-
-                    const modalIds = [
-                        'serviceVoiceModal',
-                        'serviceVoiceAccessModal',
-                        'serviceVoiceDeleteModal',
-                    ];
-
-                    const cleanupModalState = () => {
-                        if (typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        modalIds.forEach((id) => {
-                            const element = document.getElementById(id);
-
-                            if (!element) {
-                                return;
-                            }
-
-                            const instance = bootstrap.Modal.getInstance(element);
-
-                            if (instance) {
-                                instance.hide();
-                                instance.dispose();
-                            }
-
-                            element.classList.remove('show');
-                            element.style.display = 'none';
-                            element.removeAttribute('aria-modal');
-                            element.removeAttribute('role');
-                        });
-
-                        document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.removeProperty('padding-right');
-                        document.body.style.removeProperty('overflow');
-                    };
-
-                    const withModal = (id, callback) => {
-                        if (!id || typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById(id);
-
-                        if (!element) {
-                            return;
-                        }
-
-                        callback(bootstrap.Modal.getOrCreateInstance(element));
-                    };
-
-                    window.addEventListener('services-voices:modal-show', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.show());
-                    });
-
-                    window.addEventListener('services-voices:modal-hide', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.hide());
-                    });
-
-                    document.addEventListener('livewire:navigating', cleanupModalState);
-                    document.addEventListener('livewire:navigated', cleanupModalState);
-
-                    cleanupModalState();
-                })();
-            </script>
-        @endonce
-    @endpush
 </div>

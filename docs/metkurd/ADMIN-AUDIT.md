@@ -1,5 +1,138 @@
 # MetKurd Admin engineering audit
 
+## Final consolidation — 2026-09-28
+
+The [final route inventory and production acceptance checklist](ADMIN-FINAL-CONSOLIDATION.md)
+is the current Admin entry point. All routes/history/authority are retained. Remaining
+page-local modal bridges now use the existing shared owner; section titles, terminal
+status colors and Legacy coupon wording are aligned. Processing jobs sit beside API/MCP
+in Developer. Audit operation status and voice availability avoid repeated record/plan
+reads. Native MySQL/RDS, populated API/MCP, disposable-Admin revocation and final
+environment verification remain explicit production acceptance requirements.
+
+## Developer / ML operations Phase 7 — 2026-09-28
+
+Existing Operations now presents safe API/MCP/key metadata and customer-scoped
+job/reservation/file/audit links through `AdminDeveloperWorkspace`. MCP origin uses
+persisted connection metadata; processing and financial authorities remain separate.
+Grouped projections, 25-row pagination and existing fresh Admin authorization preserve
+the P2 read-only boundary. No provider/storage calls, mutations, migrations or flag
+changes. See [Phase 7 implementation and acceptance](ADMIN-REDESIGN-PHASE-7.md).
+
+## Production acceptance Phase 6 — 2026-09-28
+
+Real local browser checks now cover all thirteen representative Admin pages and
+EN/AR/KU Tools samples at desktop/tablet/mobile widths. Two proven accessibility
+defects were fixed: unnamed modal titles across Livewire updates and a clipped
+long-form mobile footer. Business authority, routes and schema are unchanged.
+Full operator coverage, disposable-account stale-permission acceptance and native
+MySQL evidence remain open. See [Phase 6 evidence and operator checklist](ADMIN-REDESIGN-PHASE-6.md).
+
+## Acceptance and accessibility Phase 5 — 2026-09-28
+
+Customer Detail now explicitly restricts its latest-payment projection after the
+Operations builder preselect, avoiding unintended payload/customer hydration.
+The shared Admin bridge restores programmatic modal focus, coordinates error-dialog
+traps and isolates the mobile drawer background. Table regions and plan controls
+have accessible names. Financial mutations and authority are unchanged.
+Local XAMPP is MariaDB 10.4.28; native MySQL EXPLAIN and interactive browser
+acceptance remain open. No indexes, application migrations or deployment.
+See [Phase 5 evidence and remaining acceptance](ADMIN-REDESIGN-PHASE-5.md).
+
+## Operational billing redesign Phase 4 — 2026-09-27
+
+Operations now has financial summaries, persisted review-state/case filters,
+effective-subscription classification and bounded event/allocation evidence.
+Current and Legacy / Pre-V2 financial reads retain BillingReportingBoundary.
+Current-payment links hand off to the existing guarded Register modals; payment
+audit traces also include matching operation-level audits. No financial authority,
+mutation policy, schema or deployment changes. See [Phase 4 behavior and acceptance
+limits](ADMIN-REDESIGN-PHASE-4.md).
+
+## Admin services workspace Phase 3 — 2026-09-27
+
+Current service families, plan/channel entitlements, enforced limits, pricing and
+voice catalog access now have operational summaries above technical evidence.
+Public status uses PublicProductCatalog; legacy rows cannot claim current service
+publication. Matrix editing reuses the existing audited editor and keeps inherited
+all-channel rows separate. Five page-specific modal bridges now use the shared
+Admin lifecycle. No economic rules, identities, migrations or deployment changed.
+See [Phase 3 behavior and verification limits](ADMIN-REDESIGN-PHASE-3.md).
+
+## Admin customer workflows Phase 2 — 2026-09-27
+
+Register is a compact eight-column directory; Customer Detail is the primary
+customer operational workspace, with bounded summaries and expandable evidence.
+Focused actions reuse existing modal methods, capabilities, reasons and intent IDs.
+Agreement review explains customer-only overrides; Developer Access reads existing
+API/MCP authorities. No business rules, routes, migrations or deployment changed.
+See [Phase 2 implementation and acceptance limits](ADMIN-REDESIGN-PHASE-2.md).
+
+## Admin redesign Phase 1 — 2026-09-27
+
+The Admin shell now groups existing pages and Operations sections into a control
+center, with section-aware navigation, a responsive RTL drawer and shared Bootstrap
+components. Dashboard queue counts reuse read-only Operations queries; billing
+authority and all mutation controls remain unchanged. No schema or deployment
+changes. See [route inventory and acceptance limits](ADMIN-REDESIGN-PHASE-1.md).
+
+## Admin usability and agreement controls — 2026-09-27
+
+Reasons now belong to action confirmations, manual billing forms open in separate
+modals, and validation failures are visible. Existing capabilities and financial
+intent identities remain authoritative. Admin 1 already has full local access.
+Plan entitlements expose enforced speech character limits; the missing customer
+limit helper is repaired with separate App/API resolution. Agreement allowance
+snapshots accept custom values; a nullable concurrency migration is prepared but
+**not applied**. Existing allocation/expiry authority is unchanged. See
+[implementation, limits and acceptance scope](ADMIN-CONTROL-CLEANUP.md).
+
+
+## Landing effective public visibility — 2026-09-27
+
+Landing Tool Pages badges, status filters and counts now use PublicProductCatalog's
+current/public family definitions instead of treating the editorial `is_active`
+flag as proof of publication. Public / Active requires an eligible active ToolAction
+and parent Tool plus enabled landing publication. Disabled covers current but
+unavailable families; Legacy / Not Public covers retired/unknown slugs regardless
+of raw flag. Direct Admin activation of legacy rows is rejected; editing remains.
+Current-family-only import preserves existing rows and cannot recreate retired
+products. Fresh capability/reason/audit requirements remain unchanged.
+
+The targeted Translation retirement migration was applied only to the verified
+local database after isolated tests: row 6 flag changed to false, audit event 12,
+all other landing data and timestamps retained. No production execution. See
+[PUBLIC-WEBSITE.md](PUBLIC-WEBSITE.md#admin-effective-visibility-follow-up--2026-09-27)
+for root cause, local snapshot, filter contracts and verification evidence.
+
+## Admin sign-in Turnstile parity — 2026-09-27
+
+Admin sign-in reuses the customer `turnstile-widget`, `ValidTurnstile` rule and
+`TurnstileVerifier`. Required challenge validation runs before Admin authentication;
+missing/invalid/expired challenges and verification failures deny the attempt.
+The challenge resets after validation, throttle and credential failures and on
+success. Existing Admin guard, active-user condition, eight-attempt/60-second
+throttle, remember option, CSRF, session regeneration and capability gates remain.
+The Admin guest sign-in route now uses the existing localization middleware so
+EN/AR/KU Admin messages use the shared verification keys on GET and Livewire updates.
+Raw verifier exception
+text is no longer logged; sanitized exception type replaces it.
+
+Configuration still uses `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` through
+`services.turnstile`; no keys or environment flags were changed. Like customer
+sign-in, localhost/development has no verification bypass and fails closed without
+valid configured verification. Isolated tests mock Cloudflare responses, including
+outages, and exercise actual signed Livewire login/CSRF/localization paths. Real
+browser challenge completion and deployment acceptance are separate; no deployment
+or external verification request was performed in this task.
+
+Verification: 48 final Admin sign-in/routing tests passed, plus 92 existing Admin
+P0/customer-entry regressions in the preceding run (140 distinct PHP tests total).
+The final run resolves the two initial locale failures by applying existing route
+localization. Four frontend localization checks, focused PHP syntax/Pint, Admin
+JSON parsing and whitespace checks passed. Fixtures use SQLite `:memory:`, array
+cache/session and mocked HTTP; no application database mutations occurred.
+
 ## Additional API tool projection — 2026-09-26
 
 ApiCatalog now supplies Zeta/Theta/Harakat as API variants, replacing Harakat's

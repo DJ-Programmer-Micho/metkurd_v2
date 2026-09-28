@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 
 class LandingPublicMetrics
 {
-    protected const CACHE_KEY = 'landing-public-metrics:v1';
+    protected const CACHE_KEY = 'landing-public-metrics:v2';
 
     protected const CACHE_TTL_MINUTES = 10;
 
@@ -18,23 +18,23 @@ class LandingPublicMetrics
     protected const METRIC_DEFINITIONS = [
         'generated_audio' => [
             'title' => 'Generated Audio',
-            'copy' => 'Finished TTS Apollo, TTS Delta, and CTTS Vector jobs',
-            'job_kinds' => ['tts', 'ftts', 'clone_tts'],
+            'copy' => 'Completed speech-generation jobs',
+            'job_kinds' => ['tts', 'ftts', 'clone_tts', 'omni_tts', 'clone_xomni', 'vector-v2', 'omni_tts_batch', 'omni_clone_batch'],
         ],
         'transcribed' => [
             'title' => 'Transcribed',
-            'copy' => 'Finished NEO and LEO transcription jobs',
-            'job_kinds' => ['wasr', 'qasr'],
+            'copy' => 'Completed transcription and caption jobs',
+            'job_kinds' => ['wasr', 'qasr', 'leo', 'caption'],
         ],
         'ocr_pages' => [
-            'title' => 'OCR Pages',
-            'copy' => 'Finished OCR jobs',
+            'title' => 'OCR Documents',
+            'copy' => 'Completed document jobs, not page totals',
             'job_kinds' => ['ocr'],
         ],
-        'translated' => [
-            'title' => 'Translated',
-            'copy' => 'Finished translation jobs',
-            'job_kinds' => ['tran'],
+        'music_separation' => [
+            'title' => 'Music Separation',
+            'copy' => 'Completed separation jobs',
+            'job_kinds' => ['stem'],
         ],
     ];
 
@@ -77,9 +77,7 @@ class LandingPublicMetrics
 
             return $counts;
         } catch (\Throwable $e) {
-            Log::warning('Landing public metrics query failed.', [
-                'message' => $e->getMessage(),
-            ]);
+            Log::warning('Landing public metrics query failed.', ['type' => class_basename($e)]);
 
             return $this->emptyCounts();
         }
@@ -115,7 +113,9 @@ class LandingPublicMetrics
             ? (string) floor($scaled)
             : number_format(floor($scaled * 10) / 10, 1, '.', '');
 
-        $display = rtrim(rtrim($display, '0'), '.');
+        if (str_contains($display, '.')) {
+            $display = rtrim(rtrim($display, '0'), '.');
+        }
 
         return $display.$unit;
     }

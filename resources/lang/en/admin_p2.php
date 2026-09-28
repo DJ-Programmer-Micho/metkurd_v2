@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'mcp' => 'MCP connections',
     'operations' => 'Operations',
     'read_notice' => 'Local records only. Provider completion alone does not confirm a saved result.',
     'wallet_notice' => 'API holds are already deducted from the available wallet balance. Reserved credits are not final spend.',
@@ -183,7 +184,7 @@ return [
     'queued' => 'Queued',
     'running' => 'Running',
     'saving' => 'Saving locally',
-    'done' => 'Done',
+    'done' => 'Completed',
     'failed' => 'Failed',
     'cancelled' => 'Cancelled',
     'deleting' => 'Deleting',

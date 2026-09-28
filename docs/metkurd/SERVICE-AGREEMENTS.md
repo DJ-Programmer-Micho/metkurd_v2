@@ -1,5 +1,16 @@
 # Dated cash / external service agreements
 
+## Agreement-level controls — 2026-09-27
+
+The Admin agreement modal now accepts custom monthly App/API credits, defaulting
+to plan snapshots when blank, plus configured concurrency (new default five).
+A separate audited adjustment modal affects future unallocated cycles and current
+active-agreement concurrency without rewriting wallets or prior allocation history.
+Normal plan limits stay unchanged. The nullable concurrency migration is prepared,
+not applied to the application database. Read [the control follow-up](ADMIN-CONTROL-CLEANUP.md)
+for precise defaults, schema gating, queue behavior and verification limits.
+
+
 ## Effective plan and Pro API follow-up — 2026-09-14
 
 Current service-plan reads now share CustomerBillingStateService and the normalized

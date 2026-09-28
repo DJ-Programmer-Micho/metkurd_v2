@@ -16,7 +16,7 @@ class extends Component
 };
 ?>
 
-<x-slot:title>{{ __('Payment Methods') }} | {{ __('MET KURD') }}</x-slot:title>
+<x-slot:title>{{ __('admin_shell.methods') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
@@ -26,10 +26,10 @@ class extends Component
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
-                    <h4 class="mb-sm-0">{{ __('Payment Methods') }}</h4>
+                    <h4 class="mb-sm-0">{{ __('admin_shell.methods') }}</h4>
                     <p class="text-muted mb-0">{{ __('Manage checkout visibility, order, supported purchase types, currencies, and fee rules from one central catalog.') }}</p>
                 </div>
-                <div class="page-title-right d-flex align-items-center gap-2">
+                <div class="page-title-right d-flex flex-wrap align-items-center gap-2">
                     <button type="button" class="btn btn-soft-secondary" wire:click="resetFilters">{{ __('Clear Filters') }}</button>
                     <button type="button" class="btn btn-primary" wire:click="openCreateMethodModal" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('New Payment Method') }}</button>
                 </div>
@@ -180,7 +180,7 @@ class extends Component
                                     <div class="d-flex flex-column gap-2">
                                         <div class="d-flex gap-2 align-items-center">
                                             <div class="form-check form-switch">
-                                                <input class="form-check-input" type="checkbox" role="switch" {{ $method->is_active ? 'checked' : '' }} wire:click="toggleMethodStatus({{ $method->id }})">
+                                                <input class="form-check-input" type="checkbox" role="switch" aria-label="{{ __('Status') }}" {{ $method->is_active ? 'checked' : '' }} wire:click="toggleMethodStatus({{ $method->id }})">
                                             </div>
                                             <span class="badge {{ $method->is_active ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning' }}">
                                                 {{ $method->is_active ? __('Active') : __('Inactive') }}
@@ -188,7 +188,7 @@ class extends Component
                                         </div>
                                         <div class="d-flex gap-2 align-items-center">
                                             <div class="form-check form-switch">
-                                                <input class="form-check-input" type="checkbox" role="switch" {{ $method->is_visible ? 'checked' : '' }} wire:click="toggleMethodVisibility({{ $method->id }})">
+                                                <input class="form-check-input" type="checkbox" role="switch" aria-label="{{ __('Visibility') }}" {{ $method->is_visible ? 'checked' : '' }} wire:click="toggleMethodVisibility({{ $method->id }})">
                                             </div>
                                             <span class="badge {{ $method->is_visible ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary' }}">
                                                 {{ $method->is_visible ? __('Visible') : __('Hidden') }}
@@ -231,6 +231,7 @@ class extends Component
 <fieldset @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>
                     @csrf
                     <div class="modal-body">
+                        <x-admin-validation-summary />
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-methods-3">{{ __('Code') }}</label>
@@ -329,6 +330,7 @@ class extends Component
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetDeleteState"></button>
                 </div>
                 <div class="modal-body">
+                        <x-admin-validation-summary />
                     <p class="mb-0">{{ __('Delete') }} <span class="fw-semibold">{{ $deleteMethodLabel }}</span>? {{ __('Only unused methods should be deleted. Otherwise deactivate or hide them.') }}</p>
                 </div>
                 <div class="modal-footer">
@@ -339,77 +341,5 @@ class extends Component
         </div>
     </div>
 
-    @push('scripts')
-        @once
-            <script>
-                (() => {
-                    if (window.__PAYMENT_METHODS_MODAL_EVENTS__) {
-                        return;
-                    }
 
-                    window.__PAYMENT_METHODS_MODAL_EVENTS__ = true;
-
-                    const modalIds = ['paymentMethodModal', 'paymentMethodDeleteModal'];
-
-                    const cleanupModalState = () => {
-                        if (typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        modalIds.forEach((id) => {
-                            const element = document.getElementById(id);
-
-                            if (!element) {
-                                return;
-                            }
-
-                            const instance = bootstrap.Modal.getInstance(element);
-
-                            if (instance) {
-                                instance.hide();
-                                instance.dispose();
-                            }
-
-                            element.classList.remove('show');
-                            element.style.display = 'none';
-                            element.removeAttribute('aria-modal');
-                            element.removeAttribute('role');
-                        });
-
-                        document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.removeProperty('padding-right');
-                        document.body.style.removeProperty('overflow');
-                    };
-
-                    const withModal = (id, callback) => {
-                        if (!id || typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById(id);
-
-                        if (!element) {
-                            return;
-                        }
-
-                        callback(bootstrap.Modal.getOrCreateInstance(element));
-                    };
-
-                    window.addEventListener('payments-methods:modal-show', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.show());
-                    });
-
-                    window.addEventListener('payments-methods:modal-hide', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.hide());
-                    });
-
-                    document.addEventListener('livewire:navigating', cleanupModalState);
-                    document.addEventListener('livewire:navigated', cleanupModalState);
-
-                    cleanupModalState();
-                })();
-            </script>
-        @endonce
-    @endpush
 </div>

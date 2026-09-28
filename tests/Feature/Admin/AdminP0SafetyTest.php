@@ -448,7 +448,9 @@ it('provisions only explicit supported capabilities through the trusted console'
 
 it('denies an inactive email login with the correct password', function () {
     $admin = p0Admin(['admin.finance'], 0);
+    $this->mock(\App\Services\Security\TurnstileVerifier::class)->shouldReceive('verify')->once()->andReturn(['success' => true]);
     Livewire::test('admin::auth.signin-one')->set('login', $admin->email)->set('password', 'test-password')
+        ->set('cfTurnstileResponse', 'fixture-challenge')
         ->call('signIn')->assertHasErrors(['login']);
     expect(auth('admin')->check())->toBeFalse();
 });

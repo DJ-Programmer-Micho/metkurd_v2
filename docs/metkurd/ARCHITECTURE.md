@@ -1,5 +1,15 @@
 # MetKurd architecture
 
+## Admin Developer read model — 2026-09-28
+
+`AdminDeveloperWorkspace` composes existing `AdminOperations` queries into bounded,
+allowlisted API/MCP/ML/key/reservation/result metadata on the existing Operations
+routes. Persisted MCP connection identity distinguishes MCP from API while both
+retain the API wallet. Typed customer-scoped evidence links and grouped reads do
+not invoke runtime submission/result serializers, providers, storage or financial
+recovery. MlJob and reservation authorities are unchanged. See
+[Admin Phase 7](ADMIN-REDESIGN-PHASE-7.md) for privacy and acceptance boundaries.
+
 ## Customer application entry and V1 retirement gate — 2026-09-26
 
 `CustomerAppDestination` owns customer navigation after password/social login,

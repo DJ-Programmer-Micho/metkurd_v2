@@ -1,5 +1,131 @@
 # Architectural and behavioral decisions
 
+## 2026-09-28 — Final Admin consolidation
+
+Retained the existing route and authority model while consolidating the eight remaining
+page-specific modal bridges into the shared Admin lifecycle. Audit status is projected
+without hydrating an operation per row; voice availability is batched per page through
+the unchanged catalog authority. Navigation, titles, terminal states and legacy labels
+are aligned. See [final inventory and acceptance](ADMIN-FINAL-CONSOLIDATION.md).
+
+## 2026-09-28 — Admin Developer metadata and origin trace, Phase 7
+
+Added a read-only projection for Developer/ML operations to existing localized
+Operations routes. Explicit persisted MCP identity, owned typed traces, grouped
+result evidence and separate processing/reservation presentation replace generic
+metadata rows. No job, billing, OAuth, API or feature-gate policy changes. Native
+MySQL and full populated external-client browser acceptance remain separate.
+See [Phase 7](ADMIN-REDESIGN-PHASE-7.md).
+
+## 2026-09-28 — Admin acceptance projection boundary, Phase 5
+
+Replaced the Customer Detail summary's ineffective `first(columns)` restriction
+with an explicit ten-field select and no eager loads. This keeps the summary narrow
+even when Operations has a broader payment selection. Accessibility fixes stay in
+the shared Admin lifecycle; policy, data and schema are unchanged. Native MySQL
+and browser acceptance are still open. See [Phase 5](ADMIN-REDESIGN-PHASE-5.md).
+
+## 2026-09-27 — Operational billing evidence, Phase 4
+
+Added read-only billing presentation and review filters to existing Operations.
+Subscription classification consumes existing authority, and financial era retains
+the committed reporting boundary. Selected records expose bounded, permission-gated
+events/allocations. Payment traces now include matching operation audits; corrections
+reuse existing customer-scoped modals and immutable audited actions. No policy,
+financial data, provider processing or schema changes. See [Phase 4](ADMIN-REDESIGN-PHASE-4.md).
+
+## 2026-09-27 — Admin service controls, Phase 3
+
+Added read-only service/plan/voice projections and an App/API entitlement matrix.
+Runtime resolvers remain authoritative; public visibility comes from the existing
+PublicProductCatalog, independent of editorial rows. Matrix edits prefill the
+existing channel-specific editor without changing inherited decisions or customer
+overrides. Service and plan modals now share the Admin lifecycle; pricing and
+business rules are unchanged. See [Phase 3](ADMIN-REDESIGN-PHASE-3.md).
+
+## 2026-09-27 — Admin customer workspace, Phase 2
+
+Customer Detail now owns the customer operational summary; Register retains the
+directory and focused actions. A bounded local projection composes existing billing,
+API/MCP, concurrency and sanitized Operations reads without new authority or external
+calls. Existing action modals retain capabilities, reasons and financial intent IDs;
+agreement review makes customer-only overrides explicit. No routes, business policy,
+migrations or rollout flags changed. See [Phase 2](ADMIN-REDESIGN-PHASE-2.md).
+
+## 2026-09-27 — OCR V2 page-selection submission correction
+
+Preserve `all` and validated compact ranges between InputBoundary and OCR's
+independent submission probe, avoiding a generated page list that exceeds the
+255-character range-input limit. Custom ranges are required only in custom mode;
+the workspace clears stale errors on mode changes and displays validation beside
+Scan Document. Expose the existing TXT selection, retaining TXT + DOCX defaults,
+owned exports, actual-page billing and durable duplicate protection. Worker/API
+contracts, prices and page limits are unchanged. See [OCR service](SERVICES.md).
+The new isolated workspace suite covers 174 verified pages, EN/AR/KU errors,
+submission/queue events, billing/replay and all five export downloads using mocked
+page probing and provider responses; it is not live worker acceptance.
+Verification: 20 new workspace tests, 61 existing OCR/durable-upload/queue tests,
+8 OCR API regressions and 18 navigation/queue/API-example frontend tests passed.
+Focused PHP syntax and Pint checks passed. Interactive browser acceptance remains
+separate: the available customer session redirected to sign-in.
+
+## 2026-09-27 — Admin control-center shell, Phase 1
+
+Reorganized existing Admin routes into customer/service/billing/developer/storage
+workflows and a collapsed technical group. The shared Admin lifecycle now owns
+sidebar behavior instead of the template menu-cloning script. Dashboard presentation
+retains financial authority and adds existing local review-queue counts. No new routes,
+business actions, capabilities, feature flags or migrations. See
+[Phase 1 inventory and verification](ADMIN-REDESIGN-PHASE-1.md).
+
+## Admin controls and agreement-specific allowances — 2026-09-27
+
+Admin browsing no longer needs a global reason input; audited confirmations collect
+it for each action. Manual financial actions use distinct modals. Existing
+entitlements now expose and enforce their speech character limits with channel-aware
+resolution (the previous missing helper always yielded 400). External agreement
+snapshots support custom App/API allowances and an optional concurrency override
+through PlanConcurrencyService. New agreement defaults are five slots; existing
+null overrides keep plan limits. Adjustment changes future unallocated allowances,
+not prior credits/history. One additive migration remains unapplied. No production,
+plan-price, permission or financial data changes. See ADMIN-CONTROL-CLEANUP.md.
+
+
+## Landing Admin status matches public availability — 2026-09-27
+
+Admin now distinguishes effective Public / Active, Disabled and Legacy / Not Public
+using the existing public catalog; raw CMS publication flags cannot label retired
+products public. Current-family definitions also bound default import and legacy
+activation guards. A narrow idempotent, audited data migration disables the retained
+Translation landing row without changing editorial/history fields. Applied only to
+the verified local DB (row 6, audit 12); no production deployment or legacy deletion.
+See PUBLIC-WEBSITE.md for the data preservation and test record.
+
+## Admin sign-in shares customer Turnstile protection — 2026-09-27
+
+Admin login now requires the existing shared Turnstile widget/rule/verifier before
+authentication, with challenge reset and localized validation errors. Admin guard,
+throttling, CSRF, session regeneration, active-account and capability checks remain
+unchanged. Existing locale middleware now also covers the Admin sign-in route.
+Shared verifier logs use exception type instead of raw provider exception
+messages. No new CAPTCHA/configuration, local bypass, keys or deployment changes.
+See [ADMIN-AUDIT.md](ADMIN-AUDIT.md) for behavior and verification scope.
+
+## Public V2 content and discovery authority — 2026-09-26
+
+Public product availability now projects current V2 definitions onto active
+Tool/ToolAction records, with a cached request-reused catalog and explicit family
+publication state. Curated EN/AR/KU product/SEO copy replaces stale legacy marketing;
+existing landing design, artwork and players remain. Pricing amounts are unchanged;
+public feature bullets use current channel entitlements and separately gated API/MCP
+access. Music Separation replaces Translation in completed-job metrics; OCR units
+are correctly labelled as documents. Demo readers support multiple ordered examples
+bound to active current products without relabeling legacy audio. Dynamic sitemap
+and llms routes replace static files; private surfaces gain indexing controls without
+blocking rendering assets. No flags, economic data, workers or deployment changed.
+See [PUBLIC-WEBSITE.md](PUBLIC-WEBSITE.md) for source ownership, Admin follow-up,
+cache/hosting behavior and verification limits.
+
 ## V2-first customer entry with independent V1 gate — 2026-09-26
 
 Added `FEATURE_APP_V1` (default true) and one customer destination resolver.

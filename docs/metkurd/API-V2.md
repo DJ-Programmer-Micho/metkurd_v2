@@ -476,7 +476,7 @@ Model and STEM-mode mapping is the API facade's allowlisted responsibility.
 
 | Input | Enforced contract |
 |---|---|
-| Apollo/Vector text | Required, trimmed, 400-character current fallback limit. Character pricing derives from accepted text; voice lookup is customer/plan-scoped. |
+| Apollo/Vector text | Required, trimmed, API-channel entitlement `max_chars_per_submit` limit; 400-character fallback when not configured. Character pricing derives from accepted text; voice lookup is customer/plan-scoped. |
 | Speech model | 1.5 or 2.0, default 2.0. |
 | Language | `ckb`, `ar`, `en`, default `ckb`; applies to speech/clone/Leo/Caption. UI Kurdish locale is `ku`. |
 | Intelligent | Boolean, default false; applied to Leo/Caption/OCR. Multipart examples use 0/1. |

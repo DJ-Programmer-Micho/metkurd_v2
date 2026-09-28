@@ -87,7 +87,7 @@ it('shows the current database app and api credits on the admin payment plans pa
     Livewire::test('admin::pages.payments.adm-payments-plans')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->assertSee('123,456')
         ->assertSee('654,321')
-        ->assertSee('Legacy monthly credits stay synchronized.');
+        ->assertSee(__('admin_service.plan_defaults'));
 });
 
 it('updates plan credit fields, refreshes the table immediately, and clears landing pricing cache', function () {

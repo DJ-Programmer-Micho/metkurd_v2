@@ -165,6 +165,7 @@ class extends Component
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetSocialForm"></button>
                     </div>
                     <div class="modal-body">
+                        <x-admin-validation-summary />
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label">{{ __('Platform Name') }}</label>
@@ -213,6 +214,7 @@ class extends Component
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetSocialDeleteState"></button>
                 </div>
                 <div class="modal-body">
+                        <x-admin-validation-summary />
                     <p class="mb-0">{{ __('Delete ":platform"? This cannot be undone.', ['platform' => $socialLinkDeleteLabel]) }}</p>
                 </div>
                 <div class="modal-footer">
@@ -223,75 +225,6 @@ class extends Component
         </div>
     </div>
 
-    @push('scripts')
-        @once
-            <script data-navigate-once>
-                (() => {
-                    if (window.__LANDING_CONTACT_MODAL_EVENTS__) {
-                        return;
-                    }
 
-                    window.__LANDING_CONTACT_MODAL_EVENTS__ = true;
-
-                    const modalIds = ['landingSocialLinkModal', 'landingSocialDeleteModal'];
-
-                    const cleanupModalState = () => {
-                        if (typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        modalIds.forEach((id) => {
-                            const element = document.getElementById(id);
-                            if (!element) {
-                                return;
-                            }
-
-                            const instance = bootstrap.Modal.getInstance(element);
-                            if (instance) {
-                                instance.hide();
-                                instance.dispose();
-                            }
-
-                            element.classList.remove('show');
-                            element.style.display = 'none';
-                            element.removeAttribute('aria-modal');
-                            element.removeAttribute('role');
-                        });
-
-                        document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.removeProperty('padding-right');
-                        document.body.style.removeProperty('overflow');
-                    };
-
-                    const withModal = (id, callback) => {
-                        if (!id || typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById(id);
-                        if (!element) {
-                            return;
-                        }
-
-                        callback(bootstrap.Modal.getOrCreateInstance(element));
-                    };
-
-                    window.addEventListener('landing-contact:modal-show', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.show());
-                    });
-
-                    window.addEventListener('landing-contact:modal-hide', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.hide());
-                    });
-
-                    document.addEventListener('livewire:navigating', cleanupModalState);
-                    document.addEventListener('livewire:navigated', cleanupModalState);
-
-                    cleanupModalState();
-                })();
-            </script>
-        @endonce
-    @endpush
 </div>
 

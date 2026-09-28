@@ -21,6 +21,7 @@ use App\Models\PlanEntitlement;
 use App\Services\CustomerApi\CustomerApiAccessService;
 use App\Services\CustomerApi\V2\ApiCatalog;
 use App\Support\Admin\AdminAccess;
+use App\Support\Admin\AdminBillingWorkspace;
 use App\Support\Admin\AdminData;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -29,7 +30,7 @@ use Illuminate\Support\Facades\Gate;
 /** Local evidence only. Never call serializers, billing repair, storage or provider services here. */
 class AdminOperations
 {
-    public const SECTIONS = ['jobs', 'review', 'api', 'payments', 'ledger', 'reservations', 'files', 'subscriptions', 'storage_subscriptions', 'orders', 'keys', 'audit', 'entitlements'];
+    public const SECTIONS = ['jobs', 'review', 'api', 'mcp', 'payments', 'ledger', 'reservations', 'files', 'subscriptions', 'storage_subscriptions', 'orders', 'keys', 'audit', 'entitlements'];
 
     public const QUEUES = ['provider_submission_unknown', 'refund_pending', 'delete_failed', 'stuck', 'unfinalized', 'reservation_review', 'payment_review'];
 
@@ -122,8 +123,10 @@ class AdminOperations
                 'requests_per_minute' => $config['requests_per_minute'], 'concurrent_jobs' => $config['concurrent_jobs'],
                 'active_jobs' => ApiJob::where('customer_id', $id)->whereIn('status', ['accepted', 'queued', 'processing'])->count()]];
         $blocks['identity']['status'] = (int) $c->status === 1 ? 'active' : 'inactive';
+        $mcp = app(\App\Services\Mcp\CustomerMcpAccessService::class);
+        $blocks['mcp_access'] = ['mcp_enabled' => (bool) config('mcp.enabled'), 'mcp_eligible' => $mcp->eligible($c), 'scopes' => $mcp->scopes($c)];
         if ($agreement = $state['agreement'] ?? $state['pending_agreement']) {
-            $blocks['plan']['agreement'] = $this->fields($agreement, ['id', 'reference', 'status', 'starts_at', 'ends_at', 'subscription_id']);
+            $blocks['plan']['agreement'] = $this->fields($agreement, ['id', 'reference', 'status', 'starts_at', 'ends_at', 'subscription_id', 'app_monthly_credits', 'api_monthly_credits', 'concurrent_jobs_limit']);
         }
         if ($state['externally_managed']) {
             $blocks['plan']['payment_id'] = __('agreement.external');
@@ -149,6 +152,9 @@ class AdminOperations
     public function query(string $section, array $f = []): Builder
     {
         AdminAccess::authorize('admin.read');
+        if ($section === 'mcp') {
+            return app(\App\Support\Admin\AdminDeveloperWorkspace::class)->query($section, $f);
+        }
         abort_unless(in_array($section, self::SECTIONS, true), 404);
         $queue = $f['queue'] ?? '';
         if ($section === 'review') {
@@ -160,16 +166,21 @@ class AdminOperations
             'jobs' => MlJob::with(['toolAction:id,full_code', 'customer:id,username'])
                 ->select(['id', 'customer_id', 'tool_action_id', 'status', 'created_at', 'started_at', 'finished_at', 'failure_stage', 'model_key', 'provider', 'provider_job_id', 'endpoint_key', 'credits_charged', 'charge_reference', 'refund_reference', 'refunded_at'])
                 ->selectRaw("CASE WHEN JSON_EXTRACT(output, '$.provider_success') = true THEN 1 ELSE 0 END AS recorded_provider_success")
+                ->selectRaw("CASE WHEN JSON_EXTRACT(input, '$.wallet_type') = 'api' THEN 1 ELSE 0 END AS recorded_api_wallet")
                 ->selectRaw("CASE WHEN JSON_EXTRACT(output, '$.text') IS NOT NULL AND JSON_EXTRACT(output, '$.text') NOT IN ('', 'null', '\"\"') THEN 1 ELSE 0 END AS recorded_inline_result"),
-            'api' => ApiJob::query(), 'payments' => Payment::query(), 'ledger' => CreditLedger::query(),
+            'api' => ApiJob::query(), 'payments' => Payment::with('customer:id,username')->select('payments.*')
+                ->selectRaw('('.AdminBillingWorkspace::stateSql().') as billing_state')
+                ->selectRaw('('.AdminBillingWorkspace::caseSql().') as billing_case'), 'ledger' => CreditLedger::query(),
             'reservations' => ApiCreditReservation::query(), 'files' => CustomerFile::query(),
-            'subscriptions' => CustomerServiceSubscription::with(['servicePlan:id,name', 'previousServicePlan:id,name']),
-            'storage_subscriptions' => CustomerStorageSubscription::with('storagePlan:id,name'),
-            'orders' => CreditOrder::query(), 'keys' => CustomerApiKey::query()->select(['id', 'customer_id', 'name', 'key_prefix', 'scopes', 'status', 'created_at', 'last_used_at', 'revoked_at']),
-            'audit' => AdminAuditEvent::query(), 'entitlements' => PlanEntitlement::with('toolAction:id,full_code'),
+            'subscriptions' => CustomerServiceSubscription::with(['servicePlan:id,name', 'previousServicePlan:id,name', 'customer:id,username', 'payment:id,customer_id,created_at']),
+            'storage_subscriptions' => CustomerStorageSubscription::with(['storagePlan:id,name', 'payment:id,customer_id,created_at']),
+            'orders' => CreditOrder::with(['customer:id,username', 'payment:id,customer_id,created_at']), 'keys' => CustomerApiKey::query()->select(['id', 'customer_id', 'name', 'key_prefix', 'scopes', 'status', 'created_at', 'last_used_at', 'revoked_at']),
+            'audit' => AdminAuditEvent::query()->select('admin_audit_events.*')->addSelect([
+                'recorded_operation_status' => AdminOperation::select('status')->whereColumn('id', 'admin_audit_events.operation_id')->limit(1),
+            ]), 'entitlements' => PlanEntitlement::with('toolAction:id,full_code'),
         };
         if (in_array($section, ['payments', 'orders'], true)) {
-            if (($f['financialEra'] ?? 'current') === 'legacy' && $queue === '') {
+            if (($f['financialEra'] ?? 'current') === 'legacy') {
                 $boundary = app(\App\Services\Billing\BillingReportingBoundary::class)->current();
                 if ($boundary) {
                     $table = $section === 'payments' ? 'payments' : 'credit_orders';
@@ -255,6 +266,22 @@ class AdminOperations
                     ->where(fn ($resolution) => $resolution->whereNull('meta->review_resolution->closed_at')->orWhere('meta->review_resolution->closed_at', '')))
                     ->orWhere('meta->provider_cancellation->provider_cancel_pending', true));
             }
+            if (in_array($f['billingState'] ?? '', AdminBillingWorkspace::STATES, true)) {
+                $q->whereRaw('('.AdminBillingWorkspace::stateSql().') = ?', [$f['billingState']]);
+            }
+            if (in_array($f['billingCase'] ?? '', AdminBillingWorkspace::CASES, true)) {
+                $q->whereRaw('('.AdminBillingWorkspace::caseSql().') = ?', [$f['billingCase']]);
+            }
+            if (($f['financialEra'] ?? 'current') !== 'legacy') {
+                $q->orderByRaw('CASE WHEN ('.AdminBillingWorkspace::stateSql().") = 'needs_review' THEN 0 WHEN (".AdminBillingWorkspace::stateSql().") = 'processing' THEN 1 ELSE 2 END");
+            }
+        }
+        if (in_array($section, AdminBillingWorkspace::SECTIONS, true) && ! empty($f['billingRecord'])) {
+            $q->whereKey($f['billingRecord']);
+        }
+        if (in_array($section, ['subscriptions', 'storage_subscriptions'], true) && in_array($f['subscriptionAccess'] ?? '', ['effective', 'not_effective'], true)) {
+            $effective = $q->getModel()->newQuery()->effectiveAt()->selectRaw('MAX(id)')->groupBy('customer_id');
+            $q->whereIn('id', $effective, not: $f['subscriptionAccess'] === 'not_effective');
         }
         if ($section === 'reservations' && $queue === 'reservation_review') {
             $q->where('status', 'reserved')->where(fn ($q) => $q->where('created_at', '<', now()->subHours(2))
@@ -320,7 +347,8 @@ class AdminOperations
         if ($section === 'payments') {
             $q->where('id', $id);
         } elseif ($section === 'audit') {
-            $q->where('target_type', Payment::class)->where('target_id', $id);
+            $q->where(fn ($audit) => $audit->where(fn ($direct) => $direct->where('target_type', Payment::class)->where('target_id', $id))
+                ->orWhereIn('operation_id', AdminOperation::where('customer_id', $p->customer_id)->where('requested->payment_id', (int) $id)->select('id')));
         } elseif ($section === 'ledger') {
             $q->where(function ($q) use ($id) {
                 foreach ([Payment::class => Payment::whereKey($id)->select('id'), CreditOrder::class => CreditOrder::where('payment_id', $id)->select('id'), CustomerServiceSubscription::class => CustomerServiceSubscription::where('payment_id', $id)->select('id'), CustomerStorageSubscription::class => CustomerStorageSubscription::where('payment_id', $id)->select('id')] as $type => $ids) {
@@ -338,7 +366,7 @@ class AdminOperations
         $q->where(function ($q) use ($id) {
             $q->whereIn('operation_id', AdminOperation::where('customer_id', $id)->select('id'))
                 ->orWhere(fn ($q) => $q->where('target_type', Customer::class)->where('target_id', $id));
-            foreach ([Payment::class, MlJob::class, CreditOrder::class, CustomerServiceSubscription::class, CustomerStorageSubscription::class] as $type) {
+            foreach ([Payment::class, MlJob::class, ApiJob::class, ApiCreditReservation::class, CustomerApiKey::class, \App\Models\CustomerMcpConnection::class, CustomerFile::class, CreditOrder::class, CustomerServiceSubscription::class, CustomerStorageSubscription::class] as $type) {
                 $q->orWhere(fn ($q) => $q->where('target_type', $type)->whereIn('target_id', $type::where('customer_id', $id)->select('id')));
             }
         });
@@ -368,14 +396,15 @@ class AdminOperations
 
     private function job(MlJob $j): array
     {
-        $api = ApiJob::where('customer_id', $j->customer_id)->where('ml_job_id', $j->id)->first(['id', 'status']);
+        $api = ApiJob::where('customer_id', $j->customer_id)->where('ml_job_id', $j->id)->select(['id', 'status'])
+            ->selectRaw("JSON_EXTRACT(meta, '$.mcp_connection_id') as origin_connection")->first();
         $action = $j->toolAction?->full_code;
         $variant = collect(app(ApiCatalog::class)->variants())->firstWhere('action', $action);
         $files = $this->query('files', ['job' => $j->id]);
         $resultCount = (clone $files)->whereIn('purpose', ['render', 'transcription', 'caption'])->where('status', 'active')->whereNull('deleted_at')->count();
         $row = $this->fields($j, ['id', 'customer_id', 'status', 'created_at', 'started_at', 'finished_at', 'failure_stage'])
             + ['customer' => $j->customer?->username, 'family' => $variant['service'] ?? 'legacy', 'model' => $variant['tool']['name'] ?? $j->model_key, 'model_key' => $variant['slug'] ?? $j->model_key,
-                'tool_action' => $action, 'channel' => $api ? 'api' : 'app', 'api_job_id' => $api?->id,
+                'tool_action' => $action, 'channel' => $api ? ($api->origin_connection && $api->origin_connection !== 'null' ? 'mcp' : 'api') : ($j->recorded_api_wallet ? 'api' : 'app'), 'api_job_id' => $api?->id,
                 'provider' => $j->provider, 'provider_job_id' => $j->provider_job_id, 'endpoint_key' => $j->endpoint_key,
                 'provider_status' => ($j->recorded_provider_success ?? (data_get($j->output, 'provider_success') === true)) ? 'provider_success_recorded' : 'not_recorded',
                 'persisted_result' => $j->status === 'done' && ($resultCount > 0 || ($j->recorded_inline_result ?? filled(data_get($j->output, 'text')))) ? 'persisted' : 'not_confirmed',
@@ -479,12 +508,14 @@ class AdminOperations
 
     private function audit(AdminAuditEvent $e): array
     {
-        $operation = $e->operation_id ? AdminOperation::find($e->operation_id) : null;
+        $operationStatus = array_key_exists('recorded_operation_status', $e->getAttributes())
+            ? $e->recorded_operation_status
+            : ($e->operation_id ? AdminOperation::whereKey($e->operation_id)->value('status') : null);
         $keys = ['status', 'is_active', 'customer_id', 'payment_id', 'service_plan_id', 'storage_plan_id', 'credits_amount', 'balance_credits', 'subscription_balance_credits', 'addon_balance_credits'];
 
         return $this->fields($e, ['id', 'created_at', 'admin_id', 'action', 'target_type', 'target_id', 'reason', 'operation_id'])
             + ['outcome' => str_ends_with($e->action, '.failed') ? 'failed' : ($e->target_type === AdminOperation::class ? 'completed' : 'not_recorded'),
-                'operation_status' => $operation?->status, 'before_state' => array_intersect_key($e->before_state ?? [], array_flip($keys)),
+                'operation_status' => $operationStatus, 'before_state' => array_intersect_key($e->before_state ?? [], array_flip($keys)),
                 'after_state' => array_intersect_key($e->after_state ?? [], array_flip($keys))];
     }
 

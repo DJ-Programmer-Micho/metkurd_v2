@@ -21,7 +21,7 @@
     <meta name="publisher" content="MET IRAQ">
     <meta name="mobile-web-app-title" content="Met Kurd AI">
     <meta name="author" content="Michel Mikhael">
-    <meta name="robots" content="index, follow">
+    <meta name="robots" content="noindex, nofollow">
 
     <link rel="shortcut icon" href="{{ app('logo_1024_tran') }}">
 
@@ -42,7 +42,7 @@
     <style>.ar-shift{direction:rtl;text-align:right;}</style>
 
     {{-- keep layout.js here if it only sets html data-attributes --}}
-    <script src="{{ asset('app/js/layout.js') }}"></script>
+    {{-- Admin owns its fixed shell; customer/template layout preferences do not apply. --}}
 
     {{-- FontAwesome (ok) --}}
     {{-- <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/js/all.min.js"
@@ -51,18 +51,26 @@
 </head>
 
 <body class="admin-shell">
-    <a class="admin-skip btn btn-primary" href="#admin-main">{{ __('admin_p3.skip') }}</a>
-    <span hidden data-admin-ui data-pagination="{{ __('Pagination Navigation') }}" data-confirm="{{ __('admin_p3.confirm') }}" data-cancel="{{ __('Cancel') }}" data-close="{{ __('Close') }}" data-failed="{{ __('admin_p0.request_failed') }}"></span>
+    <a class="admin-skip btn btn-primary" data-admin-drawer-background href="#admin-main">{{ __('admin_p3.skip') }}</a>
+    <span hidden data-admin-ui data-reason="{{ __('admin_p0.change_reason') }}" data-reason-required="{{ __('admin_cleanup.reason_required') }}" data-forbidden="{{ __('admin_p3.forbidden') }}" data-pagination="{{ __('Pagination Navigation') }}" data-confirm="{{ __('admin_p3.confirm') }}" data-cancel="{{ __('Cancel') }}" data-close="{{ __('Close') }}" data-failed="{{ __('admin_p0.request_failed') }}" data-table-region="{{ __('admin_shell.table_region') }}"></span>
     @include('admin.partials.header-one')
 
     @if (view()->exists('admin.partials.navbar-one'))
         @include('admin.partials.navbar-one')
     @endif
 
-    <div class="vertical-overlay"></div>
+    <button type="button" class="admin-sidebar-overlay" data-admin-sidebar-close tabindex="-1" aria-label="{{ __('Close') }}"></button>
 
-    <div class="main-content">
+    <div class="main-content" data-admin-drawer-background>
         <main id="admin-main" class="page-content" tabindex="-1">
+        @php
+            $adminContext = \App\Support\Admin\AdminNavigation::context();
+        @endphp
+        <nav class="admin-breadcrumb" aria-label="{{ __('admin_shell.breadcrumb') }}">
+            <a wire:navigate href="{{ route('admin.home', ['locale' => app()->getLocale()]) }}">{{ __('admin_shell.brand') }}</a>
+            <span aria-hidden="true">/</span><span data-admin-page-group>{{ __('admin_shell.'.$adminContext['group']) }}</span>
+            <span aria-hidden="true">/</span><span aria-current="page" data-admin-page-context>{{ __('admin_shell.'.$adminContext['key']) }}</span>
+        </nav>
         {{ $slot }}
         </main>
         @if (view()->exists('admin.partials.footer-one'))
@@ -77,11 +85,11 @@
     <script data-navigate-once src="{{ asset('admin/libs/feather-icons/feather.min.js') }}"></script>
     <script data-navigate-once src="{{ asset('admin/js/pages/plugins/lord-icon-2.1.0.js') }}"></script>
 
-    <script src="{{ asset('app/libs/swiper/swiper-bundle.min.js') }}"></script>
+    <script data-navigate-once src="{{ asset('app/libs/swiper/swiper-bundle.min.js') }}"></script>
 
     {{-- Template scripts --}}
     {{-- <script src="{{ asset('app/js/plugins.js') }}"></script> --}}
-    <script data-navigate-once src="{{ asset('admin/js/app.js') }}"></script>
+    {{-- Navigation and disposal are owned by resources/js/admin.js. --}}
 
     {{-- Toastr --}}
     <script data-navigate-once src="https://code.jquery.com/jquery-3.6.0.min.js"></script>

@@ -256,6 +256,7 @@ class extends Component
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="closeCustomerView"></button>
                 </div>
                 <div class="modal-body">
+                        <x-admin-validation-summary />
                     @if ($this->viewingCustomer)
                         @php
                             $focusedCustomer = $this->viewingCustomer;
@@ -399,77 +400,5 @@ class extends Component
         </div>
     </div>
 
-    @push('scripts')
-        @once
-            <script>
-                (() => {
-                    if (window.__CUSTOMERS_LIST_MODAL_EVENTS__) {
-                        return;
-                    }
 
-                    window.__CUSTOMERS_LIST_MODAL_EVENTS__ = true;
-
-                    const modalIds = ['customersListViewModal'];
-
-                    const cleanupModalState = () => {
-                        if (typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        modalIds.forEach((id) => {
-                            const element = document.getElementById(id);
-
-                            if (!element) {
-                                return;
-                            }
-
-                            const instance = bootstrap.Modal.getInstance(element);
-
-                            if (instance) {
-                                instance.hide();
-                                instance.dispose();
-                            }
-
-                            element.classList.remove('show');
-                            element.style.display = 'none';
-                            element.removeAttribute('aria-modal');
-                            element.removeAttribute('role');
-                        });
-
-                        document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.removeProperty('padding-right');
-                        document.body.style.removeProperty('overflow');
-                    };
-
-                    const withModal = (id, callback) => {
-                        if (!id || typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById(id);
-
-                        if (!element) {
-                            return;
-                        }
-
-                        callback(bootstrap.Modal.getOrCreateInstance(element));
-                    };
-
-                    window.addEventListener('customers-list:modal-show', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.show());
-                    });
-
-                    window.addEventListener('customers-list:modal-hide', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.hide());
-                    });
-
-                    document.addEventListener('livewire:navigating', cleanupModalState);
-                    document.addEventListener('livewire:navigated', cleanupModalState);
-
-                    cleanupModalState();
-                })();
-            </script>
-        @endonce
-    @endpush
 </div>

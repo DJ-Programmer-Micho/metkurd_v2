@@ -67,6 +67,10 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->configureLivewireRoutes();
         Customer::observe(CustomerObserver::class);
+        foreach ([\App\Models\Tool::class, \App\Models\ToolAction::class, \App\Models\LandingToolPage::class,
+            \App\Models\PlanEntitlement::class] as $publicModel) {
+            $publicModel::observe(\App\Observers\PublicCatalogObserver::class);
+        }
         foreach ([\App\Models\CustomerServiceSubscription::class, \App\Models\CreditWallet::class] as $accountModel) {
             $accountModel::saved(function ($record) {
                 $customerId = (int) $record->customer_id;

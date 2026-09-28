@@ -13,12 +13,12 @@
                     @if($row['attention'])<span class="badge bg-warning-subtle text-warning d-block mt-1">{{ __('admin_ux.attention') }}</span>@endif
                 </td>
                 <td><a wire:navigate dir="auto" href="{{ route('admin.customers.detail', ['locale' => app()->getLocale(), 'customer' => $row['customer_id']]) }}">{{ $row['customer'] ?: $row['customer_id'] }}</a></td>
-                <td><span class="badge bg-{{ in_array($row['local_lifecycle'], ['failed','delete_failed']) ? 'danger' : ($row['local_lifecycle'] === 'done' ? 'success' : 'secondary') }}-subtle text-body">{{ \Illuminate\Support\Facades\Lang::has('admin_p2.'.$row['local_lifecycle']) ? __('admin_p2.'.$row['local_lifecycle']) : $row['local_lifecycle'] }}</span></td>
+                <td><x-admin-status-badge :tone="in_array($row['local_lifecycle'], ['failed','delete_failed']) ? 'danger' : ($row['local_lifecycle'] === 'done' ? 'success' : (in_array($row['local_lifecycle'], ['queued','running','saving']) ? 'warning' : 'secondary'))">{{ \Illuminate\Support\Facades\Lang::has('admin_p2.'.$row['local_lifecycle']) ? __('admin_p2.'.$row['local_lifecycle']) : $row['local_lifecycle'] }}</x-admin-status-badge></td>
                 <td><time dir="ltr">{{ $row['created_at'] }}</time><small class="d-block text-muted">{{ $row['age'] }}</small></td>
                 <td><bdi dir="ltr">{{ strtoupper($row['channel']) }}</bdi></td>
                 <td>{{ __('admin_p2.'.$row['persisted_result']) }}</td>
                 <td>
-                    @if($row['channel'] === 'api')
+                    @if(in_array($row['channel'], ['api', 'mcp'], true))
                         <span>{{ __('admin_ux.api_reservation') }}:</span>
                         {{ __('admin_p2.'.data_get($row, 'api_reservation.status', 'not_recorded')) }}
                     @elseif($row['failure_stage'] === 'refund_pending')

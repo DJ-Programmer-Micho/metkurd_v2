@@ -11,6 +11,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="robots" content="noindex, nofollow">
     <meta name="theme-color" content="#cc0022">
     <title>{{ $title ?? __('MetKurd AI') }}</title>
     <link rel="shortcut icon" href="{{ app('logo_1024_tran_black') }}">

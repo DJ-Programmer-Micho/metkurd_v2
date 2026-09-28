@@ -20,8 +20,12 @@ beforeEach(function () {
 });
 
 it('resolves landing tool image urls from the configured shared media disk', function () {
+    \App\Models\Tool::updateOrCreate(['code' => 'xomni'], ['name' => 'Apollo 1.5', 'is_active' => true]);
+    \App\Models\ToolAction::updateOrCreate(['full_code' => 'xomni.generate'], [
+        'tool_code' => 'xomni', 'action_code' => 'generate', 'name' => 'Apollo 1.5', 'is_active' => true,
+    ]);
     LandingToolPage::query()->create([
-        'slug' => 'landing-media-test',
+        'slug' => 'tts',
         'is_active' => true,
         'sort_order' => 1,
         'square_image_path' => '/storage/landing/tools/square/test-square.png',
@@ -40,7 +44,7 @@ it('resolves landing tool image urls from the configured shared media disk', fun
     Storage::disk('s3')->put('landing/tools/square/test-square.png', 'square');
     Storage::disk('s3')->put('web-setting/tools/test-hero.png', 'hero');
 
-    $tool = app(LandingToolPageCatalog::class)->findForLocaleBySlug('landing-media-test', 'en');
+    $tool = app(LandingToolPageCatalog::class)->findForLocaleBySlug('tts', 'en');
 
     expect($tool)->not->toBeNull()
         ->and(data_get($tool, 'square_image_url'))->toBe(url('media/web/landing/tools/square/test-square.png'))

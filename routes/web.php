@@ -35,18 +35,14 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 | Sitemaps
 |--------------------------------------------------------------------------
-| If sitemap files exist in /public, serve them directly instead of redirecting.
-| Redirecting to the same URL creates an infinite loop.
+| Discovery documents use the cached public catalog and current feature flags.
+| Do not add static files at these paths: web servers can bypass these routes.
 |--------------------------------------------------------------------------
 */
-// Route::get('/sitemap_en.xml', fn () => response()->file(public_path('sitemap_en.xml')));
-// Route::get('/sitemap_ar.xml', fn () => response()->file(public_path('sitemap_ar.xml')));
-// Route::get('/sitemap_ku.xml', fn () => response()->file(public_path('sitemap_ku.xml')));
 Route::get('/up', fn () => response()->json(['status' => 'ok'], 200));
 
-Route::get('sitemap.xml', function () {
-    return response()->file(public_path('sitemap.xml'));
-});
+Route::get('sitemap.xml', [\App\Http\Controllers\Landing\PublicDiscoveryController::class, 'sitemap']);
+Route::get('llms.txt', [\App\Http\Controllers\Landing\PublicDiscoveryController::class, 'llms']);
 Route::post('/set-locale', [LocalizationMainMiddleware::class, 'setLocale'])->name('setLocale');
 Route::get('/media/web/{path}', PublicLandingMediaController::class)
     ->where('path', '.*')
@@ -71,7 +67,7 @@ require __DIR__.'/landing.php';
 | Admin Auth (guest)
 |--------------------------------------------------------------------------
 */
-Route::middleware('guest:admin')->group(function () {
+Route::middleware(['guest:admin', LocalizationMainMiddleware::class])->group(function () {
     Route::livewire('/'.app('aurl').'/signin', 'admin::auth.signin-one')->name('admin.signin');
 });
 

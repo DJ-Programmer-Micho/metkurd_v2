@@ -104,9 +104,9 @@ class extends Component
                 <div class="col-xl-2 col-md-3">
                     <label class="form-label text-muted text-uppercase fs-12" for="admin-field-adm-customers-ranking-4">{{ __('Leaderboard Size') }}</label>
                     <select class="form-select" wire:model.live="rankingLimit" id="admin-field-adm-customers-ranking-4">
-                        <option value="8">{{ __('Top 8') }}</option>
-                        <option value="12">{{ __('Top 12') }}</option>
-                        <option value="20">{{ __('Top 20') }}</option>
+                        @foreach ([20, 40, 60, 80, 100] as $size)
+                            <option value="{{ $size }}">1–{{ $size }}</option>
+                        @endforeach
                     </select>
                 </div>
             </div>

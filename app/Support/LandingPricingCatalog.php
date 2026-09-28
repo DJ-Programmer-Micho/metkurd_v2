@@ -13,7 +13,7 @@ class LandingPricingCatalog
     public function flushServicePlanCache(): void
     {
         foreach ((array) config('app.locales', ['en']) as $locale) {
-            Cache::forget("landing.service-plans.catalog.v5.{$locale}");
+            Cache::forget("landing.service-plans.catalog.v6.{$locale}");
         }
     }
 
@@ -21,14 +21,17 @@ class LandingPricingCatalog
     {
         $locale = app()->getLocale();
 
-        return Cache::remember("landing.service-plans.catalog.v5.{$locale}", now()->addMinutes(15), function () {
+        $read = function () {
             return ServicePlan::query()
                 ->where('is_active', true)
+                ->with('planEntitlements:id,service_plan_id,tool_action_id,entitlement_channel,allowed')
                 ->withCount([
                     'planEntitlements as allowed_entitlements_count' => fn ($query) => $query->where('allowed', true),
                 ])
                 ->orderBy('sort_order')
                 ->get([
+                    'id', 'api_enabled', 'api_allowed_tools', 'api_monthly_credits',
+                    'api_requests_per_minute', 'api_concurrent_jobs',
                     'code',
                     'name',
                     'monthly_credits',
@@ -41,10 +44,12 @@ class LandingPricingCatalog
                     'ui_features',
                     'meta',
                     'sort_order',
-                ])
-                ->map(fn (ServicePlan $plan) => $this->formatServicePlan($plan))
-                ->all();
-        });
+                ]);
+        };
+        $plans = \Illuminate\Support\Facades\DB::transactionLevel() > 0 ? $read()
+            : Cache::remember("landing.service-plans.catalog.v6.{$locale}", 900, $read);
+
+        return $plans->map(fn (ServicePlan $plan) => $this->formatServicePlan($plan))->all();
     }
 
     public function storagePlans(): array
@@ -103,17 +108,52 @@ class LandingPricingCatalog
             'code' => $plan->code,
             'name' => $plan->name,
             'title' => $ui['title'] ?? data_get($meta, 'title', $plan->name),
-            'summary' => $ui['summary'] ?? data_get($meta, 'summary'),
+            'summary' => app(\App\Support\Landing\PublicWebsiteContent::class)->text('plan_summary'),
             'monthly_credits' => (int) $plan->appMonthlyCredits(),
             'is_free' => (bool) $plan->is_free,
             'price_iqd_monthly' => $plan->priceIqdForCycle('monthly'),
             'price_iqd_yearly' => $plan->priceIqdForCycle('yearly'),
             'allowed_entitlements_count' => (int) $plan->allowed_entitlements_count,
-            'features' => $ui['features'] !== [] ? $ui['features'] : $this->featureList([], $meta),
+            'features' => $this->publicFeatures($plan),
             'badge' => $ui['badge'] ?? data_get($meta, 'badge'),
             'featured' => (bool) ($ui['recommended'] ?? data_get($meta, 'recommended', data_get($meta, 'featured', false))),
             'cta' => $ui['cta'] ?? data_get($meta, 'cta', $plan->is_free ? 'Try it free' : 'Get Started'),
         ];
+    }
+
+    private function publicFeatures(ServicePlan $plan): array
+    {
+        $catalog = app(\App\Support\Landing\PublicProductCatalog::class);
+        $copy = app(\App\Support\Landing\PublicWebsiteContent::class);
+        $api = app(\App\Services\CustomerApi\V2\ApiCatalog::class);
+        $configuration = app(\App\Services\CustomerApi\CustomerApiAccessService::class)->configForPlan($plan);
+        $scopes = $api->scopesForConfiguration($configuration['allowed_tools']);
+        $allowed = function (int $action, string $channel) use ($plan): bool {
+            $rows = $plan->planEntitlements->where('tool_action_id', $action);
+            $entitlement = $rows->firstWhere('entitlement_channel', $channel) ?? $rows->firstWhere('entitlement_channel', 'all');
+
+            return (bool) $entitlement?->allowed;
+        };
+        $products = collect($catalog->products());
+        $appNames = $products->filter(fn ($p) => $allowed($p['action_id'], 'app'))->pluck('name')->all();
+        $apiAccess = $configuration['api_enabled'] && $configuration['requests_per_minute'] > 0
+            && $products->contains(fn ($p) => $allowed($p['action_id'], 'api') && in_array($api->scopeForAction($p['action']), $scopes, true));
+        $features = [$copy->text('app_credits', ['value' => number_format($plan->appMonthlyCredits())])];
+        if ($appNames !== []) {
+            $features[] = $copy->text('included', ['products' => implode(', ', $appNames)]);
+        }
+        if ($apiAccess && ($catalog->apiEnabled() || $catalog->mcpEnabled())) {
+            $features[] = $copy->text('api_credits', ['value' => number_format($plan->apiMonthlyCredits())]);
+            if ($catalog->apiEnabled()) {
+                $features[] = $copy->text('api_included');
+            }
+            if ($catalog->mcpEnabled()) {
+                $features[] = $copy->text('mcp_included');
+            }
+        }
+        $features[] = $copy->text('units');
+
+        return $features;
     }
 
     protected function formatStoragePlan(StoragePlan $plan): array

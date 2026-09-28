@@ -7,6 +7,7 @@ use App\Models\Voice;
 use App\Support\Landing\LandingDemoSampleSchema;
 use App\Support\Landing\LandingMediaStorage;
 use App\Support\Landing\LandingToolPageCatalog;
+use App\Support\Landing\PublicProductCatalog;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -178,8 +179,9 @@ trait ManagesLandingToolsPage
     {
         return [
             'total' => (int) LandingToolPage::query()->count(),
-            'active' => (int) LandingToolPage::query()->where('is_active', true)->count(),
-            'inactive' => (int) LandingToolPage::query()->where('is_active', false)->count(),
+            'active' => (int) LandingToolPage::query()->withPublicStatus('active')->count(),
+            'inactive' => (int) LandingToolPage::query()->withPublicStatus('inactive')->count(),
+            'legacy' => (int) LandingToolPage::query()->withPublicStatus('legacy')->count(),
             'visible' => (int) $this->toolPages->total(),
         ];
     }
@@ -187,14 +189,8 @@ trait ManagesLandingToolsPage
     #[Computed]
     public function toolPages()
     {
-        $query = LandingToolPage::query();
+        $query = LandingToolPage::query()->withPublicStatus($this->statusFilter);
         $search = trim($this->search);
-
-        if ($this->statusFilter === 'active') {
-            $query->where('is_active', true);
-        } elseif ($this->statusFilter === 'inactive') {
-            $query->where('is_active', false);
-        }
 
         if ($search !== '') {
             $query->where(function ($builder) use ($search) {
@@ -310,6 +306,7 @@ trait ManagesLandingToolsPage
         $this->authorizeAdminChange('admin.catalog');
 
         $count = $this->toolCatalog()->importFallbackDefaults();
+        unset($this->toolPages, $this->topStats);
 
         $this->dispatch('alert', type: 'success', message: __('Imported :count default tool page(s).', ['count' => $count]));
     }
@@ -333,7 +330,7 @@ trait ManagesLandingToolsPage
         $this->editingToolPageId = $toolPage->id;
         $this->slug = (string) $toolPage->slug;
         $this->sortOrder = (int) $toolPage->sort_order;
-        $this->toolStatus = $toolPage->is_active ? 'active' : 'inactive';
+        $this->toolStatus = $toolPage->is_active && $toolPage->publicVisibilityStatus() !== 'legacy' ? 'active' : 'inactive';
         $this->squareImagePath = $toolPage->square_image_path;
         $this->heroImagePath = $toolPage->hero_image_path;
         $this->cardImagePath = $toolPage->card_image_path;
@@ -441,6 +438,10 @@ trait ManagesLandingToolsPage
         $toolPage = $this->editingToolPageId
             ? LandingToolPage::query()->findOrFail($this->editingToolPageId)
             : new LandingToolPage;
+
+        if ($this->toolStatus === 'active' && ! in_array($this->slug, app(PublicProductCatalog::class)->currentFamilySlugs(), true)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['toolStatus' => __('Legacy tool pages cannot be published.')]);
+        }
 
         $featureIconOptions = array_keys($this->featureIconOptions());
 
@@ -613,6 +614,7 @@ trait ManagesLandingToolsPage
         }
 
         $toolPage->save();
+        unset($this->toolPages, $this->topStats);
 
         $this->dispatch('alert', type: 'success', message: $this->editingToolPageId
             ? __('Landing tool page updated successfully.')
@@ -665,11 +667,13 @@ trait ManagesLandingToolsPage
         $this->authorizeAdminChange('admin.catalog');
 
         $toolPage = LandingToolPage::query()->findOrFail($toolPageId);
+        if (! $toolPage->is_active && $toolPage->publicVisibilityStatus() === 'legacy') {
+            throw \Illuminate\Validation\ValidationException::withMessages(['toolStatus' => __('Legacy tool pages cannot be published.')]);
+        }
         $toolPage->update(['is_active' => ! $toolPage->is_active]);
+        unset($this->toolPages, $this->topStats);
 
-        $this->dispatch('alert', type: 'success', message: $toolPage->is_active
-            ? __('Tool page is now active.')
-            : __('Tool page is now inactive.'));
+        $this->dispatch('alert', type: 'success', message: __('Landing publication setting saved. Public visibility also requires an active current V2 tool.'));
     }
 
     public function confirmToolPageDelete(int $toolPageId): void

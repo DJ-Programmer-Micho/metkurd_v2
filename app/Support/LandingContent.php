@@ -13,14 +13,14 @@ class LandingContent
             'author' => 'Michel Mikhael, support@metkurd.ai',
             'founder_name' => 'Michel Mikhael',
             'cofounder_name' => 'Shabo Shabo',
-            'origin' => 'Started from Erbil, Kurdistan.',
-            'meta_description' => 'MetKurd AI is a Kurdish-first SaaS platform for Sorani Kurdish text-to-speech, voice cloning, speech-to-text, OCR, translation, and audio tools.',
-            'meta_keywords' => 'MetKurd AI, Kurdish AI, Kurd AI, Kurdish AI platform, Sorani Kurdish AI, Kurdish text to speech, Kurdish TTS, Sorani Kurdish text to speech, Kurdish voice cloning, Kurdish speech to text, Kurdish transcription, Kurdish OCR, Kurdish translation AI, Kurdish voice generator, AI tools for Kurdish, The Future of Kurdish AI',
-            'subject' => 'Kurdish-first AI SaaS platform focused on Sorani Kurdish speech, text, OCR, translation, and audio tools',
+            'origin' => 'Erbil, Kurdistan',
+            'meta_description' => 'Create and review Kurdish content with tools built around Sorani. Turn your scripts, recordings and documents into useful work for media, learning and everyday communication.',
+            'meta_keywords' => 'MetKurd AI, Kurdish AI, Sorani Kurdish, Kurdish content tools',
+            'subject' => 'Create and review Kurdish content with tools built around Sorani. Turn your scripts, recordings and documents into useful work for media, learning and everyday communication.',
             'type' => 'website',
             'robots' => 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1',
             'theme_color' => '#07111f',
-            'default_image_alt' => 'MetKurd AI | The Future of Kurdish AI',
+            'default_image_alt' => 'MetKurd AI',
         ],
         'locales' => [
             'en' => 'English',
@@ -51,9 +51,9 @@ class LandingContent
             'sign_in' => 'Sign In',
         ],
         'footer' => [
-            'copy' => 'MetKurd AI is a Kurdish-first AI startup focused on Sorani Kurdish speech, text, OCR, translation, and audio workflows for creators, businesses, students, educators, and researchers.',
+            'copy' => 'Create and review Kurdish content with tools built around Sorani. Turn your scripts, recordings and documents into useful work for media, learning and everyday communication.',
             'rights' => '(c) :year MetKurd AI. All rights reserved.',
-            'made_for' => 'Built to support Kurdish productivity, accessibility, education, content creation, and language preservation.',
+            'made_for' => 'Built for Kurdish content, accessibility and learning.',
             'newsletter_badge' => 'Join the MetKurd AI newsletter',
             'newsletter_title' => 'Get updates on Kurdish AI features, releases, and educational resources.',
             'newsletter_copy' => 'Receive product updates, launch news, and helpful guides for Kurdish-first AI workflows.',
@@ -65,9 +65,9 @@ class LandingContent
             'resources_heading' => 'Resources',
             'legal_heading' => 'Legal',
             'status_heading' => 'Status',
-            'status_uptime' => '99.95% uptime',
-            'status_secure' => 'Stored securely',
-            'status_accessible' => 'RTL-friendly UI',
+            'status_uptime' => 'Sorani Kurdish focus',
+            'status_secure' => 'Private account files',
+            'status_accessible' => 'Arabic and Kurdish interface',
         ],
         'google_review' => [
             'g_badge' => 'Your Feedback Fuels Our Innovation',
@@ -103,31 +103,31 @@ class LandingContent
         ],
         'home' => [
             'meta' => [
-                'title' => 'MetKurd AI | The Future of Kurdish AI',
-                'description' => 'MetKurd AI is a Kurdish-first SaaS platform for Sorani Kurdish text-to-speech, voice cloning, speech-to-text, OCR, translation, and audio tools.',
-                'keywords' => 'MetKurd AI, Kurdish AI platform, Sorani Kurdish AI, Kurdish text to speech, Kurdish voice cloning, Kurdish transcription, Kurdish OCR, Kurdish translation AI',
+                'title' => 'Kurdish AI for Speech, Voice, OCR & Audio | MetKurd AI',
+                'description' => 'Create and review Kurdish content with tools built around Sorani. Turn your scripts, recordings and documents into useful work for media, learning and everyday communication.',
+                'keywords' => 'MetKurd AI, Kurdish AI, Sorani Kurdish, Kurdish content tools',
             ],
             'hero' => [
                 'badge' => 'Kurdish-first AI SaaS platform',
                 'title_html' => '<span class="landing-gradient-text">The Future of Kurdish AI</span>',
-                'lead' => 'The first all-in-one SaaS platform optimized for Sorani Kurdish. Automate voiceovers, transcriptions, document digitization, translation, and audio workflows with precision and speed.',
+                'lead' => 'Create and review Kurdish content with tools built around Sorani. Turn your scripts, recordings and documents into useful work for media, learning and everyday communication.',
                 'primary_cta' => 'Start for Free',
                 'secondary_cta' => 'View Pricing',
                 'pills' => [
                     'Sorani Kurdish focus',
-                    'Speech, text, OCR, translation, and audio tools',
+                    'Tools for speech, documents and audio',
                     'Built for creators, businesses, and education',
                 ],
             ],
             'preview' => [
                 'live' => 'Live platform preview',
-                'latency' => 'TTS Apollo and TTS Delta',
+                'latency' => 'Kurdish text to speech',
                 'latency_value' => 'Sorani',
-                'confidence' => 'NEO and LEO transcription',
+                'confidence' => 'Kurdish speech to text and captions',
                 'confidence_value' => 'Ready',
                 'demo_title' => 'Speech workflow',
                 'demo_badge' => 'Sorani',
-                'ocr_title' => 'OCR-CKB extraction',
+                'ocr_title' => 'Kurdish OCR and text tools',
                 'ocr_badge' => 'Image + PDF',
                 'table_headers' => [
                     'page' => 'Step',
@@ -149,20 +149,20 @@ class LandingContent
             ],
             'tools' => [
                 'badge' => 'Core product',
-                'title' => 'Speech, text, OCR, translation, and audio tools built for Kurdish workflows.',
-                'copy' => 'MetKurd AI helps businesses, creators, students, researchers, educators, and media teams create, transcribe, digitize, translate, and preserve Kurdish content with faster execution.',
+                'title' => 'Practical AI for Kurdish content and everyday work.',
+                'copy' => 'Explore the currently available tools for creators, media teams, universities, businesses and NGOs. Choose a tool, review its limits and keep control of the final result.',
             ],
             'demo' => [
                 'badge' => 'How it works',
                 'title' => 'Use one platform for end-to-end Kurdish AI workflows.',
-                'copy' => 'Generate professional Kurdish voiceovers without a recording studio, transcribe long audio faster than manual typing, extract text from scanned files, and translate content for business and education.',
+                'copy' => 'Start with your own content, choose an available tool and review the output. Bring the result into your media, education or research workflow.',
                 'sample_text' => 'Sorani Kurdish sample text appears here...',
                 'shell' => [
-                    'tts_title' => 'TTS Apollo and TTS Delta',
+                    'tts_title' => 'Kurdish text to speech',
                     'tts_badge' => 'Text to Speech',
-                    'asr_title' => 'NEO and LEO',
+                    'asr_title' => 'Kurdish speech to text and captions',
                     'asr_badge' => 'Speech to Text',
-                    'ocr_title' => 'OCR-CKB',
+                    'ocr_title' => 'Kurdish OCR and text tools',
                     'ocr_badge' => 'Document OCR',
                 ],
                 'steps' => [
@@ -172,7 +172,7 @@ class LandingContent
                     ],
                     [
                         'title' => 'Run the right AI tool',
-                        'copy' => 'Choose TTS, voice cloning, transcription, OCR, translation, or stem separation based on your task.',
+                        'copy' => 'Choose the available tool that fits your input and the result you need.',
                     ],
                     [
                         'title' => 'Review and export',
@@ -192,13 +192,13 @@ class LandingContent
             'reasons' => [
                 [
                     'icon' => 'bi bi-translate',
-                    'title' => 'Native-level Sorani focus',
-                    'copy' => 'MetKurd AI is designed around Sorani Kurdish, helping users generate more natural speech, clearer transcriptions, and more useful Kurdish-language outputs than generic workflows.',
+                    'title' => 'Sorani Kurdish focus',
+                    'copy' => 'Work with Arabic-script Sorani content and review the output in your own language.',
                 ],
                 [
                     'icon' => 'bi bi-clock-history',
                     'title' => 'Time and cost efficiency',
-                    'copy' => 'Reduce manual effort in voice production, transcription, OCR, and translation with one practical workflow.',
+                    'copy' => 'Reduce repetitive manual work, while keeping human review part of your workflow.',
                 ],
                 [
                     'icon' => 'bi bi-book',
@@ -221,7 +221,7 @@ class LandingContent
                     ],
                     [
                         'title' => 'Partial support by tool',
-                        'copy' => 'Some tools support Arabic, English, and additional languages depending on feature coverage.',
+                        'copy' => 'Arabic and English support varies by tool. Check the language options of the selected service.',
                     ],
                     [
                         'title' => 'Clear quality expectations',
@@ -261,101 +261,24 @@ class LandingContent
                 'badge' => 'FAQ and AEO',
                 'title' => 'Direct answers about Kurdish AI, MetKurd AI tools, privacy, and usage.',
             ],
-            'faqs' => [
-                [
-                    'title' => 'What is MetKurd AI?',
-                    'copy' => 'MetKurd AI is a Kurdish-first AI SaaS platform focused on Sorani Kurdish speech, text, OCR, translation, and audio tools.',
-                ],
-                [
-                    'title' => 'Is MetKurd AI free?',
-                    'copy' => 'MetKurd AI is free to start. Users receive free credits, and paid subscriptions or add-ons are available when more usage is needed.',
-                ],
-                [
-                    'title' => 'Which Kurdish dialect does MetKurd AI support?',
-                    'copy' => 'The primary focus is Sorani Kurdish. Kurmanji is not currently supported.',
-                ],
-                [
-                    'title' => 'What is Kurdish text to speech?',
-                    'copy' => 'Kurdish text to speech converts written Kurdish text into speech audio. MetKurd AI provides this with TTS Apollo and TTS Delta.',
-                ],
-                [
-                    'title' => 'What is Kurdish voice cloning?',
-                    'copy' => 'Voice cloning uses a short sample to reproduce a similar speaking style. MetKurd AI provides this through CTTS Vector for Sorani Kurdish output.',
-                ],
-                [
-                    'title' => 'How much audio is needed for voice cloning?',
-                    'copy' => 'A clean 10 to 30 second sample is recommended. Results depend on sample quality and may vary.',
-                ],
-                [
-                    'title' => 'What is Kurdish speech-to-text?',
-                    'copy' => 'Speech-to-text transcribes spoken Kurdish audio into text. MetKurd AI provides this with NEO and LEO.',
-                ],
-                [
-                    'title' => 'Can AI understand Kurdish audio?',
-                    'copy' => 'Yes, with varying quality based on audio clarity, dialect, and the selected model.',
-                ],
-                [
-                    'title' => 'What is Kurdish OCR?',
-                    'copy' => 'Kurdish OCR extracts text from images and PDFs, especially Arabic-script Kurdish documents. MetKurd AI provides this with OCR-CKB.',
-                ],
-                [
-                    'title' => 'Can AI translate Kurdish?',
-                    'copy' => 'Yes. TRANS-CKB supports Kurdish-focused translation workflows with strong coverage for Kurdish, Arabic, and English use cases.',
-                ],
-                [
-                    'title' => 'What is the difference between TTS and voice cloning?',
-                    'copy' => 'TTS generates speech from text using built-in voices. Voice cloning generates speech in a style based on an uploaded voice sample.',
-                ],
-                [
-                    'title' => 'What is the difference between OCR and transcription?',
-                    'copy' => 'OCR extracts text from documents and images. Transcription converts spoken audio into text.',
-                ],
-                [
-                    'title' => 'Can businesses use MetKurd AI?',
-                    'copy' => 'Yes. Businesses use MetKurd AI for customer support localization, marketing audio, documentation, translation, and content workflows.',
-                ],
-                [
-                    'title' => 'Is there a public API?',
-                    'copy' => 'MetKurd AI does not currently offer a public API. API access may be considered in the future.',
-                ],
-                [
-                    'title' => 'Is Kurdish AI always accurate?',
-                    'copy' => 'AI output may contain mistakes. Quality depends on input conditions and is continuously being improved.',
-                ],
-                [
-                    'title' => 'How can Kurdish AI quality be improved?',
-                    'copy' => 'High-quality recordings, clean documents, better language data, manual review, and continuous model updates improve output quality.',
-                ],
-                [
-                    'title' => 'Is voice cloning safe and permission-based?',
-                    'copy' => 'Users must only clone voices they are authorized to use and must avoid misleading, harmful, or unauthorized content.',
-                ],
-                [
-                    'title' => 'Does MetKurd AI use uploads for training?',
-                    'copy' => 'No. MetKurd AI states that user uploads and generated outputs are not used for training.',
-                ],
-                [
-                    'title' => 'Can I delete my files?',
-                    'copy' => 'Yes. Customers can manage storage by deleting files in their account.',
-                ],
-            ],
+            'faqs' => [],
         ],
         'tools_page' => [
             'meta' => [
                 'title' => 'Kurdish AI Tools | MetKurd AI',
-                'description' => 'Explore TTS Apollo, TTS Delta, CTTS Vector, NEO, LEO, OCR-CKB, TRANS-CKB, and STEM tools built for Kurdish-first workflows.',
-                'keywords' => 'Kurdish AI tools, Sorani Kurdish AI tools, Kurdish text to speech, Kurdish voice cloning, Kurdish OCR, Kurdish translation, Kurdish speech to text',
+                'description' => 'Explore current MetKurd tools for Kurdish content, documents and audio, with product explanations and configured examples.',
+                'keywords' => 'MetKurd AI, Kurdish AI, Sorani Kurdish, Kurdish content tools',
             ],
-            'badge' => 'Tool ecosystem',
-            'title' => 'A complete Kurdish-first AI tool stack.',
-            'lead' => 'Explore speech, text, OCR, translation, and audio workflows designed for Sorani Kurdish and practical day-to-day production.',
+            'badge' => 'Current tools',
+            'title' => 'AI tools built around Kurdish content.',
+            'lead' => 'Explore current tools for Sorani Kurdish content, Arabic text and audio production. Only currently active products are listed.',
             'empty_title' => 'No public tools are available right now',
             'empty_copy' => 'Activate a tool in the dashboard and it will appear here automatically.',
         ],
         'pricing_page' => [
             'meta' => [
-                'title' => 'Pricing',
-                'description' => 'Start free with MetKurd AI, then scale with subscriptions, one-time credit add-ons, and storage plans for Kurdish AI workflows.',
+                'title' => 'MetKurd AI Pricing | Plans & Credits',
+                'description' => 'Compare MetKurd plans, App credits, storage and available developer access. Choose the plan that fits your Kurdish content and processing needs.',
                 'keywords' => 'MetKurd AI pricing, Kurdish AI credits, Kurdish AI subscription, Sorani AI plans, OCR pricing, transcription pricing, TTS pricing',
             ],
             'badge' => 'Pricing',
@@ -369,7 +292,7 @@ class LandingContent
             'summary_fallback' => 'Includes :credits monthly credits and :actions enabled actions.',
             'storage_badge' => 'Storage Pricing',
             'storage_title' => 'Storage upgrades',
-            'storage_copy' => 'Flexible storage packs priced from the same canonical IQD billing catalog.',
+            'storage_copy' => 'Choose additional storage for your uploaded files and saved results.',
             'addons_badge' => 'Add-on Pricing',
             'addons_title' => 'Credit top-ups',
             'addons_copy' => 'One-time add-on packs for extra credits whenever your team needs more throughput.',
@@ -379,28 +302,7 @@ class LandingContent
                 'badge' => 'Pricing FAQ',
                 'title' => 'Credits, storage, billing, and plan behavior explained clearly.',
             ],
-            'faqs' => [
-                [
-                    'title' => 'How do credits work?',
-                    'copy' => 'Credits are calculated by tool-specific usage metrics such as characters, minutes, pages, or separation type.',
-                ],
-                [
-                    'title' => 'Do monthly credits renew?',
-                    'copy' => 'Yes. Subscription credits renew every month while one-time add-on credits remain available until used.',
-                ],
-                [
-                    'title' => 'What happens if I run out of credits?',
-                    'copy' => 'You can still access your dashboard, but paid generation tools are paused until you upgrade or add credits.',
-                ],
-                [
-                    'title' => 'How does storage work?',
-                    'copy' => 'Uploaded and generated files consume storage. If storage is full, users must delete files or upgrade before creating new outputs.',
-                ],
-                [
-                    'title' => 'Can I cancel anytime?',
-                    'copy' => 'Yes. Users can upgrade or cancel their subscription plans at any time.',
-                ],
-            ],
+            'faqs' => [],
             'highlights' => [
                 [
                     'icon' => 'bi bi-lightning-charge',
@@ -441,7 +343,7 @@ class LandingContent
             'company_title' => 'Company information',
             'company_lines' => [
                 'MetKurd AI startup company',
-                'Started from Erbil, Kurdistan.',
+                'Erbil, Kurdistan',
                 'Founder and CEO: Michel Mikhael',
                 'Co-Founder: Shabo Shabo',
             ],
@@ -527,16 +429,16 @@ class LandingContent
         'overview_page' => [
             'meta' => [
                 'title' => 'MetKurd AI Overview | Kurdish-first AI Platform',
-                'description' => 'MetKurd AI is a Kurdish-first SaaS platform focused on Sorani Kurdish speech, text, OCR, translation, and audio tools.',
+                'description' => 'Create and review Kurdish content with tools built around Sorani. Turn your scripts, recordings and documents into useful work for media, learning and everyday communication.',
                 'keywords' => 'MetKurd AI overview, Kurdish-first AI platform, Sorani Kurdish AI, Kurdish AI tools',
             ],
             'badge' => 'AI Overview',
             'title' => 'MetKurd AI: Kurdish-first AI platform overview',
             'lead' => 'MetKurd AI is a Kurdish-first SaaS platform designed to help users, creators, businesses, students, and researchers work with Sorani Kurdish speech and text more efficiently.',
             'one_sentence_heading' => 'One-sentence AI description',
-            'one_sentence' => 'MetKurd AI is a Kurdish-first SaaS platform focused on Sorani Kurdish speech, text, OCR, translation, and audio tools.',
+            'one_sentence' => 'Create and review Kurdish content with tools built around Sorani. Turn your scripts, recordings and documents into useful work for media, learning and everyday communication.',
             'one_paragraph_heading' => 'One-paragraph AI description',
-            'one_paragraph' => 'MetKurd AI includes tools for text-to-speech, voice cloning, speech-to-text, OCR, translation, and audio stem separation. The mission is to reduce the Kurdish digital gap by making Kurdish content easier to create, transcribe, digitize, translate, and preserve.',
+            'one_paragraph' => 'MetKurd helps people create, review and reuse Kurdish content for media, education, accessibility and research. Explore the current tools to see available products and examples.',
             'facts_heading' => 'Key facts',
             'facts' => [
                 'Official name: MetKurd AI',
@@ -545,20 +447,17 @@ class LandingContent
                 'Tagline: The Future of Kurdish AI',
                 'Founder and CEO: Michel Mikhael',
                 'Co-Founder: Shabo Shabo',
-                'Started from Erbil, Kurdistan.',
+                'Erbil, Kurdistan',
                 'The team recorded and prepared Kurdish data manually.',
                 'User uploads and outputs are not used for training.',
             ],
             'tools_heading' => 'Main tools',
             'tools' => [
-                'TTS Apollo',
-                'TTS Delta',
-                'CTTS Vector',
-                'NEO',
+                'AI tools built around Kurdish content.',
+                'Kurdish voice cloning',
                 'LEO',
-                'OCR-CKB',
-                'TRANS-CKB',
-                'STEM',
+                'Kurdish OCR and text tools',
+                'Music and vocal separation',
             ],
             'limitations_heading' => 'Important limitations',
             'limitations' => [
@@ -619,7 +518,7 @@ class LandingContent
                 ],
                 [
                     'title' => 'Limited standardized linguistic resources',
-                    'copy' => 'Dictionary gaps and inconsistent orthography can reduce output consistency in transcription, OCR, and translation tasks.',
+                    'copy' => 'Spelling variation and specialist vocabulary require careful review of AI outputs.',
                 ],
                 [
                     'title' => 'Quality requires domain adaptation',
@@ -635,7 +534,7 @@ class LandingContent
             ],
             'badge' => 'Build Story',
             'title' => 'How MetKurd AI was built',
-            'lead' => 'MetKurd AI started from Erbil, Kurdistan as a startup effort focused on practical Kurdish AI tools for speech, text, OCR, translation, and audio workflows.',
+            'lead' => 'MetKurd AI started in Erbil, Kurdistan with a focus on practical tools for Sorani Kurdish content and everyday work.',
             'timeline' => [
                 [
                     'title' => 'Step 1: Define a Kurdish-first mission',
@@ -660,8 +559,8 @@ class LandingContent
                 'slug' => 'tts',
                 'icon' => 'bi bi-soundwave',
                 'badge' => 'Speech',
-                'title' => 'TTS Apollo and TTS Delta',
-                'summary' => 'Convert Sorani Kurdish text into downloadable speech audio for narration, accessibility, education, and media workflows.',
+                'title' => 'Kurdish text to speech',
+                'summary' => 'Turn Sorani Kurdish scripts into speech with built-in voices. Create narration for media, education and accessibility, then review the audio before publishing.',
                 'capabilities' => [
                     'Sorani Kurdish support',
                     'Male and female voices',
@@ -672,8 +571,8 @@ class LandingContent
                 'slug' => 'ctts',
                 'icon' => 'bi bi-mic',
                 'badge' => 'Voice clone',
-                'title' => 'CTTS Vector',
-                'summary' => 'Clone a voice style from a short audio sample and generate Sorani Kurdish speech for custom branded voice workflows.',
+                'title' => 'Kurdish voice cloning',
+                'summary' => 'Generate speech from text using a voice recording you are authorized to use. Choose a clear single-speaker reference without music or overlapping speech; recording quality affects the result.',
                 'capabilities' => [
                     '10 to 30 second sample',
                     'Sample filtering support',
@@ -684,10 +583,10 @@ class LandingContent
                 'slug' => 'asr',
                 'icon' => 'bi bi-file-earmark-text',
                 'badge' => 'Transcription',
-                'title' => 'NEO and LEO',
-                'summary' => 'Transcribe uploaded audio into text for podcasts, classes, interviews, research, and business documentation.',
+                'title' => 'Kurdish speech to text and captions',
+                'summary' => 'Transcribe Sorani Kurdish recordings into searchable text for interviews, lectures and archives. Review names and specialist terms; noise and overlapping speakers can reduce accuracy.',
                 'capabilities' => [
-                    'NEO: Sorani, Arabic, English',
+                    'Sorani Kurdish',
                     'LEO: Sorani',
                     'TXT output',
                 ],
@@ -696,32 +595,20 @@ class LandingContent
                 'slug' => 'ocr',
                 'icon' => 'bi bi-images',
                 'badge' => 'Documents',
-                'title' => 'OCR-CKB',
-                'summary' => 'Extract text from images, scanned documents, and PDFs, with a focus on Arabic-script Sorani Kurdish.',
+                'title' => 'Kurdish OCR and text tools',
+                'summary' => 'Extract Sorani Kurdish text from images and scanned PDFs for books, forms and research archives. Review spelling and layout, then export reusable text.',
                 'capabilities' => [
                     'Arabic-script Kurdish',
                     'Image and PDF support',
                     'Partial handwriting support',
                 ],
             ],
-            'tran' => [
-                'slug' => 'translation',
-                'icon' => 'bi bi-arrow-left-right',
-                'badge' => 'Translation',
-                'title' => 'TRANS-CKB',
-                'summary' => 'Translate Kurdish-focused content across 30+ languages with strong support for Kurdish, English, and Arabic workflows.',
-                'capabilities' => [
-                    'Kurdish to English',
-                    'English to Kurdish',
-                    'Kurdish to Arabic',
-                ],
-            ],
             'stem' => [
                 'slug' => 'stem',
                 'icon' => 'bi bi-disc',
                 'badge' => 'Audio',
-                'title' => 'STEM',
-                'summary' => 'Separate vocals and audio stems for music, media, education, and creative workflows.',
+                'title' => 'Music and vocal separation',
+                'summary' => 'Separate vocals from music and review individual audio tracks. Audio stem separation is language-independent and useful for practice, analysis and media production; some sound leakage may remain.',
                 'capabilities' => [
                     'Stem separation',
                     'Vocal remover',
@@ -731,13 +618,13 @@ class LandingContent
         ],
         'tool_pages' => [
             'tts' => [
-                'meta_title' => 'Kurdish Text to Speech | Sorani Kurdish TTS | MetKurd AI',
-                'meta_description' => 'Generate Sorani Kurdish speech with TTS Apollo and TTS Delta. Create voiceovers, narration, education content, and media audio with MetKurd AI.',
-                'badge' => 'TTS Apollo and TTS Delta',
-                'title' => 'Convert Sorani Kurdish text into high-quality speech.',
-                'lead' => 'Convert Kurdish Sorani text into high-quality speech for narration, products, accessibility, and media production.',
+                'meta_title' => 'Kurdish Text to Speech (Sorani TTS) | MetKurd AI',
+                'meta_description' => 'Turn Sorani Kurdish scripts into speech with built-in voices. Create narration for media, education and accessibility, then review the audio before publishing.',
+                'badge' => 'Kurdish text to speech',
+                'title' => 'Kurdish text to speech',
+                'lead' => 'Turn Sorani Kurdish scripts into speech with built-in voices. Create narration for media, education and accessibility, then review the audio before publishing.',
                 'about_title' => 'What it does',
-                'about_copy' => 'TTS Apollo and TTS Delta convert Sorani Kurdish text into downloadable WAV speech with multiple voice options for creators, businesses, and educators.',
+                'about_copy' => 'Turn Sorani Kurdish scripts into speech with built-in voices. Create narration for media, education and accessibility, then review the audio before publishing.',
                 'use_cases_title' => 'Use cases',
                 'use_cases' => [
                     'Audiobooks and narration',
@@ -765,13 +652,13 @@ class LandingContent
                 ],
             ],
             'clone_tts' => [
-                'meta_title' => 'Kurdish Voice Cloning | CTTS Vector | MetKurd AI',
-                'meta_description' => 'Use CTTS Vector to clone a voice style from short samples and generate Sorani Kurdish speech for branded or creative media workflows.',
-                'badge' => 'CTTS Vector',
-                'title' => 'Clone a voice style and generate Sorani Kurdish speech.',
-                'lead' => 'CTTS Vector supports Kurdish voice cloning and custom TTS workflows using short sample audio in common formats.',
+                'meta_title' => 'Kurdish Voice Cloning | MetKurd AI',
+                'meta_description' => 'Generate speech from text using a voice recording you are authorized to use. Choose a clear single-speaker reference without music or overlapping speech; recording quality affects the result.',
+                'badge' => 'Kurdish voice cloning',
+                'title' => 'Kurdish voice cloning',
+                'lead' => 'Generate speech from text using a voice recording you are authorized to use. Choose a clear single-speaker reference without music or overlapping speech; recording quality affects the result.',
                 'about_title' => 'What it does',
-                'about_copy' => 'CTTS Vector clones speaking style from short audio samples. Clean WAV or MP3 files usually produce the best results, while noisy input can reduce output quality.',
+                'about_copy' => 'Generate speech from text using a voice recording you are authorized to use. Choose a clear single-speaker reference without music or overlapping speech; recording quality affects the result.',
                 'use_cases_title' => 'Use cases',
                 'use_cases' => [
                     'Custom branded voices',
@@ -799,13 +686,13 @@ class LandingContent
                 ],
             ],
             'asr' => [
-                'meta_title' => 'Kurdish Speech to Text | NEO and LEO | MetKurd AI',
-                'meta_description' => 'Transcribe uploaded audio into text with NEO and LEO speech-to-text models focused on Kurdish Sorani and multilingual use cases.',
-                'badge' => 'NEO and LEO',
-                'title' => 'Transcribe uploaded audio into text.',
-                'lead' => 'Speech-to-text for Kurdish Sorani workflows, with multilingual support in specific models.',
+                'meta_title' => 'Kurdish Speech to Text & Captions | MetKurd AI',
+                'meta_description' => 'Transcribe Sorani Kurdish recordings into searchable text for interviews, lectures and archives. Review names and specialist terms; noise and overlapping speakers can reduce accuracy.',
+                'badge' => 'Kurdish speech to text and captions',
+                'title' => 'Kurdish speech to text and captions',
+                'lead' => 'Transcribe Sorani Kurdish recordings into searchable text for interviews, lectures and archives. Review names and specialist terms; noise and overlapping speakers can reduce accuracy.',
                 'about_title' => 'What it does',
-                'about_copy' => 'NEO supports Kurdish Sorani, Arabic, and English. LEO supports Kurdish Sorani. Output is currently delivered as TXT.',
+                'about_copy' => 'Transcribe Sorani Kurdish recordings into searchable text for interviews, lectures and archives. Review names and specialist terms; noise and overlapping speakers can reduce accuracy.',
                 'use_cases_title' => 'Use cases',
                 'use_cases' => [
                     'Podcast transcription',
@@ -818,7 +705,7 @@ class LandingContent
                     [
                         'icon' => 'bi bi-lightning-charge',
                         'title' => 'Model coverage',
-                        'copy' => 'NEO supports Sorani, Arabic, and English while LEO supports Sorani.',
+                        'copy' => 'Check supported languages in the selected tool.',
                     ],
                     [
                         'icon' => 'bi bi-file-earmark-text',
@@ -833,13 +720,13 @@ class LandingContent
                 ],
             ],
             'ocr' => [
-                'meta_title' => 'OCR-CKB',
-                'meta_description' => 'Extract text from images, scanned files, and PDFs with OCR-CKB for Arabic-script Kurdish document workflows.',
-                'badge' => 'OCR-CKB',
-                'title' => 'Extract text from Kurdish images, scans, and PDFs.',
-                'lead' => 'Recognize Kurdish text in images and PDFs to digitize books, archives, forms, educational materials, and scanned notes.',
+                'meta_title' => 'Kurdish OCR and text tools',
+                'meta_description' => 'Extract Sorani Kurdish text from images and scanned PDFs for books, forms and research archives. Review spelling and layout, then export reusable text.',
+                'badge' => 'Kurdish OCR and text tools',
+                'title' => 'Kurdish OCR and text tools',
+                'lead' => 'Extract Sorani Kurdish text from images and scanned PDFs for books, forms and research archives. Review spelling and layout, then export reusable text.',
                 'about_title' => 'What it does',
-                'about_copy' => 'OCR-CKB focuses on Arabic-script Sorani Kurdish documents and supports printed text plus partial handwriting extraction.',
+                'about_copy' => 'Extract Sorani Kurdish text from images and scanned PDFs for books, forms and research archives. Review spelling and layout, then export reusable text.',
                 'use_cases_title' => 'Use cases',
                 'use_cases' => [
                     'Digitizing books',
@@ -866,48 +753,14 @@ class LandingContent
                     ],
                 ],
             ],
-            'tran' => [
-                'meta_title' => 'Kurdish Translation AI | TRANS-CKB | MetKurd AI',
-                'meta_description' => 'Translate Kurdish-focused content across 30+ languages with TRANS-CKB, including strong Kurdish, English, and Arabic workflows.',
-                'badge' => 'TRANS-CKB',
-                'title' => 'Translate Kurdish-focused content across 30+ languages.',
-                'lead' => 'TRANS-CKB supports Kurdish translation workflows for education, media, research, and business communication.',
-                'about_title' => 'What it does',
-                'about_copy' => 'TRANS-CKB supports Kurdish to English, English to Kurdish, Kurdish to Arabic, and Arabic to Kurdish use cases with meaning-focused translation.',
-                'use_cases_title' => 'Use cases',
-                'use_cases' => [
-                    'Website and app localization',
-                    'Media and subtitle translation',
-                    'Academic and research translation',
-                    'Customer support communication',
-                    'Educational content translation',
-                ],
-                'features' => [
-                    [
-                        'icon' => 'bi bi-globe2',
-                        'title' => '30+ languages',
-                        'copy' => 'Supports multilingual translation workflows with Kurdish-focused optimization.',
-                    ],
-                    [
-                        'icon' => 'bi bi-card-text',
-                        'title' => 'Long-form support',
-                        'copy' => 'Handles long text and formal tone use cases for public and professional content.',
-                    ],
-                    [
-                        'icon' => 'bi bi-exclamation-circle',
-                        'title' => 'Quality note',
-                        'copy' => 'Translations may contain mistakes and should be reviewed for critical usage.',
-                    ],
-                ],
-            ],
             'stem' => [
-                'meta_title' => 'Audio Stem Separation | STEM | MetKurd AI',
-                'meta_description' => 'Use STEM for audio stem separation, vocal remover workflows, and noise reduction in media and education use cases.',
-                'badge' => 'STEM',
-                'title' => 'Separate vocals and audio stems for practical workflows.',
-                'lead' => 'STEM supports music, media, and education workflows with stem separation, vocal remover, and noise reduction features.',
+                'meta_title' => 'AI Music & Vocal Separation | MetKurd AI',
+                'meta_description' => 'Separate vocals from music and review individual audio tracks. Audio stem separation is language-independent and useful for practice, analysis and media production; some sound leakage may remain.',
+                'badge' => 'Music and vocal separation',
+                'title' => 'Music and vocal separation',
+                'lead' => 'Separate vocals from music and review individual audio tracks. Audio stem separation is language-independent and useful for practice, analysis and media production; some sound leakage may remain.',
                 'about_title' => 'What it does',
-                'about_copy' => 'STEM separates uploaded audio into useful layers for analysis, editing, karaoke preparation, and media production workflows.',
+                'about_copy' => 'Separate vocals from music and review individual audio tracks. Audio stem separation is language-independent and useful for practice, analysis and media production; some sound leakage may remain.',
                 'use_cases_title' => 'Use cases',
                 'use_cases' => [
                     'Karaoke and acapella creation',
@@ -958,7 +811,7 @@ class LandingContent
                 'summary' => 'Balanced plan for learning, coursework, and educational Kurdish AI tasks.',
                 'features' => [
                     'Higher monthly credits',
-                    'Speech, OCR, and translation workflows',
+                    'Tools for speech, documents and audio',
                     'Email support',
                 ],
                 'cta' => 'Get Started',
@@ -1047,6 +900,21 @@ class LandingContent
 
     public static function text(string $path, array $replace = [], ?string $fallback = null): string
     {
+        $public = app(\App\Support\Landing\PublicWebsiteContent::class);
+        $catalog = app(\App\Support\Landing\PublicProductCatalog::class);
+        if (in_array($path, ['site.meta_description', 'site.subject', 'home.meta.description', 'footer.copy',
+            'overview_page.meta.description', 'overview_page.one_sentence'], true)) {
+            return $public->entity();
+        }
+        $family = match ($path) {
+            'home.preview.latency', 'home.demo.shell.tts_title' => 'tts',
+            'home.preview.confidence', 'home.demo.shell.asr_title' => 'asr',
+            'home.preview.ocr_title', 'home.demo.shell.ocr_title' => 'ocr',
+            default => null,
+        };
+        if ($family !== null) {
+            return implode(' · ', $catalog->names($family)) ?: $public->text('no_tools');
+        }
         $override = AreaJsonTranslations::get($path, 'landing');
 
         if ($override !== null) {
@@ -1064,19 +932,50 @@ class LandingContent
 
     public static function section(string $path): array
     {
+        $public = app(\App\Support\Landing\PublicWebsiteContent::class);
+        if (in_array($path, ['home.faqs', 'pricing_page.faqs'], true)) {
+            return $public->faqs($path === 'home.faqs' ? 'home' : 'pricing');
+        }
+        if ($path === 'overview_page.tools') {
+            return app(\App\Support\Landing\PublicProductCatalog::class)->names();
+        }
         $override = AreaJsonTranslations::group($path, 'landing');
 
         if ($override !== []) {
-            return $override;
+            $value = $override;
+        } else {
+            $value = Arr::get(self::CONTENT, $path, []);
+            $value = is_array($value) ? self::translate($value) : [];
+        }
+        if ($path === 'home.hero') {
+            $value['lead'] = $public->entity();
+        }
+        if ($path === 'home.preview') {
+            foreach (['latency', 'confidence', 'ocr_title'] as $key) {
+                $value[$key] = self::text('home.preview.'.$key);
+            }
+        }
+        if ($path === 'home.workflow') {
+            $value['surface'] = array_slice($value['surface'] ?? [], 0, 3);
+            $catalog = app(\App\Support\Landing\PublicProductCatalog::class);
+            if ($catalog->apiEnabled()) {
+                $value['surface'][] = ['label' => 'API', 'value' => $public->text('api_included')];
+            }
+            if ($catalog->mcpEnabled()) {
+                $value['surface'][] = ['label' => 'MCP', 'value' => $public->text('mcp_included')];
+            }
+        }
+        if ($path === 'overview_page.limitations') {
+            unset($value[1]);
+            $catalog = app(\App\Support\Landing\PublicProductCatalog::class);
+            $value[] = $public->text($catalog->apiEnabled() ? 'api_available' : 'api_unavailable');
+            if ($catalog->mcpEnabled()) {
+                $value[] = $public->text('mcp_available');
+            }
+            $value = array_values($value);
         }
 
-        $value = Arr::get(self::CONTENT, $path, []);
-
-        if (! is_array($value)) {
-            return [];
-        }
-
-        return self::translate($value);
+        return $value;
     }
 
     protected static function translate(mixed $value): mixed

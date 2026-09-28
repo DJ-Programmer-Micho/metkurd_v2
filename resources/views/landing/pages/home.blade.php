@@ -69,10 +69,10 @@ new #[Layout('landing::layouts.app')] class extends Component
 
 @push('meta')
     <script type="application/ld+json">
-        @json($faqSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+        @json($faqSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_PRETTY_PRINT)
     </script>
     <script type="application/ld+json">
-        @json($breadcrumbSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+        @json($breadcrumbSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_PRETTY_PRINT)
     </script>
 @endpush
 
@@ -352,7 +352,7 @@ new #[Layout('landing::layouts.app')] class extends Component
                 <h2 class="section-title">{{ $pricingHeading['title'] }}</h2>
             </div>
 
-            <livewire:landing::components.pricing-grid :codes="['free', 'pro', 'premium']" :show-toggle="false" :show-ancillary-sections="false" />
+            <livewire:landing::components.pricing-grid :codes="['free', 'student', 'pro', 'premium']" :show-toggle="false" :show-ancillary-sections="false" />
         </div>
     </section>
 

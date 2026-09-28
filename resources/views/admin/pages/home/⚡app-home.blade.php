@@ -12,160 +12,72 @@ class extends Component
 };
 ?>
 
-<x-slot:title>{{ __('Analysis Dashboard') }} | {{ __('MET KURD') }}</x-slot:title>
+<x-slot:title>{{ __('admin_shell.dashboard') }} | {{ __('admin_shell.brand') }}</x-slot:title>
 
 @php
     $stats = $this->overviewStats;
+    $operations = $this->operationalOverview;
     $activity = $this->recentActivity;
     $charts = $this->chartPayload;
     $revenueSources = $stats['revenue_sources'] ?? [];
 @endphp
 
 <div class="container-fluid analysis-dashboard" data-admin-home-dashboard>
-    <div class="row">
-        <div class="col-12">
-            <div class="card border-0 overflow-hidden analysis-hero mb-4">
-                <div class="card-body p-4 p-lg-5 position-relative">
-                    <div class="row align-items-end g-4">
-                        <div class="col-xl-8">
-                            <span class="badge text-bg-light text-uppercase fw-semibold mb-3">{{ __('Admin Analysis') }}</span>
-                            <h2 class="text-white mb-2">{{ __('Live operating snapshot for plans, customers, purchase flow, and tool consumption.') }}</h2>
-                            <p class="text-white-50 mb-0 analysis-hero-copy">
-                                {{ __('admin_ux.dashboard_help') }}
-                            </p>
-                            <a wire:navigate class="btn btn-outline-light mt-3" href="{{ route('admin.customers.register', ['locale' => app()->getLocale()]) }}">{{ __('Customer Register') }}</a>
-                        </div>
-                        <div class="col-xl-4">
-                            <div class="analysis-panel p-3 rounded-4">
-                                <label class="form-label text-uppercase fs-12 text-white-50 mb-2" for="admin-field-app-home-1">{{ __('Analysis Window') }}</label>
-                                <select class="form-select bg-white border-0" wire:model.live="periodFilter" id="admin-field-app-home-1">
-                                    <option value="7">{{ __('Last 7 days') }}</option>
-                                    <option value="30">{{ __('Last 30 days') }}</option>
-                                    <option value="90">{{ __('Last 90 days') }}</option>
-                                    <option value="365">{{ __('Last 12 months') }}</option>
-                                    <option value="all">{{ __('All time') }}</option>
-                                </select>
-                                <div class="small text-white-50 mt-2">
-                                    {{ __('Showing :period for revenue, purchases, and usage-heavy sections. Snapshot cache: 5 minutes.', ['period' => $this->periodLabel($periodFilter)]) }}
-                                </div>
-                                <div class="mt-3">
-                                    <label class="form-label text-uppercase fs-12 text-white-50 mb-2">{{ __('Display Currency') }}</label>
-                                    <div class="d-flex flex-wrap gap-2">
-                                        @foreach ($this->dashboardCurrencyOptions() as $currencyCode => $currencyLabel)
-                                            <button type="button"
-                                                    class="btn btn-sm {{ $displayCurrencyCode === $currencyCode ? 'btn-light text-dark' : 'btn-outline-light' }}"
-                                                    wire:click="$set('displayCurrencyCode', '{{ $currencyCode }}')">
-                                                {{ $currencyLabel }}
-                                            </button>
-                                        @endforeach
-                                    </div>
-                                    <div class="small text-white-50 mt-2">
-                                        {{ __('Revenue and plan pricing are aggregated canonically in IQD, then converted for display.') }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="analysis-orb analysis-orb-one"></div>
-                    <div class="analysis-orb analysis-orb-two"></div>
+    <x-admin-page-header :title="__('admin_shell.dashboard')" :description="__('admin_shell.dashboard_intro')">
+        <a wire:navigate class="btn btn-primary" href="{{ route('admin.operations', ['locale' => app()->getLocale(), 'section' => 'jobs']) }}">{{ __('admin_shell.processing') }}</a>
+        <a wire:navigate class="btn btn-outline-secondary" href="{{ route('admin.customers.list', ['locale' => app()->getLocale()]) }}">{{ __('admin_shell.customers') }}</a>
+    </x-admin-page-header>
+    <x-admin-filter-panel :aria-label="__('Analysis Window')">
+        <div class="row g-3 align-items-end">
+            <div class="col-sm-4 col-lg-3">
+                <label class="form-label" for="admin-analysis-window">{{ __('Analysis Window') }}</label>
+                <select class="form-select" wire:model.live="periodFilter" id="admin-analysis-window">
+                    @foreach (['7' => 'Last 7 days', '30' => 'Last 30 days', '90' => 'Last 90 days', '365' => 'Last 12 months', 'all' => 'All time'] as $value => $label)
+                        <option value="{{ $value }}">{{ __($label) }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-sm-4 col-lg-3">
+                <span class="form-label d-block">{{ __('Display Currency') }}</span>
+                <div class="d-flex gap-2" role="group" aria-label="{{ __('Display Currency') }}">
+                    @foreach ($this->dashboardCurrencyOptions() as $currencyCode => $currencyLabel)
+                        <button type="button" class="btn {{ $displayCurrencyCode === $currencyCode ? 'btn-info' : 'btn-outline-secondary' }}" wire:click="$set('displayCurrencyCode', '{{ $currencyCode }}')" aria-pressed="{{ $displayCurrencyCode === $currencyCode ? 'true' : 'false' }}">{{ $currencyLabel }}</button>
+                    @endforeach
                 </div>
             </div>
+            <div class="col-sm-12 col-lg-6 small text-muted">{{ __('Showing :period for revenue, purchases, and usage-heavy sections. Snapshot cache: 5 minutes.', ['period' => $this->periodLabel($periodFilter)]) }}</div>
         </div>
-    </div>
-
+    </x-admin-filter-panel>
+    <h2 class="admin-section-heading">{{ __('admin_shell.operating_snapshot') }}</h2>
     <div class="row g-3 mb-4">
-        <div class="col-xxl-2 col-xl-4 col-md-6">
-            <div class="card h-100 analysis-stat-card">
-                <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Total Customers') }}</p>
-                    <h3 class="mb-1">{{ number_format($stats['customers_total']) }}</h3>
-                    <span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
-                    <div class="text-muted small">{{ __(':active active · :suspended suspended', ['active' => number_format($stats['active_customers']), 'suspended' => number_format($stats['suspended_customers'])]) }}</div>
-                    <div class="text-muted small">{{ __(':count registered in :period', ['count' => number_format($stats['period_new_customers']), 'period' => $this->periodLabel($periodFilter)]) }}</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xxl-2 col-xl-4 col-md-6">
-            <div class="card h-100 analysis-stat-card">
-                <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Paid Plans') }}</p>
-                    <h3 class="mb-1">{{ number_format($stats['paid_subscribers']) }}</h3>
-                    <div class="text-muted small">{{ __(':value of active customers', ['value' => $this->formatPercent($stats['paid_subscriber_share'])]) }}</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xxl-2 col-xl-4 col-md-6">
-            <div class="card h-100 analysis-stat-card">
-                <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Revenue') }}</p>
-                    <h3 class="mb-1">{{ $this->formatMoney($stats['revenue_total']) }}</h3>
-                    <span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
-                    <div class="text-muted small">{{ __(':amount in :period', ['amount' => $this->formatMoney($stats['revenue_period']), 'period' => $this->periodLabel($periodFilter)]) }}</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xxl-2 col-xl-4 col-md-6">
-            <div class="card h-100 analysis-stat-card">
-                <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Credits Sold') }}</p>
-                    <h3 class="mb-1">{{ $this->formatCredits($stats['credits_sold_total']) }}</h3>
-                    <span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
-                    <div class="text-muted small">{{ __(':credits sold in this window', ['credits' => $this->formatCredits($stats['credits_sold_period'])]) }}</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xxl-2 col-xl-4 col-md-6">
-            <div class="card h-100 analysis-stat-card">
-                <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Consumption') }}</p>
-                    <h3 class="mb-1">{{ $this->formatCredits($stats['consumed_total']) }}</h3>
-                    <span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
-                    <div class="text-muted small">{{ __(':credits consumed in this window', ['credits' => $this->formatCredits($stats['consumed_period'])]) }}</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xxl-2 col-xl-4 col-md-6">
-            <div class="card h-100 analysis-stat-card">
-                <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Jobs') }}</p>
-                    <h3 class="mb-1">{{ number_format($stats['jobs_total']) }}</h3>
-                    <span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
-                    <div class="text-muted small">{{ __('admin_ux.job_window', ['period' => $this->periodLabel($periodFilter), 'rate' => $this->formatPercent($stats['success_rate']), 'count' => number_format($stats['active_jobs'])]) }}</div>
-                </div>
-            </div>
-        </div>
+        <div class="col-sm-6 col-xl-4"><x-admin-stat-card :label="__('Total Customers')" :value="number_format($stats['customers_total'])" :detail="__(':active active · :suspended suspended', ['active' => number_format($stats['active_customers']), 'suspended' => number_format($stats['suspended_customers'])])" icon="ri-group-line" :href="route('admin.customers.list', ['locale' => app()->getLocale()])" /></div>
+        <div class="col-sm-6 col-xl-4"><x-admin-stat-card :label="__('admin_shell.active_processing')" :value="number_format($stats['active_jobs'])" :detail="__('admin_shell.queued_count', ['count' => number_format($operations['queued'])])" icon="ri-loader-4-line" tone="info" :href="route('admin.operations', ['locale' => app()->getLocale(), 'section' => 'jobs', 'group' => 'active'])" /></div>
+        <div class="col-sm-6 col-xl-4"><x-admin-stat-card :label="__('admin_shell.needs_attention')" :value="number_format($operations['attention'])" :detail="__('admin_shell.attention_help')" icon="ri-error-warning-line" tone="warning" :href="route('admin.operations', ['locale' => app()->getLocale(), 'section' => 'jobs', 'group' => 'attention'])" /></div>
+        <div class="col-sm-6 col-xl-4"><x-admin-stat-card :label="__('admin_shell.current_revenue')" :value="$this->formatMoney($stats['revenue_total'])" :detail="__(':amount in :period', ['amount' => $this->formatMoney($stats['revenue_period']), 'period' => $this->periodLabel($periodFilter)])" icon="ri-bank-card-line" tone="success" :href="route('admin.operations', ['locale' => app()->getLocale(), 'section' => 'orders'])" /></div>
+        <div class="col-sm-6 col-xl-4"><x-admin-stat-card :label="__('admin_shell.payment_review')" :value="number_format($operations['payment_review'])" :detail="__('admin_shell.payment_review_help')" icon="ri-search-eye-line" tone="warning" :href="route('admin.operations', ['locale' => app()->getLocale(), 'section' => 'review', 'queue' => 'payment_review'])" /></div>
+        <div class="col-sm-6 col-xl-4"><x-admin-stat-card :label="__('admin_shell.processing_volume')" :value="number_format($stats['jobs_period'])" :detail="$this->periodLabel($periodFilter)" icon="ri-bar-chart-line" :href="route('admin.operations', ['locale' => app()->getLocale(), 'section' => 'jobs'])" /></div>
     </div>
-
     <div class="row g-3 mb-4">
-        <div class="col-xl-4 col-md-6">
-            <div class="card h-100 analysis-stat-card">
-                <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Service Plans Revenue') }}</p>
-                    <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'service_plan.revenue_total', 0)) }}</h3><span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
-                    <div class="text-muted small">{{ __(':orders orders and :amount in :period', ['orders' => number_format((int) data_get($revenueSources, 'service_plan.orders_period', 0)), 'amount' => $this->formatMoney(data_get($revenueSources, 'service_plan.revenue_period', 0)), 'period' => $this->periodLabel($periodFilter)]) }}</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xl-4 col-md-6">
-            <div class="card h-100 analysis-stat-card">
-                <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Storage Plans Revenue') }}</p>
-                    <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'storage_plan.revenue_total', 0)) }}</h3><span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
-                    <div class="text-muted small">{{ __(':orders orders and :amount in :period', ['orders' => number_format((int) data_get($revenueSources, 'storage_plan.orders_period', 0)), 'amount' => $this->formatMoney(data_get($revenueSources, 'storage_plan.revenue_period', 0)), 'period' => $this->periodLabel($periodFilter)]) }}</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xl-4 col-md-6">
-            <div class="card h-100 analysis-stat-card">
-                <div class="card-body">
-                    <p class="text-uppercase fw-medium text-muted mb-2">{{ __('Credit Products Revenue') }}</p>
-                    <h3 class="mb-1">{{ $this->formatMoney(data_get($revenueSources, 'credit_product.revenue_total', 0)) }}</h3><span class="badge bg-light text-body mb-1">{{ __('admin_ux.lifetime') }}</span>
-                    <div class="text-muted small">{{ __(':orders orders and :amount in :period', ['orders' => number_format((int) data_get($revenueSources, 'credit_product.orders_period', 0)), 'amount' => $this->formatMoney(data_get($revenueSources, 'credit_product.revenue_period', 0)), 'period' => $this->periodLabel($periodFilter)]) }}</div>
-                </div>
-            </div>
-        </div>
+        <div class="col-sm-6 col-xl-4"><x-admin-stat-card :label="__('admin_shell.paid_subscribers')" :value="number_format($stats['paid_subscribers'])" :detail="__('admin_shell.plan_distribution')" icon="ri-user-star-line" :href="route('admin.operations', ['locale' => app()->getLocale(), 'section' => 'subscriptions'])" /></div>
+        <div class="col-sm-6 col-xl-4"><x-admin-stat-card :label="__('Credits Sold')" :value="$this->formatCredits($stats['credits_sold_total'])" :detail="__(':credits sold in this window', ['credits' => $this->formatCredits($stats['credits_sold_period'])])" icon="ri-coins-line" /></div>
+        <div class="col-sm-6 col-xl-4"><x-admin-stat-card :label="__('Consumption')" :value="$this->formatCredits($stats['consumed_total'])" :detail="__(':credits consumed in this window', ['credits' => $this->formatCredits($stats['consumed_period'])])" icon="ri-pie-chart-line" /></div>
     </div>
-
+    <x-admin-info-panel>{{ __('admin_shell.evidence_notice') }}</x-admin-info-panel>
+    <div class="row g-3 mb-4">
+        <div class="col-lg-4"><div class="card h-100"><div class="card-body">
+            <h2 class="admin-section-heading">{{ __('admin_shell.register') }}</h2><p class="text-muted small">{{ __('admin_shell.agreements_help') }}</p>
+            <a wire:navigate href="{{ route('admin.customers.register', ['locale' => app()->getLocale()]) }}">{{ __('admin_shell.open_register') }}</a>
+        </div></div></div>
+        <div class="col-lg-4"><div class="card h-100"><div class="card-body">
+            <h2 class="admin-section-heading">{{ __('admin_shell.developer') }}</h2><p class="text-muted small">{{ __('admin_shell.developer_help') }}</p>
+            @if(config('mcp.enabled'))<p class="text-muted small">{{ __('admin_shell.mcp_help') }}</p>@endif
+            <a wire:navigate href="{{ route('admin.operations', ['locale' => app()->getLocale(), 'section' => 'api']) }}">{{ __('admin_shell.api') }}</a>
+        </div></div></div>
+        <div class="col-lg-4"><div class="card h-100"><div class="card-body">
+            <h2 class="admin-section-heading">{{ __('admin_shell.storage') }}</h2><p class="text-muted small">{{ __('admin_shell.storage_help') }}</p>
+            <a wire:navigate href="{{ route('admin.operations', ['locale' => app()->getLocale(), 'section' => 'files']) }}">{{ __('admin_shell.files') }}</a>
+        </div></div></div>
+    </div>
     <div class="row g-3 mb-4">
         <div class="col-xxl-8">
             <div class="card h-100 analysis-chart-card">
@@ -234,7 +146,7 @@ class extends Component
         <div class="col-xl-8">
             <div class="card h-100">
                 <div class="card-header border-0">
-                    <h5 class="card-title mb-1">{{ __('Plan Health') }}</h5>
+                    <h5 class="card-title mb-1">{{ __('admin_shell.plan_distribution') }}</h5>
                     <p class="text-muted mb-0">{{ __('Current subscriber distribution with revenue and credits sold during :period.', ['period' => $this->periodLabel($periodFilter)]) }}</p>
                 </div>
                 <div class="card-body p-0">
@@ -275,7 +187,7 @@ class extends Component
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="8" class="text-center py-5 text-muted">{{ __('No plan analytics are available yet.') }}</td>
+                                        <td colspan="8"><x-admin-empty-state>{{ __('No plan analytics are available yet.') }}</x-admin-empty-state></td>
                                     </tr>
                                 @endforelse
                             </tbody>
@@ -452,77 +364,6 @@ class extends Component
     @endphp
     <script type="application/json" wire:key="dashboard-data-{{ $periodFilter }}-{{ $displayCurrencyCode }}" id="admin-home-chart-data">@json($charts)</script>
 
-    <style>
-        .analysis-dashboard .analysis-hero{
-            background:
-                radial-gradient(circle at top right, rgba(255, 196, 112, 0.28), transparent 30%),
-                linear-gradient(135deg, #0f172a 0%, #15304c 55%, #0b3a3e 100%);
-        }
-
-        .analysis-dashboard .analysis-hero-copy{
-            max-width: 60rem;
-        }
-
-        .analysis-dashboard .analysis-panel{
-            background: rgba(255, 255, 255, 0.08);
-            backdrop-filter: blur(8px);
-        }
-
-        .analysis-dashboard .analysis-orb{
-            position: absolute;
-            border-radius: 999px;
-            filter: blur(4px);
-            opacity: 0.5;
-            pointer-events: none;
-        }
-
-        .analysis-dashboard .analysis-orb-one{
-            width: 140px;
-            height: 140px;
-            right: -30px;
-            top: -30px;
-            background: rgba(45, 212, 191, 0.18);
-        }
-
-        .analysis-dashboard .analysis-orb-two{
-            width: 110px;
-            height: 110px;
-            right: 22%;
-            bottom: -25px;
-            background: rgba(251, 191, 36, 0.18);
-        }
-
-        .analysis-dashboard .analysis-stat-card{
-            border: 1px solid rgba(15, 23, 42, 0.04);
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
-        }
-
-        .analysis-dashboard .analysis-chart-card{
-            border: 1px solid rgba(15, 23, 42, 0.04);
-            box-shadow: 0 22px 48px rgba(15, 23, 42, 0.06);
-        }
-
-        .analysis-dashboard .analysis-chart-wrap{
-            position: relative;
-            height: 300px;
-        }
-
-        .analysis-dashboard .analysis-chart-wrap-lg{
-            height: 340px;
-        }
-
-        .analysis-dashboard .analysis-chart-wrap-md{
-            height: 340px;
-        }
-
-        .analysis-dashboard .analysis-metric-row{
-            border: 1px solid rgba(15, 23, 42, 0.06);
-            border-radius: 1rem;
-            padding: 1rem;
-            background: linear-gradient(180deg, #313233, #333435);
-            color: #fff
-        }
-    </style>
 
     @push('scripts')
         @once

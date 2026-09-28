@@ -1,6 +1,8 @@
 <?php
 
 return [
+    // Maximum published examples rendered on one detail page; never a required sample count.
+    'public_demo_limit' => 60,
     /*
     |--------------------------------------------------------------------------
     | Landing Media Disk

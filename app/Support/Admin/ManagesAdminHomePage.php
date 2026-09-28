@@ -25,6 +25,21 @@ trait ManagesAdminHomePage
     #[Url(as: 'period', keep: true)]
     public string $periodFilter = '30';
 
+    #[Computed]
+    public function operationalOverview(): array
+    {
+        // Reuse the existing read-only queues, including their billing boundary.
+        return Cache::remember($this->analyticsCacheKey('operational-overview'), $this->analyticsCacheTtl(), function () {
+            $reader = app(\App\Services\Admin\AdminOperations::class);
+
+            return [
+                'queued' => $reader->query('jobs', ['status' => 'queued'])->count(),
+                'attention' => $reader->query('jobs', ['group' => 'attention'])->count(),
+                'payment_review' => $reader->query('review', ['queue' => 'payment_review'])->count(),
+            ];
+        });
+    }
+
     public function updatedPeriodFilter(): void
     {
         if (! in_array($this->periodFilter, ['7', '30', '90', '365', 'all'], true)) {

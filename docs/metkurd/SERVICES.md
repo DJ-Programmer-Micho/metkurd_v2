@@ -342,7 +342,17 @@ and selects bounded, deduplicated page ranges and exports. Submission verifies
 the count again before charging ocr.standard; browser page counts are preview
 metadata only. pdfinfo must be available (OCR_PDFINFO_BINARY override); unreadable,
 unverified or over-3888-page PDFs fail before billing. Image inputs retain the
-existing one-page contract. Sources upload through shared storage. The adapter requests compact HTML internally and optional DOCX, with
+existing one-page contract. The input boundary preserves the validated `all` or
+compact custom range expression until submission's independent probe: expanding
+174 pages into a comma-separated list here previously exceeded the range-input
+length limit at that second validation. All-pages mode excludes custom-range
+validation; custom mode requires a valid range. The workspace renders field and
+service errors beside Scan Document and clears stale range errors when switching
+modes. Its selectable exports are TXT, DOCX, Markdown, HTML and ZIP, with TXT and
+DOCX selected by default. TXT uses the existing required text persistence and
+owned download route. Durable submission, actual selected-page billing and the
+Process Queue job-submitted event remain shared with the existing lifecycle.
+Sources upload through shared storage. The adapter requests compact HTML internally and optional DOCX, with
 executionTimeout=900000 and ttl=1200000 milliseconds. These are request policy
 values, not proof of the deployed worker's behavior. Large layout JSON is
 deliberately avoided in the request contract.

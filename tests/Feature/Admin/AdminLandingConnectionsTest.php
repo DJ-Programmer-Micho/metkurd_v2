@@ -38,20 +38,24 @@ it('saves contact and social configuration into public localized Landing output'
     Http::assertNothingSent();
 });
 
-it('persists tool page edits and activation in the public tool catalog and localized detail pages', function () {
+it('retains CMS edits while current V2 products govern public content and activation', function () {
+    \App\Models\Tool::create(['code' => 'xomni', 'name' => 'Apollo 1.5', 'is_active' => true]);
+    \App\Models\ToolAction::create(['tool_code' => 'xomni', 'action_code' => 'generate', 'full_code' => 'xomni.generate', 'name' => 'Apollo 1.5', 'is_active' => true]);
     $cms = Livewire::test('admin::pages.landing.adm-landing-tools')->call('openToolCreateModal')
-        ->set('adminChangeReason', 'Isolated Landing tool verification')->set('slug', 'consumer-fixture');
+        ->set('adminChangeReason', 'Isolated Landing tool verification')->set('slug', 'tts');
     foreach (['en' => 'Connected Tool', 'ar' => 'أداة متصلة', 'ku' => 'ئامرازی پەیوەست'] as $locale => $title) {
         $cms->set('title.'.$locale, $title)->set('heroText.'.$locale, $title.' example')
             ->set('summary.'.$locale, $title.' summary')->set('aboutCopy.'.$locale, $title.' description');
     }
     $cms->call('saveToolPage')->assertHasNoErrors();
-    $page = LandingToolPage::where('slug', 'consumer-fixture')->firstOrFail();
+    $page = LandingToolPage::where('slug', 'tts')->firstOrFail();
     foreach (['en' => 'Connected Tool', 'ar' => 'أداة متصلة', 'ku' => 'ئامرازی پەیوەست'] as $locale => $title) {
-        $this->get(route('landing.tools.show', ['locale' => $locale, 'slug' => $page->slug]))->assertOk()->assertSee($title);
+        expect(data_get($page->content, $locale.'.title'))->toBe($title);
+        $this->get(route('landing.tools.show', ['locale' => $locale, 'slug' => $page->slug]))->assertOk()->assertSee('Apollo 1.5');
     }
     $cms->call('openToolEditModal', $page->id)->set('title.en', 'Updated Connected Tool')->call('saveToolPage')->assertHasNoErrors();
-    $this->get(route('landing.tools.show', ['locale' => 'en', 'slug' => $page->slug]))->assertSee('Updated Connected Tool');
+    expect(data_get($page->fresh()->content, 'en.title'))->toBe('Updated Connected Tool');
+    $this->get(route('landing.tools.show', ['locale' => 'en', 'slug' => $page->slug]))->assertSee('Kurdish text to speech')->assertDontSee('Updated Connected Tool');
     $cms->call('toggleToolPageStatus', $page->id);
     expect(app(LandingToolPageCatalog::class)->findForLocaleBySlug($page->slug, 'en'))->toBeNull();
     $this->get(route('landing.tools.show', ['locale' => 'en', 'slug' => $page->slug]))->assertNotFound();

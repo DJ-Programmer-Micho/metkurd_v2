@@ -18,14 +18,25 @@ class extends Component
 
 <x-slot:title>{{ __('Customers Register') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div class="container-fluid">
+<div class="container-fluid admin-customer-register">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-customer-context :customer-id="(int) $customerFilter" :name="$this->selectedCustomer?->username" />
+    @if($billingContext = $this->billingPaymentContext)
+        <div class="card mb-3"><div class="card-body">
+            <h5>{{ __('admin_billing.selected_payment', ['id' => $billingContext['id']]) }}</h5>
+            <p><bdi>{{ $billingContext['amount'] }} {{ $billingContext['currency'] }}</bdi> · <bdi>{{ $billingContext['local_reference'] }}</bdi></p>
+            <x-admin-operation-status :row="$billingContext" />
+            <p class="text-muted small">{{ __('admin_billing.inspect_first') }}</p>
+            @if(\App\Support\Admin\AdminUiAccess::can('admin.reconcile'))
+                <button type="button" class="btn btn-outline-primary" wire:click="openReviewPayment({{ $billingContext['id'] }})">{{ __('admin_billing.review_modal') }}</button>
+                @if($billingContext['provider'] === 'fib' && $billingContext['purchase_type'] === 'plan_subscription')<button type="button" class="btn btn-outline-primary" wire:click="prefillPaidSubscriptionReconciliation({{ $billingContext['id'] }})">{{ __('admin_billing.reconcile_modal') }}</button>@endif
+            @endif
+            <a wire:navigate class="btn btn-soft-secondary" href="{{ route('admin.operations', ['locale' => app()->getLocale(), 'section' => 'audit', 'payment' => $billingContext['id'], 'customerFilter' => $billingContext['customer_id'], 'financialEra' => 'current']) }}">{{ __('admin_p2.audit') }}</a>
+        </div></div>
+    @endif
     <div class="mb-3">
         <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="startNewCorrection" @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance') && ! \App\Support\Admin\AdminUiAccess::can('admin.reconcile')) disabled @endif>{{ __('admin_p0.new_correction') }}</button>
-        <label class="form-label ms-2" for="admin-credit-reason">{{ __('admin_p0.sync_reason') }}</label>
-        <input id="admin-credit-reason" class="form-control" wire:model="creditSyncReason" maxlength="500" dir="auto">
-        @error('creditSyncReason') <div class="text-danger">{{ $message }}</div> @enderror
+        <x-admin-validation-summary />
         @foreach (['operation', 'providerReference', 'classification', 'paymentId', 'billingCycle', 'delete'] as $errorKey)
             @error($errorKey) <div class="text-danger">{{ $message }}</div> @enderror
         @endforeach
@@ -34,8 +45,8 @@ class extends Component
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
-                    <h4 class="mb-sm-0">{{ __('Customer Billing Register') }}</h4>
-                    <p class="text-muted mb-0">{{ __('Track customer onboarding and apply manual billing corrections when a provider payment succeeded but local plan state did not update.') }}</p>
+                    <h4 class="mb-sm-0">{{ __('admin_customer.register_title') }}</h4>
+                    <p class="text-muted mb-0">{{ __('admin_customer.register_help') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <a wire:navigate href="{{ route('admin.customers.list', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-secondary">{{ __('Back to List') }}</a>
@@ -48,6 +59,7 @@ class extends Component
         </div>
     </div>
 
+    @if ($customerFilter === 'all')
     <div class="row mb-3">
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate h-100">
@@ -138,6 +150,8 @@ class extends Component
         </div>
     </div>
 
+    @endif
+
     @if ($this->selectedCustomer)
         <a wire:navigate class="btn btn-soft-secondary mb-3" href="{{ route('admin.operations', ['locale' => app()->getLocale(), 'customerFilter' => $this->selectedCustomer->id, 'section' => 'orders', 'financialEra' => 'legacy']) }}">{{ __('billing_epoch.legacy') }}</a>
         @php
@@ -148,75 +162,14 @@ class extends Component
             $focusedPlan = $focusedState['current_plan'];
             $focusedStoragePlan = $focusedCustomer->activeStorageSubscription?->storagePlan ?? $focusedCustomer->currentStoragePlan();
         @endphp
-        <div class="row mb-3">
-            <div class="col-xl-4">
-                <div class="card h-100">
-                    <div class="card-header border-0">
-                        <h5 class="card-title mb-0">{{ __('Focused Customer') }}</h5>
-                    </div>
-                    <div class="card-body">
-                        <h5 class="mb-1">{{ $this->customerDisplayName($focusedCustomer) }}</h5>
-                        <p class="text-muted mb-3">{{ '@' . $focusedCustomer->username }} • {{ $focusedCustomer->email }}</p>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('UID:') }}</span> {{ $focusedCustomer->uid ?? __('n/a') }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Joined:') }}</span> {{ $focusedCustomer->created_at?->format('M d, Y H:i') ?? __('n/a') }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Location:') }}</span> {{ $this->customerLocation($focusedCustomer) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Phone:') }}</span> {{ data_get($focusedCustomer, 'profile.phone_number', __('Not set')) }}</div>
-                        <div><span class="badge {{ $this->customerStatusBadgeClasses($focusedCustomer->status) }}">{{ $this->customerStatusLabel($focusedCustomer->status) }}</span></div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-xl-4">
-                <div class="card h-100">
-                    <div class="card-header border-0">
-                        <h5 class="card-title mb-0">{{ __('Account Snapshot') }}</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Service Plan:') }}</span> {{ $focusedPlan?->name ?? __('No active plan') }}</div>
-                        @if($focusedState['subscription'])<div class="mb-2"><x-admin-subscription-origin :subscription="$focusedState['subscription']" /></div>@endif
-                        @if($focusedState['externally_managed'])<div class="mb-2">{{ __('agreement.external') }}</div>@endif
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Storage Plan:') }}</span> {{ $focusedStoragePlan?->name ?? __('No active storage plan') }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('App Wallet Balance:') }}</span> {{ __(':credits credits', ['credits' => $this->formatCredits($focusedWallet?->balance_credits)]) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('App Subscription Bucket:') }}</span> {{ $this->formatCredits($focusedWallet?->subscription_balance_credits) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('App Addon Bucket:') }}</span> {{ $this->formatCredits($focusedWallet?->addon_balance_credits) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('API Wallet Balance:') }}</span> {{ __(':credits credits', ['credits' => $this->formatCredits($focusedApiWallet?->balance_credits)]) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('API Subscription Bucket:') }}</span> {{ $this->formatCredits($focusedApiWallet?->subscription_balance_credits) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('API Addon Bucket:') }}</span> {{ $this->formatCredits($focusedApiWallet?->addon_balance_credits) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Storage Used:') }}</span> {{ $this->formatBytes(data_get($focusedCustomer, 'usage.storage_used_bytes')) }}</div>
-                        <div><span class="fw-semibold">{{ __('Paid Orders:') }}</span> {{ number_format((int) ($focusedCustomer->paid_orders_count ?? 0)) }}</div>
-                        <div class="mt-3">
-                            <button
-                                type="button"
-                                class="btn btn-soft-primary w-100"
-                                data-admin-target="{{ $focusedCustomer->username }}" data-admin-method="syncCustomerCreditsToPlan" data-admin-args="{{ json_encode([$focusedCustomer->id]) }}" data-admin-impact="{{ __('This will sync the customer\'s subscription credits with their current plan. It will add missing plan credits only when the current subscription balance is lower than the plan allowance. It will not subtract existing credits or remove add-on credits.') }}"
-                             @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>
-                                {{ __('Sync Credits To Plan') }}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-xl-4">
-                <div class="card h-100">
-                    <div class="card-header border-0">
-                        <h5 class="card-title mb-0">{{ __('Verification and Activity') }}</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Email verification:') }}</span> {{ $focusedCustomer->email_verify ? __('Verified') : __('Pending') }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Phone verification:') }}</span> {{ $focusedCustomer->phone_verify ? __('Verified') : __('Pending') }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Jobs:') }}</span> {{ number_format((int) ($focusedCustomer->jobs_count ?? 0)) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Credits consumed:') }}</span> {{ $this->formatCredits($focusedCustomer->consumed_credits) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Subscription records:') }}</span> {{ number_format((int) ($focusedCustomer->service_subscriptions_count ?? 0)) }}</div>
-                        <div class="mb-2"><span class="fw-semibold">{{ __('Storage records:') }}</span> {{ number_format((int) ($focusedCustomer->storage_subscriptions_count ?? 0)) }}</div>
-                        <div class="small text-muted">{{ __('Plans :plans | Storage :storage | Addons :addons', ['plans' => $this->formatMoney($focusedCustomer->service_plan_amount_spent), 'storage' => $this->formatMoney($focusedCustomer->storage_amount_spent), 'addons' => $this->formatMoney($focusedCustomer->credit_product_amount_spent)]) }}</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card mb-3 border-warning">
-            <div class="card-header bg-warning-subtle border-0">
-                <h5 class="card-title mb-1">{{ __('Manual Billing Actions') }}</h5>
-                <p class="text-muted mb-0">{{ __('Use Manual Grant for internal/non-revenue access and Paid Customer Reconciliation only for real FIB revenue that must be connected safely.') }}</p>
+        <x-admin-info-panel>
+            <strong dir="auto">{{ $focusedCustomer->username }}</strong> · {{ $focusedPlan?->name }} · {{ \App\Support\Admin\AdminCustomerWorkspace::sourceLabel($focusedState['source']) }}
+            <a wire:navigate class="d-block mt-2" href="{{ route('admin.customers.detail', ['locale' => app()->getLocale(), 'customer' => $focusedCustomer->id]) }}">{{ __('admin_customer.open_detail') }}</a>
+        </x-admin-info-panel>
+        <div class="card mb-3" id="customer-actions">
+            <div class="card-header">
+                <h5 class="card-title mb-1">{{ __('admin_customer.manage_actions') }}</h5>
+                <p class="text-muted mb-0">{{ __('admin_customer.actions_help') }}</p>
             </div>
             <div class="card-body">
                 @php
@@ -226,9 +179,12 @@ class extends Component
                         : __('This will apply the real FIB payment and run fulfillment once. This may change the customer plan and refill app/API credits.');
                 @endphp
                 <div class="row g-3">
-                    <div class="col-xl-6">
-                        <div class="border rounded p-3 h-100">
-                            <h6 class="text-uppercase text-muted fs-12 mb-2">{{ __('admin_ux.grant_title') }}</h6>
+                    <div class="col-md-6"><div class="admin-customer-action"><h3 class="h6 text-muted">{{ __('admin_customer.access') }}</h3><button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#customer-action-1" @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>{{ __('admin_ux.grant_title') }}</button>
+    <p class="small text-muted mt-2 mb-0">{{ __('admin_customer.grant_help') }}</p></div>
+    <div wire:ignore.self class="modal fade" id="customer-action-1" tabindex="-1" aria-labelledby="customer-action-1-title" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="customer-action-1-title">{{ __('admin_ux.grant_title') }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}"></button></div>
+        <div class="modal-body"><x-admin-validation-summary />
                             <div class="alert alert-warning small mb-3">
                                 <div>{{ __('This action does not create revenue.') }}</div>
                                 <div>{{ __('This action does not create a FIB payment.') }}</div>
@@ -315,6 +271,7 @@ class extends Component
                                     <div>{{ __('admin_ux.grant_api_allowance', ['credits' => $this->formatCredits($grantPlan->apiMonthlyCredits())]) }}</div>
                                     <div class="mt-2">{{ __('admin_ux.grant_added', ['app' => $this->formatCredits($this->complimentaryCreditPreview['app'] ?? 0), 'api' => $this->formatCredits($this->complimentaryCreditPreview['api'] ?? 0)]) }}</div>
                                     <div class="small text-muted mt-2">{{ __('admin_ux.grant_credit_policy') }}</div>
+                                    <div class="small text-muted mt-2">{{ __('admin_cleanup.grant_start', ['date' => now()->format('Y-m-d H:i')]) }}</div>
                                     <div class="small text-muted mt-2">{{ __('admin_ux.grant_expiry', ['date' => ($servicePlanBillingCycle === 'yearly' ? now()->addYearNoOverflow() : now()->addMonthNoOverflow())->format('Y-m-d H:i')]) }}</div>
                                 </div>
                             @endif
@@ -327,10 +284,14 @@ class extends Component
                                 {{ __('admin_ux.grant_action') }}
                             </button>
                         </div>
-                    </div>
-                    <div class="col-xl-6">
-                        <div class="border rounded p-3 h-100">
-                            <h6 class="text-uppercase text-muted fs-12 mb-2">{{ __('Paid Customer Reconciliation — Real FIB Payment') }}</h6>
+      </div></div>
+    </div></div>
+                    <div class="col-md-6"><div class="admin-customer-action"><h3 class="h6 text-muted">{{ __('admin_customer.payments') }}</h3><button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#customer-action-2" @if(! \App\Support\Admin\AdminUiAccess::can('admin.reconcile')) disabled @endif>{{ __('Paid Customer Reconciliation — Real FIB Payment') }}</button>
+    <p class="small text-muted mt-2 mb-0">{{ __('admin_customer.fib_help') }}</p></div>
+    <div wire:ignore.self class="modal fade" id="customer-action-2" tabindex="-1" aria-labelledby="customer-action-2-title" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="customer-action-2-title">{{ __('Paid Customer Reconciliation — Real FIB Payment') }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}"></button></div>
+        <div class="modal-body"><x-admin-validation-summary />
                             <div class="alert alert-warning small mb-3">
                                 <div>{{ __('Use this only when the customer actually paid through FIB.') }}</div>
                                 <div>{{ __('This keeps or connects a real revenue/payment record.') }}</div>
@@ -414,10 +375,14 @@ class extends Component
                                 {{ __('Reconcile Paid FIB Subscription') }}
                             </button>
                         </div>
-                    </div>
-                    <div class="col-xl-3">
-                        <div class="border rounded p-3 h-100">
-                            <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Storage Subscription (Recurring)') }}</h6>
+      </div></div>
+    </div></div>
+                    <div class="col-md-6"><div class="admin-customer-action"><h3 class="h6 text-muted">{{ __('admin_customer.credits_storage') }}</h3><button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#customer-action-3" @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>{{ __('Storage Subscription (Recurring)') }}</button>
+    <p class="small text-muted mt-2 mb-0">{{ __('admin_customer.storage_help') }}</p></div>
+    <div wire:ignore.self class="modal fade" id="customer-action-3" tabindex="-1" aria-labelledby="customer-action-3-title" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="customer-action-3-title">{{ __('Storage Subscription (Recurring)') }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}"></button></div>
+        <div class="modal-body"><x-admin-validation-summary />
                             <div class="mb-3">
                                 <label class="form-label" for="admin-field-adm-customers-register-18">{{ __('Storage Plan') }}</label>
                                 <select class="form-select" wire:model="storagePlanAdjustmentId" data-admin-review id="admin-field-adm-customers-register-18">
@@ -448,8 +413,10 @@ class extends Component
                                     <option value="no_revenue">{{ __('admin_p0.no_revenue') }}</option>
                                     <option value="verified_paid">{{ __('admin_p0.verified_paid') }}</option>
                                 </select>
+                                @error('storageClassification')<div class="text-danger">{{ $message }}</div>@enderror
                                 <label class="form-label" for="admin-field-adm-customers-register-21">{{ __('admin_p0.payment_evidence') }}</label>
                                 <input type="number" min="1" class="form-control" wire:model="storagePaymentId" id="admin-field-adm-customers-register-21">
+                                @error('storagePaymentId')<div class="text-danger">{{ $message }}</div>@enderror
                             </div>
                             <div class="mb-3">
                                 <label class="form-label" for="admin-field-adm-customers-register-22">{{ __('Admin Note') }}</label>
@@ -460,10 +427,14 @@ class extends Component
                             </div>
                             <button type="button" class="btn btn-primary w-100" data-admin-target="{{ $focusedCustomer?->username }}" data-admin-method="applyStoragePlanAdjustment" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.financial') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>{{ __('Apply Storage Correction') }}</button>
                         </div>
-                    </div>
-                    <div class="col-xl-3">
-                        <div class="border rounded p-3 h-100">
-                            <h6 class="text-uppercase text-muted fs-12 mb-3">{{ __('Addon Credits (One-Time)') }}</h6>
+      </div></div>
+    </div></div>
+                    <div class="col-md-6"><div class="admin-customer-action"><h3 class="h6 text-muted">{{ __('admin_customer.credits_storage') }}</h3><button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#customer-action-4" @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>{{ __('Addon Credits (One-Time)') }}</button>
+    <p class="small text-muted mt-2 mb-0">{{ __('admin_customer.addon_help') }}</p></div>
+    <div wire:ignore.self class="modal fade" id="customer-action-4" tabindex="-1" aria-labelledby="customer-action-4-title" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="customer-action-4-title">{{ __('Addon Credits (One-Time)') }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}"></button></div>
+        <div class="modal-body"><x-admin-validation-summary />
                             <div class="mb-3">
                                 <label class="form-label" for="admin-field-adm-customers-register-23">{{ __('Addon Package') }}</label>
                                 <select class="form-select" wire:model="addonProductAdjustmentId" data-admin-review id="admin-field-adm-customers-register-23">
@@ -484,8 +455,10 @@ class extends Component
                                     <option value="no_revenue">{{ __('admin_p0.no_revenue') }}</option>
                                     <option value="verified_paid">{{ __('admin_p0.verified_paid') }}</option>
                                 </select>
+                                @error('addonClassification')<div class="text-danger">{{ $message }}</div>@enderror
                                 <label class="form-label" for="admin-field-adm-customers-register-25">{{ __('admin_p0.payment_evidence') }}</label>
                                 <input type="number" min="1" class="form-control" wire:model="addonPaymentId" id="admin-field-adm-customers-register-25">
+                                @error('addonPaymentId')<div class="text-danger">{{ $message }}</div>@enderror
                             </div>
                             <div class="mb-3">
                                 <label class="form-label" for="admin-field-adm-customers-register-26">{{ __('Admin Note') }}</label>
@@ -496,13 +469,24 @@ class extends Component
                             </div>
                             <button type="button" class="btn btn-primary w-100" data-admin-target="{{ $focusedCustomer?->username }}" data-admin-method="applyAddonAdjustment" data-admin-args="{{ json_encode([]) }}" data-admin-impact="{{ __('admin_p3.financial') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>{{ __('Apply Addon Correction') }}</button>
                         </div>
-                    </div>
+      </div></div>
+    </div></div>
                 </div>
             </div>
         </div>
 
+        <section class="card mb-3"><div class="card-body">
+            <h3 class="h6">{{ __('admin_customer.credits_storage') }}</h3><p class="small text-muted">{{ __('admin_customer.sync_help') }}</p>
+            <button type="button" class="btn btn-outline-primary" data-admin-reason-field="creditSyncReason" data-admin-method="syncCustomerCreditsToPlan" data-admin-args="{{ json_encode([$focusedCustomer->id]) }}" data-admin-target="{{ $focusedCustomer->username }}" data-admin-impact="{{ __('This will sync the customer\'s subscription credits with their current plan. It will add missing plan credits only when the current subscription balance is lower than the plan allowance. It will not subtract existing credits or remove add-on credits.') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>{{ __('Sync Credits To Plan') }}</button>
+        </div></section>
+        <section class="card mb-3"><div class="card-body">
+            <h3 class="h6">{{ __('admin_customer.security_access') }}</h3><p class="small text-muted">{{ __('admin_customer.security_help') }}</p>
+            <a wire:navigate class="btn btn-sm btn-outline-secondary" href="{{ route('admin.customers.detail', ['locale' => app()->getLocale(), 'customer' => $focusedCustomer->id]) }}">{{ __('admin_customer.developer_access') }}</a>
+            @if(\App\Support\Admin\AdminUiAccess::can('admin.customers'))<a wire:navigate class="btn btn-sm btn-outline-secondary" href="{{ route('admin.customers.list', ['locale' => app()->getLocale(), 'q' => $focusedCustomer->username]) }}">{{ __('admin_customer.account_controls') }}</a>@endif
+        </div></section>
         @include('admin.pages.customers.service-agreements')
 
+        <details class="admin-customer-evidence mb-3"><summary>{{ __('admin_customer.billing_evidence') }}</summary>
         <div class="row mb-3">
             <div class="col-xl-6 mb-3">
                 <div class="card h-100">
@@ -682,10 +666,14 @@ class extends Component
         </div>
 
         @php($reviewSelection = $this->selectedReviewPayment)
+        </details>
         @if ($reviewSelection)
+            <div wire:ignore.self class="modal fade" id="customer-payment-review" tabindex="-1" aria-labelledby="customer-payment-review-title" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title" id="customer-payment-review-title">{{ __('Review Payment') }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}"></button></div>
+                <div class="modal-body"><x-admin-validation-summary />
             <div class="card mb-3 border-warning">
                 <div class="card-header bg-warning-subtle border-0">
-                    <h5 class="card-title mb-1">{{ __('Review Payment') }}</h5>
                     <p class="text-muted mb-0">{{ __('Use this guided review workflow to reconnect the correct FIB reference, close invalid rows safely, or reclassify internal/manual records without deleting history.') }}</p>
                 </div>
                 <div class="card-body">
@@ -804,57 +792,12 @@ class extends Component
                     @endif
                 </div>
             </div>
+                </div></div></div></div>
         @endif
 
-        <div class="row mb-3">
-            <div class="col-xl-12">
-                <div class="card h-100">
-                    <div class="card-header border-0">
-                        <h5 class="card-title mb-0">{{ __('Recent Jobs and Paid Orders') }}</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-lg-6 mb-3">
-                                <h6 class="text-uppercase text-muted fs-12">{{ __('Latest Jobs') }}</h6>
-                                @forelse ($focusedCustomer->mlJobs as $job)
-                                    <div class="d-flex align-items-center justify-content-between py-2 border-bottom">
-                                        <div>
-                                            <div class="fw-semibold">{{ $job->tool?->name ?? $job->toolAction?->tool?->name ?? __('Unknown tool') }}</div>
-                                            <div class="text-muted small">{{ $job->toolAction?->full_code ?? $job->job_kind }}</div>
-                                        </div>
-                                        <div class="text-end">
-                                            <div class="fw-semibold">{{ $this->formatCredits($job->credits_charged) }} {{ __('credits') }}</div>
-                                            <div class="text-muted small">{{ $job->created_at?->diffForHumans() ?? __('n/a') }}</div>
-                                        </div>
-                                    </div>
-                                @empty
-                                    <div class="text-muted">{{ __('No job history yet.') }}</div>
-                                @endforelse
-                            </div>
-                            <div class="col-lg-6 mb-3">
-                                <h6 class="text-uppercase text-muted fs-12">{{ __('Latest Paid Orders') }}</h6>
-                                @forelse ($focusedCustomer->creditOrders as $order)
-                                    <div class="d-flex align-items-center justify-content-between py-2 border-bottom">
-                                        <div>
-                                            <div class="fw-semibold">{{ $this->paymentSourceLabel($order->source_type, $order->order_type) }}</div>
-                                            <div class="text-muted small">{{ $order->servicePlan?->name ?? $order->creditProduct?->name ?? ($order->source_type ?? __('n/a')) }}</div>
-                                        </div>
-                                        <div class="text-end">
-                                            <div class="fw-semibold">{{ $this->formatMoney($order->amount_usd) }}</div>
-                                            <div class="text-muted small">{{ $order->created_at?->format('M d, Y') ?? __('n/a') }}</div>
-                                        </div>
-                                    </div>
-                                @empty
-                                    <div class="text-muted">{{ __('No paid orders yet.') }}</div>
-                                @endforelse
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
     @endif
 
+    @if ($customerFilter === 'all')
     <div class="card">
         <div class="card-header border-0">
             <h5 class="card-title mb-1">{{ __('Register Table') }}</h5>
@@ -863,71 +806,25 @@ class extends Component
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light text-muted">
-                        <tr class="text-uppercase">
-                            <th>{{ __('Customer') }}</th>
-                            <th>{{ __('Joined') }}</th>
-                            <th>{{ __('Location') }}</th>
-                            <th>{{ __('Plan') }}</th>
-                            <th>{{ __('Profile') }}</th>
-                            <th>{{ __('Verification') }}</th>
-                            <th class="text-end">{{ __('Actions') }}</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>{{ __('Customer') }}</th><th>{{ __('Status') }}</th><th>{{ __('admin_customer.effective_plan') }}</th><th>{{ __('admin_p2.app_credits') }}</th><th>{{ __('admin_p2.api_credits') }}</th><th>{{ __('Storage') }}</th><th>{{ __('Joined') }}</th><th>{{ __('Actions') }}</th></tr></thead>
                     <tbody>
                         @forelse ($this->registrationCustomers as $customer)
                             <tr wire:key="register-row-{{ $customer->id }}">
-                                <td>
-                                    <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $this->customerDisplayName($customer) }}</span>
-                                        <span class="text-muted small">{{ '@' . $customer->username }}</span>
-                                        <span class="text-muted small">{{ $customer->email }}</span>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $customer->created_at?->format('M d, Y') ?? __('n/a') }}</span>
-                                        <span class="text-muted small">{{ $customer->created_at?->diffForHumans() ?? '' }}</span>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $this->customerLocation($customer) }}</span>
-                                        <span class="text-muted small">{{ data_get($customer, 'profile.address', __('No address provided')) }}</span>
-                                    </div>
-                                </td>
-                                <td><span class="badge {{ $this->planBadgeClasses($customer->servicePlan?->code) }}">{{ $customer->currentServicePlan()?->name ?? __('No active plan') }}</span></td>
-                                <td>
-                                    <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ data_get($customer, 'profile.job_title', __('No job title')) }}</span>
-                                        <span class="text-muted small">{{ data_get($customer, 'profile.brand_name', __('No brand')) }}</span>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="d-flex flex-wrap gap-1">
-                                        <span class="badge {{ $this->verificationBadgeClasses((bool) $customer->email_verify) }}">{{ __('Email') }}</span>
-                                        <span class="badge {{ $this->verificationBadgeClasses((bool) $customer->phone_verify) }}">{{ __('Phone') }}</span>
-                                    </div>
-                                </td>
-                                <td class="text-end">
-                                    <div class="d-flex justify-content-end flex-wrap gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-info" wire:click="focusCustomer({{ $customer->id }})">{{ __('Focus') }}</button>
-                                        <button
-                                            type="button"
-                                            class="btn btn-sm btn-soft-primary"
-                                            data-admin-method="syncCustomerCreditsToPlan" data-admin-args="{{ json_encode([$customer->id]) }}" data-admin-impact="{{ __('This will sync the customer\'s subscription credits with their current plan. It will add missing plan credits only when the current subscription balance is lower than the plan allowance. It will not subtract existing credits or remove add-on credits.') }}"
-                                         @if(! \App\Support\Admin\AdminUiAccess::can('admin.finance')) disabled @endif>
-                                            {{ __('Sync Credits To Plan') }}
-                                        </button>
-                                        <a wire:navigate class="btn btn-sm btn-soft-info" href="{{ route('admin.customers.detail', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}">{{ __('admin_p2.operations') }}</a>
-                                        <a wire:navigate href="{{ route('admin.customers.usage', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}" class="btn btn-sm btn-soft-secondary">{{ __('Usage') }}</a>
-                                        <a wire:navigate href="{{ route('admin.customers.list', ['locale' => app()->getLocale(), 'q' => $customer->username]) }}" class="btn btn-sm btn-soft-primary">{{ __('Locate') }}</a>
-                                    </div>
-                                </td>
+                                <td><a wire:navigate class="fw-semibold" dir="auto" href="{{ route('admin.customers.detail', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}">{{ $this->customerDisplayName($customer) }}</a><small class="d-block text-muted" dir="auto">{{ $customer->email }}</small></td>
+                                <td><x-admin-status-badge :tone="(int) $customer->status === 0 ? 'danger' : 'success'">{{ $this->customerStatusLabel($customer->status) }}</x-admin-status-badge></td>
+                                <td dir="auto">{{ $customer->currentServicePlan()?->name ?? __('No active plan') }}</td>
+                                <td><bdi>{{ $this->formatCredits($customer->wallet?->balance_credits ?? 0) }}</bdi></td>
+                                <td><bdi>{{ $this->formatCredits($customer->apiWallet?->balance_credits ?? 0) }}</bdi></td>
+                                <td><bdi>{{ number_format($customer->storageUsedBytes() / 1048576, 1) }} / {{ number_format($customer->storageQuotaMb()) }} MB</bdi></td>
+                                <td><bdi>{{ $customer->created_at?->format('Y-m-d') }}</bdi></td>
+                                <td><div class="d-flex flex-wrap gap-2 justify-content-end">
+                                    <a wire:navigate class="btn btn-sm btn-soft-info" href="{{ route('admin.customers.detail', ['locale' => app()->getLocale(), 'customer' => $customer->id]) }}">{{ __('admin_customer.open_detail') }}</a>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" wire:click="focusCustomer({{ $customer->id }})">{{ __('admin_customer.manage_actions') }}</button>
+                                </div></td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="text-center py-5 text-muted">{{ __('No customer registrations matched the current filters.') }}</td>
+                                <td colspan="8" class="text-center py-5 text-muted">{{ __('No customer registrations matched the current filters.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -938,5 +835,7 @@ class extends Component
             {{ $this->registrationCustomers->onEachSide(1)->links() }}
         </div>
     </div>
+
+    @endif
 
 </div>

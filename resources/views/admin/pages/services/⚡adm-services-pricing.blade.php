@@ -18,7 +18,7 @@ class extends Component
 
 <x-slot:title>{{ __('Services Pricing') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div class="container-fluid">
+<div class="container-fluid admin-service-workspace">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-capability-notice :capabilities="['admin.pricing']" />
     <x-admin-change-reason />
@@ -27,7 +27,7 @@ class extends Component
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
                     <h4 class="mb-sm-0">{{ __('Service Pricing') }}</h4>
-                    <p class="text-muted mb-0">{{ __('Manage grouped App, Mobile, and API metering rules while keeping legacy all-channel fallback safe at runtime.') }}</p>
+                    <p class="text-muted mb-0">{{ __('admin_service.pricing_help') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
                     <a wire:navigate href="{{ route('admin.services.entitlements', ['locale' => app()->getLocale()]) }}" class="btn btn-soft-secondary">{{ __('View Entitlements') }}</a>
@@ -77,6 +77,7 @@ class extends Component
         </div>
     </div>
 
+    <p class="alert alert-info">{{ __('admin_service.pricing_help') }}</p>
     <x-admin-v2-catalog />
     <div class="card">
         <div class="card-header border-0">
@@ -102,7 +103,7 @@ class extends Component
                     <select class="form-select" wire:model.live="actionFilter" id="admin-field-adm-services-pricing-3">
                         <option value="all">{{ __('All Actions') }}</option>
                         @foreach ($this->actionOptions as $action)
-                            <option value="{{ $action->id }}">{{ $action->full_code }}</option>
+                            <option value="{{ $action->id }}">{{ \App\Support\Admin\AdminServiceWorkspace::actionName($action) }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -149,7 +150,7 @@ class extends Component
         <div class="card-header border-0">
             <div>
                 <h5 class="card-title mb-1">{{ __('Pricing Rules') }}</h5>
-                <p class="text-muted mb-0">{{ __('Define shared metering settings and grouped App, Mobile, and API credit prices for each tool action.') }}</p>
+                <p class="text-muted mb-0">{{ __('admin_service.pricing_help') }}</p>
             </div>
         </div>
         <div class="card-body p-0">
@@ -180,8 +181,8 @@ class extends Component
                             <tr wire:key="pricing-group-{{ md5((string) $group['group_key']) }}">
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ $group['tool_action']?->name ?? __('Unknown Action') }}</span>
-                                        <span class="text-muted small" dir="ltr">{{ $group['tool_action']?->full_code ?? __('n/a') }}</span>
+                                        <span class="fw-semibold">{{ \App\Support\Admin\AdminServiceWorkspace::actionName($group['tool_action']) }}</span>
+                                        <small class="text-muted">{{ $group['tool_action']?->tool?->name }}</small><details><summary>{{ __('admin_ux.configuration_reference') }}</summary><code dir="ltr">{{ $group['tool_action']?->full_code }}</code></details>
                                     </div>
                                 </td>
                                 <td>
@@ -200,9 +201,9 @@ class extends Component
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold" dir="ltr">{{ $group['metric_code'] }}</span>
                                         <span class="text-muted small">{{ __('Unit size: :value', ['value' => $this->formatDecimal($group['unit_size'], 4)]) }}</span>
-                                        <span class="text-muted small">{{ __('Priority: :value', ['value' => number_format((int) $group['priority'])]) }}</span>
+                                        <details><summary>{{ __('admin_ux.configuration_reference') }}</summary><span class="text-muted small">{{ __('Priority: :value', ['value' => number_format((int) $group['priority'])]) }}</span>
                                         <span class="text-muted small">{{ __(':mode / step :step', ['mode' => __($group['rounding_mode']), 'step' => $this->formatDecimal($group['rounding_step'], 4)]) }}</span>
-                                        <span class="text-muted small">{{ __('Minimum :value', ['value' => number_format((int) $group['minimum_credits'])]) }}</span>
+                                        <span class="text-muted small">{{ __('Minimum :value', ['value' => number_format((int) $group['minimum_credits'])]) }}</span></details>
                                     </div>
                                 </td>
                                 <td>
@@ -272,20 +273,21 @@ class extends Component
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetRuleForm"></button>
                     </div>
                     <div class="modal-body">
+                        <x-admin-validation-summary />
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label" for="admin-field-adm-services-pricing-8">{{ __('Tool Action') }}</label>
-                                <select class="form-select @error('ruleToolActionId') is-invalid @enderror" wire:model.defer="ruleToolActionId" id="admin-field-adm-services-pricing-8">
+                                <select class="form-select @error('ruleToolActionId') is-invalid @enderror" wire:model.defer="ruleToolActionId" id="admin-field-adm-services-pricing-8" data-admin-review>
                                     <option value="">{{ __('Choose action...') }}</option>
                                     @foreach ($this->actionOptions as $action)
-                                        <option value="{{ $action->id }}">{{ $action->full_code }}</option>
+                                        <option value="{{ $action->id }}">{{ \App\Support\Admin\AdminServiceWorkspace::actionName($action) }}</option>
                                     @endforeach
                                 </select>
                                 @error('ruleToolActionId') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="admin-field-adm-services-pricing-9">{{ __('Service Plan') }}</label>
-                                <select class="form-select @error('ruleServicePlanId') is-invalid @enderror" wire:model.defer="ruleServicePlanId" id="admin-field-adm-services-pricing-9">
+                                <select class="form-select @error('ruleServicePlanId') is-invalid @enderror" wire:model.defer="ruleServicePlanId" id="admin-field-adm-services-pricing-9" data-admin-review>
                                     <option value="">{{ __('Global default') }}</option>
                                     @foreach ($this->planOptions as $plan)
                                         <option value="{{ $plan->id }}">{{ $plan->name }}</option>
@@ -295,7 +297,7 @@ class extends Component
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-pricing-10">{{ __('Rule Type') }}</label>
-                                <select class="form-select" wire:model.defer="ruleType" id="admin-field-adm-services-pricing-10">
+                                <select class="form-select" wire:model.defer="ruleType" id="admin-field-adm-services-pricing-10" data-admin-review>
                                     <option value="free">{{ __('Free') }}</option>
                                     <option value="fixed">{{ __('Fixed') }}</option>
                                     <option value="unit">{{ __('Unit') }}</option>
@@ -304,47 +306,47 @@ class extends Component
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-pricing-11">{{ __('Priority') }}</label>
-                                <input type="number" min="0" class="form-control @error('rulePriority') is-invalid @enderror" wire:model.defer="rulePriority" id="admin-field-adm-services-pricing-11">
+                                <input type="number" min="0" class="form-control @error('rulePriority') is-invalid @enderror" wire:model.defer="rulePriority" id="admin-field-adm-services-pricing-11" data-admin-review>
                                 @error('rulePriority') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-pricing-12">{{ __('Metric Code') }}</label>
-                                <input dir="ltr" type="text" class="form-control @error('ruleMetricCode') is-invalid @enderror" wire:model.defer="ruleMetricCode" placeholder="character" id="admin-field-adm-services-pricing-12">
+                                <input dir="ltr" type="text" class="form-control @error('ruleMetricCode') is-invalid @enderror" wire:model.defer="ruleMetricCode" placeholder="character" id="admin-field-adm-services-pricing-12" data-admin-review>
                                 @error('ruleMetricCode') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label" for="admin-field-adm-services-pricing-13">{{ __('Status') }}</label>
-                                <select class="form-select" wire:model.defer="ruleStatus" id="admin-field-adm-services-pricing-13">
+                                <select class="form-select" wire:model.defer="ruleStatus" id="admin-field-adm-services-pricing-13" data-admin-review>
                                     <option value="active">{{ __('Active') }}</option>
                                     <option value="inactive">{{ __('Inactive') }}</option>
                                 </select>
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label" for="admin-field-adm-services-pricing-14">{{ __('Unit Size') }}</label>
-                                <input type="number" step="0.0001" min="0.0001" class="form-control @error('ruleUnitSize') is-invalid @enderror" wire:model.defer="ruleUnitSize" id="admin-field-adm-services-pricing-14">
+                                <input type="number" step="0.0001" min="0.0001" class="form-control @error('ruleUnitSize') is-invalid @enderror" wire:model.defer="ruleUnitSize" id="admin-field-adm-services-pricing-14" data-admin-review>
                                 @error('ruleUnitSize') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-pricing-15">{{ __('App Dashboard Credits / Unit') }}</label>
-                                <input type="number" step="0.0001" min="0" class="form-control @error('ruleAppCreditsPerUnit') is-invalid @enderror" wire:model.defer="ruleAppCreditsPerUnit" id="admin-field-adm-services-pricing-15">
+                                <input type="number" step="0.0001" min="0" class="form-control @error('ruleAppCreditsPerUnit') is-invalid @enderror" wire:model.defer="ruleAppCreditsPerUnit" id="admin-field-adm-services-pricing-15" data-admin-review>
                                 <div class="form-text">{{ __('Dashboard and normal web app usage.') }}</div>
                                 @error('ruleAppCreditsPerUnit') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-pricing-16">{{ __('Mobile API Credits / Unit') }}</label>
-                                <input type="number" step="0.0001" min="0" class="form-control @error('ruleMobileCreditsPerUnit') is-invalid @enderror" wire:model.defer="ruleMobileCreditsPerUnit" id="admin-field-adm-services-pricing-16">
+                                <input type="number" step="0.0001" min="0" class="form-control @error('ruleMobileCreditsPerUnit') is-invalid @enderror" wire:model.defer="ruleMobileCreditsPerUnit" id="admin-field-adm-services-pricing-16" data-admin-review>
                                 <div class="form-text">{{ __('Mobile client API pricing.') }}</div>
                                 @error('ruleMobileCreditsPerUnit') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-pricing-17">{{ __('Public API Credits / Unit') }}</label>
-                                <input type="number" step="0.0001" min="0" class="form-control @error('ruleApiCreditsPerUnit') is-invalid @enderror" wire:model.defer="ruleApiCreditsPerUnit" id="admin-field-adm-services-pricing-17">
+                                <input type="number" step="0.0001" min="0" class="form-control @error('ruleApiCreditsPerUnit') is-invalid @enderror" wire:model.defer="ruleApiCreditsPerUnit" id="admin-field-adm-services-pricing-17" data-admin-review>
                                 <div class="form-text">{{ __('Public Customer API pricing.') }}</div>
                                 @error('ruleApiCreditsPerUnit') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label" for="admin-field-adm-services-pricing-18">{{ __('Rounding Mode') }}</label>
-                                <select class="form-select" wire:model.defer="ruleRoundingMode" id="admin-field-adm-services-pricing-18">
+                                <select class="form-select" wire:model.defer="ruleRoundingMode" id="admin-field-adm-services-pricing-18" data-admin-review>
                                     <option value="none">{{ __('none') }}</option>
                                     <option value="ceil">{{ __('ceil') }}</option>
                                     <option value="floor">{{ __('floor') }}</option>
@@ -353,21 +355,21 @@ class extends Component
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label" for="admin-field-adm-services-pricing-19">{{ __('Rounding Step') }}</label>
-                                <input type="number" step="0.0001" min="0.0001" class="form-control @error('ruleRoundingStep') is-invalid @enderror" wire:model.defer="ruleRoundingStep" id="admin-field-adm-services-pricing-19">
+                                <input type="number" step="0.0001" min="0.0001" class="form-control @error('ruleRoundingStep') is-invalid @enderror" wire:model.defer="ruleRoundingStep" id="admin-field-adm-services-pricing-19" data-admin-review>
                                 @error('ruleRoundingStep') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label" for="admin-field-adm-services-pricing-20">{{ __('Minimum Credits') }}</label>
-                                <input type="number" min="0" class="form-control @error('ruleMinimumCredits') is-invalid @enderror" wire:model.defer="ruleMinimumCredits" id="admin-field-adm-services-pricing-20">
+                                <input type="number" min="0" class="form-control @error('ruleMinimumCredits') is-invalid @enderror" wire:model.defer="ruleMinimumCredits" id="admin-field-adm-services-pricing-20" data-admin-review>
                                 @error('ruleMinimumCredits') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label" for="admin-field-adm-services-pricing-21">{{ __('Starts At') }}</label>
-                                <input type="datetime-local" class="form-control" wire:model.defer="ruleStartsAt" id="admin-field-adm-services-pricing-21">
+                                <input type="datetime-local" class="form-control" wire:model.defer="ruleStartsAt" id="admin-field-adm-services-pricing-21" data-admin-review>
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label" for="admin-field-adm-services-pricing-22">{{ __('Ends At') }}</label>
-                                <input type="datetime-local" class="form-control" wire:model.defer="ruleEndsAt" id="admin-field-adm-services-pricing-22">
+                                <input type="datetime-local" class="form-control" wire:model.defer="ruleEndsAt" id="admin-field-adm-services-pricing-22" data-admin-review>
                             </div>
                             <div class="col-12">
                                 <label class="form-label">{{ __('Conditions JSON') }}</label>
@@ -398,6 +400,7 @@ class extends Component
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetDeleteState"></button>
                 </div>
                 <div class="modal-body">
+                        <x-admin-validation-summary />
                     <p class="mb-2">{{ __('Delete this pricing group?') }}</p>
                     <p class="mb-2"><span class="fw-semibold">{{ $deleteLabel }}</span></p>
                     <p class="mb-0 text-muted">{{ __('This will remove App, Mobile, and Public API pricing rows for this tool/action configuration. Legacy All Channel fallback rows will be preserved unless explicitly handled.') }}</p>
@@ -410,80 +413,5 @@ class extends Component
         </div>
     </div>
 
-    @push('scripts')
-        @once
-            <script>
-                (() => {
-                    if (window.__SERVICES_PRICING_MODAL_EVENTS__) {
-                        return;
-                    }
 
-                    window.__SERVICES_PRICING_MODAL_EVENTS__ = true;
-
-                    const modalIds = [
-                        'servicePricingRuleModal',
-                        'servicePricingDeleteModal',
-                    ];
-
-                    const cleanupModalState = () => {
-                        if (typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        modalIds.forEach((id) => {
-                            const element = document.getElementById(id);
-
-                            if (!element) {
-                                return;
-                            }
-
-                            const instance = bootstrap.Modal.getInstance(element);
-
-                            if (instance) {
-                                instance.hide();
-                                instance.dispose();
-                            }
-
-                            element.classList.remove('show');
-                            element.style.display = 'none';
-                            element.removeAttribute('aria-modal');
-                            element.removeAttribute('role');
-                        });
-
-                        document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.removeProperty('padding-right');
-                        document.body.style.removeProperty('overflow');
-                    };
-
-                    const withModal = (id, callback) => {
-                        if (!id || typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById(id);
-
-                        if (!element) {
-                            return;
-                        }
-
-                        callback(bootstrap.Modal.getOrCreateInstance(element));
-                    };
-
-                    window.addEventListener('services-pricing:modal-show', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.show());
-                    });
-
-                    window.addEventListener('services-pricing:modal-hide', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.hide());
-                    });
-
-                    document.addEventListener('livewire:navigating', cleanupModalState);
-                    document.addEventListener('livewire:navigated', cleanupModalState);
-
-                    cleanupModalState();
-                })();
-            </script>
-        @endonce
-    @endpush
 </div>

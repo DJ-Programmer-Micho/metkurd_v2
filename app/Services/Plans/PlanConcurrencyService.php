@@ -24,6 +24,10 @@ class PlanConcurrencyService
             return self::DEFAULT_LIMIT;
         }
 
+        if (($override = $this->agreementOverride($customer)) !== null) {
+            return $override;
+        }
+
         $plan = method_exists($customer, 'currentServicePlan')
             ? $customer->currentServicePlan()
             : null;
@@ -67,6 +71,18 @@ class PlanConcurrencyService
         }
 
         return $lookup['by_code'][$planCode] ?? self::DEFAULT_LIMIT;
+    }
+
+    public function agreementOverride(Customer $customer): ?int
+    {
+        $state = app(CustomerBillingStateService::class)->servicePlanState($customer);
+        $agreement = $state['agreement'];
+        if (! $agreement || $agreement->status !== 'active' || $agreement->starts_at->isFuture()
+            || $agreement->ends_at->lte(now()) || $agreement->concurrent_jobs_limit === null) {
+            return null;
+        }
+
+        return max(1, min((int) config('service_agreements.max_concurrency'), (int) $agreement->concurrent_jobs_limit));
     }
 
     public function flushCache(): void

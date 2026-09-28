@@ -11,7 +11,7 @@
         ['admin.customers.detail', ['customer' => $customerId, 'section' => 'audit'], 'audit'],
     ])
     @foreach($links as [$routeName, $parameters, $label])
-        <a wire:navigate class="btn btn-sm btn-soft-info" href="{{ route($routeName, ['locale' => app()->getLocale()] + $parameters) }}">{{ __('admin_p3.'.$label) }}</a>
+        <a wire:navigate class="btn btn-sm btn-soft-info" href="{{ route($routeName, ['locale' => app()->getLocale()] + $parameters) }}">{{ $label === 'billing' ? __('admin_customer.manage_actions') : __('admin_p3.'.$label) }}</a>
     @endforeach
     <details class="dropdown">
         <summary class="btn btn-sm btn-soft-info">{{ __('admin_ux.more_records') }}</summary>

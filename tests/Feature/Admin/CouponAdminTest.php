@@ -27,7 +27,8 @@ it('renders the admin coupon management page', function () {
     $this->actingAs($admin, 'admin');
 
     Livewire::test('admin::pages.payments.adm-payments-coupons')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
-        ->assertSee('Checkout Coupons')
+        ->assertSee(__('admin_shell.coupons'))
+        ->assertSee(__('admin_shell.legacy_coupons_help'))
         ->assertSee('Recurring provider limitation');
 });
 

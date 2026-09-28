@@ -42,7 +42,7 @@ it('renders every scoped Admin surface in its own locale and direction', functio
         expect(substr_count($html, 'data-admin-ui'))->toBe(1);
         if ($page === 'home') {
             expect(html_entity_decode($html))->toContain(route('admin.customers.register', ['locale' => $locale]));
-            expect($html)->toContain(__('Customer Register'));
+            expect($html)->toContain(e(__('admin_shell.register')));
             preg_match('/id="admin-home-chart-data">(.*?)<\/script>/s', $html, $chart);
             $payload = json_decode($chart[1], true, flags: JSON_THROW_ON_ERROR);
             expect($payload['ui']['revenue'])->toBe(__('Revenue'));

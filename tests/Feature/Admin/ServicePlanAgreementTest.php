@@ -246,7 +246,7 @@ it('freezes monthly allowances and does not depend on later catalog price or cre
 it('renders safely before the new schema is installed and never runs the migration automatically', function () {
     \Illuminate\Support\Facades\Schema::drop('service_plan_agreements');
     Livewire::test('admin::pages.customers.adm-customers-register')->set('customerFilter', (string) $this->customer->id)
-        ->assertSee(__('agreement.migration'))->assertDontSee('data-admin-method="recordServiceAgreement"', false);
+        ->assertSee(__('admin_cleanup.agreement_migration'))->assertDontSee('data-admin-method="recordServiceAgreement"', false);
     expect(fn () => ($this->recordAgreement)())->toThrow(ValidationException::class);
     $this->artisan('billing:process-service-agreements')->assertSuccessful();
     expect(\Illuminate\Support\Facades\Schema::hasTable('service_plan_agreements'))->toBeFalse();
@@ -382,4 +382,101 @@ it('does not reuse the App shell plan cache across agreement activation or the e
     $this->travelTo(ServicePlanAgreement::find($result['agreement_id'])->ends_at);
     expect($shell->forCurrentCustomer()['plan_code'])->toBe('free');
     Http::assertNothingSent();
+});
+
+it('uses custom agreement allowances and isolated App/API concurrency through expiry', function () {
+    $service = app(AdminServiceAgreements::class);
+    $prices = $this->plan->getRawOriginal();
+    $money = collect(['payments', 'payment_events', 'credit_orders', 'payment_intents'])->mapWithKeys(fn ($t) => [$t => DB::table($t)->count()]);
+    $id = (string) Str::uuid();
+    $record = fn () => $service->record($id, $this->customer->id, $this->plan->id, '2026-09-13', '2027-09-03', null, 'CUSTOM-FIXTURE', 'Approved custom allowance fixture.', 1000000, 2000000);
+    $result = $record();
+    $agreement = ServicePlanAgreement::findOrFail($result['agreement_id']);
+    $concurrency = app(\App\Services\Plans\PlanConcurrencyService::class);
+    expect($agreement->concurrent_jobs_limit)->toBe(5)
+        ->and($concurrency->allowedConcurrentJobsForCustomer($this->customer->fresh()))->toBe(5)
+        ->and(app(\App\Services\CustomerApi\CustomerApiAccessService::class)->configForCustomer($this->customer->fresh())['concurrent_jobs'])->toBe(5)
+        ->and($this->customer->fresh()->wallet->subscription_balance_credits)->toBe(1000000)
+        ->and($this->customer->fresh()->apiWallet->subscription_balance_credits)->toBe(2000000);
+    $other = Customer::create(['username' => 'other_'.Str::random(8), 'email' => Str::uuid().'@example.test', 'password' => 'fixture', 'status' => 1]);
+    expect($concurrency->agreementOverride($other))->toBeNull()->and($this->plan->fresh()->getRawOriginal())->toBe($prices);
+    $record();
+    expect(SubscriptionCreditAllocation::where('subscription_id', $agreement->subscription_id)->count())->toBe(1);
+    $operation = (string) Str::uuid();
+    $service->adjust($operation, $this->customer->id, $agreement->id, 700000, 900000, 3, 'Approved future monthly allowance adjustment.');
+    $service->adjust($operation, $this->customer->id, $agreement->id, 700000, 900000, 3, 'Approved future monthly allowance adjustment.');
+    expect($concurrency->allowedConcurrentJobsForCustomer($this->customer->fresh()))->toBe(3)
+        ->and($this->customer->fresh()->wallet->subscription_balance_credits)->toBe(1000000);
+    $audit = AdminAuditEvent::where('action', 'agreement.allowances')->where('operation_id', $operation)->firstOrFail();
+    expect($audit->before_state['app_monthly_credits'])->toBe(1000000)->and($audit->after_state['app_monthly_credits'])->toBe(700000);
+    $this->travelTo(now()->setDate(2026, 12, 15));
+    app(ServiceAgreementLifecycle::class)->process($agreement->id);
+    app(ServiceAgreementLifecycle::class)->process($agreement->id);
+    expect($this->customer->fresh()->wallet->subscription_balance_credits)->toBe(700000)
+        ->and($this->customer->fresh()->apiWallet->subscription_balance_credits)->toBe(900000)
+        ->and(SubscriptionCreditAllocation::where('subscription_id', $agreement->subscription_id)->count())->toBe(2);
+    $this->travelTo($agreement->ends_at);
+    expect($concurrency->agreementOverride($this->customer->fresh()))->toBeNull();
+    app(ServiceAgreementLifecycle::class)->process($agreement->id);
+    expect($this->customer->fresh()->wallet->subscription_balance_credits)->toBe(0)
+        ->and($this->customer->fresh()->apiWallet->subscription_balance_credits)->toBe(0)
+        ->and($this->customer->fresh()->wallet->addon_balance_credits)->toBe(19);
+    foreach ($money as $table => $count) {
+        expect(DB::table($table)->count())->toBe($count);
+    }
+    Http::assertNothingSent();
+});
+
+it('rejects unsafe custom agreement values before creating an operation', function ($app, $api, $slots) {
+    expect(fn () => app(AdminServiceAgreements::class)->record((string) Str::uuid(), $this->customer->id, $this->plan->id,
+        '2026-09-13', '2027-09-03', null, 'INVALID-FIXTURE', 'Approved validation fixture.', $app, $api, $slots))->toThrow(ValidationException::class);
+    expect(ServicePlanAgreement::count())->toBe(0)->and(AdminOperation::count())->toBe(0);
+})->with([[-1, 0, 5], [0, -1, 5], [0, 0, 0], [0, 0, 6], [1000000001, 0, 5]]);
+
+it('retains plan concurrency for legacy null overrides and before a future agreement starts', function () {
+    $result = ($this->recordAgreement)('2026-10-13', '2027-09-03');
+    $service = app(\App\Services\Plans\PlanConcurrencyService::class);
+    expect($service->agreementOverride($this->customer->fresh()))->toBeNull();
+    $this->travelTo(now()->setDate(2026, 10, 14));
+    app(ServiceAgreementLifecycle::class)->process($result['agreement_id']);
+    ServicePlanAgreement::findOrFail($result['agreement_id'])->update(['concurrent_jobs_limit' => null]);
+    expect($service->agreementOverride($this->customer->fresh()))->toBeNull()
+        ->and($service->allowedConcurrentJobsForCustomer($this->customer->fresh()))->toBe($service->allowedConcurrentJobsForPlan($this->plan));
+});
+
+it('rejects adjustment ownership capability and expired agreements without changing allowances', function () {
+    $result = ($this->recordAgreement)();
+    $agreement = ServicePlanAgreement::findOrFail($result['agreement_id']);
+    $other = Customer::create(['username' => 'owner_'.Str::random(8), 'email' => Str::uuid().'@example.test', 'password' => 'fixture', 'status' => 1]);
+    $service = app(AdminServiceAgreements::class);
+    expect(fn () => $service->adjust((string) Str::uuid(), $other->id, $agreement->id, 0, 0, 1, 'Ownership fixture change.'))->toThrow(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    $this->admin->forceFill(['admin_capabilities' => ['admin.read']])->save();
+    expect(fn () => $service->adjust((string) Str::uuid(), $this->customer->id, $agreement->id, 0, 0, 1, 'Capability fixture change.'))->toThrow(\Illuminate\Auth\Access\AuthorizationException::class);
+    $this->admin->forceFill(['admin_capabilities' => ['admin.read', 'admin.finance']])->save();
+    $this->travelTo($agreement->ends_at);
+    expect(fn () => $service->adjust((string) Str::uuid(), $this->customer->id, $agreement->id, 0, 0, 1, 'Expired fixture change.'))->toThrow(ValidationException::class);
+    expect($agreement->fresh()->app_monthly_credits)->toBe($agreement->app_monthly_credits);
+});
+
+it('isolates two agreement overrides on the same base plan', function () {
+    $first = ($this->recordAgreement)();
+    $other = Customer::create(['username' => 'same_plan_'.Str::random(8), 'email' => Str::uuid().'@example.test', 'password' => 'fixture', 'status' => 1]);
+    app(AdminServiceAgreements::class)->record((string) Str::uuid(), $other->id, $this->plan->id, '2026-09-13', '2027-09-03', null, 'OTHER-FIXTURE', 'Second customer isolated agreement.', 100, 200, 2);
+    $service = app(\App\Services\Plans\PlanConcurrencyService::class);
+    expect($this->customer->fresh()->currentServicePlan()->id)->toBe($other->fresh()->currentServicePlan()->id)
+        ->and($service->allowedConcurrentJobsForCustomer($this->customer->fresh()))->toBe(5)
+        ->and($service->allowedConcurrentJobsForCustomer($other->fresh()))->toBe(2)
+        ->and($other->fresh()->wallet->subscription_balance_credits)->toBe(100)
+        ->and($this->plan->fresh()->appMonthlyCredits())->toBe($this->plan->appMonthlyCredits());
+});
+
+it('keeps historical agreements visible and blocks new controls before the additive migration', function () {
+    $result = ($this->recordAgreement)();
+    \Illuminate\Support\Facades\Schema::table('service_plan_agreements', fn ($table) => $table->dropColumn('concurrent_jobs_limit'));
+    $component = Livewire::test('admin::pages.customers.adm-customers-register')->call('focusCustomer', $this->customer->id);
+    $component->assertSee('AGENCY-FIXTURE')->assertDontSee('id="agreement-create"', false);
+    expect($component->get('agreementSchemaReady'))->toBeFalse()
+        ->and(app(\App\Services\Plans\PlanConcurrencyService::class)->agreementOverride($this->customer->fresh()))->toBeNull();
+    expect(fn () => ($this->recordAgreement)('2027-10-13', '2028-09-03'))->toThrow(ValidationException::class);
+    expect(ServicePlanAgreement::count())->toBe(1);
 });

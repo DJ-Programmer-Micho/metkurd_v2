@@ -88,7 +88,7 @@ class ApiSubmission
             $data['text'] = app(HarakatInput::class)->prepare($data['text'])['text'];
         }
         if (in_array($service, ['speech', 'voice-clone'], true)) {
-            $data = array_merge($data, $boundary->text($customer, $action, $data, $service === 'speech'));
+            $data = array_merge($data, $boundary->text($customer, $action, $data, $service === 'speech', 'api'));
         }
         if ($service === 'voice-clone') {
             if ((bool) $file === ! empty($data['reference_id'])) {

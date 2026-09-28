@@ -77,17 +77,11 @@ new #[Layout('landing::layouts.app')] class extends Component
         'operatingSystem' => 'Web',
         'inLanguage' => $locale,
         'description' => $description,
+        'featureList' => (array) data_get($tool, 'capabilities', []),
         'url' => $toolUrl,
         'brand' => [
             '@type' => 'Brand',
             'name' => LandingContent::text('site.name'),
-        ],
-        'offers' => [
-            '@type' => 'Offer',
-            'price' => '0',
-            'priceCurrency' => 'IQD',
-            'availability' => 'https://schema.org/InStock',
-            'url' => route('landing.pricing', ['locale' => $locale]),
         ],
     ];
 @endphp
@@ -98,10 +92,10 @@ new #[Layout('landing::layouts.app')] class extends Component
 
 @push('meta')
     <script type="application/ld+json">
-        @json($breadcrumbSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+        @json($breadcrumbSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_PRETTY_PRINT)
     </script>
     <script type="application/ld+json">
-        @json($softwareSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+        @json($softwareSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_PRETTY_PRINT)
     </script>
 @endpush
 

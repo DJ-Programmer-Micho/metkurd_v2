@@ -361,7 +361,7 @@ class extends Component
 };
 ?>
 
-<x-slot:title>{{ __('Currency Exchange Rates') }} | {{ __('MET KURD') }}</x-slot:title>
+<x-slot:title>{{ __('admin_shell.currencies') }} | {{ __('MET KURD') }}</x-slot:title>
 
 <div class="container-fluid">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
@@ -371,7 +371,7 @@ class extends Component
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
-                    <h4 class="mb-sm-0">{{ __('Currency Exchange Rates') }}</h4>
+                    <h4 class="mb-sm-0">{{ __('admin_shell.currencies') }}</h4>
                     <p class="text-muted mb-0">{{ __('IQD is the canonical billing currency. Manage quote rates, active display currencies, and pricing-rounding rules here.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
@@ -554,6 +554,7 @@ class extends Component
 <fieldset @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>
                     @csrf
                     <div class="modal-body">
+                        <x-admin-validation-summary />
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label" for="admin-field-adm-payments-currencies-2">{{ __('Quote Currency') }}</label>
@@ -640,73 +641,5 @@ class extends Component
         </div>
     </div>
 
-    @push('scripts')
-        @once
-            <script>
-                (() => {
-                    if (window.__PAYMENT_CURRENCIES_MODAL_EVENTS__) {
-                        return;
-                    }
 
-                    window.__PAYMENT_CURRENCIES_MODAL_EVENTS__ = true;
-
-                    const cleanupModalState = () => {
-                        if (typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById('paymentCurrencyModal');
-
-                        if (!element) {
-                            return;
-                        }
-
-                        const instance = bootstrap.Modal.getInstance(element);
-
-                        if (instance) {
-                            instance.hide();
-                            instance.dispose();
-                        }
-
-                        element.classList.remove('show');
-                        element.style.display = 'none';
-                        element.removeAttribute('aria-modal');
-                        element.removeAttribute('role');
-
-                        document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.removeProperty('padding-right');
-                        document.body.style.removeProperty('overflow');
-                    };
-
-                    const withModal = (id, callback) => {
-                        if (!id || typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById(id);
-
-                        if (!element) {
-                            return;
-                        }
-
-                        callback(bootstrap.Modal.getOrCreateInstance(element));
-                    };
-
-                    window.addEventListener('payments-currencies:modal-show', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.show());
-                    });
-
-                    window.addEventListener('payments-currencies:modal-hide', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.hide());
-                    });
-
-                    document.addEventListener('livewire:navigating', cleanupModalState);
-                    document.addEventListener('livewire:navigated', cleanupModalState);
-
-                    cleanupModalState();
-                })();
-            </script>
-        @endonce
-    @endpush
 </div>

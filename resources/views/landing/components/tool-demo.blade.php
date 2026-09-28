@@ -30,7 +30,7 @@ new class extends Component
             return [];
         }
 
-        $normalized = $this->demoSchema()->normalizeConfig($type, $rawConfig, $slug);
+        $normalized = app(\App\Support\Landing\PublicDemoCatalog::class)->filter($slug, $rawConfig);
         if ($normalized !== []) {
             return $normalized;
         }
@@ -82,7 +82,7 @@ new class extends Component
 
         $items = $this->resolveTtsDemoEntries($this->demoItems);
 
-        return $items !== [] ? $items : $this->fallbackTtsItemsFromVoices();
+        return $items;
     }
 
     /**
@@ -282,6 +282,7 @@ new class extends Component
 
         $stemLabels = [
             'vocals' => __('Vocals'),
+            'instrumental' => __('Instrumental'),
             'drums' => __('Drums'),
             'bass' => __('Bass'),
             'other' => __('Other'),
@@ -413,7 +414,8 @@ new class extends Component
 
         $voiceMap = Voice::query()
             ->where('is_active', true)
-            ->when($voiceIds !== [], fn ($query) => $query->whereIn('code', $voiceIds))
+            ->where('is_public', true)
+            ->whereIn('code', $voiceIds)
             ->get(['code', 'name', 'meta'])
             ->keyBy('code');
 
@@ -660,10 +662,6 @@ new class extends Component
                 ->all();
         }
 
-        if ($samples === [] && $engine !== '') {
-            $samples = $this->fallbackTtsItemsFromVoices($engine);
-        }
-
         return $samples;
     }
 
@@ -819,6 +817,12 @@ new class extends Component
 
     protected function engineLabel(string $engine): string
     {
+        $product = collect(app(\App\Support\Landing\PublicProductCatalog::class)->products())
+            ->first(fn ($row) => str_replace('-', '_', $row['key']) === $this->normalizeDemoEngine($engine));
+        if ($product) {
+            return $product['name'];
+        }
+
         return match ($this->normalizeDemoEngine($engine)) {
             'xtts' => __('Apollo 1.0v'),
             'ftts' => __('Delta'),

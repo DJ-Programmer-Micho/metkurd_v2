@@ -94,8 +94,8 @@ new class extends Component
     }
 
     $legalLinks = [
-        ['label' => LandingContent::text('nav.terms'), 'href' => route('law.terms')],
-        ['label' => LandingContent::text('nav.privacy'), 'href' => route('law.privacy')],
+        ['label' => LandingContent::text('nav.terms'), 'href' => route('landing.terms', ['locale' => $locale])],
+        ['label' => LandingContent::text('nav.privacy'), 'href' => route('landing.privacy', ['locale' => $locale])],
         ['label' => LandingContent::text('nav.contact'), 'href' => route('landing.contact', ['locale' => $locale])],
     ];
 

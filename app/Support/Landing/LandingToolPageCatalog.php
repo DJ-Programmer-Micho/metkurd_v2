@@ -15,35 +15,30 @@ class LandingToolPageCatalog
      */
     public function listForLocale(string $locale): array
     {
-        if (! Schema::hasTable('landing_tool_pages')) {
-            return $this->fallbackCatalog($locale);
+        $families = app(PublicProductCatalog::class)->currentFamilySlugs();
+        $read = fn () => LandingToolPage::query()->whereIn('slug', $families)
+            ->get(['slug', 'square_image_path', 'hero_image_path', 'card_image_path'])->keyBy('slug');
+        $pages = \Illuminate\Support\Facades\DB::transactionLevel() > 0 ? $read()
+            : \Illuminate\Support\Facades\Cache::remember('landing:public-pages:v2:'.$locale, 300, $read);
+        $items = [];
+        foreach ($families as $slug) {
+            $products = app(PublicProductCatalog::class)->family($slug);
+            if ($products === []) {
+                continue;
+            }
+            $page = $pages->get($slug);
+            $item = app(PublicWebsiteContent::class)->tool($slug, $products, $locale);
+            // Legacy editorial copy cannot override current product facts. Keep configured artwork and samples.
+            foreach (['square', 'hero', 'card'] as $size) {
+                $item[$size.'_image_url'] = $page ? $this->publicAssetUrl($page->{$size.'_image_path'}) : null;
+            }
+            $item['app_download'] = ['enabled' => false];
+            $item['demo_type'] = $slug;
+            $item['demo_config'] = [];
+            $items[] = $item;
         }
 
-        $definedSlugs = LandingToolPage::query()
-            ->pluck('slug')
-            ->map(fn ($slug) => $this->normalizeSlug((string) $slug))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
-        $dynamicPages = LandingToolPage::query()
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->orderBy('slug')
-            ->get()
-            ->map(fn (LandingToolPage $page) => $this->mapModel($page, $locale))
-            ->values();
-
-        $fallbackPages = collect($this->fallbackCatalog($locale))
-            ->reject(fn (array $item) => in_array($this->normalizeSlug((string) ($item['slug'] ?? '')), $definedSlugs, true))
-            ->values();
-
-        return $dynamicPages
-            ->concat($fallbackPages)
-            ->unique(fn (array $item) => $this->normalizeSlug((string) ($item['slug'] ?? '')))
-            ->values()
-            ->all();
+        return $items;
     }
 
     /**
@@ -51,23 +46,16 @@ class LandingToolPageCatalog
      */
     public function findForLocaleBySlug(string $slug, string $locale): ?array
     {
-        $normalized = Str::of($slug)->lower()->replace('_', '-')->toString();
-
-        if (Schema::hasTable('landing_tool_pages')) {
-            $page = LandingToolPage::query()
-                ->where('slug', $normalized)
-                ->first();
-
+        $tool = collect($this->listForLocale($locale))->firstWhere('slug', $slug);
+        if ($tool) {
+            $page = LandingToolPage::query()->where('slug', $slug)->first(['demo_config', 'content']);
+            $tool['demo_config'] = app(PublicDemoCatalog::class)->filter($slug, $page?->demo_config ?: data_get($page?->content, '_demo.config', []));
             if ($page) {
-                if (! $page->is_active) {
-                    return null;
-                }
-
-                return $this->mapModel($page, $locale);
+                $tool['app_download'] = $this->localizedAppDownloadFromContent((array) $page->content, $locale);
             }
         }
 
-        return $this->fallbackToolBySlug($normalized, $locale);
+        return $tool;
     }
 
     public function importFallbackDefaults(): int
@@ -84,7 +72,7 @@ class LandingToolPageCatalog
         foreach ($this->fallbackToolCodes() as $index => $toolCode) {
             $slug = $this->canonicalFallbackSlug($toolCode);
 
-            if ($slug === '') {
+            if (! in_array($slug, app(PublicProductCatalog::class)->currentFamilySlugs(), true)) {
                 continue;
             }
 
@@ -278,7 +266,8 @@ class LandingToolPageCatalog
      */
     protected function fallbackToolCodes(): array
     {
-        return ['tts', 'clone_tts', 'asr', 'ocr', 'tran', 'stem'];
+        return array_map(fn (string $slug) => $slug === 'ctts' ? 'clone_tts' : $slug,
+            app(PublicProductCatalog::class)->currentFamilySlugs());
     }
 
     protected function canonicalFallbackSlug(string $toolCode): string

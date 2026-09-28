@@ -53,16 +53,6 @@ new #[Layout('landing::layouts.app')] class extends Component
             ->all(),
     ];
 
-    $offerSchema = [
-        '@context' => 'https://schema.org',
-        '@type' => 'Offer',
-        'name' => LandingContent::text('pricing_page.offer_name'),
-        'price' => '0',
-        'priceCurrency' => 'IQD',
-        'availability' => 'https://schema.org/InStock',
-        'url' => route('landing.pricing', ['locale' => $locale]),
-        'category' => LandingContent::text('pricing_page.offer_category'),
-    ];
 @endphp
 
 <x-slot:title>{{ LandingContent::text('pricing_page.meta.title') }}</x-slot:title>
@@ -71,13 +61,10 @@ new #[Layout('landing::layouts.app')] class extends Component
 
 @push('meta')
     <script type="application/ld+json">
-        @json($breadcrumbSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+        @json($breadcrumbSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_PRETTY_PRINT)
     </script>
     <script type="application/ld+json">
-        @json($faqSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
-    </script>
-    <script type="application/ld+json">
-        @json($offerSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+        @json($faqSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_PRETTY_PRINT)
     </script>
 @endpush
 

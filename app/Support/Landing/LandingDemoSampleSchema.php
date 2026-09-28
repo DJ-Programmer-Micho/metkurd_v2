@@ -162,7 +162,7 @@ class LandingDemoSampleSchema
     {
         $row = is_array($item) ? $item : [];
 
-        return match ($type) {
+        $normalized = match ($type) {
             'tts' => $this->normalizeTtsItem($row),
             'ctts' => $this->normalizeCttsItem($row),
             'asr' => $this->normalizeAsrItem($row),
@@ -171,6 +171,19 @@ class LandingDemoSampleSchema
             'translation' => $this->normalizeTranslationItem($row),
             default => [],
         };
+
+        return $normalized === [] ? [] : $this->publicationFields($row) + $normalized;
+    }
+
+    private function publicationFields(array $row): array
+    {
+        return array_filter([
+            'product' => trim((string) ($row['product'] ?? '')),
+            'action' => trim((string) ($row['action'] ?? '')),
+            'language' => trim((string) ($row['language'] ?? '')),
+            'sort_order' => (int) ($row['sort_order'] ?? 0),
+            'is_active' => ! array_key_exists('is_active', $row) || $this->normalizeBoolean($row['is_active']),
+        ], fn ($value) => $value !== '');
     }
 
     /**
@@ -210,7 +223,7 @@ class LandingDemoSampleSchema
             $label = Str::headline(str_replace('_', ' ', $key));
         }
 
-        return array_filter([
+        return $this->publicationFields($group) + array_filter([
             'key' => $key,
             'label' => $label,
             'engine' => $engine,
@@ -337,7 +350,7 @@ class LandingDemoSampleSchema
         }
 
         $normalizedStems = [];
-        foreach (['vocals', 'drums', 'bass', 'other'] as $stemKey) {
+        foreach (['vocals', 'instrumental', 'drums', 'bass', 'other'] as $stemKey) {
             $audio = $this->normalizeMediaValue(data_get($stems, $stemKey));
             if ($audio !== null) {
                 $normalizedStems[$stemKey] = $audio;
@@ -583,8 +596,7 @@ class LandingDemoSampleSchema
             str_contains($normalized, 'vocal') || str_contains($normalized, 'voice') => 'vocals',
             str_contains($normalized, 'drum') => 'drums',
             str_contains($normalized, 'bass') => 'bass',
-            str_contains($normalized, 'music'),
-            str_contains($normalized, 'instrument'),
+            str_contains($normalized, 'music'), str_contains($normalized, 'instrument') => 'instrumental',
             str_contains($normalized, 'other') => 'other',
             default => null,
         };

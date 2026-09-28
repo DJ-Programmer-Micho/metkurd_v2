@@ -60,16 +60,13 @@ class LandingToolVoiceAssetController extends Controller
 
     protected function resolvePublicVoice(string $voiceCode): Voice
     {
-        return Cache::remember(
-            'landing-tool-demo-voice:'.Str::lower(trim($voiceCode)),
-            now()->addMinutes(15),
-            function () use ($voiceCode): Voice {
-                return Voice::query()
-                    ->where('code', $voiceCode)
-                    ->where('is_active', true)
-                    ->firstOrFail(['id', 'code', 'name', 'meta', 'is_active', 'is_public']);
-            }
-        );
+        $voice = Voice::query()->where('code', $voiceCode)->where('is_active', true)->where('is_public', true)
+            ->firstOrFail(['id', 'code', 'name', 'meta', 'is_active', 'is_public']);
+        // These existing reference previews belong to Apollo 1.5, not Apollo 2 or Zeta output.
+        abort_unless(data_get($voice->meta, 'engine') === 'xomni'
+            && app(\App\Support\Landing\PublicProductCatalog::class)->has('apollo-1'), 404);
+
+        return $voice;
     }
 
     protected function respondFromDisk(Request $request, string $path, string $mime, string $filename)

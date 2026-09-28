@@ -68,7 +68,7 @@ class TurnstileVerifier
             return $payload;
         } catch (\Throwable $e) {
             Log::warning('TURNSTILE_SITEVERIFY_EXCEPTION', [
-                'message' => $e->getMessage(),
+                'type' => class_basename($e),
                 'remote_ip' => $remoteIp,
             ]);
 

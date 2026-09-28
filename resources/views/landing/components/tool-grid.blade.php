@@ -43,6 +43,19 @@ new class extends Component
             ->filter()
             ->values();
 
+        $catalog = app(\App\Support\Landing\PublicProductCatalog::class);
+        if ($catalog->apiEnabled() || $catalog->mcpEnabled()) {
+            $copy = app(\App\Support\Landing\PublicWebsiteContent::class);
+            $tools->push([
+                'slug' => 'developers', 'title' => $copy->text('developer'),
+                'summary' => $copy->text($catalog->apiEnabled() ? 'api_available' : 'mcp_available'),
+                'capabilities' => array_values(array_filter([$catalog->apiEnabled() ? 'API' : null, $catalog->mcpEnabled() ? 'MCP' : null])),
+                'href' => config('metkurd_v2.enabled')
+                    ? route($catalog->apiEnabled() ? 'app.v2.api' : 'app.v2.mcp', ['locale' => app()->getLocale()])
+                    : route('landing.pricing', ['locale' => app()->getLocale()]),
+            ]);
+        }
+
         if ($this->limit > 0) {
             $tools = $tools->take($this->limit)->values();
         }
@@ -102,7 +115,7 @@ new class extends Component
                     @if($showMeta && ! empty($tool['capabilities']) && is_array($tool['capabilities']))
                         <div class="d-flex flex-wrap gap-2 mt-3">
                             @foreach($tool['capabilities'] as $capability)
-                                <span class="mini-pill">{{ $capability }}</span>
+                                <span class="mini-pill"><bdi dir="ltr">{{ $capability }}</bdi></span>
                             @endforeach
                         </div>
                     @endif

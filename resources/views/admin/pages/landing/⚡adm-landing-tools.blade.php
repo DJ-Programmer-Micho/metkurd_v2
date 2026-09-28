@@ -27,6 +27,7 @@ class extends Component
 <div class="container-fluid">
     <x-admin-capability-notice :capabilities="['admin.catalog']" />
     <x-admin-change-reason />
+    <p class="small text-muted">{{ __('admin_service.public_help') }} <a wire:navigate href="{{ route('admin.services.tools', ['locale' => app()->getLocale()]) }}">{{ __('admin_service.catalog') }}</a></p>
     <div class="row mb-3">
         <div class="col-12 d-flex justify-content-between align-items-center">
             <div>
@@ -52,8 +53,9 @@ class extends Component
                     <label class="form-label text-muted text-uppercase fs-12">{{ __('Status') }}</label>
                     <select class="form-select" wire:model.live="statusFilter">
                         <option value="all">{{ __('All') }}</option>
-                        <option value="active">{{ __('Active') }}</option>
-                        <option value="inactive">{{ __('Inactive') }}</option>
+                        <option value="active">{{ __('Public / Active') }}</option>
+                        <option value="inactive">{{ __('Disabled') }}</option>
+                        <option value="legacy">{{ __('Legacy / Not Public') }}</option>
                     </select>
                 </div>
             </div>
@@ -111,13 +113,16 @@ class extends Component
                                 </td>
                                 <td>{{ $toolPage->sort_order }}</td>
                                 <td>
-                                    <span class="badge {{ $toolPage->is_active ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning' }}">
-                                        {{ $toolPage->is_active ? __('Active') : __('Inactive') }}
+                                    @php($publicStatus = $toolPage->publicVisibilityStatus())
+                                    <span data-public-status="{{ $publicStatus }}" class="badge {{ match ($publicStatus) { 'active' => 'bg-success-subtle text-success', 'inactive' => 'bg-warning-subtle text-warning', default => 'bg-secondary-subtle text-secondary' } }}">
+                                        {{ match ($publicStatus) { 'active' => __('Public / Active'), 'inactive' => __('Disabled'), default => __('Legacy / Not Public') } }}
                                     </span>
                                 </td>
                                 <td class="text-end">
                                     <div class="d-flex justify-content-end gap-2">
-                                        <button type="button" class="btn btn-sm btn-soft-success" wire:click="toggleToolPageStatus({{ $toolPage->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ $toolPage->is_active ? __('Disable') : __('Enable') }}</button>
+                                        @if($publicStatus !== 'legacy' || $toolPage->is_active)
+                                            <button type="button" class="btn btn-sm btn-soft-success" wire:click="toggleToolPageStatus({{ $toolPage->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ $toolPage->is_active ? __('Disable landing publication') : __('Enable landing publication') }}</button>
+                                        @endif
                                         <button type="button" class="btn btn-sm btn-soft-info" wire:click="openToolEditModal({{ $toolPage->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Edit') }}</button>
                                         <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmToolPageDelete({{ $toolPage->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                                     </div>
@@ -178,11 +183,12 @@ class extends Component
                                 @error('sortOrder') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-2">
-                                <label class="form-label">{{ __('Status') }}</label>
+                                <label class="form-label">{{ __('Landing publication') }}</label>
                                 <select class="form-select @error('toolStatus') is-invalid @enderror" wire:model.defer="toolStatus">
-                                    <option value="active">{{ __('Active') }}</option>
-                                    <option value="inactive">{{ __('Inactive') }}</option>
+                                    <option value="active">{{ __('Enabled, subject to tool availability') }}</option>
+                                    <option value="inactive">{{ __('Disabled') }}</option>
                                 </select>
+                                <div class="form-text">{{ __('Only current V2 families with active tools can be public. Legacy pages remain available for editing.') }}</div>
                                 @error('toolStatus') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
@@ -747,79 +753,12 @@ class extends Component
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header"><h5 class="modal-title">{{ __('Delete Tool Page') }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetDeleteState"></button></div>
-                <div class="modal-body"><p class="mb-0">{{ __('Delete tool page ":slug"? This action cannot be undone.', ['slug' => $toolPageDeleteLabel]) }}</p></div>
+                <div class="modal-body">
+                        <x-admin-validation-summary /><p class="mb-0">{{ __('Delete tool page ":slug"? This action cannot be undone.', ['slug' => $toolPageDeleteLabel]) }}</p></div>
                 <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal" wire:click="resetDeleteState">{{ __('Cancel') }}</button><button type="button" class="btn btn-danger" wire:click="performToolPageDelete" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button></div>
             </div>
         </div>
     </div>
 
-    @push('scripts')
-        @once
-            <script data-navigate-once>
-                (() => {
-                    if (window.__LANDING_TOOLS_MODAL_EVENTS__) {
-                        return;
-                    }
 
-                    window.__LANDING_TOOLS_MODAL_EVENTS__ = true;
-                    const modalIds = ['landingToolPageModal', 'landingToolDemoModal', 'landingToolPageDeleteModal'];
-
-                    const cleanupModalState = () => {
-                        if (typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        modalIds.forEach((id) => {
-                            const element = document.getElementById(id);
-                            if (!element) {
-                                return;
-                            }
-
-                            const instance = bootstrap.Modal.getInstance(element);
-                            if (instance) {
-                                instance.hide();
-                                instance.dispose();
-                            }
-
-                            element.classList.remove('show');
-                            element.style.display = 'none';
-                            element.removeAttribute('aria-modal');
-                            element.removeAttribute('role');
-                        });
-
-                        document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.removeProperty('padding-right');
-                        document.body.style.removeProperty('overflow');
-                    };
-
-                    const withModal = (id, callback) => {
-                        if (!id || typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById(id);
-                        if (!element) {
-                            return;
-                        }
-
-                        callback(bootstrap.Modal.getOrCreateInstance(element));
-                    };
-
-                    window.addEventListener('landing-tools:modal-show', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.show());
-                    });
-
-                    window.addEventListener('landing-tools:modal-hide', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.hide());
-                    });
-
-                    document.addEventListener('livewire:navigating', cleanupModalState);
-                    document.addEventListener('livewire:navigated', cleanupModalState);
-
-                    cleanupModalState();
-                })();
-            </script>
-        @endonce
-    @endpush
 </div>

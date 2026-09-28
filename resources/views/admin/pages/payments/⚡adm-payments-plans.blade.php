@@ -16,9 +16,9 @@ class extends Component
 };
 ?>
 
-<x-slot:title>{{ __('Payment Plans') }} | {{ __('MET KURD') }}</x-slot:title>
+<x-slot:title>{{ __('admin_shell.plans') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div class="container-fluid">
+<div class="container-fluid admin-service-workspace">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-capability-notice :capabilities="['admin.pricing']" />
     <x-admin-change-reason />
@@ -27,11 +27,11 @@ class extends Component
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
-                    <h4 class="mb-sm-0">{{ __('Service Plan Payments') }}</h4>
+                    <h4 class="mb-sm-0">{{ __('admin_shell.plans') }}</h4>
                     <p class="text-muted mb-0">{{ __('Manage App/API credits, concurrency, pricing, scopes, and activation state from one plan catalog.') }}</p>
                 </div>
                 <div class="page-title-right d-flex align-items-center gap-2">
-                    <select class="form-select" wire:model.live="displayCurrencyCode" style="min-width: 180px;">
+                    <select class="form-select" wire:model.live="displayCurrencyCode" aria-label="{{ __('Currency') }}" style="min-width: 180px;">
                         @foreach ($this->displayCurrencyOptions as $currencyCode => $currencyLabel)
                             <option value="{{ $currencyCode }}">{{ $currencyLabel }}</option>
                         @endforeach
@@ -163,11 +163,14 @@ class extends Component
                     </thead>
                     <tbody>
                         @forelse ($this->plans as $plan)
+                            @php
+                                $serviceSummary = app(\App\Support\Admin\AdminServiceWorkspace::class)->planSummary($plan);
+                            @endphp
                             <tr wire:key="payment-plan-{{ $plan->id }}">
                                 <td>
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold">{{ $plan->name }}</span>
-                                        <span class="text-muted small">{{ $plan->code }}</span>
+                                        <details><summary>{{ __('admin_ux.configuration_reference') }}</summary><code dir="ltr">{{ $plan->code }}</code></details><x-admin-plan-service-summary :plan="$plan" :summary="$serviceSummary" />
                                         @php
                                             $billingCyclesLabel = collect($plan->billingIntervals())
                                                 ->map(fn (string $cycle) => __(
@@ -188,26 +191,26 @@ class extends Component
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold">{{ $this->formatCredits((int) ($plan->app_monthly_credits_effective ?? $plan->app_monthly_credits ?? $plan->monthly_credits ?? 0)) }}</span>
                                         <span class="text-muted small">{{ __('App Monthly Credits') }}</span>
-                                        <span class="text-muted small">{{ __('Legacy monthly credits stay synchronized.') }}</span>
+                                        <span class="text-muted small">{{ __('admin_service.plan_defaults') }}</span>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
                                         <span class="fw-semibold">{{ $this->formatCredits((int) ($plan->api_monthly_credits_effective ?? $plan->api_monthly_credits ?? 0)) }}</span>
                                         <span class="text-muted small">{{ __('API Monthly Credits') }}</span>
-                                        <span class="badge {{ (bool) ($plan->api_enabled ?? false) ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning' }}">
-                                            {{ (bool) ($plan->api_enabled ?? false) ? __('API Enabled') : __('API Disabled') }}
+                                        <span class="badge {{ $serviceSummary['api']['api_enabled'] ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning' }}">
+                                            {{ $serviceSummary['api']['api_enabled'] ? __('API Enabled') : __('API Disabled') }}
                                         </span>
                                         <span class="text-muted small">
-                                            {{ collect((array) ($plan->api_allowed_tools ?? []))->take(3)->join(', ') ?: __('No API scopes') }}
+                                            <details><summary>{{ __('admin_ux.configuration_reference') }}</summary><bdi>{{ implode(', ', $serviceSummary['api']['allowed_tools']) ?: __('No API scopes') }}</bdi></details>
                                         </span>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column">
-                                        <span class="fw-semibold">{{ __('App Jobs: :value', ['value' => number_format((int) ($plan->concurrent_jobs_limit ?? 2))]) }}</span>
-                                        <span class="text-muted small">{{ __('API RPM: :value', ['value' => number_format((int) ($plan->api_requests_per_minute ?? 0))]) }}</span>
-                                        <span class="text-muted small">{{ __('API Jobs: :value', ['value' => number_format((int) ($plan->api_concurrent_jobs ?? 0))]) }}</span>
+                                        <span class="fw-semibold">{{ __('App Jobs: :value', ['value' => number_format(app(\App\Services\Plans\PlanConcurrencyService::class)->allowedConcurrentJobsForPlan($plan))]) }}</span>
+                                        <span class="text-muted small">{{ __('API RPM: :value', ['value' => number_format((int) $serviceSummary['api']['requests_per_minute'])]) }}</span>
+                                        <span class="text-muted small">{{ __('API Jobs: :value', ['value' => number_format((int) $serviceSummary['api']['concurrent_jobs'])]) }}</span>
                                     </div>
                                 </td>
                                 <td>
@@ -244,7 +247,7 @@ class extends Component
                                 </td>
                                 <td>
                                     <div class="form-check form-switch">
-                                        <input class="form-check-input" type="checkbox" role="switch" {{ $plan->is_active ? 'checked' : '' }} wire:click="togglePlanStatus({{ $plan->id }})">
+                                        <input class="form-check-input" type="checkbox" role="switch" aria-label="{{ __('admin_shell.plan_activation', ['plan' => $plan->name]) }}" {{ $plan->is_active ? 'checked' : '' }} data-admin-method="togglePlanStatus" data-admin-args="{{ json_encode([$plan->id]) }}" data-admin-impact="{{ __('admin_p3.pricing') }}" @disabled(! \App\Support\Admin\AdminUiAccess::can('admin.pricing'))>
                                     </div>
                                     <span class="badge {{ $plan->is_active ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning' }}">
                                         {{ $plan->is_active ? __('Active') : __('Inactive') }}
@@ -285,6 +288,7 @@ class extends Component
 <fieldset @if(! \App\Support\Admin\AdminUiAccess::can('admin.pricing')) disabled @endif>
                     @csrf
                     <div class="modal-body">
+                        <x-admin-validation-summary />
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-plans-4">{{ __('Code') }}</label>
@@ -318,7 +322,7 @@ class extends Component
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-plans-6">{{ __('Payment Mode') }}</label>
-                                <select class="form-select @error('paymentMode') is-invalid @enderror" wire:model.defer="paymentMode" id="admin-field-adm-payments-plans-6">
+                                <select class="form-select @error('paymentMode') is-invalid @enderror" wire:model.defer="paymentMode" id="admin-field-adm-payments-plans-6" data-admin-review>
                                     <option value="one_time">{{ __('Manual Payment') }}</option>
                                     <option value="recurring">{{ __('Auto Renewal') }}</option>
                                 </select>
@@ -327,18 +331,18 @@ class extends Component
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-plans-7">{{ __('App Monthly Credits') }}</label>
-                                <input type="number" min="0" class="form-control @error('appMonthlyCredits') is-invalid @enderror" wire:model.defer="appMonthlyCredits" id="admin-field-adm-payments-plans-7">
+                                <input type="number" min="0" class="form-control @error('appMonthlyCredits') is-invalid @enderror" wire:model.defer="appMonthlyCredits" id="admin-field-adm-payments-plans-7" data-admin-review>
                                 <div class="form-text">{{ __('Keeps the legacy `monthly_credits` column synchronized for existing runtime paths.') }}</div>
                                 @error('appMonthlyCredits') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-plans-8">{{ __('API Monthly Credits') }}</label>
-                                <input type="number" min="0" class="form-control @error('apiMonthlyCredits') is-invalid @enderror" wire:model.defer="apiMonthlyCredits" id="admin-field-adm-payments-plans-8">
+                                <input type="number" min="0" class="form-control @error('apiMonthlyCredits') is-invalid @enderror" wire:model.defer="apiMonthlyCredits" id="admin-field-adm-payments-plans-8" data-admin-review>
                                 @error('apiMonthlyCredits') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-plans-9">{{ __('App Concurrent Jobs') }}</label>
-                                <input type="number" min="1" class="form-control @error('concurrentJobsLimit') is-invalid @enderror" wire:model.defer="concurrentJobsLimit" id="admin-field-adm-payments-plans-9">
+                                <input type="number" min="1" class="form-control @error('concurrentJobsLimit') is-invalid @enderror" wire:model.defer="concurrentJobsLimit" id="admin-field-adm-payments-plans-9" data-admin-review>
                                 <div class="form-text">{{ __('Dashboard + `/api/mobile` concurrency limit.') }}</div>
                                 @error('concurrentJobsLimit') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
@@ -350,18 +354,18 @@ class extends Component
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-plans-10">{{ __('API Requests / Minute') }}</label>
-                                <input type="number" min="0" class="form-control @error('apiRequestsPerMinute') is-invalid @enderror" wire:model.defer="apiRequestsPerMinute" id="admin-field-adm-payments-plans-10">
+                                <input type="number" min="0" class="form-control @error('apiRequestsPerMinute') is-invalid @enderror" wire:model.defer="apiRequestsPerMinute" id="admin-field-adm-payments-plans-10" data-admin-review>
                                 @error('apiRequestsPerMinute') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-plans-11">{{ __('API Concurrent Jobs') }}</label>
-                                <input type="number" min="0" class="form-control @error('apiConcurrentJobs') is-invalid @enderror" wire:model.defer="apiConcurrentJobs" id="admin-field-adm-payments-plans-11">
+                                <input type="number" min="0" class="form-control @error('apiConcurrentJobs') is-invalid @enderror" wire:model.defer="apiConcurrentJobs" id="admin-field-adm-payments-plans-11" data-admin-review>
                                 <div class="form-text">{{ __('Public `/api/v1` concurrency limit.') }}</div>
                                 @error('apiConcurrentJobs') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="admin-field-adm-payments-plans-12">{{ __('API Allowed Tools / Scopes') }}</label>
-                                <textarea class="form-control font-monospace @error('apiAllowedToolsText') is-invalid @enderror" rows="4" wire:model.defer="apiAllowedToolsText" dir="ltr" placeholder="v2:*" id="admin-field-adm-payments-plans-12"></textarea>
+                                <textarea class="form-control font-monospace @error('apiAllowedToolsText') is-invalid @enderror" rows="4" wire:model.defer="apiAllowedToolsText" dir="ltr" placeholder="v2:*" id="admin-field-adm-payments-plans-12" data-admin-review></textarea>
                                 <div class="form-text">{{ __('admin_p1.scope_help') }} <bdi dir="ltr">{{ implode(', ', app(\App\Services\CustomerApi\V2\ApiCatalog::class)->serviceScopes()) }}</bdi></div>
                                 @error('apiAllowedToolsText') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                 @if($editingPlanId)
@@ -370,12 +374,12 @@ class extends Component
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-plans-13">{{ __('Monthly Price (IQD)') }}</label>
-                                <input type="number" min="0" step="250" class="form-control @error('priceIqdMonthly') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqdMonthly" id="admin-field-adm-payments-plans-13">
+                                <input type="number" min="0" step="250" class="form-control @error('priceIqdMonthly') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqdMonthly" id="admin-field-adm-payments-plans-13" data-admin-review>
                                 @error('priceIqdMonthly') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-plans-14">{{ __('Yearly Price (IQD)') }}</label>
-                                <input type="number" min="0" step="250" class="form-control @error('priceIqdYearly') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqdYearly" id="admin-field-adm-payments-plans-14">
+                                <input type="number" min="0" step="250" class="form-control @error('priceIqdYearly') is-invalid @enderror" wire:model.live.debounce.200ms="priceIqdYearly" id="admin-field-adm-payments-plans-14" data-admin-review>
                                 @error('priceIqdYearly') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
@@ -404,7 +408,7 @@ class extends Component
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-payments-plans-15">{{ __('Sort Order') }}</label>
-                                <input type="number" min="0" class="form-control @error('sortOrder') is-invalid @enderror" wire:model.defer="sortOrder" id="admin-field-adm-payments-plans-15">
+                                <input type="number" min="0" class="form-control @error('sortOrder') is-invalid @enderror" wire:model.defer="sortOrder" id="admin-field-adm-payments-plans-15" data-admin-review>
                                 @error('sortOrder') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-4 d-flex align-items-center">
@@ -448,6 +452,7 @@ class extends Component
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetDeleteState"></button>
                 </div>
                 <div class="modal-body">
+                        <x-admin-validation-summary />
                     <p class="mb-0">{{ __('Delete') }} <span class="fw-semibold">{{ $deletePlanLabel }}</span>? {{ __('This only works for plans without subscriptions, pricing dependencies, or paid orders.') }}</p>
                 </div>
                 <div class="modal-footer">
@@ -458,77 +463,5 @@ class extends Component
         </div>
     </div>
 
-    @push('scripts')
-        @once
-            <script>
-                (() => {
-                    if (window.__PAYMENT_PLANS_MODAL_EVENTS__) {
-                        return;
-                    }
 
-                    window.__PAYMENT_PLANS_MODAL_EVENTS__ = true;
-
-                    const modalIds = ['paymentPlanModal', 'paymentPlanDeleteModal'];
-
-                    const cleanupModalState = () => {
-                        if (typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        modalIds.forEach((id) => {
-                            const element = document.getElementById(id);
-
-                            if (!element) {
-                                return;
-                            }
-
-                            const instance = bootstrap.Modal.getInstance(element);
-
-                            if (instance) {
-                                instance.hide();
-                                instance.dispose();
-                            }
-
-                            element.classList.remove('show');
-                            element.style.display = 'none';
-                            element.removeAttribute('aria-modal');
-                            element.removeAttribute('role');
-                        });
-
-                        document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.removeProperty('padding-right');
-                        document.body.style.removeProperty('overflow');
-                    };
-
-                    const withModal = (id, callback) => {
-                        if (!id || typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById(id);
-
-                        if (!element) {
-                            return;
-                        }
-
-                        callback(bootstrap.Modal.getOrCreateInstance(element));
-                    };
-
-                    window.addEventListener('payments-plans:modal-show', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.show());
-                    });
-
-                    window.addEventListener('payments-plans:modal-hide', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.hide());
-                    });
-
-                    document.addEventListener('livewire:navigating', cleanupModalState);
-                    document.addEventListener('livewire:navigated', cleanupModalState);
-
-                    cleanupModalState();
-                })();
-            </script>
-        @endonce
-    @endpush
 </div>

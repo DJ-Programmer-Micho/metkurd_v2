@@ -282,7 +282,7 @@
 
     {{-- JSON-LD helps search engines understand the brand, website, and current localized page. --}}
     <script type="application/ld+json">
-        @json($structuredData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+        @json($structuredData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_PRETTY_PRINT)
     </script>
 
     @stack('meta')

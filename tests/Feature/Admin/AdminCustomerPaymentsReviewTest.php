@@ -134,6 +134,8 @@ it('opens the guided payment review panel and can close a review row as invalid 
     Livewire::test('admin::pages.customers.adm-customers-register')->set('adminChangeReason', 'Authorized catalog correction for regression verification.')
         ->set('customerFilter', (string) $customer->id)
         ->call('openReviewPayment', (int) $payment->id)
+        ->assertDispatched('admin:modal-show', id: 'customer-payment-review')
+        ->assertSee('id="customer-payment-review"', false)
         ->assertSet('reviewPaymentId', (string) $payment->id)
         ->assertSee('Review Payment')
         ->assertSee('Stored FIB Subscription ID')

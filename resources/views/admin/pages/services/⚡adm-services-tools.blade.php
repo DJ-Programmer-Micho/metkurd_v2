@@ -18,7 +18,7 @@ class extends Component
 
 <x-slot:title>{{ __('Services Tools') }} | {{ __('MET KURD') }}</x-slot:title>
 
-<div class="container-fluid">
+<div class="container-fluid admin-service-workspace">
     <div wire:loading.delay class="small text-muted mb-2" role="status" aria-live="polite">{{ __('admin_p2.loading') }}</div>
     <x-admin-capability-notice :capabilities="['admin.catalog']" />
     <x-admin-change-reason />
@@ -27,7 +27,7 @@ class extends Component
             <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                 <div>
                     <h4 class="mb-sm-0">{{ __('Services Tools') }}</h4>
-                    <p class="text-muted mb-0">{{ __('Admin CRUD for tools, actions, operational status, and usage-aware filtering.') }}</p>
+                    <p class="text-muted mb-0">{{ __('admin_service.tools_help') }}</p>
                 </div>
 
                 <div class="page-title-right d-flex align-items-center gap-2">
@@ -44,6 +44,8 @@ class extends Component
         </div>
     </div>
 
+    <x-admin-service-overview />
+    <details class="card admin-reference"><summary class="card-header fw-semibold">{{ __('admin_service.registry') }}</summary><div class="card-body">
     <div class="row">
         <div class="col-xl-3 col-md-6 mb-3">
             <div class="card card-animate h-100">
@@ -95,6 +97,7 @@ class extends Component
         </div>
     </div>
 
+    <p><a wire:navigate class="btn btn-outline-primary" href="{{ route('admin.services.entitlements', ['locale' => app()->getLocale()]) }}">{{ __('admin_cleanup.plan_limits') }}</a></p>
     <x-admin-v2-catalog />
     <div class="card">
         <div class="card-header border-0">
@@ -209,6 +212,7 @@ class extends Component
                                 $usageCount = (int) ($tool->usage_events_count ?? 0);
                                 $creditsSpent = (int) ($tool->total_credits_spent ?? 0);
                                 $isMaintenance = !$tool->is_active;
+                                $classification = app(\App\Services\Admin\AdminV2Catalog::class)->classification($tool);
                             @endphp
                             <tr class="{{ $isMaintenance ? 'table-danger' : '' }}" wire:key="tool-row-{{ $tool->id }}">
                                 <td>
@@ -220,7 +224,7 @@ class extends Component
                                     <div class="d-flex flex-column">
                                         <div class="d-flex align-items-center gap-2">
                                             <h6 class="{{ $isMaintenance ? 'text-dark' : '' }} mb-0">{{ $tool->name }}</h6>
-                                            <span class="badge {{ $this->statusBadgeClasses((bool) $tool->is_active) }}">{{ $this->statusLabel((bool) $tool->is_active) }}</span>
+                                            <span class="badge {{ $classification === 'current' ? $this->statusBadgeClasses((bool) $tool->is_active) : 'bg-secondary' }}">{{ app(\App\Services\Admin\AdminV2Catalog::class)->classification($tool) === 'current' ? __('admin_service.'.($tool->is_active ? 'active' : 'disabled')) : __('admin_service.legacy') }}</span>
                                         </div>
                                         <span class="text-muted small">{{ $tool->code }}</span> <span class="badge bg-secondary">{{ __('admin_p1.'.app(\App\Services\Admin\AdminV2Catalog::class)->classification($tool)) }}</span>
                                         @if ($notes)
@@ -323,6 +327,7 @@ class extends Component
                                                                 <td class="text-end">
                                                                     <div class="d-flex justify-content-end flex-wrap gap-2">
                                                                         <button type="button" class="btn btn-sm btn-soft-success" data-admin-method="toggleActionStatus" data-admin-args="{{ json_encode([$action->id]) }}" data-admin-impact="{{ __('admin_p3.catalog_effect') }}" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ $action->is_active ? __('Maintenance') : __('Activate') }}</button>
+                                                                        <a wire:navigate class="btn btn-sm btn-outline-primary" href="{{ route('admin.services.entitlements', ['locale' => app()->getLocale(), 'action' => $action->id]) }}">{{ __('admin_cleanup.plan_limits') }}</a>
                                                                         <button type="button" class="btn btn-sm btn-soft-info" wire:click="openActionEditModal({{ $action->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Edit') }}</button>
                                                                         <button type="button" class="btn btn-sm btn-soft-danger" wire:click="confirmActionDelete({{ $action->id }})" @if(! \App\Support\Admin\AdminUiAccess::can('admin.catalog')) disabled @endif>{{ __('Delete') }}</button>
                                                                     </div>
@@ -359,6 +364,8 @@ class extends Component
         </div>
     </div>
 
+    </div></details>
+
     <div wire:ignore.self class="modal fade" id="servicesToolModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
@@ -373,11 +380,12 @@ class extends Component
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetToolForm"></button>
                     </div>
                     <div class="modal-body">
+                        <x-admin-validation-summary />
                         <div class="row g-3">
                             <div class="col-md-4">
-                                <label class="form-label" for="admin-field-adm-services-tools-6">{{ __('Tool Code') }}</label>
+                                <details><summary>{{ __('admin_ux.configuration_reference') }}</summary><label class="form-label" for="admin-field-adm-services-tools-6">{{ __('Tool Code') }}</label>
                                 <input dir="ltr" type="text" class="form-control @error('toolCode') is-invalid @enderror" wire:model.defer="toolCode" placeholder="{{ __('tts') }}" {{ $editingToolId ? 'disabled' : '' }} data-admin-review id="admin-field-adm-services-tools-6">
-                                @error('toolCode') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                @error('toolCode') <div class="invalid-feedback">{{ $message }}</div> @enderror</details>
                                 @if ($editingToolId)
                                     <div class="form-text">{{ __('Codes are locked after creation to protect tool/action references.') }}</div>
                                 @endif
@@ -389,17 +397,17 @@ class extends Component
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label" for="admin-field-adm-services-tools-8">{{ __('Sort Order') }}</label>
-                                <input type="number" min="0" class="form-control @error('toolSortOrder') is-invalid @enderror" wire:model.defer="toolSortOrder" id="admin-field-adm-services-tools-8">
+                                <input type="number" min="0" class="form-control @error('toolSortOrder') is-invalid @enderror" wire:model.defer="toolSortOrder" id="admin-field-adm-services-tools-8" data-admin-review>
                                 @error('toolSortOrder') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="admin-field-adm-services-tools-9">{{ __('Category') }}</label>
-                                <input type="text" class="form-control @error('toolCategory') is-invalid @enderror" wire:model.defer="toolCategory" placeholder="{{ __('Speech, Media, OCR') }}" id="admin-field-adm-services-tools-9">
+                                <input type="text" class="form-control @error('toolCategory') is-invalid @enderror" wire:model.defer="toolCategory" placeholder="{{ __('Speech, Media, OCR') }}" id="admin-field-adm-services-tools-9" data-admin-review>
                                 @error('toolCategory') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="admin-field-adm-services-tools-10">{{ __('Status') }}</label>
-                                <select class="form-select @error('toolStatus') is-invalid @enderror" wire:model.defer="toolStatus" id="admin-field-adm-services-tools-10">
+                                <select class="form-select @error('toolStatus') is-invalid @enderror" wire:model.defer="toolStatus" id="admin-field-adm-services-tools-10" data-admin-review>
                                     <option value="active">{{ __('Active') }}</option>
                                     <option value="maintenance">{{ __('Maintenance') }}</option>
                                 </select>
@@ -407,11 +415,11 @@ class extends Component
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="admin-field-adm-services-tools-11">{{ __('Admin Notes') }}</label>
-                                <textarea class="form-control @error('toolNotes') is-invalid @enderror" rows="3" wire:model.defer="toolNotes" placeholder="{{ __('Optional internal note or maintenance context') }}" id="admin-field-adm-services-tools-11" dir="auto"></textarea>
+                                <textarea class="form-control @error('toolNotes') is-invalid @enderror" rows="3" wire:model.defer="toolNotes" placeholder="{{ __('Optional internal note or maintenance context') }}" id="admin-field-adm-services-tools-11" dir="auto" data-admin-review></textarea>
                                 @error('toolNotes') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
-                                <label class="form-label">{{ __('Advanced Meta JSON') }}</label>
+                                <label class="form-label">{{ __('admin_ux.configuration_reference') }}</label>
                                 <details><summary>{{ __('admin_p3.advanced') }}</summary><textarea dir="ltr" class="form-control font-monospace @error('toolMetaJson') is-invalid @enderror" rows="6" wire:model.defer="toolMetaJson" placeholder='{{ __("{\"owner\":\"ml-team\",\"sla\":\"gold\"}") }}'></textarea></details>
                                 @error('toolMetaJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
@@ -440,25 +448,26 @@ class extends Component
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetActionForm"></button>
                     </div>
                     <div class="modal-body">
+                        <x-admin-validation-summary />
                         <div class="row g-3">
                             <div class="col-md-5">
                                 <label class="form-label" for="admin-field-adm-services-tools-12">{{ __('Tool') }}</label>
-                                <select class="form-select @error('actionToolId') is-invalid @enderror" wire:model.defer="actionToolId" {{ $editingActionId ? 'disabled' : '' }} id="admin-field-adm-services-tools-12">
+                                <select class="form-select @error('actionToolId') is-invalid @enderror" wire:model.defer="actionToolId" {{ $editingActionId ? 'disabled' : '' }} id="admin-field-adm-services-tools-12" data-admin-review>
                                     <option value="">{{ __('Choose tool...') }}</option>
                                     @foreach ($this->toolOptions as $toolOption)
-                                        <option value="{{ $toolOption->id }}">{{ $toolOption->name }} ({{ $toolOption->code }})</option>
+                                        <option value="{{ $toolOption->id }}">{{ $toolOption->name }}</option>
                                     @endforeach
                                 </select>
                                 @error('actionToolId') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label" for="admin-field-adm-services-tools-13">{{ __('Action Code') }}</label>
+                                <details><summary>{{ __('admin_ux.configuration_reference') }}</summary><label class="form-label" for="admin-field-adm-services-tools-13">{{ __('Action Code') }}</label>
                                 <input dir="ltr" type="text" class="form-control @error('actionCode') is-invalid @enderror" wire:model.defer="actionCode" placeholder="{{ __('standard') }}" {{ $editingActionId ? 'disabled' : '' }} data-admin-review id="admin-field-adm-services-tools-13">
-                                @error('actionCode') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                @error('actionCode') <div class="invalid-feedback">{{ $message }}</div> @enderror</details>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="admin-field-adm-services-tools-14">{{ __('Status') }}</label>
-                                <select class="form-select @error('actionStatus') is-invalid @enderror" wire:model.defer="actionStatus" id="admin-field-adm-services-tools-14">
+                                <select class="form-select @error('actionStatus') is-invalid @enderror" wire:model.defer="actionStatus" id="admin-field-adm-services-tools-14" data-admin-review>
                                     <option value="active">{{ __('Active') }}</option>
                                     <option value="maintenance">{{ __('Maintenance') }}</option>
                                 </select>
@@ -471,7 +480,7 @@ class extends Component
                             </div>
                             <div class="col-md-5">
                                 <label class="form-label" for="admin-field-adm-services-tools-16">{{ __('Default Metric Code') }}</label>
-                                <input dir="ltr" list="tool-action-metrics" type="text" class="form-control @error('actionMetricCode') is-invalid @enderror" wire:model.defer="actionMetricCode" placeholder="{{ __('character') }}" id="admin-field-adm-services-tools-16">
+                                <input dir="ltr" list="tool-action-metrics" type="text" class="form-control @error('actionMetricCode') is-invalid @enderror" wire:model.defer="actionMetricCode" placeholder="{{ __('character') }}" id="admin-field-adm-services-tools-16" data-admin-review>
                                 @error('actionMetricCode') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                 <datalist id="tool-action-metrics">
                                     @foreach ($metricOptions as $metricCode => $metricLabel)
@@ -481,11 +490,11 @@ class extends Component
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="admin-field-adm-services-tools-17">{{ __('Admin Notes') }}</label>
-                                <textarea class="form-control @error('actionNotes') is-invalid @enderror" rows="3" wire:model.defer="actionNotes" id="admin-field-adm-services-tools-17" dir="auto"></textarea>
+                                <textarea class="form-control @error('actionNotes') is-invalid @enderror" rows="3" wire:model.defer="actionNotes" id="admin-field-adm-services-tools-17" dir="auto" data-admin-review></textarea>
                                 @error('actionNotes') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-12">
-                                <label class="form-label">{{ __('Advanced Meta JSON') }}</label>
+                                <label class="form-label">{{ __('admin_ux.configuration_reference') }}</label>
                                 <details><summary>{{ __('admin_p3.advanced') }}</summary><textarea dir="ltr" class="form-control font-monospace @error('actionMetaJson') is-invalid @enderror" rows="6" wire:model.defer="actionMetaJson" placeholder='{{ __("{\"quality\":\"studio\",\"provider\":\"runpod\"}") }}'></textarea></details>
                                 @error('actionMetaJson') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
@@ -508,6 +517,7 @@ class extends Component
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}" wire:click="resetDeleteState"></button>
                 </div>
                 <div class="modal-body">
+                        <x-admin-validation-summary />
                     <p class="mb-0">
                         {{ __('Delete') }} <span class="fw-semibold">{{ $deleteLabel }}</span>?
                         @if ($deleteTarget === 'action')
@@ -525,81 +535,5 @@ class extends Component
         </div>
     </div>
 
-    @push('scripts')
-        @once
-            <script>
-                (() => {
-                    if (window.__SERVICES_TOOLS_MODAL_EVENTS__) {
-                        return;
-                    }
 
-                    window.__SERVICES_TOOLS_MODAL_EVENTS__ = true;
-
-                    const modalIds = [
-                        'servicesToolModal',
-                        'servicesToolActionModal',
-                        'servicesToolDeleteModal',
-                    ];
-
-                    const cleanupModalState = () => {
-                        if (typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        modalIds.forEach((id) => {
-                            const element = document.getElementById(id);
-
-                            if (!element) {
-                                return;
-                            }
-
-                            const instance = bootstrap.Modal.getInstance(element);
-
-                            if (instance) {
-                                instance.hide();
-                                instance.dispose();
-                            }
-
-                            element.classList.remove('show');
-                            element.style.display = 'none';
-                            element.removeAttribute('aria-modal');
-                            element.removeAttribute('role');
-                        });
-
-                        document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.removeProperty('padding-right');
-                        document.body.style.removeProperty('overflow');
-                    };
-
-                    const withModal = (id, callback) => {
-                        if (!id || typeof bootstrap === 'undefined') {
-                            return;
-                        }
-
-                        const element = document.getElementById(id);
-
-                        if (!element) {
-                            return;
-                        }
-
-                        callback(bootstrap.Modal.getOrCreateInstance(element));
-                    };
-
-                    window.addEventListener('services-tools:modal-show', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.show());
-                    });
-
-                    window.addEventListener('services-tools:modal-hide', (event) => {
-                        withModal(event.detail?.id, (modal) => modal.hide());
-                    });
-
-                    document.addEventListener('livewire:navigating', cleanupModalState);
-                    document.addEventListener('livewire:navigated', cleanupModalState);
-
-                    cleanupModalState();
-                })();
-            </script>
-        @endonce
-    @endpush
 </div>

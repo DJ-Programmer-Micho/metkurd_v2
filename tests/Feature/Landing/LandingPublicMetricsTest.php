@@ -77,15 +77,15 @@ it('counts finished ocr jobs', function () {
     expect($cards['ocr_pages']['raw_value'])->toBe(2);
 });
 
-it('counts finished translation jobs', function () {
+it('counts finished separation jobs', function () {
     $customer = landingMetricsCustomer('landing-tran@example.com', 'landing_tran_user');
 
-    createLandingMetricJob($customer, 'tran');
-    createLandingMetricJob($customer, 'tran', 'delete_failed');
+    createLandingMetricJob($customer, 'stem');
+    createLandingMetricJob($customer, 'stem', 'delete_failed');
 
     $cards = collect(app(LandingPublicMetrics::class)->cards())->keyBy('key');
 
-    expect($cards['translated']['raw_value'])->toBe(1);
+    expect($cards['music_separation']['raw_value'])->toBe(1);
 });
 
 it('formats compact metric values as expected', function () {
@@ -95,7 +95,20 @@ it('formats compact metric values as expected', function () {
         ->and($service->formatCompact(1010))->toBe('1K')
         ->and($service->formatCompact(3615))->toBe('3.6K')
         ->and($service->formatCompact(12698))->toBe('12.6K')
+        ->and($service->formatCompact(100000))->toBe('100K')
+        ->and($service->formatCompact(100000000))->toBe('100M')
         ->and($service->formatCompact(532147))->toBe('532K');
+});
+
+it('includes current V2 kinds without counting failed or pending work', function () {
+    $customer = landingMetricsCustomer();
+    foreach (['omni_tts', 'clone_xomni', 'vector-v2', 'omni_tts_batch', 'omni_clone_batch', 'leo', 'caption', 'stem'] as $kind) {
+        createLandingMetricJob($customer, $kind);
+        createLandingMetricJob($customer, $kind, 'failed');
+        createLandingMetricJob($customer, $kind, 'queued');
+    }
+    $counts = app(LandingPublicMetrics::class)->counts();
+    expect($counts['generated_audio'])->toBe(5)->and($counts['transcribed'])->toBe(2)->and($counts['music_separation'])->toBe(1);
 });
 
 it('caches raw metric counts until the cache is flushed', function () {

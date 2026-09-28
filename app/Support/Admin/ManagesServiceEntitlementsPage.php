@@ -46,6 +46,57 @@ trait ManagesServiceEntitlementsPage
 
     public string $entitlementLimitsJson = '';
 
+    public string $entitlementMaxCharacters = '';
+
+    #[Url(as: 'matrix')]
+    public string $matrixChannel = 'app';
+
+    #[Computed]
+    public function entitlementMatrix(): array
+    {
+        return app(AdminServiceWorkspace::class)->matrix($this->matrixChannel, $this->planFilter === 'all' ? null : (int) $this->planFilter);
+    }
+
+    public function openMatrixEntitlement(int $planId, int $actionId, string $channel): void
+    {
+        AdminAccess::authorize('admin.pricing');
+        $this->resetEntitlementForm();
+        ServicePlan::findOrFail($planId);
+        ToolAction::findOrFail($actionId);
+        $channel = in_array($channel, ['app', 'api'], true) ? $channel : 'app';
+        $existing = PlanEntitlement::where('service_plan_id', $planId)->where('tool_action_id', $actionId)
+            ->where('entitlement_channel', $channel)->first();
+        if ($existing) {
+            $this->openEntitlementEditModal($existing->id);
+
+            return;
+        }
+        // Create a channel-specific decision; never silently edit a shared "all" row.
+        $this->entitlementServicePlanId = $planId;
+        $this->entitlementToolActionId = $actionId;
+        $this->entitlementChannel = $channel;
+        $this->entitlementAllowed = 'blocked';
+        $this->dispatch('services-entitlements:modal-show', id: 'serviceEntitlementModal');
+    }
+
+    #[Computed]
+    public function supportsCharacterLimit(): bool
+    {
+        return app(AdminServiceLimits::class)->characterField($this->entitlementToolActionId);
+    }
+
+    #[Computed]
+    public function sharedServiceLimits(): array
+    {
+        return app(AdminServiceLimits::class)->reference($this->entitlementToolActionId);
+    }
+
+    public function updatedEntitlementToolActionId(): void
+    {
+        $this->entitlementMaxCharacters = '';
+        unset($this->supportsCharacterLimit, $this->sharedServiceLimits);
+    }
+
     public ?int $entitlementIdPendingDelete = null;
 
     public string $deleteLabel = '';
@@ -189,6 +240,7 @@ trait ManagesServiceEntitlementsPage
         $this->entitlementChannel = PlanEntitlement::normalizeChannel((string) ($entitlement->entitlement_channel ?? PlanEntitlement::CHANNEL_APP), PlanEntitlement::CHANNEL_APP, true);
         $this->entitlementAllowed = $entitlement->allowed ? 'allowed' : 'blocked';
         $this->entitlementLimitsJson = $entitlement->limits ? (string) json_encode(AdminData::redact($entitlement->limits), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
+        $this->entitlementMaxCharacters = (string) data_get($entitlement->limits, 'max_chars_per_submit', '');
 
         $this->dispatch('services-entitlements:modal-show', id: 'serviceEntitlementModal');
     }
@@ -219,6 +271,14 @@ trait ManagesServiceEntitlementsPage
         }
 
         $limits = $this->decodeJsonField($this->entitlementLimitsJson, 'entitlementLimitsJson');
+        if ($this->supportsCharacterLimit) {
+            $this->validate(['entitlementMaxCharacters' => 'nullable|integer|min:1|max:1000000']);
+            if ($this->entitlementMaxCharacters !== '') {
+                $limits['max_chars_per_submit'] = (int) $this->entitlementMaxCharacters;
+            } else {
+                unset($limits['max_chars_per_submit']);
+            }
+        }
 
         app(AdminEntitlementScopes::class)->mutate($this->editingEntitlementId, [
             'service_plan_id' => $this->entitlementServicePlanId,
@@ -276,6 +336,7 @@ trait ManagesServiceEntitlementsPage
         $this->entitlementChannel = PlanEntitlement::CHANNEL_APP;
         $this->entitlementAllowed = 'allowed';
         $this->entitlementLimitsJson = '';
+        $this->entitlementMaxCharacters = '';
     }
 
     public function resetDeleteState(): void

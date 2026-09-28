@@ -24,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(\App\Http\Middleware\McpRequestSize::class);
+        $middleware->append(\App\Http\Middleware\PrivateSurfaceIndexing::class);
         $middleware->trustProxies(
             at: env('TRUSTED_PROXIES', '**'),
             headers: Request::HEADER_X_FORWARDED_FOR
