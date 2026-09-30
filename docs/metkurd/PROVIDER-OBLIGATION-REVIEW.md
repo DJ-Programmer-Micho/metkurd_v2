@@ -1,5 +1,12 @@
 # Production cutover provider evidence review — 2026-09-30
 
+For multiple obligations use the [batch workflow](PROVIDER-OBLIGATION-BATCH-REVIEW.md):
+bulk private inventory, prefilled review decisions, GET-only DRAFT observations,
+attested merchant returns and individually bounded coverage approvals under one
+parent operation. The single-payment command below remains available for exceptions.
+The batch addition introduces one further migration; neither schema change has been
+applied to the local reproduction database by this task. No production/provider access.
+
 ## Scope and local findings
 
 Source correction, not deployment or cutover approval. The explicitly authorized

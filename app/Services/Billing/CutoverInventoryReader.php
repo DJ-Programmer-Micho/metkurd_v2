@@ -37,6 +37,15 @@ final class CutoverInventoryReader
             'status', 'internal_status', 'fulfilled_at', 'fib_subscription_id', 'provider_subscription_status', 'active_until', 'last_payment_at', 'meta'])->keyBy('id');
         $intents = $this->table('payment_intents')->get();
         $orders = $this->table('credit_orders')->get();
+        $snapshot = ProviderReviewSnapshot::capture(db: $this->db);
+        $terminalIds = [];
+        $retirement = new ProviderRetirementEvidence;
+        foreach ($payments as $p) {
+            if ($retirement->terminal($snapshot, $snapshot->payment($p->id))) {
+                $terminalIds[] = $p->id;
+            }
+        }
+        $report['confirmed_retired_provider_ids'] = $terminalIds;
         $paymentGroups = [];
         foreach ($payments as $payment) {
             $labels = [];
@@ -56,7 +65,9 @@ final class CutoverInventoryReader
                 || ! in_array($payment->internal_status, ['applied', 'failed', 'canceled', 'expired', 'refunded'], true)
                 || ($payment->status === 'paid' && ! $payment->fulfilled_at)
                 || ($payment->fulfilled_at && ! in_array($payment->status, ['paid', 'refunded'], true))) {
-                $labels[] = 'unresolved';
+                if (! in_array($payment->id, $terminalIds, true)) {
+                    $labels[] = 'unresolved';
+                }
             }
             if ($payment->fib_subscription_id) {
                 $labels[] = 'provider_subscription_references';
@@ -178,7 +189,7 @@ final class CutoverInventoryReader
             }
         }
         // Detached paid plan purchases and provider objects still matter even if the customer resolves to Free.
-        $unlinked = $payments->filter(fn ($p) => ! isset($linked[$p->id]) && ($p->fib_subscription_id
+        $unlinked = $payments->filter(fn ($p) => ! in_array($p->id, $terminalIds, true) && ! isset($linked[$p->id]) && ($p->fib_subscription_id
             || ($p->status === 'paid' && in_array($p->purchasable_type, ['App\\Models\\ServicePlan', 'App\\Models\\StoragePlan'], true))));
         $report['payments']['unlinked_plan_or_provider_evidence'] = ['rows' => $unlinked->count(), 'customers' => $unlinked->pluck('customer_id')->unique()->count()];
         if ($unlinked->isNotEmpty()) {

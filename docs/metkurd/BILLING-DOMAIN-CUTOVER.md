@@ -1,5 +1,16 @@
 # V2 payment-domain cutover
 
+## Batch provider review — 2026-09-30
+
+[Batch review](PROVIDER-OBLIGATION-BATCH-REVIEW.md) now provides grouped private
+manifests, bounded authenticated DRAFT GETs, explicit merchant attestations and
+atomic per-customer coverage approvals under one durable Admin operation. The new
+`provider_obligation_reviews` table retains logical Payment/event IDs after the
+existing approved processing retirement. Only exact unpaid/unbound terminal proof
+can clear that object's obligation; newer/stale/failed evidence remains blocked.
+The paid-coverage authority and complete zero-blocker cutover preflight are unchanged.
+Source migrations and isolated tests are not application execution approval.
+
 ## Reviewed provider coverage exception — 2026-09-30
 
 The current release adds `provider_coverage_dispositions`; review its

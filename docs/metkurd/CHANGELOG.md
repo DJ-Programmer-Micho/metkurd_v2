@@ -1,5 +1,18 @@
 # Architectural and behavioral decisions
 
+## 2026-09-30 — Private batch provider obligation review
+
+Added read-only grouped inventory and deterministic identity/source/evidence-bound
+private manifests with separate editable decisions. One durable Admin parent applies
+bounded serial DRAFT GETs, narrow externally attested merchant retirement and existing
+individual paid-coverage approvals atomically. A new additive review table retains
+safe evidence; shared cutover readers revalidate exact basis/audit hashes and keep
+unresolved objects blocked. No Free-row work, force flag, automatic DRAFT retirement,
+new Admin route, provider cancellation or financial lifecycle mutation. Read-only
+local reproduction preserved all ten protected table fingerprints. Native MySQL,
+real merchant/provider evidence and production acceptance remain separate. See
+[operator procedure](PROVIDER-OBLIGATION-BATCH-REVIEW.md).
+
 ## 2026-09-30 — Audited provider coverage disposition before cutover
 
 Added a first-class immutable approved/retained provider coverage record, additive

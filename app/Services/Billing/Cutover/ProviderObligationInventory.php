@@ -20,6 +20,8 @@ class ProviderObligationInventory
                 $approved[$payment->id] = $disposition;
             }
         }
+        $snapshot = \App\Services\Billing\ProviderReviewSnapshot::capture();
+        $retirement = new \App\Services\Billing\ProviderRetirementEvidence;
         $linked = [];
         foreach ($normalizations as $table => $rows) {
             foreach ($rows as $normalization) {
@@ -54,12 +56,13 @@ class ProviderObligationInventory
                 continue;
             }
             $confirmation = app(ProviderSubscriptionCancellation::class)->confirmation($payment);
+            $terminal = $retirement->terminal($snapshot, $payment);
             [$classification, $reason] = isset($approved[$payment->id])
                 ? ['approved_coverage_to_preserve', 'audited_bounded_term_and_confirmed_renewal_stop']
-                : $this->classify($payment, $confirmation);
+                : ($terminal ? ['retired_confirmed_cancelled', $terminal['kind']] : $this->classify($payment, $confirmation));
             $items[] = ['payment_id' => $payment->id, 'customer_id' => $payment->customer_id,
                 'subscriptions' => $linked[$payment->id] ?? [], 'classification' => $classification, 'reason' => $reason,
-                'cancellation_evidence' => $confirmation];
+                'cancellation_evidence' => $confirmation, 'retirement_evidence' => $terminal];
         }
         // Legacy provider schedules can exist without a native Payment or normalized
         // subscription. No current evidence service proves their remote retirement.
@@ -87,7 +90,7 @@ class ProviderObligationInventory
             'summary' => $summary, 'items' => $items, 'blockers' => $blockers];
     }
 
-    private function classify(Payment $payment, array $confirmation): array
+    public function classify(Payment $payment, array $confirmation): array
     {
         $context = (array) data_get($payment->meta, 'provider_cancellation', []);
         $ends = [];

@@ -1,5 +1,16 @@
 # MetKurd architecture
 
+## Batch provider disposition — 2026-09-30
+
+The private CLI review bulk-loads provider obligations and excludes ordinary Free
+rows. An immutable identity/source/evidence manifest plus separately selected
+per-item decisions feeds one AdminOperationRunner parent. Existing individual paid
+coverage authority is reused; unpaid DRAFT GET/merchant attestations append durable
+evidence only. Shared retirement validation feeds both cutover inventories, with
+stale/ambiguous evidence still blocking. See
+[batch review and acceptance](PROVIDER-OBLIGATION-BATCH-REVIEW.md). No automatic
+provider cancellation, fulfillment, financial repair or cutover authorization.
+
 ## Admin Developer read model — 2026-09-28
 
 `AdminDeveloperWorkspace` composes existing `AdminOperations` queries into bounded,

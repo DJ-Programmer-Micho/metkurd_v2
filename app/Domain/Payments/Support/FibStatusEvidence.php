@@ -29,7 +29,21 @@ final class FibStatusEvidence
         $event = PaymentEvent::where('payment_id', $payment->id)
             ->whereIn('event_type', ['provider_status_checked', 'provider_status_ignored'])
             ->latest('id')->first();
-        if (! $event || $event->provider !== 'fib' || $event->provider_object_type !== 'subscription'
+
+        return $this->validatePersistedObservation($payment, $event, $event && PaymentEvent::where('payment_id', $payment->id)
+            ->where('id', '>', $event->id)->where('event_type', 'callback_received')->exists());
+    }
+
+    /** Same validator for a bulk-loaded snapshot; this method performs no queries. */
+    public function validatePersistedObservation(Payment $payment, ?PaymentEvent $event, bool $newerCallback): ?array
+    {
+        if (! $payment->isProviderSubscriptionObject() || $payment->provider !== PaymentProvider::FIB
+            || ! $payment->fib_subscription_id || ! $payment->last_status_checked_at || $payment->last_status_checked_at->isFuture()) {
+            return null;
+        }
+        if (! $event || (int) $event->payment_id !== (int) $payment->id
+            || ! in_array($event->event_type, ['provider_status_checked', 'provider_status_ignored'], true)
+            || $event->provider !== 'fib' || $event->provider_object_type !== 'subscription'
             || $event->fib_subscription_id !== $payment->fib_subscription_id
             || $event->local_reference !== $payment->local_reference
             || ! $event->processed_at || $event->processed_at->isFuture()
@@ -47,8 +61,7 @@ final class FibStatusEvidence
         }
         // A subsequent unverified callback cannot prove a transition, but it does
         // prevent an older GET from settling a potentially changed obligation.
-        if (PaymentEvent::where('payment_id', $payment->id)->where('id', '>', $event->id)
-            ->where('event_type', 'callback_received')->exists()) {
+        if ($newerCallback) {
             return null;
         }
         $requestedAt = FibSubscriptionTimestamp::parse(data_get($payment->meta, 'provider_cancellation.requested_at'));

@@ -5,7 +5,9 @@
 **2026-09-30 provider-disposition follow-up:** follow
 [PROVIDER-OBLIGATION-REVIEW.md](PROVIDER-OBLIGATION-REVIEW.md) before the final cutover
 review. The release adds one retained-coverage migration and an audited, explicit
-approval workflow. Cancellation alone does not certify November coverage. Confirmed
+approval workflow. The subsequent [batch review](PROVIDER-OBLIGATION-BATCH-REVIEW.md)
+adds a second review-evidence migration, private manifests, bounded GET-only checks
+and atomic per-item approvals. Cancellation alone does not certify November coverage. Confirmed
 fake/manual history is preserved, not deleted; DRAFT 159/160 remain unresolved.
 No migration, production connection, disposition or cutover was executed by this task.
 
@@ -383,7 +385,7 @@ business caches or releasing live locks. Review compiled caches per release.
 
 ## 9. Shared migration run — [ONE VM ONLY — SHARED DATABASE OPERATION]
 
-Appendix A inventories **87 source migrations: 65 original-snapshot baseline + 22
+Appendix A inventories **88 source migrations: 65 original-snapshot baseline + 23
 later files**. This is not a production pending count. **Actual production
 `php artisan migrate:status` wins**, including unknown or partially applied migrations.
 The legacy snapshot already contains the original API tables/wallet channels;
@@ -546,6 +548,18 @@ deployment workaround. This runbook does not implement any of these alternatives
 
 ## 12. Pre-cutover preflight and provider disposition — [ONE APP NODE ONLY] [FIB]
 
+Use [the batch operator procedure](PROVIDER-OBLIGATION-BATCH-REVIEW.md) for the full
+dataset, keeping single-payment approval for exceptions. Apply both additive evidence
+migrations under the one-node migration controls. The batch commands reuse the exact
+protected identity assertions in section 13: after identity/backup/maintenance review,
+configure those assertions for review before this phase. Unresolved provider evidence
+still prevents cutover execution; enabling the identity gate is not reset approval.
+Export/review on one node with writers quiesced, select bounded actions, preview their
+exact worksheet hash, then apply only the separately approved set. Re-export after
+each batch. GET failures/DRAFT/ACTIVE/TRIAL remain blockers; merchant imports require
+explicit per-object evidence/attestation. Preserve the new review rows and Admin
+history. No blanket SQL correction or automatic cancellation.
+
 Before this phase can pass, complete the separately reviewed
 [provider coverage disposition procedure](PROVIDER-OBLIGATION-REVIEW.md#exact-operator-sequence-after-separately-approved-deployment).
 The new table must be migrated under this runbook's one-node migration controls. Explicitly
@@ -598,8 +612,11 @@ retry/late-event strategy; no automatic provider cancellation command belongs he
 `RESET-V2-BILLING-DOMAIN` as the production confirmation.** Do not spoof APP_ENV,
 use loopback tunnels to bypass identity, or disable foreign keys.
 
-**PRECONDITION:** production preflight/identity, native MySQL rehearsal, provider
-disposition, backups/restore and approved Admin 1 all accepted. No prior epoch.
+**PRECONDITION for cutover execution:** production preflight/identity, native MySQL
+rehearsal, provider disposition, backups/restore and approved Admin 1 all accepted.
+No prior epoch. The identity configuration below may be installed earlier for the
+separately approved section 12 batch review; provider disposition must be complete
+before any cutover execute, and all execution guards remain enforced.
 **COMMAND / ACTION — protected configuration write:** install these assertions with
 the verified secret/config mechanism, then rebuild configuration on both nodes:
 
@@ -1079,7 +1096,7 @@ production acceptance. MCP rows may be deferred only while its gate remains fals
 
 ## Appendix A. Exact migration inventory from source
 
-All names below are under `database/migrations/`. Source review found **87 files**.
+All names below are under `database/migrations/`. Source review found **88 files**.
 The documented original `eu-metkurd-v1-260906.sql` baseline has 65 migration records,
 ending with channel separation; the already-mutated local R1 copy had a different
 inventory. The **21-file delta below is relative to that original snapshot only**.
@@ -1113,6 +1130,7 @@ requires native rehearsal. Catalog/data migrations require economic/data review.
 | `2026_09_27_120000_retire_translation_landing_publication.php` | Data: inactive Translation landing flag + system audit | Landing pages and Admin audit | Narrow conditional update; preserves editorial/media/timestamps/history. Down cannot republish or erase audit. |
 | `2026_09_27_140000_add_service_agreement_concurrency.php` | Schema: nullable agreement concurrent_jobs_limit | Service agreements | Additive; null preserves plan concurrency; populated override down refused. No customer credit/access rewrite. |
 | `2026_09_30_000001_create_provider_coverage_dispositions.php` | Schema: immutable reviewed legacy-provider coverage + restricted customer/Admin/operation FKs | Existing subscriptions and Admin operation schema | Additive; no approvals/backfill, HTTP or credits. Historical Payment/event IDs survive processing retirement. Populated rollback refused. Native MySQL JSON/date/transaction acceptance required. |
+| `2026_09_30_000002_create_provider_obligation_reviews.php` | Schema: exact GET/merchant review provenance with restricted customer/Admin/operation FKs | Admin operations and provider coverage release | Additive, no backfill/HTTP/financial mutation. Logical Payment/event IDs survive processing retirement; populated rollback refused. Native MySQL JSON/hash/locking acceptance required. |
 
 No separate migration for Process Queue, dynamic discovery, Admin layout, Harakat API
 route or V1 retirement flag. Their dependencies are in the inventory above/baseline.
