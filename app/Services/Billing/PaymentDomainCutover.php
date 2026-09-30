@@ -94,7 +94,8 @@ class PaymentDomainCutover
             }
             $this->verifyEffectivePlans($review['effective_after']);
             $this->authorize($workersStopped);
-            if (app(BillingReportingBoundary::class)->apply(DB::table('credit_orders'))->exists() || DB::table('payments')->exists()) {
+            if (app(BillingReportingBoundary::class)->apply(DB::table('credit_orders'))->exists()
+                || collect(self::PROCESSING)->contains(fn ($table) => DB::table($table)->exists())) {
                 throw new PaymentHistoryResetRefused('Current billing did not start empty; cutover rolled back.');
             }
 
@@ -141,12 +142,20 @@ class PaymentDomainCutover
         foreach (self::PROCESSING as $table) {
             $delete[$table] = DB::table($table)->orderBy('id')->pluck('id')->all();
         }
-        $retainedIntents = DB::table('payment_intents')->get()->filter(fn ($intent) => LegacyFakeIntentEvidence::matches($intent))->pluck('id')->all();
-        $delete['payment_intents'] = array_values(array_diff($delete['payment_intents'], $retainedIntents));
-        foreach (['payment_transactions', 'payment_webhook_events'] as $table) {
-            $retainedChildren = DB::table($table)->whereIn('payment_intent_id', $retainedIntents)->pluck('id')->all();
-            $delete[$table] = array_values(array_diff($delete[$table], $retainedChildren));
-        }
+        // All five processing tables start empty. Corroborated fake/manual provenance
+        // survives in the immutable cutover audit, never as live V2 processing rows.
+        $archivedIntents = DB::table('payment_intents')->get()->filter(fn ($intent) => LegacyFakeIntentEvidence::matches($intent));
+        $legacyProvenance = $archivedIntents->map(fn ($intent) => [
+            'intent' => array_intersect_key((array) $intent, array_flip(['id', 'uuid', 'customer_id', 'provider', 'payment_method',
+                'purpose_type', 'purpose_id', 'status', 'paid_at', 'fulfilled_at', 'base_amount_iqd', 'gross_amount_iqd',
+                'currency', 'recurring_strategy', 'provider_payment_id', 'provider_transaction_id'])),
+            'order_ids' => DB::table('credit_orders')->where('payment_intent_id', $intent->id)->pluck('id')->all(),
+            'transactions' => DB::table('payment_transactions')->where('payment_intent_id', $intent->id)->orderBy('id')->get()
+                ->map(fn ($r) => array_intersect_key((array) $r, array_flip(['id', 'payment_intent_id', 'parent_transaction_id',
+                    'provider', 'transaction_type', 'status', 'amount_iqd', 'gross_amount_iqd', 'surcharge_amount_iqd',
+                    'provider_fee_amount_iqd', 'net_amount_iqd', 'currency', 'processed_at', 'failed_at', 'created_at', 'updated_at'])))->all(),
+            'webhook_ids' => DB::table('payment_webhook_events')->where('payment_intent_id', $intent->id)->orderBy('id')->pluck('id')->all(),
+        ])->values()->all();
         foreach ($tables as $table) {
             $columns = Schema::getColumns($table);
             $keys = Schema::getForeignKeys($table);
@@ -241,7 +250,8 @@ class PaymentDomainCutover
                 ->selectRaw('COUNT(*) AS count, COALESCE(SUM(balance_credits),0) AS balance, COALESCE(SUM(subscription_balance_credits),0) AS subscription_balance, COALESCE(SUM(addon_balance_credits),0) AS addon_balance')->first();
         }
         $result = ['policy' => 'payment-domain-cutover-v2', 'target' => $target, 'database' => $identity,
-            'retained_financial_intent_ids' => $retainedIntents, 'readiness' => $readiness, 'provider_obligations' => $obligations, 'counts' => $counts,
+            'archived_financial_intent_ids' => $archivedIntents->pluck('id')->all(), 'legacy_processing_provenance' => $legacyProvenance,
+            'readiness' => $readiness, 'provider_obligations' => $obligations, 'counts' => $counts,
             'reporting_boundary_projection' => ['starts_at' => 'transaction commit time',
                 'credit_order_id' => DB::table('credit_orders')->max('id') ?? 0, 'payment_id' => DB::table('payments')->max('id') ?? 0],
             'delete_counts' => array_map('count', $delete), 'delete_ids' => $delete, 'delete_order' => $order,

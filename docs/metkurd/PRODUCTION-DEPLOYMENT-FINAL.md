@@ -6,9 +6,10 @@
 [PROVIDER-OBLIGATION-REVIEW.md](PROVIDER-OBLIGATION-REVIEW.md) before the final cutover
 review. The release adds one retained-coverage migration and an audited, explicit
 approval workflow. The subsequent [batch review](PROVIDER-OBLIGATION-BATCH-REVIEW.md)
-adds a second review-evidence migration, private manifests, bounded GET-only checks
-and atomic per-item approvals. Cancellation alone does not certify November coverage. Confirmed
-fake/manual history is preserved, not deleted; DRAFT 159/160 remain unresolved.
+adds a second review-evidence migration, private manifests, bounded GET-first remote
+retirement and existing paid-coverage approvals. Cancellation alone does not certify
+November coverage. Fake/manual provenance survives in orders and cutover audit;
+all five old processing tables are deleted. DRAFT 159/160 remain unresolved.
 No migration, production connection, disposition or cutover was executed by this task.
 
 **Status: operator procedure prepared; production execution is NOT accepted yet.**
@@ -556,9 +557,13 @@ configure those assertions for review before this phase. Unresolved provider evi
 still prevents cutover execution; enabling the identity gate is not reset approval.
 Export/review on one node with writers quiesced, select bounded actions, preview their
 exact worksheet hash, then apply only the separately approved set. Re-export after
-each batch. GET failures/DRAFT/ACTIVE/TRIAL remain blockers; merchant imports require
-explicit per-object evidence/attestation. Preserve the new review rows and Admin
-history. No blanket SQL correction or automatic cancellation.
+each batch. Use --remote-limit=25 for preselected exact objects. Authenticated GET
+precedes a committed single-POST fence for ACTIVE/TRIAL and a confirming GET; closed
+objects get no POST. DRAFT/failed/ambiguous results remain blocked. The reason
+"No Service Available" stays local. Replays retain the exact UUID and never blindly
+repeat POST. Merchant imports are exceptional API-unresolved reviews with explicit
+per-object evidence. Preserve review rows, paid dispositions and Admin history.
+No blanket SQL correction or unreviewed provider action.
 
 Before this phase can pass, complete the separately reviewed
 [provider coverage disposition procedure](PROVIDER-OBLIGATION-REVIEW.md#exact-operator-sequence-after-separately-approved-deployment).

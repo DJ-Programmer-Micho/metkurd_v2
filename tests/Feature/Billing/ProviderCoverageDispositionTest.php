@@ -193,18 +193,18 @@ function fakeHistoryFixture($test): array
         'service_plan_id' => $test->payment->purchasable_id, 'source_type' => 'service_plan', 'order_type' => 'subscription',
         'status' => 'paid', 'provider' => 'fake', 'payment_method' => 'fake', 'credits_amount' => 1000, 'base_amount_iqd' => 12000]);
     $parent = DB::table('payment_transactions')->insertGetId(['payment_intent_id' => $intent, 'provider' => 'fake', 'transaction_type' => 'initiate', 'status' => 'paid']);
-    DB::table('payment_transactions')->insert(['payment_intent_id' => $intent, 'parent_transaction_id' => $parent, 'provider' => 'fake', 'transaction_type' => 'charge', 'status' => 'paid']);
+    DB::table('payment_transactions')->insert(['payment_intent_id' => $intent, 'parent_transaction_id' => $parent, 'provider' => 'fake', 'transaction_type' => 'charge', 'status' => 'paid', 'amount_iqd' => 12000, 'currency' => 'IQD']);
     DB::table('credit_ledgers')->insert(['customer_id' => $test->payment->customer_id, 'wallet_type' => 'app', 'type' => 'grant',
         'related_type' => \App\Models\PaymentIntent::class, 'related_id' => $intent, 'direction' => 'credit', 'amount' => 1, 'credits_delta' => 1, 'balance_after' => 1]);
 
     return [$intent, $order];
 }
-it('preserves the corroborated fake intent order transactions and ledger without a remote obligation', function () {
+it('archives fake processing provenance while preserving its order and ledger and emptying all five tables', function () {
     $admin = coverageAdmin($this, AdminAccess::CAPABILITIES);
     [$intent, $order] = fakeHistoryFixture($this);
     approveCoverage($this);
     $before = coverageSnapshot();
-    $transactions = DB::table('payment_transactions')->orderBy('id')->get()->toJson();
+    $orderBefore = $order->fresh()->getRawOriginal();
     $inventory = (new \App\Services\Billing\CutoverInventoryReader(DB::connection()))->inspect();
     expect($inventory['legacy_intents']['unresolved_or_scheduled'])->toBe(0)
         ->and($inventory['unlinked_paid_plan_orders']['rows'])->toBe(0)
@@ -212,11 +212,18 @@ it('preserves the corroborated fake intent order transactions and ledger without
     $obligations = app(ProviderObligationInventory::class)->inspect('production', ['customer_service_subscriptions' => [['id' => $this->subscription->id]]]);
     expect($obligations['summary']['financial_legacy_preserved'])->toBe(1)->and($obligations['blockers'])->toBe([]);
     executeCoverageCutover($this, $admin);
-    foreach (['credit_wallets', 'credit_ledgers', 'credit_orders', 'payment_intents', 'subscription_credit_allocations'] as $table) {
+    foreach (['credit_wallets', 'credit_ledgers', 'subscription_credit_allocations'] as $table) {
         expect(coverageSnapshot()[$table])->toBe($before[$table], $table);
     }
-    expect(DB::table('payment_transactions')->orderBy('id')->get()->toJson())->toBe($transactions)
-        ->and($order->fresh()->payment_intent_id)->toBe($intent)
+    foreach (PaymentDomainCutover::PROCESSING as $table) {
+        expect(DB::table($table)->count())->toBe(0);
+    }
+    expect($order->fresh()->getRawOriginal())->toBe(array_replace($orderBefore, ['payment_intent_id' => null]));
+    $audit = \App\Models\AdminAuditEvent::where('action', \App\Services\Billing\BillingReportingBoundary::ACTION)->firstOrFail();
+    $provenance = data_get($audit->after_state, 'manifest.legacy_processing_provenance');
+    expect($provenance[0]['intent']['id'])->toBe($intent)
+        ->and($provenance[0]['order_ids'])->toBe([$order->id])->and($provenance[0]['transactions'])->toHaveCount(2)
+        ->and((int) $provenance[0]['transactions'][1]['amount_iqd'])->toBe(12000)->and($provenance[0]['transactions'][1]['currency'])->toBe('IQD')
         ->and(\App\Models\CreditOrder::currentBillingPeriod()->count())->toBe(0);
 });
 it('does not infer safe fake history from a recurring flag alone or conflicting remote identity', function ($fault) {

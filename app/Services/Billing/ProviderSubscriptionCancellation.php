@@ -16,8 +16,11 @@ use Illuminate\Validation\ValidationException;
 class ProviderSubscriptionCancellation
 {
     /** Persisted cancellation authority shared with cutover; no HTTP or writes. */
-    public function confirmation(Payment $payment): array
+    public function confirmation(Payment $payment, ?ProviderReviewSnapshot $snapshot = null): array
     {
+        if ($remote = app(ProviderRetirementEvidence::class)->renewalConfirmation($payment, $snapshot)) {
+            return $remote;
+        }
         $evidence = app(\App\Domain\Payments\Support\FibStatusEvidence::class);
         $observation = $evidence->persistedSubscriptionObservation($payment);
         $status = $observation['status'] ?? null;

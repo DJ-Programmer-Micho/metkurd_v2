@@ -1,7 +1,7 @@
 # Production cutover provider evidence review — 2026-09-30
 
 For multiple obligations use the [batch workflow](PROVIDER-OBLIGATION-BATCH-REVIEW.md):
-bulk private inventory, prefilled review decisions, GET-only DRAFT observations,
+bulk private inventory, preselected bounded GET-first remote retirement, DRAFT observations,
 attested merchant returns and individually bounded coverage approvals under one
 parent operation. The single-payment command below remains available for exceptions.
 The batch addition introduces one further migration; neither schema change has been
@@ -202,10 +202,11 @@ that narrow conjunction. A recurring flag alone is no longer treated as proof of
 remote obligation in this case. Conflicting remote identities or missing corroboration
 remain unresolved. This is not reclassification as FIB revenue or an entitlement grant.
 
-Cutover preserves matching intents and linked transactions/webhook evidence unchanged,
-and leaves Order 1's intent FK intact. Any retained processing child referencing a
-parent selected for retirement blocks the transaction. Self-referencing transaction
-delete ordering respects the retained subset. The broad inventory excludes only a
+The final business clarification supersedes the earlier retained-processing exception:
+cutover archives matching intent/transaction/order provenance in its retained Admin
+audit, deletes all five processing tables and detaches the reviewed nullable Order
+intent FK with its original mapping retained. Immutable dependencies still block.
+Self-referencing transaction delete ordering remains enforced. The broad inventory excludes only a
 customer/plan/provider/method-matched Order from its unlinked remote-plan count and
 reports retained financial legacy IDs separately. Other historical financial reads
 and immutable dependencies remain unchanged; reporting watermarks exclude these old

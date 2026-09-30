@@ -1,5 +1,21 @@
 # Architectural and behavioral decisions
 
+## 2026-09-30 — Final V1 processing retirement and bounded remote cancellation
+
+Adapted existing batch commands for deterministic groups of up to 25 exact provider
+objects. Existing ACTIVE/TRIAL cancellation now supports a batch callback that
+commits the one-POST fence after validated GET; final GET and audited per-object
+results survive interruption without blind POST retry. Closed objects need no POST;
+DRAFT support is unproven and stays blocked. Merchant attestation follows unresolved
+API review. New/pending/failed remote evidence cannot bypass older paid cancellation
+proof. Individual paid-term approvals remain separate and never refill credits.
+Final cutover now empties all five processing tables, preserving fake/manual order
+provenance in its retained audit instead of retaining processing rows. Two existing
+additive migrations suffice. No production/provider access, application migration,
+local corrective write or application cutover occurred. See the updated
+[operator procedure](PROVIDER-OBLIGATION-BATCH-REVIEW.md) for counts, commands and
+native MySQL/provider acceptance limits.
+
 ## 2026-09-30 — Private batch provider obligation review
 
 Added read-only grouped inventory and deterministic identity/source/evidence-bound

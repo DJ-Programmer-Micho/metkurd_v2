@@ -47,6 +47,14 @@ class ProviderObligationBatchReview
             $hasReview = collect($snapshot->rows['provider_obligation_reviews'])->contains(fn ($r) => (int) $r['original_payment_id'] === (int) $payment->id);
             $providerStatus = $latest ? $latest['provider_status'] : ($status?->status ?? $payment->provider_subscription_status);
             $reviewEvidence = $latest ? json_decode($latest['evidence'], true) : [];
+            if ($latest && ($reviewEvidence['verified'] ?? false)) {
+                $status = \App\Domain\Payments\Data\FibSubscriptionStatusData::fromArray([
+                    'id' => $payment->fib_subscription_id, 'status' => $providerStatus,
+                    'lastPaymentAt' => $reviewEvidence['last_payment_at'] ?? null, 'activeUntil' => $reviewEvidence['active_until'] ?? null,
+                ]);
+            } elseif (($latest['kind'] ?? null) === 'remote_retirement') {
+                $status = null;
+            }
             $category = 'unresolved';
             $reason = 'no_authenticated_retirement_evidence';
             $objectId = $payment->fib_subscription_id ?: $payment->fib_payment_id;
@@ -85,10 +93,12 @@ class ProviderObligationBatchReview
                 [$category, $reason] = ['conflict', 'review_evidence_changed_refresh_required'];
             } elseif ($payment->paid_at || $payment->isFulfilled() || $payment->last_payment_at || $status?->lastPaymentAt || ($reviewEvidence['last_payment_at'] ?? null)) {
                 [$category, $reason] = ['paid_coverage', 'paid_term_requires_individual_review'];
-                if ($status && in_array($status->status, ['CANCELLED', 'CANCELED'], true) && $status->activeUntil && $status->activeUntil->gt($at)) {
+                $renewalStopped = $status && (in_array($status->status, ['CANCELLED', 'CANCELED'], true)
+                    || ($status->status === 'REJECTED' && ($latest['kind'] ?? null) === 'remote_retirement' && ($reviewEvidence['verified'] ?? false)));
+                if ($renewalStopped && $status->activeUntil && $status->activeUntil->gt($at)) {
                     $reason = 'confirmed_renewal_stop_operator_interval_approval_required';
                 }
-                if ($status && in_array($status->status, ['CANCELLED', 'CANCELED'], true)) {
+                if ($renewalStopped) {
                     [$oldClass] = app(\App\Services\Billing\Cutover\ProviderObligationInventory::class)->classify($payment,
                         ['confirmed' => true, 'observed_active_until' => $status->activeUntil?->format('Y-m-d\TH:i:s.vP')]);
                     $remaining = collect($subscriptions)->contains(fn ($s) => collect([$s['row']['ends_at'], data_get(json_decode($s['row']['meta'] ?? '{}', true), 'period_ends_at'),
@@ -112,16 +122,31 @@ class ProviderObligationBatchReview
                 'provider' => $payment->provider?->value, 'provider_object_id' => $safeObject ? $objectId : null,
                 'local_reference' => preg_match('/^[a-zA-Z0-9_-]{1,190}$/D', (string) $payment->local_reference) ? $payment->local_reference : null, 'local_status' => $payment->status?->value,
                 'internal_status' => $payment->internal_status?->value, 'provider_status' => preg_match('/^[A-Z_]{1,30}$/D', (string) $providerStatus) ? $providerStatus : null,
-                'created_at' => $payment->created_at?->toIso8601String(), 'paid' => (bool) ($payment->paid_at || $payment->last_payment_at || $payment->isFulfilled()),
+                'created_at' => $payment->created_at?->toIso8601String(), 'paid_at' => $payment->paid_at?->toIso8601String(),
+                'recent_paid' => ($payment->paid_at && $payment->paid_at->gte($at->subDays(7)))
+                    || ($status?->lastPaymentAt && $status->lastPaymentAt->gte($at->subDays(7)))
+                    || ($payment->last_payment_at && $payment->last_payment_at->gte($at->subDays(7))),
+                'paid' => (bool) ($payment->paid_at || $payment->last_payment_at || $payment->isFulfilled()),
                 'applied' => $payment->isFulfilled(), 'verified_start' => $status?->lastPaymentAt?->format('Y-m-d\TH:i:s.vP'),
-                'verified_end' => $status?->activeUntil?->format('Y-m-d\TH:i:s.vP'), 'evidence_event_id' => $terminal['evidence_event_id'] ?? $observation['event_id'] ?? null,
+                'verified_end' => $status?->activeUntil?->format('Y-m-d\TH:i:s.vP'), 'evidence_event_id' => $latest['evidence_event_id'] ?? $terminal['evidence_event_id'] ?? $observation['event_id'] ?? null,
                 'category' => $category, 'reason' => $reason, 'operator_action_required' => $category !== 'confirmed_retired',
                 'proposed_actions' => match ($category) {
-                    'draft_unpaid' => ['draft_get', 'merchant_attestation'],
+                    'draft_unpaid' => $latest && $latest['outcome'] === 'unresolved'
+                        && in_array($latest['kind'], ['draft_get', 'remote_retirement'], true)
+                        && in_array($latest['provider_status'], [null, 'DRAFT'], true)
+                        && in_array($reviewEvidence['reason'] ?? null, ['provider_unavailable', 'verified_observation', 'draft_not_contractually_cancellable'], true)
+                        && empty($reviewEvidence['last_payment_at']) && empty($reviewEvidence['active_until'])
+                            ? ['draft_get', 'merchant_attestation'] : ['draft_get'],
                     'paid_coverage' => $reason === 'confirmed_renewal_stop_operator_interval_approval_required' && count($subscriptions) === 1 ? ['coverage_approval'] : [],
                     default => (! $conflict || $conflictReason === 'persisted_get_not_current_or_valid') && $category !== 'confirmed_retired' && $category !== 'active_trial'
                         && $payment->provider_subscription_status === 'DRAFT' && $snapshot->unpaidUnbound($payment) ? ['draft_get'] : [],
                 }];
+            $priorRemote = collect($snapshot->rows['provider_obligation_reviews'])->contains(fn ($r) => (int) $r['original_payment_id'] === (int) $id && $r['kind'] === 'remote_retirement');
+            $item['remote_review_eligible'] = ! $disposition && $snapshot->remoteEligible($payment);
+            $item['remote_previously_reviewed'] = $priorRemote;
+            if ($item['remote_review_eligible']) {
+                $item['proposed_actions'][] = 'remote_retire';
+            }
             $items[] = $item;
         }
         foreach (['service', 'storage'] as $kind) {
@@ -205,6 +230,21 @@ class ProviderObligationBatchReview
         return $packet;
     }
 
+    /** Select a deterministic next group without editing customer/provider IDs. */
+    public function selectRemote(array $packet, int $limit, bool $retryReviewed = false): array
+    {
+        if ($limit < 1 || $limit > 25) {
+            throw new PaymentHistoryResetRefused('Remote retirement requires 1–25 objects.');
+        }
+        $items = array_values(array_filter($packet['review']['items'], fn ($i) => ($i['remote_review_eligible'] ?? false)
+            && ($retryReviewed || ! $i['remote_previously_reviewed'])));
+        usort($items, fn ($a, $b) => $a['payment_id'] <=> $b['payment_id']);
+        $packet['decisions'] = array_map(fn ($i) => ['action' => 'remote_retire', 'selected' => true,
+            'payment_id' => $i['payment_id'], 'customer_id' => $i['customer_id'], 'provider_subscription_id' => $i['provider_object_id']], array_slice($items, 0, $limit));
+
+        return $packet;
+    }
+
     /** Prepare a new worksheet only. A returned spreadsheet/status list is never execution authority. */
     public function importMerchant(array $packet, array $returned): array
     {
@@ -243,7 +283,7 @@ class ProviderObligationBatchReview
             array_filter($packet['review']['items'], fn ($i) => isset($i['payment_id']) && $i['operator_action_required'] && $i['provider'] === 'fib')))];
     }
 
-    private function code(): array
+    public function code(): array
     {
         $revision = config('provider_obligation_review.release_revision');
         if (! $revision) {

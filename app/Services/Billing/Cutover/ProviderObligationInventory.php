@@ -55,7 +55,7 @@ class ProviderObligationInventory
                 && ! $payment->active_until?->isFuture()) {
                 continue;
             }
-            $confirmation = app(ProviderSubscriptionCancellation::class)->confirmation($payment);
+            $confirmation = app(ProviderSubscriptionCancellation::class)->confirmation($payment, $snapshot);
             $terminal = $retirement->terminal($snapshot, $payment);
             [$classification, $reason] = isset($approved[$payment->id])
                 ? ['approved_coverage_to_preserve', 'audited_bounded_term_and_confirmed_renewal_stop']

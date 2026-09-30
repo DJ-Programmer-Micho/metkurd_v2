@@ -4,12 +4,15 @@
 
 The private CLI review bulk-loads provider obligations and excludes ordinary Free
 rows. An immutable identity/source/evidence manifest plus separately selected
-per-item decisions feeds one AdminOperationRunner parent. Existing individual paid
-coverage authority is reused; unpaid DRAFT GET/merchant attestations append durable
-evidence only. Shared retirement validation feeds both cutover inventories, with
-stale/ambiguous evidence still blocking. See
-[batch review and acceptance](PROVIDER-OBLIGATION-BATCH-REVIEW.md). No automatic
-provider cancellation, fulfillment, financial repair or cutover authorization.
+per-item decisions feeds AdminOperationRunner. Explicit remote batches select up to
+25 objects, GET first, commit a POST fence before existing ACTIVE/TRIAL cancellation,
+then GET-confirm and persist each result independently. Ambiguous/crashed POSTs never
+blindly repeat. DRAFT remains blocked; merchant attestation is an API-unresolved
+exception. Individual paid coverage authority remains separate. Shared retirement
+validation rejects stale/failed/pending evidence in both cutover inventories. All
+five old processing tables retire; fake/manual provenance survives in the cutover
+audit, not live processing rows. See [batch review](PROVIDER-OBLIGATION-BATCH-REVIEW.md).
+No fulfillment, financial repair, refill or cutover authorization is implied.
 
 ## Admin Developer read model — 2026-09-28
 

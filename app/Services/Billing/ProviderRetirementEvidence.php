@@ -4,7 +4,7 @@ namespace App\Services\Billing;
 
 use App\Domain\Payments\Models\Payment;
 
-/** Only unpaid, unbound objects. Paid coverage always stays on its separate stricter authority. */
+/** Retirement evidence stops renewal; paid access requires separate coverage authority. */
 class ProviderRetirementEvidence
 {
     public function terminal(ProviderReviewSnapshot $snapshot, Payment $payment): ?array
@@ -44,7 +44,7 @@ class ProviderRetirementEvidence
             if ($row['provider'] !== 'fib'
                 || (int) $row['customer_id'] !== (int) $payment->customer_id || $row['provider_object_id'] !== $payment->fib_subscription_id
                 || ! hash_equals($row['basis_hash'], $snapshot->basis($payment)) || ($operation['status'] ?? null) !== 'completed'
-                || ($operation['action'] ?? null) !== ProviderObligationBatchActions::ACTION
+                || ! in_array($operation['action'] ?? null, [ProviderObligationBatchActions::ACTION, ProviderRemoteRetirementBatch::RESULT], true)
                 || (int) ($operation['admin_id'] ?? 0) !== (int) $row['admin_id']
                 || ! hash_equals((string) ($result['evidence_hashes'][$row['id']] ?? ''), self::approvalHash($row))) {
                 return null;
@@ -54,6 +54,35 @@ class ProviderRetirementEvidence
         }
 
         return null;
+    }
+
+    public function renewalConfirmation(Payment $payment, ?ProviderReviewSnapshot $snapshot = null): ?array
+    {
+        if (! $snapshot && (! \Illuminate\Support\Facades\Schema::hasTable('provider_obligation_reviews')
+            || ! \Illuminate\Support\Facades\DB::table('provider_obligation_reviews')->where('original_payment_id', $payment->id)->where('kind', 'remote_retirement')->exists())) {
+            return null;
+        }
+        $snapshot ??= ProviderReviewSnapshot::capture();
+        if (! collect($snapshot->rows['provider_obligation_reviews'])->contains(fn ($r) => (int) $r['original_payment_id'] === (int) $payment->id && $r['kind'] === 'remote_retirement')) {
+            return null;
+        }
+        // Once remote review starts, older local cancellation evidence cannot bypass
+        // a pending, failed, changed or contradictory authenticated observation.
+        $blocked = ['confirmed' => false, 'evidence_event_id' => null,
+            'observed_active_until' => null, 'observed_last_payment_at' => null];
+        $row = $this->latest($snapshot, $payment);
+        if (! $row || $row['kind'] !== 'remote_retirement' || ! in_array($row['outcome'], ['renewal_stopped', 'confirmed_retired'], true)
+            || ! in_array($row['provider_status'], ['CANCELLED', 'CANCELED', 'REJECTED'], true)) {
+            return $blocked;
+        }
+        $evidence = json_decode($row['evidence'], true);
+        if (! ($evidence['verified'] ?? false)) {
+            return $blocked;
+        }
+
+        return ['confirmed' => true, 'evidence_event_id' => (int) $row['evidence_event_id'],
+            'observed_active_until' => $evidence['active_until'] ?? null, 'observed_last_payment_at' => $evidence['last_payment_at'] ?? null,
+            'remote_review_id' => (int) $row['id']];
     }
 
     public static function approvalHash(array $row): string

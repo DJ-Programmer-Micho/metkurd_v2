@@ -3,7 +3,7 @@
 ## Batch provider review — 2026-09-30
 
 [Batch review](PROVIDER-OBLIGATION-BATCH-REVIEW.md) now provides grouped private
-manifests, bounded authenticated DRAFT GETs, explicit merchant attestations and
+manifests, bounded GET-first remote retirement (maximum 25 objects), exceptional merchant attestations and
 atomic per-customer coverage approvals under one durable Admin operation. The new
 `provider_obligation_reviews` table retains logical Payment/event IDs after the
 existing approved processing retirement. Only exact unpaid/unbound terminal proof
@@ -22,12 +22,15 @@ fingerprints/effective-plan identity must verify before commit. This is not a ma
 or cash grant, current revenue, or credit-cycle authority. Unapproved/ambiguous paid
 coverage and remote obligations still block production.
 
-The processing-delete set now excludes narrowly corroborated paid fake/manual intents
-and their transaction/webhook history. Their retained CreditOrder links and ledger/
-allocation dependencies remain intact. All other dependency guards still apply.
-The original blanket five-table retirement/date-preservation description below is
-superseded ONLY for these explicit reviewed preservation cases. Local-rehearsal and
-production retain their existing separate identity/preflight policies.
+The final business clarification requires all five processing tables to be empty.
+Corroborated fake/manual intent, transaction and order provenance is archived in the
+cutover audit; those processing rows are deleted and reviewed nullable order links
+are detached with their original mapping retained. This supersedes the earlier
+fake-processing-row exception. Immutable ledger/allocation dependencies still block.
+Paid dates change only under the explicit coverage disposition above. Local-rehearsal
+and production retain their separate identity/preflight policies. Remote cancellation
+is a separate, explicitly executed, per-object durable workflow; cutover itself makes
+no provider calls. Unconfirmed renewal/coverage still blocks it.
 
 
 ## Deployment targets — 2026-09-15

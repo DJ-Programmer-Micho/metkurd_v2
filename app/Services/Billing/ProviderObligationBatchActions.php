@@ -21,6 +21,9 @@ class ProviderObligationBatchActions
     {
         $this->authorize();
         Validator::make(compact('operation', 'reason'), ['operation' => 'required|uuid', 'reason' => 'required|string|min:10|max:1000'])->validate();
+        if (collect($packet['decisions'] ?? [])->contains(fn ($d) => ($d['selected'] ?? false) && ($d['action'] ?? null) === 'remote_retire')) {
+            return app(ProviderRemoteRetirementBatch::class)->apply($packet, $operation, $reason, $reviewHash, $execute);
+        }
         $approvalHash = ProviderReviewSnapshot::hash($packet);
         if (! $execute) {
             $snapshot = app(ProviderObligationBatchReview::class)->validate($packet);

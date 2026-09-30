@@ -1,328 +1,216 @@
-# Batch provider obligation review — 2026-09-30
+# Batch provider obligation retirement — 2026-09-30
 
-Source implementation and isolated acceptance only. No production connection,
-deployment, application migration, real FIB call or cutover was performed. The
-local reproduction database was inspected read-only. This procedure supplements
-[the final deployment runbook](PRODUCTION-DEPLOYMENT-FINAL.md); it does not authorize
-execution or replace its maintenance, backup, identity and zero-blocker gates.
+Source implementation and isolated acceptance only. No production access, deployment,
+application migration, real FIB request or application cutover was performed. The
+local reproduction database was inspected read-only. This supplements the
+[deployment runbook](PRODUCTION-DEPLOYMENT-FINAL.md), not its execution authority.
 
-## Architecture and boundaries
+## Final scope and existing authority
 
-Two CLI commands reuse fresh `admin.finance` + `admin.reconcile` authorization,
-`AdminOperationRunner`, `FibStatusEvidence`, the existing authenticated FIB client
-and the existing individual `ProviderCoverageDispositions` authority. No new Admin
-route, generic “resolved” button, provider cancellation path or financial policy.
+The existing cutover deletes all old rows in exactly five processing tables:
+payments, payment_events, payment_intents, payment_transactions and
+payment_webhook_events. Customers, wallets, balances, ledgers, orders, allocations,
+valid subscriptions, jobs, files, usage and Admin history survive under existing
+fingerprint guards. Reviewed nullable processing links may be detached with their
+original mappings retained in the audit. Immutable allocation/ledger FK dependencies
+still block deletion. Old poll/callback rows do not become live V2 processing state.
 
-`ProviderReviewSnapshot` bulk-loads relevant tables and streams events once.
-Inventory performs no per-obligation SQL or HTTP. Ordinary Free/provider-unrelated
-subscriptions are excluded. Items are grouped into:
+Corroborated fake/manual intent history makes no FIB requests. Its allowlisted intent,
+transaction and order provenance is archived in the immutable cutover audit under
+legacy_processing_provenance, alongside original table fingerprints/link mappings.
+Its processing rows are deleted too. This supersedes the earlier exception retaining
+fake intents/transactions inside live processing tables.
 
-| Category | Meaning / permitted next step |
+The two existing review/apply commands reuse fresh active Admin finance/reconcile
+authorization, AdminOperationRunner, exact configured CutoverIdentity,
+FibStatusEvidence, the existing cancellation service and ProviderCoverageDispositions.
+No identity override, generic resolved flag, refund, fulfillment, wallet mutation or
+automatic refill. New actions are refused after a committed billing epoch.
+BILLING_CUTOVER_ENABLED remains false by default; review configuration is not reset
+approval. Production still requires native MySQL/RDS identity and readiness checks.
+
+The bulk snapshot streams events and loads financial evidence without per-obligation
+SQL in inventory. Categories remain confirmed_retired, paid_coverage, draft_unpaid,
+active_trial, conflict, retained_fake_history and unresolved. They are not final
+cutover blocker counts. Remote eligibility is separate: stale GET can be refreshed;
+missing/unsafe identity, ownership/reference mismatch, financial review, duplicate
+objects or synthetic/mock/revenue-excluded Payments cannot trigger HTTP. Ordinary
+Free rows are excluded. Local synthetic Payment 176 must never be polled.
+
+## Contract and remote state handling
+
+| Authenticated current state | Batch behavior |
 | --- | --- |
-| `confirmed_retired` | Accepted terminal unpaid evidence, or confirmed cancellation with no remaining paid term; no new action proposed. |
-| `paid_coverage` | Paid/applied/collection evidence; individual interval review required. Only eligible confirmed-cancellation cases propose coverage approval. Existing dispositions are identified without proposing duplicate approval; final cutover revalidates them. |
-| `draft_unpaid` | Exact unpaid, unbound native FIB subscription currently DRAFT; optional bounded GET or explicit merchant attestation. DRAFT itself is never safe. |
-| `active_trial` | Remote renewal/activation obligation remains blocked. |
-| `conflict` | Invalid identity, rejected/stale GET, pending financial review, malformed term or orphan subscription. Reason codes distinguish these cases. An otherwise exact unpaid/unbound DRAFT with stale GET evidence can request a fresh GET only, never merchant retirement over that conflict. |
-| `retained_fake_history` | Narrowly corroborated fake/manual history; retained, with no remote action. |
-| `unresolved` | Other provider obligation; no automatic disposition. |
+| CANCELLED/CANCELED or REJECTED | Verified renewal stop, no POST. Only unpaid/unbound objects without collection/coverage evidence can be confirmed retired; paid terms remain separate. |
+| ACTIVE or TRIAL | Existing cancellation service, one fenced POST, then authenticated GET. Nonterminal/ambiguous results stay unresolved. |
+| DRAFT | GET only, unresolved; no fabricated local CANCELLED state. |
+| Unknown, malformed, wrong identity or failed GET | Unresolved, no cancellation POST. |
 
-These are review categories, **not** a replacement for the complete cutover
-classifier. A batch category count is not the number of final cutover blockers.
-Paid ACTIVE/TRIAL objects remain in the stricter paid-coverage group with their
-provider status visible. Non-FIB, one-time, orphan and conflicting cases receive
-no generic GET/merchant exception. Existing paid coverage approval remains stricter
-than unpaid retirement. New actions are refused after an audited billing epoch.
+The existing isCancelableProviderStatus permits ACTIVE/TRIAL. The public
+[FIB subscription documentation](https://gist.github.com/first-iraqi-bank-bot/3e78260f90b143d0c5b853685ca0fb01)
+describes cancellation of active subscriptions but does not establish DRAFT
+cancellability. No real transition was tested. Obtain an applicable FIB contract or
+reviewed merchant disposition for unresolved DRAFTs; the one-time-payment cancel API
+is not proof. “No Service Available” is a local audit reason, never a FIB parameter.
 
-## Commands and private manifest
+## Exact production commands after separately approved deployment
 
-Both commands use the existing explicitly configured cutover target identity.
-`BILLING_CUTOVER_ENABLED` still defaults false. No connection override, force,
-ignore, implicit production identity or automatic capability provision is added.
-Production requires the existing native MySQL/RDS identity checks. Read-only
-review still requires that identity configuration and an active authorized Admin.
+Use one operator node, accepted native MySQL migrations and the runbook's protected
+identity/configuration. Quiesce payment writers/callback processing to prevent drift.
+Protect console output and private files, which contain internal/provider identities.
+
+```sh
+php artisan billing:provider-obligations-review --target=production --admin=1 --details --export --remote-limit=25
+php artisan billing:provider-obligations-apply --manifest="<printed worksheet_file>" --admin=1 --operation="<new UUID>" --reason="No Service Available" --dry-run
+php artisan billing:provider-obligations-apply --manifest="<same worksheet_file>" --review-hash="<apply dry-run review_hash>" --admin=1 --operation="<same UUID>" --reason="No Service Available" --execute
+```
+
+Review/export and apply dry-run make no DB writes or provider calls. --remote-limit
+requires export and preselects the next 1–25 eligible, never-reviewed objects in
+Payment-ID order with exact identities filled. No customer-by-customer CLI editing.
+Repeat fresh review/export for the next group until selected_objects=0; empty apply
+is refused. A completed group can contain unresolved observations. Re-export after
+each completed group; success is not cutover authorization.
+
+For interruption, retain the original file/hash/UUID/reason and repeat the same
+execute command. Do not repeat dry-run against the now-changed manifest. For completed
+unresolved objects, fresh review with --remote-limit=25 --retry-reviewed permits a
+new review but never clears a prior POST marker. This explicit option also includes
+completed terminal objects; inspect its selected set, do not blindly loop it.
+
+## Durable execution, concurrency and bounds
+
+The parent Admin operation commits selected intent events/review rows and source
+bases before HTTP. Each object acquires a ten-minute owner lease in a short
+transaction. Authenticated validated GET precedes POST. Immediately before POST,
+fresh capabilities, source and lease are rechecked and post_started=true is committed.
+No HTTP runs inside those transactions during application execution. The shared
+cancel client makes one POST attempt with automatic POST retry disabled.
+
+All reviews for the exact provider object are checked for prior POST markers. Timeout,
+crash, final persistence failure or a new UUID cannot erase that fence. Replay checks
+with GET; even a crash after the fence but before actual POST prohibits automatic
+repeat. Expired leases can be reclaimed; active leases block another worker. Completed
+child operations replay without HTTP. Parent completion means preparation committed,
+not every remote result completed. Each safe result/event/Admin audit commits separately.
+
+Failed, pending, tampered or contradictory remote review cannot reuse older cancellation
+proof. Changed source stays unresolved. Pre-POST paid timestamps survive if cancellation
+removes response dates; individual paid-interval approval is still required. Raw provider
+replies/errors are not stored by the batch. Changed Admin/reason/packet for a UUID is
+rejected. Remote effects cannot roll back with SQL; no false atomic rollback promise.
+
+Cap: 25 objects, or configured lower PROVIDER_REVIEW_MAX_GETS. Object spacing is
+PROVIDER_REVIEW_GET_INTERVAL_MS (default 1000, bounded 500–10000 ms). Each object can
+require two GETs, one POST and token exchange. Shared GET configuration must bound
+attempts 1–3, timeout 1–30 seconds and retry delay 0–10000 ms. Object count is not HTTP
+attempt count. Full snapshots are bounded by historical dataset size, not 25 rows.
+Native MySQL lock duration, deadlock/lease behavior and actual latency need acceptance.
+
+## Paid access and exceptional merchant review
+
+After remote batches, export a normal worksheet:
 
 ```sh
 php artisan billing:provider-obligations-review --target=production --admin=1 --details --export --merchant-export
 ```
 
-This makes no database writes or provider requests. `--export` writes two separate
-files directly in `storage/app/private/billing`: an immutable source review and an
-editable worksheet with prefilled exact identities. `--merchant-export` adds a
-compact no-customer-PII list. Without export options, only console output is produced.
-Protect console output too: it contains internal/customer/provider identifiers.
+Normal decisions are unselected. Each coverage_approval includes exact Payment,
+customer/provider/subscription/event and observed dates. Confirm each legitimate
+interval, set coverage_confirmed=true and a nonsecret review_reference; activeUntil
+alone is not interval approval. Select eligible coverage decisions together and use
+the same apply dry-run/hash/UUID flow. Existing strict paid/applied/bound/current-access
+validation remains. Local coverage/merchant/GET-only actions remain atomic, max 100
+local actions and max 25 GETs. They cannot be mixed with remote_retire actions.
 
-Source/worksheet structure:
+Approval writes disposition/audit only. Cutover revalidates it and retains the same
+subscription through its reviewed exact boundary. No fake Payment, V2 revenue,
+recurring allocation or credit refill. Compensation remains a separate operator
+decision through the existing audited credit mechanism.
 
-```json
-{
-  "review": {
-    "version": 1,
-    "identity": {"target": "production", "configured_schema": "<verified schema>"},
-    "code": {"revision": "<release SHA>", "source_hash": "<source SHA-256>"},
-    "reviewed_at": "<ISO-8601 timestamp>",
-    "fingerprints": {"payments": "<hash>", "payment_events": "<hash>"},
-    "counts": {"draft_unpaid": 1},
-    "items": ["<generated allowlisted review objects>"],
-    "manifest_hash": "<immutable source hash>"
-  },
-  "decisions": ["<generated per-item decisions; selected=false initially>"]
-}
-```
-
-This illustrates structure, not a hand-authored executable packet. Generated
-identity/fingerprints include the complete actual fields and all relevant tables.
-No raw payload, token, QR/app URL, customer name, email or audio/text content is exported.
-The source hash includes PHP under app/config/migrations and composer.lock; the
-release SHA comes from Git or `PROVIDER_REVIEW_RELEASE_REVISION` for a Git-free
-artifact. Do not edit the review section. Edit only selected decision fields.
-
-The source manifest hash binds database identity, raw row fingerprints, exact
-Payment/subscription/event IDs, classifications/actions, review time and source
-revision. **The apply dry-run returns a separate `review_hash` for the entire
-worksheet including decisions.** Use that hash for execution, not `manifest_hash`.
-Every relevant row change or code change invalidates the worksheet. Full-table
-fingerprints deliberately also reject unrelated changes within those tables.
-Re-export after each completed batch. Never copy decisions blindly onto new evidence.
-
-Files use exclusive random filenames, directory mode 0700, file mode 0600 and source
-mode 0400 where supported. Windows requires verified private NTFS ACLs. File reads
-are capped at 10 MiB, JSON-only, directly inside private billing storage, with
-symlink/public-path refusal. Never publish, email the full manifest, or commit it.
-Filesystem permissions plus revalidation protect the source; this is not a signed
-FIB document or cryptographic proof that database contents originated at FIB.
-
-## One reviewed set, one durable parent operation
-
-Select the desired generated decisions. One Payment can have only one selected
-action. Keep a durable UUID and reason unchanged across dry-run/execution/replay.
+Merchant attestation is an exception after durable unresolved API review, limited
+to exact unpaid/unbound DRAFT with no collection/term or identity conflict. It cannot
+override paid/active/unknown/conflicting objects. Required fields are disposition
+(CANCELLED, REJECTED or PERMANENTLY_NON_ACTIVATABLE), review_reference, evidence_sha256,
+current observed_at and explicit attested/no_collection/irreversibly_non_activatable.
+Privately retain the real evidence; arbitrary returned status lists are not approval.
 
 ```sh
-php artisan billing:provider-obligations-apply --manifest="<private worksheet.json>" --admin=1 --operation="<UUID>" --reason="<specific reviewed purpose>" --dry-run
-php artisan billing:provider-obligations-apply --manifest="<same worksheet.json>" --review-hash="<apply dry-run hash>" --admin=1 --operation="<same UUID>" --reason="<same purpose>" --execute
+php artisan billing:provider-obligations-apply --manifest="<private worksheet>" --merchant-import="<private attested return>" --admin=1 --operation="<UUID>" --reason="No Service Available" --dry-run
 ```
 
-Omitting `--execute` is read-only, including no provider calls. Fresh capability
-checks, exact identity/hash validation and all selected decisions must pass before
-the first action. Execution locks and validates the fresh snapshot in a single
-parent Admin operation transaction. Coverage records use deterministic child UUIDs
-under that parent and reuse the unchanged single-payment approval validator.
-One invalid decision or persistence failure rolls back the whole set, including
-previous coverage inserts and child audits. The parent intent/failure audit remains
-for safe recovery. No item is silently skipped.
+Return JSON binds manifest_hash and exact payment_id/provider_subscription_id in each
+items entry. Import is prepare-only and prints a new worksheet: inspect it, dry-run
+and apply its hash through separately approved execution. Import cannot use --execute.
+Only one action per Payment may be selected.
 
-An exact completed UUID replay returns its original result without another GET or
-approval. Changed operator/reason/packet under that UUID is rejected. Replaying a
-completed result does not certify current evidence; always run fresh inventory.
-A crash before commit may require repeating authenticated GETs, which are read-only.
-No remote cancellation or financial write needs compensation.
+## Private files and two existing migrations
 
-Network failures and nonterminal GET states are deliberately committed as
-**unresolved observations**, not successful retirement. A completed batch means all
-selected observations/approvals were durably recorded, not that cutover is safe.
-Retry unresolved GETs using a fresh review and a new operation UUID.
+Immutable source and separate worksheet live directly in storage/app/private/billing,
+with random exclusive filenames, directory 0700, file 0600 and source 0400 where supported.
+Verify private NTFS ACLs on Windows. Direct local JSON only, max 10 MiB; no symlinks/public
+paths. No token, QR/app URL, customer name/email or raw provider payload is exported.
+Manifest hashes bind DB identity, release/source PHP+composer.lock, review time and
+full evidence fingerprints; apply hashes also bind decisions. Never hand-edit review.
 
-## Paid terms
+The existing two migrations suffice; no third migration:
+2026_09_30_000001_create_provider_coverage_dispositions.php and
+2026_09_30_000002_create_provider_obligation_reviews.php. Existing JSON evidence stores
+preparation, lease and POST fences. Logical historical Payment/event IDs survive
+retirement with restrictive customer/Admin/operation FKs. Populated rollback is
+refused. No migrations were applied to the reproduction or production database.
 
-Each `coverage_approval` decision includes its own Payment/customer/provider object,
-service/storage subscription, exact authenticated evidence event, `coverage_start`,
-`coverage_end`, `coverage_confirmed=true` and nonempty `review_reference`.
-Generated observed dates are proposals; an operator must confirm the actual interval
-against merchant evidence. No generic end date or batch-wide approval interval.
-The strict existing validator checks full identity, current paid/applied state,
-renewal-stop evidence, exact observed dates and conflicting/newer subscriptions.
+## Local reproduction and remaining acceptance
 
-Approval only appends individual coverage records and operation/audit history.
-Payments, subscriptions, wallets, ledgers, orders and allocations remain unchanged.
-Only a later separately approved cutover may activate retained coverage under its
-committed epoch. Its exact millisecond end boundary, provider provenance and no-new-
-credit-cycle rules remain unchanged. See [individual authority](PROVIDER-OBLIGATION-REVIEW.md).
+Read-only loopback metkurd_local_260930 has 162 review items: 13 confirmed_retired,
+12 paid_coverage, 38 draft_unpaid, 0 active_trial, 92 conflict, 6 fake/manual, 1 unresolved.
+Separate remote eligibility identifies 73 objects: 21 REJECTED, 2 CANCELLED, 7 ACTIVE,
+43 DRAFT. Therefore 30 have a potential automatic confirmation/cancellation path,
+subject to current GET and successful confirmation. None were remotely processed.
+If all 43 remain DRAFT, those plus 83 non-fake items outside eligibility (82 conflicts
+and one unresolved item) leave potentially
+126 exceptional review items, not 126 proven provider debts. Paid approvals are separate.
 
-## DRAFT GET verification
+This copy identifies only one customer via the seven-day recent-paid marker:
+Customer 1182 / Payment 161 / service subscription 1216. Event 216568 reports UTC
+2026-09-29T16:42:15.998 through 2026-11-29T16:42:15.998; old local coverage ends in October.
+Confirm actual paid interval before preservation. The user's second recently paid
+customer is not established by this copy: obtain its identity before final cutover.
+No compensation or refill was applied.
 
-Select `draft_get` decisions only for the prefilled exact unpaid/unbound objects.
-Existing authenticated subscription GET is called serially. OAuth token acquisition
-may POST to the token endpoint; there is **no cancellation/create/payment/refund POST**.
-No fulfillment, polling lifecycle dispatch, Payment status rewrite, wallet debit,
-credit allocation or subscription mutation runs.
+All ten protected fingerprints remained unchanged: wallets 2330, ledgers 8516,
+service subscriptions 1199, storage subscriptions 1167, payments 161, events 39074,
+intents 1, orders 35, allocations 0 and Admin audits 1. Local MariaDB 10.4.28 is not native
+MySQL/RDS acceptance or a production executable manifest.
 
-| Setting | Default | Enforced bound |
-| --- | --- | --- |
-| `PROVIDER_REVIEW_MAX_ACTIONS` | 100 | 1–100 selected actions |
-| `PROVIDER_REVIEW_MAX_GETS` | 25 | 1–25 selected objects |
-| `PROVIDER_REVIEW_GET_INTERVAL_MS` | 1000 | 500–10000 ms between object request starts |
+Isolated SQLite tests mock all HTTP and cover bounds, identities, GET/POST/GET,
+closed/DRAFT no-POST, transport no-retry/no-reason, committed fences, persistence
+failure/replay, permissions, stale proof, merchant exceptions, paid access and
+all-five-table retirement with financial fingerprints. Native MySQL JSON/locks/
+commit/rollback, concurrent leases, real provider acceptance, both paid customers,
+merchant evidence, release/configuration, filesystem permissions, backup/restore
+and stopped writers remain acceptance requirements.
 
-The shared FIB transport must have 1–3 configured attempts, 1–30 second timeout and
-0–10000 ms retry delay; otherwise the batch refuses before HTTP. Defaults remain
-2 attempts/15 seconds/200 ms. The object cap is not an HTTP-attempt count: up to
-75 subscription GET attempts are possible, plus bounded token exchange attempts.
-Existing intra-request retries use their configured delay; object pacing does not
-replace that delay. Run small batches on one operator node with writers quiesced:
-the transaction holds review locks during bounded HTTP. Native MySQL lock duration,
-deadlock recovery and realistic provider latency require acceptance before use.
-
-Accepted exact CANCELLED/CANCELED/REJECTED evidence can retire only an unpaid,
-unbound object with no historical collection/coverage evidence. DRAFT, ACTIVE,
-TRIAL, expired checkout, `non_cancelable`, missing IDs, malformed/mismatched replies,
-auth/network failure and unknown statuses remain blocked. No irreversible DRAFT
-expiry semantics are inferred. Safe PaymentEvents and durable review evidence are
-appended; raw provider responses/errors are not placed in these records/exports.
-
-## Merchant/FIB bulk return
-
-Send only the compact merchant export through an approved channel. It contains
-Payment ID, provider object ID, safe local reference, statuses, created time and
-paid indicator. It deliberately excludes customer identity and raw payloads.
-Retain the actual external response privately; compute its SHA-256 and retain a
-nonsecret merchant case/reference. A status spreadsheet alone is not provider proof.
-
-An authorized operator prepares a private JSON return tied to the source manifest:
-
-```json
-{
-  "manifest_hash": "<source manifest hash>",
-  "items": [{
-    "payment_id": 152,
-    "provider_subscription_id": "<exact exported object ID>",
-    "disposition": "PERMANENTLY_NON_ACTIVATABLE",
-    "review_reference": "<merchant case reference>",
-    "evidence_sha256": "<SHA-256 of privately retained response>",
-    "observed_at": "<reviewed evidence timestamp>",
-    "attested": true,
-    "no_collection": true,
-    "irreversibly_non_activatable": true
-  }]
-}
-```
-
-Allowed retirement dispositions are CANCELLED, REJECTED and
-PERMANENTLY_NON_ACTIVATABLE, all requiring every attestation above. The evidence
-timestamp must be at/after the inventory and not future-dated. ACTIVE/TRIAL, DRAFT,
-ambiguous collection, missing references, duplicate/wrong IDs and unexpected fields
-are refused. This narrow path accepts only still-eligible unpaid unbound DRAFT
-objects; paid/active/conflicting cases require their separate authority.
-The hash binds an externally retained artifact; the application does not download
-it or independently prove its authenticity. Admin accountability is explicit.
+Final source regression: **269 tests / 3268 assertions passed** across the eight PHP
+suites below. All **41 focused Admin frontend tests** passed. PHP lint and focused
+Pint passed for all 13 changed/new PHP files; git diff --check passed. No frontend
+assets changed, so no Vite rebuild was required. Tests use SQLite :memory:, array
+cache/session and mocked HTTP; fixture cutovers are not application cutover execution.
 
 ```sh
-php artisan billing:provider-obligations-apply --manifest="<private worksheet.json>" --merchant-import="<private attested-return.json>" --admin=1 --operation="<UUID>" --reason="<merchant review purpose>" --dry-run
-```
-
-Import validates and creates a **new prepared worksheet**, never executes. It
-cannot be combined with `--execute`. Review the printed path/hash, then use the
-ordinary apply flow on that prepared worksheet. Only select one action per Payment;
-unselect a GET decision if selecting its merchant attestation. No arbitrary CSV
-status list is accepted. The database review retains the external reference, artifact
-hash, attestations, manifest hash, event ID, exact source basis and Admin operation.
-
-## Cutover authority and migration
-
-`ProviderRetirementEvidence` is shared by `ProviderObligationInventory` and
-`CutoverInventoryReader`. Valid terminal unpaid proof requires unchanged exact
-Payment/subscription/event/order/allocation basis, completed audited parent identity
-and matching approval hash. A newer failed or invalid review prevents fallback to
-older proof. New callback/source changes invalidate approval. “Reviewed” alone is
-never safe. Individual paid coverage still uses its separate existing authority.
-
-One additional additive migration is required:
-`2026_09_30_000002_create_provider_obligation_reviews.php`.
-It preserves evidence after Payment/event retirement using logical historical IDs
-and restrictive customer/Admin/operation foreign keys. No backfill, HTTP, credits
-or grants. Populated rollback is refused. It follows the retained-coverage migration
-`2026_09_30_000001`. Neither was applied to the reproduction database in this task.
-The release now contains 88 source migrations (65 baseline + 23 additions).
-
-## Local reproduction and acceptance
-
-Read-only loopback inspection of `metkurd_local_260930`, 2026-09-30:
-
-| Review category | Items |
-| --- | ---: |
-| Confirmed retired | 13 |
-| Paid coverage | 12 |
-| DRAFT/unpaid | 38 |
-| ACTIVE/TRIAL | 0 |
-| Conflicting evidence | 92 |
-| Retained fake/manual history | 6 |
-| Other unresolved | 1 |
-| Total | 162 |
-
-Payment 161 remains paid-coverage review, with matched Event 216568 and verified UTC
-term 2026-09-29T16:42:15.998+00:00 through 2026-11-29T16:42:15.998+00:00. No automatic
-date correction or approval. Payments 152–154 and 156–160 are unresolved DRAFTs;
-155 has a stale/invalid persisted GET: it remains conflicting, but can request a
-fresh exact authenticated GET; merchant attestation is unavailable while conflicted.
-Intent 15 and Order 1 remain
-corroborated fake/manual retained history. Conflicting legacy observations are not
-bulk-cleared just to reduce the exception count.
-
-The 92 conflicts break down into 32 missing/unsafe provider identities, 33 financial
-review flags, 9 subscription identity conflicts, 17 noncurrent/invalid persisted
-GET observations and 1 orphan/unmatched provider subscription. A fresh GET may
-resolve eligible stale observations; it cannot override financial or ownership
-conflicts, and previous collection evidence is retained even after its review basis
-changes. No blanket DRAFT retirement or generic “mark resolved” action exists.
-
-All ten before/after fingerprints matched: credit_wallets 2330, credit_ledgers 8516,
-customer_service_subscriptions 1199, customer_storage_subscriptions 1167, payments
-161, payment_events 39074, payment_intents 1, credit_orders 35,
-subscription_credit_allocations 0, admin_audit_events 1. No corrective command ran
-against the local copy. These are diagnostic counts, not an executable production
-manifest or evidence of current production state. Local MariaDB is not native RDS
-MySQL acceptance.
-
-Remaining acceptance: native MySQL migrations/JSON hash stability/locks/rollback,
-privately reviewed real merchant evidence, individually confirmed paid intervals,
-approved controlled provider GET acceptance, operator filesystem permissions,
-production identity/configuration/backup/restore/writer control and zero remaining
-cutover blockers. Source tests cannot replace any of these.
-
-Verified in isolated SQLite `:memory:` with array cache/session, synchronous queue
-and stray HTTP blocked: **241 tests / 3037 assertions passed** across batch review,
-individual provider coverage, provider evidence, payment-domain cutover, target
-identity, diagnostic inventory and recurring-action lifecycle. This includes 52
-batch cases: 120 mixed objects with fewer than 22 inventory queries, deterministic
-manifest/tamper rejection, Free exclusion, strict merchant import, all GET outcomes,
-bounded calls, authenticated transport with no cancellation POST, financial
-preservation, exact replay, fresh capabilities, stale proof, historical collection
-aliases, per-item dates, late-insert rollback and a mixed-disposition cutover fixture.
-Payment 161-shaped coverage and fake Intent 15/Order history regressions pass.
-
-The existing four focused Admin frontend suites also pass **41 tests**. PHP lint
-and focused Pint pass for all 13 changed/new PHP files; `git diff --check` passes.
-No frontend assets changed, so a Vite rebuild was not required. Real provider and
-native MySQL behavior remain untested; the cutover fixture is not application execution.
-
-```sh
-php vendor/bin/pest tests/Feature/Billing/ProviderObligationBatchTest.php tests/Feature/Billing/ProviderCoverageDispositionTest.php tests/Feature/Billing/ProviderObligationEvidenceTest.php tests/Feature/Billing/PaymentDomainCutoverTest.php tests/Feature/Billing/CutoverTargetsTest.php tests/Feature/Billing/CutoverInventoryTest.php tests/Feature/Billing/RecurringActionLifecycleTest.php --compact
+php vendor/bin/pest tests/Feature/Billing/ProviderObligationBatchTest.php tests/Feature/Billing/ProviderCoverageDispositionTest.php tests/Feature/Billing/ProviderObligationEvidenceTest.php tests/Feature/Billing/PaymentDomainCutoverTest.php tests/Feature/Billing/CutoverTargetsTest.php tests/Feature/Billing/CutoverInventoryTest.php tests/Feature/Billing/RecurringActionLifecycleTest.php tests/Feature/Payments/FibSubscriptionRepairCommandsTest.php --compact
 node --test tests/Frontend/admin-ui.test.mjs tests/Frontend/admin-localization.test.mjs tests/Frontend/admin-customer-workspace.test.mjs tests/Frontend/admin-billing-workspace.test.mjs
 ```
 
-Use the repository's isolated test environment for these commands, never a live
-connection or cached production configuration.
+Use the repository's isolated test environment, never a live connection or cached
+production configuration.
 
-## Safe operator sequence after separately approved deployment
-
-1. Complete release, native MySQL and migration acceptance under the final runbook.
-   On one authorized node, install its exact protected cutover identity assertions
-   for review. This does not authorize reset execution; unchanged unresolved-provider,
-   backup, maintenance and stopped-writer guards still block cutover.
-2. Quiesce writers and export a fresh private review/worksheet/merchant list.
-3. Review/select bounded GET decisions if needed; dry-run, record packet hash/UUID,
-   then separately authorize apply execution. Re-export after the observations.
-4. Send compact unresolved IDs to merchant/FIB; retain the external reply privately.
-   Import only explicit eligible attestations; validate/review/apply the new worksheet.
-   Re-export after each set; unchanged DRAFT and exceptional cases stay blocked.
-5. Confirm each legitimate paid interval/reference, select its coverage decision,
-   dry-run and atomically apply with one parent UUID. No giant per-customer commands.
-6. Run `php artisan billing:cutover-inventory --details`. Resolve remaining exceptions
-   through their appropriate authority; do not edit financial rows or invent evidence.
-7. Re-quiesce writers, refresh backup/recovery evidence and run:
+After those reviews, run the existing read-only final checks:
 
 ```sh
+php artisan billing:cutover-inventory --details
 php artisan billing:cutover-reset-payment-domain --target=production --dry-run --admin=1
 ```
 
-Only a fresh **complete zero-blocker** dry-run can proceed to the existing separately
-approved cutover procedure. Batch success, source tests and old review hashes are
-never cutover authorization. No cutover execute command is part of this batch task.
+Only a fresh complete zero-blocker dry-run may proceed to the separately approved
+cutover procedure. No cutover execute command is authorized/performed in this task.

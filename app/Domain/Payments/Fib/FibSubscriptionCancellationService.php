@@ -23,7 +23,7 @@ class FibSubscriptionCancellationService
      *     error_codes:array<int, string>
      * }
      */
-    public function cancel(Payment $payment, bool $requestCancellation = true): array
+    public function cancel(Payment $payment, bool $requestCancellation = true, ?\Closure $beforeCancellation = null): array
     {
         try {
             $status = $this->subscriptions->getStatus($payment);
@@ -57,6 +57,12 @@ class FibSubscriptionCancellationService
         }
 
         if (! $requestCancellation) {
+            return array_merge($base, ['result' => 'awaiting_confirmation']);
+        }
+
+        // The cutover batch commits its exact durable POST marker here, after GET
+        // validation and before HTTP. Existing lifecycle callers remain unchanged.
+        if ($beforeCancellation && ! $beforeCancellation($status)) {
             return array_merge($base, ['result' => 'awaiting_confirmation']);
         }
 

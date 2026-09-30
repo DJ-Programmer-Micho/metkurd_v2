@@ -159,6 +159,33 @@ class ProviderReviewSnapshot
         return isset($this->events[$payment->id]);
     }
 
+    public function remoteEligible(Payment $payment): bool
+    {
+        if ($payment->provider?->value !== 'fib' || ! $payment->isProviderSubscriptionObject()
+            || ! preg_match('/^[a-zA-Z0-9_-]{1,190}$/D', (string) $payment->fib_subscription_id)
+            || $payment->review_required_at || $payment->requiresReview() || $payment->status?->value === 'refund_requested'
+            || data_get($payment->meta, 'provider_evidence_rejection')
+            || ($payment->status?->value === 'paid' && (! $payment->paid_at || ! $payment->isFulfilled()))
+            || $payment->isRevenueExcluded() || data_get($payment->meta, 'mock') || data_get($payment->meta, 'synthetic')) {
+            return false;
+        }
+        // A provider object must identify exactly one local Payment before any request.
+        if (count(array_filter($this->rows['payments'], fn ($r) => $r['fib_subscription_id'] === $payment->fib_subscription_id)) !== 1) {
+            return false;
+        }
+        foreach ($this->subscriptions($payment) as $sub) {
+            $row = $sub['row'];
+            $meta = json_decode($row['meta'] ?? '{}', true);
+            if ((int) $row['customer_id'] !== (int) $payment->customer_id || (int) $row['payment_id'] !== (int) $payment->id
+                || collect(array_filter([$row['provider_ref'], $meta['fib_subscription_id'] ?? null, $meta['provider_ref'] ?? null]))
+                    ->contains(fn ($ref) => $ref !== $payment->fib_subscription_id)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public function matchedManualHistory(array $row, string $kind): bool
     {
         $meta = json_decode($row['meta'] ?? '{}', true);

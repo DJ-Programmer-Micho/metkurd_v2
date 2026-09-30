@@ -251,6 +251,14 @@ it('approves individually reviewed paid terms with one parent and refuses an inv
 
 function batchMerchantPacket($test, Payment $draft): array
 {
+    $operation = $test->operation;
+    $test->operation = (string) Str::uuid();
+    $mock = Mockery::mock(FibSubscriptionService::class);
+    app()->instance(FibSubscriptionService::class, $mock);
+    $mock->shouldReceive('getStatus')->once()->andReturn(
+        FibSubscriptionStatusData::fromArray(['id' => $draft->fib_subscription_id, 'status' => 'DRAFT']));
+    batchExecute($test, batchPacket($test, [$draft->id]));
+    $test->operation = $operation;
     $packet = batchPacket($test, []);
 
     return $test->batch->importMerchant($packet, ['manifest_hash' => $packet['review']['manifest_hash'], 'items' => [[
@@ -265,13 +273,13 @@ it('imports exact attested merchant decisions without provider calls and retains
     $draft = batchDraft($this);
     $before = batchPreservedTables();
     $packet = batchMerchantPacket($this, $draft);
-    expect(DB::table('provider_obligation_reviews')->count())->toBe(0);
+    expect(DB::table('provider_obligation_reviews')->count())->toBe(1);
     $export = $this->batch->merchantExport($packet);
     expect(json_encode($export))->not->toContain('customer_id', 'example.test', 'monetaryValue', 'status_response');
     $result = batchExecute($this, $packet);
     expect($result['observations'][0]['outcome'])->toBe('confirmed_retired')
         ->and(batchPreservedTables())->toBe($before);
-    $record = DB::table('provider_obligation_reviews')->first();
+    $record = DB::table('provider_obligation_reviews')->latest('id')->first();
     expect(json_decode($record->evidence, true)['review_reference'])->toBe('MERCHANT-CASE-FIXTURE');
     expect(collect(app(ProviderObligationInventory::class)->inspect('production', [])['items'])
         ->firstWhere('payment_id', $draft->id)['classification'])->toBe('retired_confirmed_cancelled');
@@ -299,7 +307,7 @@ it('refuses incomplete ambiguous or stale merchant attestations', function ($fau
     }
     unset($decision);
     expect(fn () => batchExecute($this, $packet))->toThrow(\Exception::class);
-    expect(DB::table('provider_obligation_reviews')->count())->toBe(0);
+    expect(DB::table('provider_obligation_reviews')->count())->toBe(1);
     Http::assertNothingSent();
 })->with(['no attestation', 'collection uncertain', 'activatable', 'DRAFT', 'ACTIVE', 'missing reference', 'past evidence', 'future evidence', 'raw payload']);
 
@@ -340,7 +348,7 @@ it('requires fresh capabilities even for completed operation replay and rejects 
     expect(fn () => $this->actions->apply($packet, $this->operation, 'Different reason for same operation.', $result['review_hash'], true))->toThrow(\Exception::class);
     $this->operator->forceFill(['admin_capabilities' => ['admin.read', 'admin.finance']])->save();
     expect(fn () => $this->actions->apply($packet, $this->operation, $this->reason, $result['review_hash'], true))->toThrow(\Exception::class);
-    expect(DB::table('provider_obligation_reviews')->count())->toBe(1);
+    expect(DB::table('provider_obligation_reviews')->count())->toBe(2);
 });
 
 it('does not approve unbound draft retirement over historical paid evidence or malformed GET dates', function ($fault) {
@@ -353,7 +361,7 @@ it('does not approve unbound draft retirement over historical paid evidence or m
         \App\Domain\Payments\Models\PaymentEvent::where('payment_id', $draft->id)->update(['payload' => json_encode($payload)]);
     }
     $item = collect($this->batch->review('production')['review']['items'])->firstWhere('payment_id', $draft->id);
-    expect($item['category'])->not->toBe('confirmed_retired')->and($item['proposed_actions'])->toBe([]);
+    expect($item['category'])->not->toBe('confirmed_retired')->and($item['proposed_actions'])->toBe(['remote_retire']);
 })->with(['past paid event', 'malformed date']);
 
 it('bounds shared transport retries and hard caps despite permissive configuration', function ($fault) {
@@ -435,7 +443,7 @@ it('keeps real cutover blocked until exact batch dispositions pass and retains t
     // Isolated SQLite fixture only, never the local reproduction or production database.
     $cutover->execute('production', $review['review_hash'], 'Isolated mixed batch cutover fixture.', true, $this->operator->id, true, true);
     expect(DB::table('payments')->count())->toBe(0)
-        ->and(DB::table('provider_obligation_reviews')->count())->toBe(1)
+        ->and(DB::table('provider_obligation_reviews')->count())->toBe(2)
         ->and(DB::table('provider_coverage_dispositions')->value('status'))->toBe('retained')
         ->and(DB::table('admin_operations')->where('id', $this->operation)->value('status'))->toBe('completed');
     Http::assertNothingSent();
@@ -452,14 +460,14 @@ it('retains prior batch collection evidence when later local state changes', fun
     $snapshot = \App\Services\Billing\ProviderReviewSnapshot::capture();
     expect($snapshot->unpaidUnbound($draft->fresh()))->toBeFalse();
     $item = collect($this->batch->review('production')['review']['items'])->firstWhere('payment_id', $draft->id);
-    expect($item['category'])->not->toBe('confirmed_retired')->and($item['proposed_actions'])->toBe([]);
+    expect($item['category'])->not->toBe('confirmed_retired')->and($item['proposed_actions'])->toBe(['remote_retire']);
 });
 
 it('can refresh stale DRAFT observations but cannot attest them away', function () {
     $draft = batchDraft($this);
     app(PaymentEventRecorder::class)->record($draft, ['event_type' => 'callback_received', 'source' => 'fixture']);
     $item = collect($this->batch->review('production')['review']['items'])->firstWhere('payment_id', $draft->id);
-    expect($item['category'])->toBe('conflict')->and($item['proposed_actions'])->toBe(['draft_get']);
+    expect($item['category'])->toBe('conflict')->and($item['proposed_actions'])->toBe(['draft_get', 'remote_retire']);
     $this->mock(FibSubscriptionService::class)->shouldReceive('getStatus')->once()->andReturn(FibSubscriptionStatusData::fromArray([
         'id' => $draft->fib_subscription_id, 'status' => 'CANCELLED',
     ]));
@@ -474,3 +482,215 @@ it('retains all recognized historical nested collection aliases', function ($key
     app(PaymentEventRecorder::class)->record($draft, ['event_type' => 'historical_evidence', 'source' => 'fixture', 'payload' => $payload]);
     expect(\App\Services\Billing\ProviderReviewSnapshot::capture()->unpaidUnbound($draft))->toBeFalse();
 })->with(['payment.lastPaidAt', 'latestPayment.lastPaidAt', 'subscription.lastPaidAt']);
+
+function remotePacket($test, array $ids): array
+{
+    $packet = $test->batch->selectRemote($test->batch->review('production'), 25, true);
+    $packet['decisions'] = array_values(array_filter($packet['decisions'], fn ($d) => in_array($d['payment_id'], $ids, true)));
+
+    return $packet;
+}
+
+it('selects the next bounded remote group without manually editing identities', function () {
+    for ($i = 0; $i < 27; $i++) {
+        batchDraft($this);
+    }
+    $review = $this->batch->review('production');
+    $packet = $this->batch->selectRemote($review, 25);
+    expect($packet['decisions'])->toHaveCount(25)->and($packet)->toBe($this->batch->selectRemote($review, 25));
+    expect(fn () => $this->batch->selectRemote($review, 26))->toThrow(\Exception::class);
+    $this->actions->apply($packet, $this->operation, 'No Service Available');
+    expect(DB::table('provider_obligation_reviews')->count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+it('remotely verifies closed and DRAFT states without POST and never mutates financial rows', function ($state, $expected) {
+    $draft = batchDraft($this);
+    $packet = remotePacket($this, [$draft->id]);
+    $before = batchPreservedTables();
+    $mock = $this->partialMock(FibSubscriptionService::class);
+    $mock->shouldReceive('getStatus')->once()->andReturn(FibSubscriptionStatusData::fromArray(['id' => $draft->fib_subscription_id, 'status' => $state]));
+    $mock->shouldNotReceive('cancel');
+    $result = batchExecute($this, $packet);
+    expect($result['observations'][0]['outcome'])->toBe($expected)->and(batchPreservedTables())->toBe($before);
+    expect($this->actions->apply($packet, $this->operation, $this->reason, $result['review_hash'], true))->toBe($result);
+    $next = $this->batch->selectRemote($this->batch->review('production'), 25);
+    expect(array_column($next['decisions'], 'payment_id'))->not->toContain($draft->id);
+    expect(collect(app(ProviderObligationInventory::class)->inspect('production', [])['items'])
+        ->firstWhere('payment_id', $draft->id)['classification'] === 'retired_confirmed_cancelled')->toBe($expected === 'confirmed_retired');
+})->with([['CANCELLED', 'confirmed_retired'], ['REJECTED', 'confirmed_retired'], ['DRAFT', 'unresolved']]);
+
+it('commits the POST fence after validated GET then confirms ACTIVE or TRIAL cancellation', function ($state) {
+    $draft = batchDraft($this, $state);
+    $packet = remotePacket($this, [$draft->id]);
+    $before = batchPreservedTables();
+    $mock = $this->partialMock(FibSubscriptionService::class);
+    $mock->shouldReceive('getStatus')->twice()->andReturn(
+        FibSubscriptionStatusData::fromArray(['id' => $draft->fib_subscription_id, 'status' => $state]),
+        FibSubscriptionStatusData::fromArray(['id' => $draft->fib_subscription_id, 'status' => 'CANCELLED']));
+    $transactionLevel = DB::transactionLevel();
+    $mock->shouldReceive('cancel')->once()->andReturnUsing(function () use ($transactionLevel) {
+        $row = DB::table('provider_obligation_reviews')->first();
+        expect(json_decode($row->evidence, true)['post_started'])->toBeTrue()->and(DB::transactionLevel())->toBe($transactionLevel);
+        expect(DB::table('admin_operations')->where('action', \App\Services\Billing\ProviderRemoteRetirementBatch::PREPARE)->value('status'))->toBe('completed');
+    });
+    expect(batchExecute($this, $packet)['observations'][0]['outcome'])->toBe('confirmed_retired')
+        ->and(batchPreservedTables())->toBe($before);
+})->with(['ACTIVE', 'TRIAL']);
+
+it('keeps ambiguous POST blocked and a new reviewed attempt GET-only', function () {
+    $draft = batchDraft($this, 'ACTIVE');
+    $mock = $this->partialMock(FibSubscriptionService::class);
+    $mock->shouldReceive('getStatus')->times(3)->andReturn(FibSubscriptionStatusData::fromArray(['id' => $draft->fib_subscription_id, 'status' => 'ACTIVE']));
+    $mock->shouldReceive('cancel')->once()->andThrow(new RuntimeException('PRIVATE AMBIGUOUS RESPONSE'));
+    $first = batchExecute($this, remotePacket($this, [$draft->id]));
+    expect($first['observations'][0]['outcome'])->toBe('unresolved')->and(json_encode($first))->not->toContain('PRIVATE');
+    $this->operation = (string) Str::uuid();
+    $second = batchExecute($this, remotePacket($this, [$draft->id]));
+    expect($second['observations'][0]['outcome'])->toBe('unresolved');
+});
+
+it('resumes persistence failure after POST with GET and never repeats POST', function () {
+    $draft = batchDraft($this, 'ACTIVE');
+    $packet = remotePacket($this, [$draft->id]);
+    $mock = $this->partialMock(FibSubscriptionService::class);
+    $active = FibSubscriptionStatusData::fromArray(['id' => $draft->fib_subscription_id, 'status' => 'ACTIVE']);
+    $closed = FibSubscriptionStatusData::fromArray(['id' => $draft->fib_subscription_id, 'status' => 'CANCELLED']);
+    $mock->shouldReceive('getStatus')->times(4)->andReturn($active, $closed, $closed, $closed);
+    $mock->shouldReceive('cancel')->once();
+    $fail = true;
+    DB::listen(function ($query) use (&$fail) {
+        if ($fail && str_starts_with($query->sql, 'insert into "payment_events"') && in_array('provider_retirement_observed', $query->bindings, true)) {
+            $fail = false;
+            throw new RuntimeException('Injected result persistence failure.');
+        }
+    });
+    $preview = $this->actions->apply($packet, $this->operation, $this->reason);
+    expect(fn () => $this->actions->apply($packet, $this->operation, $this->reason, $preview['review_hash'], true))->toThrow(RuntimeException::class);
+    expect(json_decode(DB::table('provider_obligation_reviews')->value('evidence'), true)['post_started'])->toBeTrue();
+    $this->travel(11)->minutes();
+    $result = $this->actions->apply($packet, $this->operation, $this->reason, $preview['review_hash'], true);
+    expect($result['observations'][0]['outcome'])->toBe('confirmed_retired');
+});
+
+it('requires exact identity and blocks HTTP for synthetic or ambiguous local objects', function ($fault) {
+    $draft = batchDraft($this);
+    match ($fault) {
+        'missing' => $draft->update(['fib_subscription_id' => null]),
+        'synthetic' => $draft->update(['meta' => ['revenue_excluded' => true]]),
+        'financial review' => $draft->update(['internal_status' => 'requires_review']),
+        'subscription mismatch' => $this->subscription->update(['payment_id' => $draft->id]),
+    };
+    expect(\App\Services\Billing\ProviderReviewSnapshot::capture()->remoteEligible($draft->fresh()))->toBeFalse();
+    expect(remotePacket($this, [$draft->id])['decisions'])->toBe([]);
+    Http::assertNothingSent();
+})->with(['missing', 'synthetic', 'financial review', 'subscription mismatch']);
+
+it('keeps GET failures and wrong returned identities blocked without POST', function ($fault) {
+    $draft = batchDraft($this);
+    $packet = remotePacket($this, [$draft->id]);
+    $mock = $this->partialMock(FibSubscriptionService::class);
+    $expectation = $mock->shouldReceive('getStatus')->once();
+    $fault === 'network' ? $expectation->andThrow(new RuntimeException('PRIVATE RESPONSE'))
+        : $expectation->andReturn(FibSubscriptionStatusData::fromArray(['id' => 'wrong-object', 'status' => 'ACTIVE']));
+    $mock->shouldNotReceive('cancel');
+    expect(batchExecute($this, $packet)['observations'][0]['outcome'])->toBe('unresolved');
+})->with(['network', 'wrong identity']);
+
+it('preserves pre-POST paid dates for individual coverage approval without rewriting access or refilling', function () {
+    $this->payment->update(['provider_subscription_status' => 'ACTIVE']);
+    $packet = remotePacket($this, [$this->payment->id]);
+    $before = batchPreservedTables();
+    $mock = $this->partialMock(FibSubscriptionService::class);
+    $mock->shouldReceive('getStatus')->twice()->andReturn(
+        FibSubscriptionStatusData::fromArray(array_replace($this->payload, ['status' => 'ACTIVE'])),
+        FibSubscriptionStatusData::fromArray(['id' => $this->payment->fib_subscription_id, 'status' => 'CANCELLED']));
+    $mock->shouldReceive('cancel')->once();
+    expect(batchExecute($this, $packet)['observations'][0]['outcome'])->toBe('renewal_stopped');
+    $this->operation = (string) Str::uuid();
+    $coverage = batchExecute($this, batchPacket($this, [$this->payment->id], 'coverage_approval'));
+    expect($coverage['coverage'])->toHaveCount(1)->and(batchPreservedTables())->toBe($before)
+        ->and(app(\App\Services\Billing\ProviderCoverageDispositions::class)->approvedFor($this->payment->fresh()))->not->toBeNull();
+});
+
+it('sends no reason parameter and disables cancellation transport retry', function () {
+    $draft = batchDraft($this, 'ACTIVE');
+    config(['fib.enabled' => true, 'payments.providers.fib.enabled' => true, 'fib.profiles.subscription.base_url' => 'https://fib-stage.fib.iq',
+        'fib.profiles.subscription.client_id' => 'fixture-client', 'fib.profiles.subscription.client_secret' => 'fixture-secret',
+        'fib.http.retries' => 3, 'fib.http.retry_sleep_ms' => 1]);
+    Http::fake(['*openid-connect/token' => Http::response(['access_token' => 'fixture-token', 'expires_in' => 3600]),
+        '*/subscriptions/'.$draft->fib_subscription_id.'/cancel' => Http::response(['error' => 'ambiguous fixture'], 503),
+        '*/subscriptions/'.$draft->fib_subscription_id => Http::response(['id' => $draft->fib_subscription_id, 'status' => 'ACTIVE'])]);
+    $this->reason = 'No Service Available';
+    expect(batchExecute($this, remotePacket($this, [$draft->id]))['observations'][0]['outcome'])->toBe('unresolved');
+    $cancel = Http::recorded(fn ($r) => str_ends_with($r->url(), '/cancel'));
+    expect($cancel)->toHaveCount(1)->and($cancel->first()[0]->body())->not->toContain('reason', 'No Service Available');
+    expect(Http::recorded(fn ($r) => $r->method() === 'GET'))->toHaveCount(2);
+});
+
+it('never reuses older paid cancellation proof after pending failed or contradictory remote review', function ($fault) {
+    $packet = remotePacket($this, [$this->payment->id]);
+    $mock = $this->partialMock(FibSubscriptionService::class);
+    if ($fault === 'failure') {
+        $mock->shouldReceive('getStatus')->once()->andThrow(new RuntimeException('Provider unavailable'));
+        $mock->shouldNotReceive('cancel');
+    } else {
+        $mock->shouldReceive('getStatus')->times($fault === 'active' ? 2 : 1)->andReturn(
+            FibSubscriptionStatusData::fromArray(array_replace($this->payload, ['status' => $fault === 'active' ? 'ACTIVE' : 'CANCELLED'])));
+        $fault === 'active' ? $mock->shouldReceive('cancel')->once() : $mock->shouldNotReceive('cancel');
+    }
+    batchExecute($this, $packet);
+    if ($fault === 'pending') {
+        DB::table('provider_obligation_reviews')->update(['outcome' => 'pending']);
+    }
+    expect(app(\App\Services\Billing\ProviderSubscriptionCancellation::class)->confirmation($this->payment->fresh())['confirmed'])->toBeFalse();
+    $item = collect($this->batch->review('production')['review']['items'])->firstWhere('payment_id', $this->payment->id);
+    expect($item['proposed_actions'])->not->toContain('coverage_approval');
+    expect(collect(app(ProviderObligationInventory::class)->inspect('production', [])['items'])
+        ->firstWhere('payment_id', $this->payment->id)['classification'])->not->toBe('retired_confirmed_cancelled');
+})->with(['failure', 'active', 'pending']);
+
+it('offers merchant attestation only after the API cannot resolve an exact unpaid DRAFT', function () {
+    $draft = batchDraft($this);
+    $item = collect($this->batch->review('production')['review']['items'])->firstWhere('payment_id', $draft->id);
+    expect($item['proposed_actions'])->not->toContain('merchant_attestation');
+    $packet = batchMerchantPacket($this, $draft);
+    expect(collect($packet['decisions'])->where('action', 'merchant_attestation')->where('selected', true))->toHaveCount(1);
+});
+
+it('rechecks permissions and source after GET before committing any POST', function ($fault) {
+    $draft = batchDraft($this, 'ACTIVE');
+    $packet = remotePacket($this, [$draft->id]);
+    $mock = $this->partialMock(FibSubscriptionService::class);
+    $mock->shouldReceive('getStatus')->once()->andReturnUsing(function () use ($draft, $fault) {
+        if ($fault === 'permission') {
+            $this->operator->forceFill(['admin_capabilities' => ['admin.read', 'admin.finance']])->save();
+        } else {
+            app(PaymentEventRecorder::class)->record($draft, ['event_type' => 'callback_received', 'source' => 'fixture']);
+        }
+
+        return FibSubscriptionStatusData::fromArray(['id' => $draft->fib_subscription_id, 'status' => 'ACTIVE']);
+    });
+    $mock->shouldNotReceive('cancel');
+    if ($fault === 'permission') {
+        expect(fn () => batchExecute($this, $packet))->toThrow(\Exception::class);
+    } else {
+        expect(batchExecute($this, $packet)['observations'][0]['outcome'])->toBe('unresolved');
+    }
+    expect(json_decode(DB::table('provider_obligation_reviews')->value('evidence'), true)['post_started'])->toBeFalse();
+})->with(['permission', 'callback']);
+
+it('blocks a second claimant while the first remote object has a live lease', function () {
+    $draft = batchDraft($this, 'DRAFT');
+    $packet = remotePacket($this, [$draft->id]);
+    $preview = $this->actions->apply($packet, $this->operation, $this->reason);
+    $mock = $this->partialMock(FibSubscriptionService::class);
+    $mock->shouldReceive('getStatus')->once()->andReturnUsing(function () use ($draft, $packet, $preview) {
+        expect(fn () => $this->actions->apply($packet, $this->operation, $this->reason, $preview['review_hash'], true))
+            ->toThrow(\App\Services\Billing\PaymentHistoryResetRefused::class);
+
+        return FibSubscriptionStatusData::fromArray(['id' => $draft->fib_subscription_id, 'status' => 'DRAFT']);
+    });
+    $mock->shouldNotReceive('cancel');
+    expect($this->actions->apply($packet, $this->operation, $this->reason, $preview['review_hash'], true)['observations'][0]['outcome'])->toBe('unresolved');
+});

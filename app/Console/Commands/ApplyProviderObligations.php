@@ -14,9 +14,9 @@ class ApplyProviderObligations extends Command
         {--merchant-import= : Private operator-attested return JSON; prepares a new worksheet, never executes}
         {--admin=} {--operation= : Durable parent UUID} {--reason=}
         {--dry-run : Read-only validation (default); no HTTP}
-        {--execute : Apply the exact selected actions atomically}';
+        {--execute : Apply exact selected decisions; remote actions use durable per-object checkpoints}';
 
-    protected $description = 'Preview or atomically apply bounded GET-only, merchant-attested and individual coverage review actions.';
+    protected $description = 'Preview or apply exact bounded provider retirement, evidence and coverage decisions.';
 
     public function handle(ProviderObligationBatchActions $actions, ProviderReviewFiles $files): int
     {
@@ -43,7 +43,7 @@ class ApplyProviderObligations extends Command
 
             return self::SUCCESS;
         } catch (\Throwable) {
-            $this->error('Batch refused or rolled back. Check exact manifest/hash, identities, capabilities, per-item evidence and configured limits. No cutover was authorized.');
+            $this->error('Batch stopped. Remote actions may already be durably recorded; retry the same UUID to resume safely. Check exact manifest/hash, identities, capabilities and per-item evidence. No cutover was authorized.');
 
             return self::FAILURE;
         } finally {
