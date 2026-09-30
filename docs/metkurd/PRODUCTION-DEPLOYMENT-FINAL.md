@@ -131,6 +131,21 @@ actions/parents, Admin/allocation/agreement schema, production/debug/native-MySQ
 FIB profiles/HTTPS callback and an asynchronous queue. It does **not** verify prices,
 endpoint contents, callbacks, storage, actual processes, backups or all feature flags.
 
+The `production_environment` check combines two conditions exactly:
+`app()->environment('production') && ! config('app.debug')`. If the same command
+reports environment=production but this check=false, effective debug configuration
+is truthy. APP_ENV alone is insufficient; cached configuration/process overrides
+may differ from the edited environment file. Inspect only the effective nonsecret
+values; this diagnostic is not an instruction to alter production configuration:
+
+```sh
+php artisan tinker --execute='dump(["environment" => app()->environment(), "debug" => config("app.debug"), "configuration_cached" => app()->configurationIsCached()]);'
+```
+
+For the payment-event source-width incident, see the dated
+[billing acceptance follow-up](BILLING-AUDIT.md#production-source-width-acceptance-follow-up--2026-09-30).
+No schema migration or automatic provider-batch replay is needed for that source fix.
+
 Record actual RDS `SELECT VERSION(), DATABASE();` through the approved DBA read-only
 console and compare it with Laravel's inventory on **both nodes**. Historical 8.4.8
 reports are not current evidence. XAMPP/phpMyAdmin/MariaDB does not certify RDS MySQL.

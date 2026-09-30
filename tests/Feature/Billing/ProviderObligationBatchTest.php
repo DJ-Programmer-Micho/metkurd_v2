@@ -628,6 +628,37 @@ it('sends no reason parameter and disables cancellation transport retry', functi
     expect(Http::recorded(fn ($r) => $r->method() === 'GET'))->toHaveCount(2);
 });
 
+it('persists authenticated FIB 404 as unresolved batch evidence independently of sync failure recording', function ($remote) {
+    $draft = batchDraft($this);
+    $packet = $remote ? remotePacket($this, [$draft->id]) : batchPacket($this, [$draft->id]);
+    $before = batchPreservedTables();
+    $this->mock(\App\Services\Payments\PaymentSyncFailureService::class)->shouldNotReceive('capture', 'captureRenewalFailure');
+    config(['fib.enabled' => true, 'payments.providers.fib.enabled' => true, 'fib.profiles.subscription.base_url' => 'https://fib-stage.fib.iq',
+        'fib.profiles.subscription.client_id' => 'fixture-client', 'fib.profiles.subscription.client_secret' => 'fixture-secret',
+        'fib.http.retries' => 1, 'fib.http.retry_sleep_ms' => 1]);
+    Http::fake(['*openid-connect/token' => Http::response(['access_token' => 'fixture-token', 'expires_in' => 3600]),
+        '*/subscriptions/'.$draft->fib_subscription_id => Http::response([
+            'errors' => [['code' => 'NOT_FOUND', 'title' => 'Not found']], 'private_field' => 'MUST-NOT-BE-PERSISTED',
+        ], 404)]);
+    $result = batchExecute($this, $packet);
+    expect($result['observations'][0]['outcome'])->toBe('unresolved')
+        ->and($result['observations'][0]['provider_status'])->toBeNull()
+        ->and(batchPreservedTables())->toBe($before);
+    $row = DB::table('provider_obligation_reviews')->where('original_payment_id', $draft->id)->sole();
+    $evidence = json_decode($row->evidence, true);
+    expect($row->outcome)->toBe('unresolved')->and($row->provider_status)->toBeNull()
+        ->and($evidence['reason'])->toBe('provider_unavailable')
+        ->and($evidence['post_started'] ?? false)->toBeFalse()
+        ->and(json_encode($row))->not->toContain('MUST-NOT-BE-PERSISTED', 'fixture-token', 'fixture-secret');
+    $event = \App\Domain\Payments\Models\PaymentEvent::findOrFail($row->evidence_event_id);
+    expect($event->source)->toBe('admin_provider_batch_review')->and(strlen($event->source))->toBeLessThanOrEqual(40)
+        ->and($event->payload['outcome'])->toBe('unresolved')->and($event->payload['provider_status'])->toBeNull();
+    expect($this->actions->apply($packet, $this->operation, $this->reason, $result['review_hash'], true))->toBe($result);
+    Http::assertSent(fn ($r) => $r->method() === 'GET' && $r->hasHeader('Authorization', 'Bearer fixture-token'));
+    expect(Http::recorded(fn ($r) => $r->method() === 'GET'))->toHaveCount(1);
+    Http::assertNotSent(fn ($r) => $r->method() === 'POST' && ! str_ends_with($r->url(), '/openid-connect/token'));
+})->with([true, false]);
+
 it('never reuses older paid cancellation proof after pending failed or contradictory remote review', function ($fault) {
     $packet = remotePacket($this, [$this->payment->id]);
     $mock = $this->partialMock(FibSubscriptionService::class);

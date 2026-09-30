@@ -6,6 +6,25 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
+it('requires both the production environment and disabled effective debug configuration', function ($environment, $debug, $expected) {
+    expect(config('database.default'))->toBe('sqlite')->and(DB::connection()->getDatabaseName())->toBe(':memory:');
+    Http::preventStrayRequests();
+    $original = app()->environment();
+    $originalDebug = config('app.debug');
+    try {
+        app()->instance('env', $environment);
+        config(['app.debug' => $debug]);
+        Artisan::call('metkurd:production-preflight', ['--production' => true]);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($output['environment'])->toBe($environment)
+            ->and($output['checks']['production_environment'])->toBe($expected);
+    } finally {
+        app()->instance('env', $original);
+        config(['app.debug' => $originalDebug]);
+    }
+    Http::assertNothingSent();
+})->with([['production', false, true], ['production', true, false], ['local', false, false]]);
+
 it('requires every current product and rejects missing or inactive new service identities without repairing them', function () {
     expect(config('database.default'))->toBe('sqlite')
         ->and(DB::connection()->getDatabaseName())->toBe(':memory:');

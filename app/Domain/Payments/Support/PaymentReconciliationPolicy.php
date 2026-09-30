@@ -89,7 +89,7 @@ class PaymentReconciliationPolicy
 
     public function normalizeScheduledSource(Payment $payment, string $source, ?string $eventType = null): string
     {
-        $source = trim($source);
+        $source = PaymentEventRecorder::canonicalSource(trim($source));
 
         if ($source !== 'scheduled_reconciliation') {
             return $source;
@@ -107,7 +107,7 @@ class PaymentReconciliationPolicy
 
     public function isScheduledCheckoutSource(string $source): bool
     {
-        return in_array(trim($source), [
+        return in_array(PaymentEventRecorder::canonicalSource(trim($source)), [
             'scheduled_reconciliation',
             'scheduled_payment_reconciliation',
             'scheduled_sub_checkout',
@@ -116,7 +116,7 @@ class PaymentReconciliationPolicy
 
     public function isScheduledRenewalSource(string $source): bool
     {
-        return trim($source) === 'scheduled_sub_renewal';
+        return PaymentEventRecorder::canonicalSource(trim($source)) === 'scheduled_sub_renewal';
     }
 
     protected function isApplied(Payment $payment): bool

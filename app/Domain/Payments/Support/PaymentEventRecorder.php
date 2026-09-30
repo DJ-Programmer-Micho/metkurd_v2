@@ -9,12 +9,23 @@ use Illuminate\Support\Arr;
 
 class PaymentEventRecorder
 {
+    /** Exact legacy aliases, not truncation: checkout and renewal remain distinct. */
+    public static function canonicalSource(string $source): string
+    {
+        return match ($source) {
+            'scheduled_subscription_checkout_reconciliation' => 'scheduled_sub_checkout',
+            'scheduled_subscription_renewal_reconciliation' => 'scheduled_sub_renewal',
+            default => $source,
+        };
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      */
     public function record(?Payment $payment, array $attributes): PaymentEvent
     {
-        if (strlen((string) Arr::get($attributes, 'source', 'system')) > 40) {
+        $source = self::canonicalSource((string) Arr::get($attributes, 'source', 'system'));
+        if (strlen($source) > 40) {
             throw new \InvalidArgumentException('Payment event source exceeds its schema contract.');
         }
         $provider = $payment?->provider ?? PaymentProvider::FIB;
@@ -23,7 +34,7 @@ class PaymentEventRecorder
             'payment_id' => $payment?->id,
             'provider' => $provider->value,
             'event_type' => (string) Arr::get($attributes, 'event_type'),
-            'source' => (string) Arr::get($attributes, 'source', 'system'),
+            'source' => $source,
             'provider_object_type' => Arr::get($attributes, 'provider_object_type', $payment?->provider_object_type?->value ?? 'payment'),
             'local_reference' => Arr::get($attributes, 'local_reference', $payment?->local_reference),
             'fib_payment_id' => Arr::get($attributes, 'fib_payment_id', $payment?->fib_payment_id),

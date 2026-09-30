@@ -365,7 +365,7 @@ it('rejects malformed or conflicting callback identifiers before provider reques
     Http::assertNothingSent();
 })->with([[['id' => ['bad']]], [['id' => str_repeat('a', 129)]], [['id' => 'one', 'subscriptionId' => 'two']]]);
 
-it('persists scheduled checkout and renewal events within a strict source width guard', function () {
+it('persists scheduled checkout and renewal events within a strict source width guard', function ($legacy) {
     [, , $payment] = billingAuditFixture(false);
     PaymentEvent::creating(function (PaymentEvent $event) {
         if (strlen($event->source) > 40) {
@@ -375,13 +375,13 @@ it('persists scheduled checkout and renewal events within a strict source width 
     $status = FibSubscriptionStatusData::fromArray(['id' => $payment->fib_subscription_id, 'status' => 'ACTIVE',
         'lastPaymentAt' => '2026-05-01T10:00:00Z', 'activeUntil' => '2026-06-01T10:00:00Z']);
     $this->partialMock(FibSubscriptionService::class)->shouldReceive('getStatus')->twice()->andReturn($status);
-    app(SyncFibCheckoutStatus::class)->handle($payment, 'scheduled_sub_checkout');
-    app(SyncFibCheckoutStatus::class)->handle($payment, 'scheduled_sub_renewal');
+    app(SyncFibCheckoutStatus::class)->handle($payment, $legacy ? 'scheduled_subscription_checkout_reconciliation' : 'scheduled_sub_checkout');
+    app(SyncFibCheckoutStatus::class)->handle($payment, $legacy ? 'scheduled_subscription_renewal_reconciliation' : 'scheduled_sub_renewal');
     expect($payment->fresh()->fulfilled_at)->not->toBeNull();
     foreach (['scheduled_sub_checkout', 'scheduled_sub_renewal'] as $source) {
         expect(PaymentEvent::where('payment_id', $payment->id)->where('source', $source)->exists())->toBeTrue();
     }
-});
+})->with([false, true]);
 
 it('preserves the exact UTC second when documented millisecond evidence is stored and read back', function () {
     [, , $payment] = billingAuditFixture(false);

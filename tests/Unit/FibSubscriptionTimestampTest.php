@@ -29,7 +29,7 @@ it('keeps production event source literals within the existing schema', function
         preg_match_all('/(?:[\'"]source[\'"]\s*=>|\$source\s*=|source\s*:)\s*[\'"]([^\'"]+)[\'"]/', $code, $matches);
         preg_match_all('/[\'"](scheduled_[a-z_]+)[\'"]/', $code, $scheduled);
         foreach (array_merge($matches[1], $scheduled[1]) as $source) {
-            expect(strlen($source), $file->getFilename().' source '.$source)->toBeLessThanOrEqual(40);
+            expect(strlen(\App\Domain\Payments\Support\PaymentEventRecorder::canonicalSource($source)), $file->getFilename().' source '.$source)->toBeLessThanOrEqual(40);
             $count++;
         }
     }

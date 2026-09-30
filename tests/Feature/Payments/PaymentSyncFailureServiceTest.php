@@ -11,9 +11,13 @@ use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Models\PaymentEvent;
 use App\Models\Customer;
 use App\Services\Payments\PaymentSyncFailureService;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
+    expect(config('database.default'))->toBe('sqlite')->and(DB::connection()->getDatabaseName())->toBe(':memory:');
+    Http::preventStrayRequests();
     $this->seed();
 });
 
@@ -163,4 +167,79 @@ it('normalizes legacy scheduled reconciliation failure events for unresolved row
             ->count())->toBe(0)
         ->and((string) data_get($payment->meta, 'latest_sync_failure.source'))->toBe('scheduled_sub_checkout')
         ->and((int) data_get($payment->meta, 'latest_sync_failure_count'))->toBe(1);
+});
+
+it('persists the exact overlength legacy sources as distinct canonical failure identities', function ($legacy, $canonical, $renewal) {
+    $payment = syncFailurePayment(syncFailureCustomer(), $renewal ? [
+        'status' => PaymentStatus::PAID, 'internal_status' => PaymentInternalStatus::APPLIED,
+        'provider_subscription_status' => 'ACTIVE', 'paid_at' => now()->subHour(),
+        'fulfilled_at' => now()->subHour(), 'active_until' => now()->addDay(),
+    ] : []);
+    // SQLite does not enforce VARCHAR widths; emulate the production constraint.
+    PaymentEvent::creating(function (PaymentEvent $event) {
+        expect(strlen($event->source))->toBeLessThanOrEqual(40);
+    });
+    $method = $renewal ? 'captureRenewalFailure' : 'capture';
+    $eventType = $renewal ? 'provider_renewal_sync_failed' : 'provider_status_sync_failed';
+    $prefix = $renewal ? 'latest_renewal_sync_failure' : 'latest_sync_failure';
+    $service = app(PaymentSyncFailureService::class);
+    $first = $service->$method($payment, syncFailureException(404, 'NOT_FOUND'), $legacy);
+    $second = $service->$method($payment->fresh(), syncFailureException(404, 'NOT_FOUND'), $canonical);
+    $events = $payment->events()->where('event_type', $eventType)->get();
+    expect($first['source'])->toBe($canonical)->and($second['failure_count'])->toBe(2)
+        ->and($events)->toHaveCount(1)->and($events[0]->source)->toBe($canonical)
+        ->and($events[0]->response_code)->toBe(404)->and($events[0]->payload['fib_error_code'])->toBe('NOT_FOUND')
+        ->and($events[0]->payload['source'])->toBe($canonical)
+        ->and($events[0]->event_key)->toContain(':'.$canonical.':')
+        ->and(data_get($payment->fresh()->meta, $prefix.'.source'))->toBe($canonical)
+        ->and($payment->fresh()->provider_subscription_status)->toBe($renewal ? 'ACTIVE' : 'DRAFT');
+    Http::assertNothingSent();
+})->with([
+    ['scheduled_subscription_checkout_reconciliation', 'scheduled_sub_checkout', false],
+    ['scheduled_subscription_renewal_reconciliation', 'scheduled_sub_renewal', true],
+]);
+
+it('records authenticated subscription 404 safely through legacy sync and the reconciliation command without cancel POST', function ($legacyCaller) {
+    $payment = syncFailurePayment(syncFailureCustomer());
+    config(['fib.enabled' => true, 'payments.providers.fib.enabled' => true,
+        'fib.profiles.subscription.base_url' => 'https://fib-stage.fib.iq',
+        'fib.profiles.subscription.client_id' => 'fixture-client', 'fib.profiles.subscription.client_secret' => 'fixture-secret',
+        'fib.http.retries' => 1, 'fib.http.retry_sleep_ms' => 1]);
+    Http::fake(['*openid-connect/token' => Http::response(['access_token' => 'fixture-token', 'expires_in' => 3600]),
+        '*/subscriptions/'.$payment->fib_subscription_id => Http::response([
+            'errors' => [['code' => 'NOT_FOUND', 'title' => 'Not found']], 'private_provider_field' => 'MUST-NOT-BE-PERSISTED',
+        ], 404)]);
+    if ($legacyCaller) {
+        $source = 'scheduled_subscription_checkout_reconciliation';
+        try {
+            app(\App\Domain\Payments\Actions\SyncFibCheckoutStatus::class)->handle($payment, $source);
+            $this->fail('Expected authenticated GET failure.');
+        } catch (FibApiException $exception) {
+            expect($exception->getCode())->toBe(404);
+            app(PaymentSyncFailureService::class)->capture($payment, $exception, $source);
+        }
+    } else {
+        $this->artisan('subscriptions:reconcile', ['--customer' => $payment->customer_id, '--limit' => 1, '--stale-minutes' => 0])->assertSuccessful();
+    }
+    $event = $payment->events()->where('event_type', 'provider_status_sync_failed')->sole();
+    expect($event->source)->toBe('scheduled_sub_checkout')->and($event->response_code)->toBe(404)
+        ->and($event->payload['fib_error_code'])->toBe('NOT_FOUND')
+        ->and(json_encode($event->payload))->not->toContain('MUST-NOT-BE-PERSISTED', 'fixture-token', 'fixture-secret')
+        ->and($payment->fresh()->provider_subscription_status)->toBe('DRAFT')
+        ->and(app(\App\Services\Billing\ProviderSubscriptionCancellation::class)->confirmation($payment->fresh())['confirmed'])->toBeFalse();
+    Http::assertSent(fn ($request) => $request->method() === 'GET' && $request->hasHeader('Authorization', 'Bearer fixture-token'));
+    Http::assertNotSent(fn ($request) => $request->method() === 'POST' && ! str_ends_with($request->url(), '/openid-connect/token'));
+})->with([true, false]);
+
+it('canonicalizes only the two known recorder aliases and refuses unknown overlength sources without truncation', function () {
+    $payment = syncFailurePayment(syncFailureCustomer());
+    $recorder = app(\App\Domain\Payments\Support\PaymentEventRecorder::class);
+    foreach (['scheduled_subscription_checkout_reconciliation' => 'scheduled_sub_checkout',
+        'scheduled_subscription_renewal_reconciliation' => 'scheduled_sub_renewal', 'fib_subscription_callback' => 'fib_subscription_callback'] as $source => $expected) {
+        expect($recorder->record($payment, ['event_type' => 'fixture', 'source' => $source])->source)->toBe($expected);
+    }
+    foreach ([str_repeat('x', 40).'a', str_repeat('x', 40).'b'] as $source) {
+        expect(fn () => $recorder->record($payment, ['event_type' => 'fixture', 'source' => $source]))->toThrow(InvalidArgumentException::class);
+    }
+    expect($payment->events()->count())->toBe(3);
 });

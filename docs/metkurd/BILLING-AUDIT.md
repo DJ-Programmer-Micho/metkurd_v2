@@ -1,5 +1,54 @@
 # Billing audit — FIB payments, recurring subscriptions, events and credit renewal
 
+## Production source-width acceptance follow-up — 2026-09-30
+
+The reported authenticated subscription GET 404 for Payment 112 is distinct from
+the subsequent MySQL persistence failure. The declared payment_events.source is
+VARCHAR(40); the old scheduled_subscription_checkout_reconciliation identifier is
+46 characters and its renewal counterpart is 45. This checkout already emitted
+scheduled_sub_checkout / scheduled_sub_renewal and rejected unknown overlength
+sources in PaymentEventRecorder. A production SQL insert containing the long name
+therefore does not match that source path: verify the deployed revision and running
+process code, without inferring which node/cache is stale from this report alone.
+
+Added exact compatibility aliases for those two historical identifiers at the
+shared recorder and before scheduled policy/failure interpretation. Existing short
+identifiers remain unchanged, checkout and renewal remain distinct, unknown long
+values still fail explicitly, and no arbitrary truncation/hash substitution occurs.
+Failure signatures, deduplication keys, metadata and event sources use the same
+canonical value. No historical events are rewritten; authenticated evidence matching
+uses event type/object/time/payload, not either legacy source spelling. No migration.
+
+Audited every application PaymentEvent writer and PaymentSyncFailureService caller:
+event creation is centralized in PaymentEventRecorder; callbacks, checkout/renewal
+commands, lifecycle/fulfillment, Admin/manual actions and provider batch sources fit
+the schema after explicit alias resolution. The longest other source is the
+39-character scheduled_reconciliation_metadata_guard. Dynamic internal sources keep
+the recorder's 40-byte guard. No change to provider or financial policy.
+
+Provider batch actions do not call PaymentSyncFailureService. They record their own
+27-character admin_provider_batch_review source. An authenticated 404 provides no
+verified subscription state and is persisted as unresolved with provider_status=null;
+it is not cancellation evidence and sends no cancel POST. Other transport/identity
+errors can also produce null: the reported 404 does not diagnose every Batch 1 item.
+Completed unresolved reviews do not require blanket replay because of this fix.
+Exact UUID replay returns the saved result; it is not a fresh provider GET. New
+provider verification requires fresh reviewed evidence under the existing workflow.
+Code-bound manifests cannot simply be reused after deploying changed source.
+
+No production connection, FIB request, deployment, migration or cutover was performed.
+Tests use isolated SQLite with mocked authenticated HTTP; width assertions supplement
+SQLite's lack of VARCHAR length enforcement. Native MySQL acceptance remains separate.
+
+Verification: **233 tests / 1778 assertions passed** across PaymentSyncFailureService,
+FibPaymentFlow, BillingAuditCharacterization, ProviderObligationBatch,
+ProviderObligationEvidence, ProductionPreflightCatalog and FibSubscriptionTimestamp.
+This includes exact old checkout/renewal inputs, successful sync, canonical failure
+deduplication, authenticated 404 in subscriptions:reconcile and both batch paths,
+no cancellation POST, no batch dependency on PaymentSyncFailureService, unknown-long
+source rejection, and production/debug combinations. PHP lint/Pint passed for all
+seven changed PHP files; git diff --check passed. No frontend assets changed.
+
 ## Post-cutover correctness and mocked purchase — 2026-09-15
 
 Read-only forensics found customer 1 selecting retained manual subscription 407, whose

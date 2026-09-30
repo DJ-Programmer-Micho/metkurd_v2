@@ -1,5 +1,16 @@
 # Architectural and behavioral decisions
 
+## 2026-09-30 — Legacy payment event source aliases
+
+Added exact checkout/renewal aliases before scheduled policy/failure handling and
+event persistence, using the already established scheduled_sub_checkout and
+scheduled_sub_renewal identifiers. The VARCHAR(40) schema and explicit unknown-long
+source rejection remain; no truncation, history rewrite or migration. Regressions
+cover authenticated 404 failure persistence, deduplication, successful sync, batch
+unresolved evidence without cancellation and production-preflight's combined
+production/debug condition. No provider/billing workflow or production configuration
+change. See [acceptance findings](BILLING-AUDIT.md#production-source-width-acceptance-follow-up--2026-09-30).
+
 ## 2026-09-30 — Final V1 processing retirement and bounded remote cancellation
 
 Adapted existing batch commands for deterministic groups of up to 25 exact provider
