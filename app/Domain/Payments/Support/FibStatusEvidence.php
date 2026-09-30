@@ -6,9 +6,59 @@ use App\Domain\Payments\Data\FibPaymentStatusData;
 use App\Domain\Payments\Data\FibSubscriptionStatusData;
 use App\Domain\Payments\Enums\PaymentProvider;
 use App\Domain\Payments\Models\Payment;
+use App\Domain\Payments\Models\PaymentEvent;
 
 final class FibStatusEvidence
 {
+    /**
+     * Read the latest persisted authenticated GET, never a callback or a local status.
+     * These two event types are emitted only by SyncFibCheckoutStatus after GET.
+     * Legacy writers did not populate the durable cancellation context/date columns.
+     * Revalidate their raw response instead of trusting their old DTO interpretation.
+     *
+     * @return array{status: FibSubscriptionStatusData, event_id: int}|null
+     */
+    public function persistedSubscriptionObservation(Payment $payment): ?array
+    {
+        if (! $payment->isProviderSubscriptionObject() || $payment->provider !== PaymentProvider::FIB
+            || ! $payment->fib_subscription_id || ! $payment->last_status_checked_at
+            || $payment->last_status_checked_at->isFuture()) {
+            return null;
+        }
+        // Select before validating: never fall back past newer contradictory/bad evidence.
+        $event = PaymentEvent::where('payment_id', $payment->id)
+            ->whereIn('event_type', ['provider_status_checked', 'provider_status_ignored'])
+            ->latest('id')->first();
+        if (! $event || $event->provider !== 'fib' || $event->provider_object_type !== 'subscription'
+            || $event->fib_subscription_id !== $payment->fib_subscription_id
+            || $event->local_reference !== $payment->local_reference
+            || ! $event->processed_at || $event->processed_at->isFuture()
+            || $event->processed_at->timestamp !== $payment->last_status_checked_at->timestamp
+            || ! is_array($event->payload) || $event->payload !== $payment->status_response
+            || data_get($event->meta, 'provider_object_type') !== 'subscription') {
+            return null;
+        }
+        $status = FibSubscriptionStatusData::fromArray($event->payload);
+        if ($this->rejection($payment, $status) !== null
+            || $status->status !== strtoupper((string) $payment->provider_subscription_status)
+            || ($status->lastPaymentAt && ($status->lastPaymentAt->isFuture()
+                || ($status->activeUntil && ! $status->activeUntil->gt($status->lastPaymentAt))))) {
+            return null;
+        }
+        // A subsequent unverified callback cannot prove a transition, but it does
+        // prevent an older GET from settling a potentially changed obligation.
+        if (PaymentEvent::where('payment_id', $payment->id)->where('id', '>', $event->id)
+            ->where('event_type', 'callback_received')->exists()) {
+            return null;
+        }
+        $requestedAt = FibSubscriptionTimestamp::parse(data_get($payment->meta, 'provider_cancellation.requested_at'));
+        if ($requestedAt && $requestedAt->gt($event->processed_at)) {
+            return null;
+        }
+
+        return ['status' => $status, 'event_id' => (int) $event->id];
+    }
+
     /** Returns a safe reason code, never a provider payload or banking value. */
     public function rejection(Payment $payment, FibPaymentStatusData|FibSubscriptionStatusData $status): ?string
     {

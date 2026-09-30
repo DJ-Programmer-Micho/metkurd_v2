@@ -15,6 +15,127 @@ use Illuminate\Validation\ValidationException;
 /** Durable local intent. Remote renewal state never determines already-paid access. */
 class ProviderSubscriptionCancellation
 {
+    /** Persisted cancellation authority shared with cutover; no HTTP or writes. */
+    public function confirmation(Payment $payment): array
+    {
+        $evidence = app(\App\Domain\Payments\Support\FibStatusEvidence::class);
+        $observation = $evidence->persistedSubscriptionObservation($payment);
+        $status = $observation['status'] ?? null;
+        $result = ['confirmed' => false, 'evidence_event_id' => $observation['event_id'] ?? null,
+            'observed_active_until' => $status?->activeUntil?->format('Y-m-d\TH:i:s.vP'),
+            'observed_last_payment_at' => $status?->lastPaymentAt?->format('Y-m-d\TH:i:s.vP')];
+        if ($payment->provider?->value !== 'fib' || ! $payment->isProviderSubscriptionObject()
+            || ! $payment->fib_subscription_id
+            || ! in_array(strtoupper((string) $payment->provider_subscription_status), ['CANCELED', 'CANCELLED'], true)) {
+            return $result;
+        }
+        if ($status && in_array($status->status, ['CANCELED', 'CANCELLED'], true)) {
+            return array_replace($result, ['confirmed' => true]);
+        }
+        $context = (array) data_get($payment->meta, 'provider_cancellation', []);
+        $confirmedAt = \App\Domain\Payments\Support\FibSubscriptionTimestamp::parse($context['provider_cancel_confirmed_at'] ?? null);
+        if (($context['state'] ?? null) !== 'confirmed' || ($context['provider_cancel_pending'] ?? true) !== false
+            || ! $confirmedAt || $confirmedAt->isFuture()
+            || (isset($context['provider_ref']) && $context['provider_ref'] !== $payment->fib_subscription_id)) {
+            return $result;
+        }
+        // A newer status check must itself validate; old canonical context is not a bypass.
+        if ($payment->last_status_checked_at?->gt($confirmedAt)
+            || \App\Domain\Payments\Models\PaymentEvent::where('payment_id', $payment->id)
+                ->where('event_type', 'callback_received')->where('processed_at', '>', $confirmedAt)->exists()) {
+            return $result;
+        }
+        $verified = in_array($context['result'] ?? null, ['already_canceled', 'already_scheduled'], true);
+        if (! $verified && $payment->last_status_checked_at && $payment->status_response) {
+            $stored = \App\Domain\Payments\Data\FibSubscriptionStatusData::fromArray((array) $payment->status_response);
+            $verified = in_array($stored->status, ['CANCELED', 'CANCELLED'], true)
+                && $evidence->rejection($payment, $stored) === null;
+        }
+
+        foreach (['observed_active_until', 'observed_last_payment_at'] as $key) {
+            if (isset($context[$key])) {
+                $date = \App\Domain\Payments\Support\FibSubscriptionTimestamp::parse($context[$key]);
+                if (! $date) {
+                    return $result;
+                }
+                $result[$key] = $date->format('Y-m-d\TH:i:s.vP');
+            }
+        }
+
+        return array_replace($result, ['confirmed' => $verified]);
+    }
+
+    /**
+     * Operator-only recovery via AdminOperationRunner. GET confirms renewal stop;
+     * it does not establish a new collection, refill, or resolve disputed paid terms.
+     */
+    public function reviewConfirmation(string $operation, int $customerId, int $paymentId, string $providerRef, string $reason): array
+    {
+        \App\Support\Admin\AdminAccess::authorize('admin.finance');
+
+        return app(\App\Services\Admin\AdminOperationRunner::class)->run($operation, 'admin.reconcile',
+            'payment.cancellation_evidence_review', $customerId,
+            ['payment_id' => $paymentId, 'provider_ref' => $providerRef], $reason,
+            function () use ($paymentId, $customerId, $providerRef) {
+                \App\Support\Admin\AdminAccess::authorize('admin.finance');
+                \App\Support\Admin\AdminAccess::authorize('admin.reconcile');
+                $payment = Payment::whereKey($paymentId)->where('customer_id', $customerId)->lockForUpdate()->firstOrFail();
+                if (! $payment->isCurrentBillingPeriod() || ! $payment->isFulfilled()
+                    || $payment->status?->value !== 'paid' || ! $payment->isProviderSubscriptionObject()
+                    || $payment->provider?->value !== 'fib' || $payment->fib_subscription_id !== $providerRef
+                    || $payment->requiresReview() || $payment->review_required_at) {
+                    throw new \RuntimeException('Cancellation evidence target requires separate review.');
+                }
+                $status = app(\App\Domain\Payments\Fib\FibSubscriptionService::class)->getStatus($payment);
+                if (app(\App\Domain\Payments\Support\FibStatusEvidence::class)->rejection($payment, $status) !== null
+                    || ! in_array($status->status, ['CANCELED', 'CANCELLED'], true)
+                    || ! $status->activeUntil || ! $status->lastPaymentAt
+                    || $status->lastPaymentAt->isFuture() || ! $status->activeUntil->gt($status->lastPaymentAt)) {
+                    throw new \RuntimeException('Authenticated cancellation or coverage evidence is insufficient.');
+                }
+                $meta = (array) $payment->meta;
+                $context = (array) ($meta['provider_cancellation'] ?? []);
+                $previous = $this->confirmation($payment);
+                $retainedUntil = $status->activeUntil->copy();
+                foreach ([$previous['observed_active_until'], $context['observed_active_until'] ?? null,
+                    $context['retained_active_until'] ?? null, $payment->active_until?->toIso8601String()] as $raw) {
+                    if ($raw !== null) {
+                        $prior = \App\Domain\Payments\Support\FibSubscriptionTimestamp::parse($raw);
+                        if (! $prior) {
+                            throw new \RuntimeException('Previous coverage requires review.');
+                        }
+                        $retainedUntil = $retainedUntil->max($prior);
+                    }
+                }
+                $context += ['requested_at' => now()->toIso8601String(), 'reason_code' => 'operator_review',
+                    'effective_access_until' => $payment->active_until?->toIso8601String()];
+                $context = array_replace($context, ['provider' => 'fib', 'provider_ref' => $providerRef,
+                    'state' => 'confirmed', 'provider_cancel_pending' => false,
+                    'provider_cancel_confirmed_at' => now()->toIso8601String(), 'retry_after' => null,
+                    'result' => 'already_scheduled', 'observed_active_until' => $status->activeUntil->format('Y-m-d\TH:i:s.vP'),
+                    'observed_last_payment_at' => $status->lastPaymentAt->format('Y-m-d\TH:i:s.vP'),
+                    'retained_active_until' => $retainedUntil->format('Y-m-d\TH:i:s.vP'),
+                    'coverage_disposition' => 'operator_review_required']);
+                $meta['provider_cancellation'] = $context;
+                $payment->forceFill(['meta' => $meta, 'provider_status' => $status->status,
+                    'provider_subscription_status' => $status->status, 'status_response' => $status->raw,
+                    'last_status_checked_at' => now()])->save();
+                // Preserve every pre-existing paid/history date. The observed provider
+                // boundary is retained for review; do not infer a collection or a grant.
+                $this->project($payment, false);
+                app(PaymentEventRecorder::class)->record($payment, [
+                    'event_type' => 'provider_cancellation_confirmed', 'source' => 'operator_cancellation_review',
+                    'before_status' => $payment->status->value, 'after_status' => $payment->status->value,
+                    'meta' => $context]);
+
+                return ['payment_id' => $payment->id, 'renewal_stop_confirmed' => true,
+                    'observed_active_until' => $context['observed_active_until'],
+                    'observed_last_payment_at' => $context['observed_last_payment_at'],
+                    'retained_active_until' => $context['retained_active_until'],
+                    'coverage_disposition' => 'operator_review_required', 'cutover_authorized' => false];
+            });
+    }
+
     public function customerCancel(Customer $customer, CustomerServiceSubscription|CustomerStorageSubscription $subscription): mixed
     {
         DB::transaction(function () use ($customer, $subscription) {
@@ -190,12 +311,19 @@ class ProviderSubscriptionCancellation
         });
     }
 
-    private function project(Payment $payment): void
+    private function project(Payment $payment, bool $projectAccess = true): void
     {
         $context = (array) data_get($payment->meta, 'provider_cancellation', []);
         foreach ([CustomerServiceSubscription::class, CustomerStorageSubscription::class] as $class) {
-            foreach ($class::where('customer_id', $payment->customer_id)->where('payment_id', $payment->id)->lockForUpdate()->get() as $sub) {
+            $query = $class::where('customer_id', $payment->customer_id)->where('payment_id', $payment->id);
+            if (! $projectAccess) {
+                $query->where('status', 'active');
+            }
+            foreach ($query->lockForUpdate()->get() as $sub) {
                 $meta = (array) $sub->meta;
+                if (! $projectAccess && data_get($meta, 'superseded_at')) {
+                    continue;
+                }
                 $wasAutoRenewing = (bool) $sub->auto_renew;
                 $meta['provider_cancellation'] = $context;
                 $meta['cancel_source'] = match ($context['reason_code']) {
@@ -205,8 +333,11 @@ class ProviderSubscriptionCancellation
                 };
                 $meta['provider_cancel_pending'] = $context['provider_cancel_pending'];
                 $meta['provider_status'] = $payment->provider_subscription_status;
-                $sub->forceFill(['auto_renew' => false, 'canceled_at' => $sub->canceled_at ?? now(), 'meta' => $meta]);
-                if ($sub->status === 'active' && ! data_get($meta, 'superseded_at') && $context['effective_access_until']) {
+                $sub->forceFill(['auto_renew' => false, 'meta' => $meta]);
+                if ($projectAccess) {
+                    $sub->canceled_at ??= now();
+                }
+                if ($projectAccess && $sub->status === 'active' && ! data_get($meta, 'superseded_at') && $context['effective_access_until']) {
                     $sub->ends_at = $context['effective_access_until'];
                 }
                 $sub->save();

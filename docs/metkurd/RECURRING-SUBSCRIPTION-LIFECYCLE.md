@@ -1,5 +1,16 @@
 # Recurring subscription actions — 2026-09-14
 
+## Legacy cancellation evidence review — 2026-09-30
+
+The shared cancellation service now exposes read-only confirmation from canonical
+context or the latest matched authenticated GET event, revalidated by FibStatusEvidence.
+Legacy `provider_status_ignored` events can confirm renewal cancellation while the
+paid Payment remains paid. Optional `payments:review-fib-cancellation` uses explicit
+Admin identity/capabilities and a durable operation to obtain fresh GET evidence;
+it preserves paid dates, retains the longest observed coverage bound and does not
+POST cancellation, refill or transfer access. Future/disputed coverage still blocks
+cutover. See [the operator review procedure](PROVIDER-OBLIGATION-REVIEW.md).
+
 ## Contract and ownership
 
 The [official FIB subscription collection](https://documenter.getpostman.com/view/30814842/2sB3BHn9i6)

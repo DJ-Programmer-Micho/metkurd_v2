@@ -2,10 +2,9 @@
 
 namespace App\Services\Billing\Cutover;
 
-use App\Domain\Payments\Data\FibSubscriptionStatusData;
 use App\Domain\Payments\Models\Payment;
-use App\Domain\Payments\Support\FibStatusEvidence;
 use App\Domain\Payments\Support\FibSubscriptionTimestamp;
+use App\Services\Billing\ProviderSubscriptionCancellation;
 use Illuminate\Support\Facades\DB;
 
 /** Reads persisted evidence only. Never invokes cancellation, polling or fulfillment. */
@@ -48,9 +47,11 @@ class ProviderObligationInventory
                 && ! $payment->active_until?->isFuture()) {
                 continue;
             }
-            [$classification, $reason] = $this->classify($payment);
+            $confirmation = app(ProviderSubscriptionCancellation::class)->confirmation($payment);
+            [$classification, $reason] = $this->classify($payment, $confirmation);
             $items[] = ['payment_id' => $payment->id, 'customer_id' => $payment->customer_id,
-                'subscriptions' => $linked[$payment->id] ?? [], 'classification' => $classification, 'reason' => $reason];
+                'subscriptions' => $linked[$payment->id] ?? [], 'classification' => $classification, 'reason' => $reason,
+                'cancellation_evidence' => $confirmation];
         }
         // Legacy provider schedules can exist without a native Payment or normalized
         // subscription. No current evidence service proves their remote retirement.
@@ -77,12 +78,14 @@ class ProviderObligationInventory
             'summary' => $summary, 'items' => $items, 'blockers' => $blockers];
     }
 
-    private function classify(Payment $payment): array
+    private function classify(Payment $payment, array $confirmation): array
     {
         $context = (array) data_get($payment->meta, 'provider_cancellation', []);
         $ends = [];
         foreach ([$payment->active_until, data_get($payment->meta, 'verified_subscription_collection.paid_through'),
-            $context['effective_access_until'] ?? null, $context['observed_active_until'] ?? null] as $raw) {
+            $context['effective_access_until'] ?? null, $context['observed_active_until'] ?? null,
+            $context['retained_active_until'] ?? null,
+            $confirmation['observed_active_until']] as $raw) {
             if ($raw !== null) {
                 $end = FibSubscriptionTimestamp::parse($raw instanceof \DateTimeInterface ? $raw->format(DATE_ATOM) : $raw);
                 if (! $end) {
@@ -95,7 +98,8 @@ class ProviderObligationInventory
         if (collect($ends)->contains(fn ($end) => $end->isFuture())) {
             // Shared cutover retires provider authority. Do not erase still-valid coverage;
             // a separate approved preservation/disposition phase must resolve it first.
-            return $hasCollection ? ['valid_coverage_to_preserve', 'paid_through_boundary_not_finished']
+            return $hasCollection ? ['valid_coverage_to_preserve', $confirmation['confirmed']
+                ? 'confirmed_renewal_stop_with_remaining_coverage' : 'paid_through_boundary_not_finished']
                 : ['requires_operator_review', 'coverage_without_collection_evidence'];
         }
         if ($payment->review_required_at || $payment->requiresReview()
@@ -104,20 +108,7 @@ class ProviderObligationInventory
             || data_get($payment->meta, 'provider_evidence_rejection')) {
             return ['requires_operator_review', 'financial_review_unresolved'];
         }
-        $confirmedAt = FibSubscriptionTimestamp::parse($context['provider_cancel_confirmed_at'] ?? null);
-        $terminal = in_array(strtoupper((string) $payment->provider_subscription_status), ['CANCELED', 'CANCELLED'], true);
-        $contextMatches = ! isset($context['provider_ref']) || $context['provider_ref'] === $payment->fib_subscription_id;
-        $hasContext = $terminal && ($context['state'] ?? null) === 'confirmed'
-            && ($context['provider_cancel_pending'] ?? true) === false && $confirmedAt && ! $confirmedAt->isFuture() && $contextMatches;
-        // Both paths are written by the current lifecycle only after a validated authenticated GET:
-        // cancellation service result, or observation of the stored validated status response.
-        $verified = $hasContext && in_array($context['result'] ?? null, ['already_canceled', 'already_scheduled'], true);
-        if ($hasContext && ! $verified && $payment->last_status_checked_at && $payment->status_response) {
-            $status = FibSubscriptionStatusData::fromArray((array) $payment->status_response);
-            $verified = in_array($status->status, ['CANCELED', 'CANCELLED'], true)
-                && app(FibStatusEvidence::class)->rejection($payment, $status) === null;
-        }
-        if (! $verified || $payment->provider?->value !== 'fib' || ! $payment->fib_subscription_id) {
+        if (! $confirmation['confirmed']) {
             return ['unresolved_remote_obligation', 'no_authenticated_cancellation_confirmation'];
         }
         if ($hasCollection && ! $ends) {

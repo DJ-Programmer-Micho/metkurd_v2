@@ -1,5 +1,27 @@
 # V1 → V2 production launch runbook
 
+> **Current operator entry point — 2026-09-30:** Follow
+> [PRODUCTION-DEPLOYMENT-FINAL.md](PRODUCTION-DEPLOYMENT-FINAL.md) as the single
+> authoritative execution sequence for the current VM2/VM3 production release.
+> It inventories all 86 current source migrations (21 after the original 65-file
+> V1 snapshot), separates one-time shared-DB operations from per-node work, and
+> includes maintenance, backups, production billing cutover, rollout and rollback.
+> The dated counts, local rehearsals and command sequences below are retained as
+> historical evidence; do not execute them as a second deployment checklist.
+> Actual production `migrate:status` always wins. Neither document authorizes
+> execution without its production acceptance and operator approval gates.
+
+## Provider-obligation correction — 2026-09-30
+
+Before retrying production cutover, read [Provider obligation review](PROVIDER-OBLIGATION-REVIEW.md).
+Matched persisted authenticated GET cancellation is now recognized even when the
+legacy event is named `provider_status_ignored` and newer canonical metadata is
+absent. Callback/local CANCELLED alone remains insufficient. Payment 161 still has
+coverage to preserve/review; this fix does not authorize retiring that access.
+The linked procedure includes config refresh, optional audited GET-only review,
+independent draft/legacy blockers and a **fresh** production dry-run. No old hash,
+provider bypass, migration or broad SQL repair is appropriate.
+
 ## Customer application flags — 2026-09-26
 
 These switches are independent and read through Laravel configuration:

@@ -1,5 +1,17 @@
 # Architectural and behavioral decisions
 
+## 2026-09-30 — Legacy authenticated cancellation evidence at cutover
+
+FibStatusEvidence now validates the latest matched persisted subscription GET event,
+including paid-to-canceled `provider_status_ignored`, through the existing evidence
+validator. ProviderSubscriptionCancellation exposes one read-only confirmation
+authority to the cutover inventory, which retains raw provider coverage bounds and
+continues blocking future/ambiguous access. A narrow AdminOperationRunner-backed
+`payments:review-fib-cancellation` provides explicit audited GET-only confirmation
+without date correction, cancellation POST, credit allocation or cutover. No
+automatic fake-intent exemption, paid-to-manual conversion, migration, production
+access or local financial correction. See [diagnosis and operator re-review](PROVIDER-OBLIGATION-REVIEW.md).
+
 ## 2026-09-28 — Final Admin consolidation
 
 Retained the existing route and authority model while consolidating the eight remaining
