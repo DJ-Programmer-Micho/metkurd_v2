@@ -5,6 +5,16 @@
     @if($evidence['restricted'])<p>{{ __('admin_billing.restricted') }}</p>
     @else
         <p class="text-muted small">{{ __('admin_billing.bounded_evidence') }}</p>
+        @if($coverage = ($evidence['provider_coverage'] ?? null))
+            <section class="border rounded p-3 mb-3" aria-label="{{ __('admin_billing.legacy_provider_coverage') }}">
+                <h6>{{ __('admin_billing.legacy_provider_coverage') }}</h6>
+                <p>{{ __('admin_billing.renewal_stopped') }} · {{ __('admin_billing.coverage_through') }} <bdi>{{ $coverage['coverage_end'] }}</bdi></p>
+                <p>{{ __('admin_billing.'.$coverage['status'].'_coverage') }}</p>
+                <p class="small text-muted">{{ __('admin_billing.pre_v2_provider_provenance') }}</p>
+                <dl class="mb-0"><dt>{{ __('admin_billing.original_payment') }}</dt><dd><bdi>#{{ $coverage['original_payment_id'] }}</bdi></dd>
+                    <dt>{{ __('admin_billing.cancellation_event') }}</dt><dd><bdi>#{{ $coverage['evidence_event_id'] }}</bdi></dd></dl>
+            </section>
+        @endif
         @foreach(['events', 'allocations'] as $kind)
             @if($page = $evidence[$kind])
                 <h6 id="billing-{{ $kind }}">{{ __('admin_billing.'.$kind) }} <span class="text-muted">({{ $page->total() }})</span></h6>

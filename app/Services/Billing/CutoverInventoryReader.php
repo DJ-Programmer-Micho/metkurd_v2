@@ -35,8 +35,8 @@ final class CutoverInventoryReader
         }
         $payments = $this->table('payments')->get(['id', 'customer_id', 'provider', 'provider_object_type', 'purchasable_type', 'purchasable_id',
             'status', 'internal_status', 'fulfilled_at', 'fib_subscription_id', 'provider_subscription_status', 'active_until', 'last_payment_at', 'meta'])->keyBy('id');
-        $intents = $this->table('payment_intents')->get(['id', 'customer_id', 'status', 'fulfilled_at', 'provider_schedule_ref']);
-        $orders = $this->table('credit_orders')->get(['id', 'customer_id', 'payment_id', 'status', 'provider', 'source_type', 'order_type', 'meta']);
+        $intents = $this->table('payment_intents')->get();
+        $orders = $this->table('credit_orders')->get();
         $paymentGroups = [];
         foreach ($payments as $payment) {
             $labels = [];
@@ -72,7 +72,10 @@ final class CutoverInventoryReader
         if ($report['payments']['unresolved']['rows']) {
             $report['blockers'][] = 'unresolved_payments';
         }
-        $unresolvedIntents = $intents->filter(fn ($p) => ! in_array($p->status, ['paid', 'failed', 'canceled', 'expired', 'refunded'], true)
+        $retainedIntents = $intents->filter(fn ($p) => LegacyFakeIntentEvidence::matches($p))->keyBy('id');
+        $report['retained_financial_legacy'] = ['intent_ids' => $retainedIntents->keys()->all(),
+            'order_ids' => $orders->filter(fn ($o) => isset($retainedIntents[$o->payment_intent_id]) && LegacyFakeIntentEvidence::orderMatches($o, $retainedIntents[$o->payment_intent_id]))->pluck('id')->all()];
+        $unresolvedIntents = $intents->reject(fn ($p) => isset($retainedIntents[$p->id]))->filter(fn ($p) => ! in_array($p->status, ['paid', 'failed', 'canceled', 'expired', 'refunded'], true)
             || $p->status === 'paid' || $p->provider_schedule_ref);
         $report['legacy_intents'] = ['unresolved_or_scheduled' => $unresolvedIntents->count(), 'customers' => $unresolvedIntents->pluck('customer_id')->unique()->count()];
         if ($unresolvedIntents->isNotEmpty()) {
@@ -188,7 +191,7 @@ final class CutoverInventoryReader
         }
         $paidOrders = $orders->filter(fn ($o) => $o->status === 'paid' && ! $this->nonRevenue($o));
         $unlinkedOrders = $paidOrders->filter(fn ($o) => ($o->order_type === 'subscription' || in_array($o->source_type, ['service_plan', 'storage_plan'], true))
-            && ! isset($linked[$o->payment_id]));
+            && ! isset($linked[$o->payment_id]) && ! in_array($o->id, $report['retained_financial_legacy']['order_ids'], true));
         $report['unlinked_paid_plan_orders'] = ['rows' => $unlinkedOrders->count(), 'customers' => $unlinkedOrders->pluck('customer_id')->unique()->count()];
         if ($unlinkedOrders->isNotEmpty()) {
             $report['blockers'][] = 'unlinked_paid_plan_orders';

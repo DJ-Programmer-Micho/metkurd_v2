@@ -126,6 +126,15 @@ final class AdminBillingWorkspace
             $page?->through(fn ($row) => AdminData::redact($row->toArray()));
         }
 
-        return ['restricted' => false, 'customer_id' => $model->customer_id, 'events' => $events, 'allocations' => $allocations];
+        $coverage = null;
+        if (\Illuminate\Support\Facades\Schema::hasTable('provider_coverage_dispositions')) {
+            $coverage = \App\Models\ProviderCoverageDisposition::where('customer_id', $model->customer_id)
+                ->when($model instanceof Payment,
+                    fn ($q) => $q->where('original_payment_id', $model->id),
+                    fn ($q) => $q->where('subscription_kind', $model instanceof CustomerServiceSubscription ? 'service' : 'storage')->where('subscription_id', $model->id))
+                ->first(['id', 'original_payment_id', 'evidence_event_id', 'coverage_start', 'coverage_end', 'status', 'renewal_stop_confirmed']);
+        }
+
+        return ['restricted' => false, 'customer_id' => $model->customer_id, 'events' => $events, 'allocations' => $allocations, 'provider_coverage' => $coverage?->toArray()];
     }
 }

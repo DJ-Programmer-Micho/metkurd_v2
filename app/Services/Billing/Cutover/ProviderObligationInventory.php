@@ -14,6 +14,12 @@ class ProviderObligationInventory
     {
         $items = [];
         $payments = Payment::orderBy('id')->get()->keyBy('id');
+        $approved = [];
+        foreach ($payments as $payment) {
+            if ($disposition = app(\App\Services\Billing\ProviderCoverageDispositions::class)->approvedFor($payment)) {
+                $approved[$payment->id] = $disposition;
+            }
+        }
         $linked = [];
         foreach ($normalizations as $table => $rows) {
             foreach ($rows as $normalization) {
@@ -21,7 +27,7 @@ class ProviderObligationInventory
                 $payment = $payments[$row->payment_id] ?? null;
                 $meta = json_decode($row->meta ?? '{}', true, flags: JSON_THROW_ON_ERROR);
                 foreach ([$row->ends_at, $meta['period_ends_at'] ?? null, $meta['provider_active_until'] ?? null] as $raw) {
-                    if ($raw !== null && (! ($end = FibSubscriptionTimestamp::parse($raw)) || $end->isFuture())) {
+                    if (! isset($approved[$row->payment_id]) && $raw !== null && (! ($end = FibSubscriptionTimestamp::parse($raw)) || $end->isFuture())) {
                         $items[] = ['table' => $table, 'id' => $row->id, 'customer_id' => $row->customer_id,
                             'classification' => 'requires_operator_review', 'reason' => 'retained_subscription_coverage_needs_disposition'];
                         break;
@@ -48,7 +54,9 @@ class ProviderObligationInventory
                 continue;
             }
             $confirmation = app(ProviderSubscriptionCancellation::class)->confirmation($payment);
-            [$classification, $reason] = $this->classify($payment, $confirmation);
+            [$classification, $reason] = isset($approved[$payment->id])
+                ? ['approved_coverage_to_preserve', 'audited_bounded_term_and_confirmed_renewal_stop']
+                : $this->classify($payment, $confirmation);
             $items[] = ['payment_id' => $payment->id, 'customer_id' => $payment->customer_id,
                 'subscriptions' => $linked[$payment->id] ?? [], 'classification' => $classification, 'reason' => $reason,
                 'cancellation_evidence' => $confirmation];
@@ -57,18 +65,19 @@ class ProviderObligationInventory
         // subscription. No current evidence service proves their remote retirement.
         foreach (DB::table('payment_intents')->where(fn ($q) => $q->where('is_recurring', true)
             ->orWhereNotNull('provider_schedule_ref')->orWhereIn('recurring_strategy', ['provider_schedule', 'provider_token']))
-            ->orderBy('id')->get(['id', 'customer_id']) as $intent) {
+            ->orderBy('id')->get() as $intent) {
             $items[] = ['table' => 'payment_intents', 'id' => $intent->id, 'customer_id' => $intent->customer_id,
-                'classification' => 'unresolved_remote_obligation', 'reason' => 'legacy_recurring_intent_requires_provider_disposition'];
+                'classification' => \App\Services\Billing\LegacyFakeIntentEvidence::matches($intent) ? 'financial_legacy_preserved' : 'unresolved_remote_obligation',
+                'reason' => \App\Services\Billing\LegacyFakeIntentEvidence::matches($intent) ? 'fake_manual_without_remote_schedule' : 'legacy_recurring_intent_requires_provider_disposition'];
         }
-        $summary = array_fill_keys(['retired_confirmed_cancelled', 'valid_coverage_to_preserve', 'requires_operator_review', 'unresolved_remote_obligation'], 0);
+        $summary = array_fill_keys(['approved_coverage_to_preserve', 'financial_legacy_preserved', 'retired_confirmed_cancelled', 'valid_coverage_to_preserve', 'requires_operator_review', 'unresolved_remote_obligation'], 0);
         foreach ($items as $item) {
             $summary[$item['classification']]++;
         }
         $blockers = [];
         if ($target === 'production') {
             foreach ($items as $item) {
-                if ($item['classification'] !== 'retired_confirmed_cancelled') {
+                if (! in_array($item['classification'], ['retired_confirmed_cancelled', 'approved_coverage_to_preserve', 'financial_legacy_preserved'], true)) {
                     $blockers[] = 'Provider obligation '.($item['payment_id'] ?? $item['table'].':'.$item['id']).': '.$item['classification'].' ('.$item['reason'].').';
                 }
             }

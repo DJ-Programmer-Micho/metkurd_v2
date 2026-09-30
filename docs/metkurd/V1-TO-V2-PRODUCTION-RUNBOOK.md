@@ -3,7 +3,7 @@
 > **Current operator entry point — 2026-09-30:** Follow
 > [PRODUCTION-DEPLOYMENT-FINAL.md](PRODUCTION-DEPLOYMENT-FINAL.md) as the single
 > authoritative execution sequence for the current VM2/VM3 production release.
-> It inventories all 86 current source migrations (21 after the original 65-file
+> It inventories all 87 current source migrations (22 after the original 65-file
 > V1 snapshot), separates one-time shared-DB operations from per-node work, and
 > includes maintenance, backups, production billing cutover, rollout and rollback.
 > The dated counts, local rehearsals and command sequences below are retained as
@@ -12,6 +12,15 @@
 > execution without its production acceptance and operator approval gates.
 
 ## Provider-obligation correction — 2026-09-30
+
+The follow-up now includes a first-class approved legacy-provider coverage record,
+one additive migration and `billing:disposition-provider-coverage`. It retains true
+provider provenance and never creates a manual/cash/new-V2 payment. Follow the linked
+operator sequence: explicit merchant review, approval dry run, audited execution,
+independent draft resolution, then fresh complete production cutover dry run. Intent
+15/Order 1 are preserved fake/manual financial history, not a live FIB schedule.
+The original recognition-only review below does not supersede this new procedure.
+
 
 Before retrying production cutover, read [Provider obligation review](PROVIDER-OBLIGATION-REVIEW.md).
 Matched persisted authenticated GET cancellation is now recognized even when the

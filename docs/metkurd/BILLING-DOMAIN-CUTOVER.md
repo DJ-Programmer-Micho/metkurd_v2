@@ -1,5 +1,24 @@
 # V2 payment-domain cutover
 
+## Reviewed provider coverage exception — 2026-09-30
+
+The current release adds `provider_coverage_dispositions`; review its
+[operator procedure](PROVIDER-OBLIGATION-REVIEW.md) before cutover. Confirmed cancellation
+plus a completed immutable Admin approval can retain the same service/storage
+subscription under the explicitly reviewed bounded provider term. The full original
+term/provenance snapshot survives, dates are projected only at cutover, and exact
+fingerprints/effective-plan identity must verify before commit. This is not a manual
+or cash grant, current revenue, or credit-cycle authority. Unapproved/ambiguous paid
+coverage and remote obligations still block production.
+
+The processing-delete set now excludes narrowly corroborated paid fake/manual intents
+and their transaction/webhook history. Their retained CreditOrder links and ledger/
+allocation dependencies remain intact. All other dependency guards still apply.
+The original blanket five-table retirement/date-preservation description below is
+superseded ONLY for these explicit reviewed preservation cases. Local-rehearsal and
+production retain their existing separate identity/preflight policies.
+
+
 ## Deployment targets — 2026-09-15
 
 The shared review/mutation algorithm now requires explicit `--target=local-rehearsal`

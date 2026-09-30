@@ -58,8 +58,11 @@ class BillingSubscriptionAuthority
             }
         }
 
-        return $query->where(function (Builder $eligible) use ($table, $planKey, $planClass, $service, $localIds, $onlineIds, $at, $lifecycle) {
+        $retainedIds = $lifecycle ? [] : app(ProviderCoverageDispositions::class)->eligibleIds($model::class, $at);
+
+        return $query->where(function (Builder $eligible) use ($table, $planKey, $planClass, $service, $localIds, $onlineIds, $retainedIds, $at, $lifecycle) {
             $eligible->whereIn($table.'.id', $localIds)
+                ->orWhereIn($table.'.id', $retainedIds)
                 ->orWhere(function (Builder $free) use ($table, $service) {
                     $free->whereNull($table.'.payment_id')
                         ->where(fn ($q) => $q->whereNull($table.'.source')->orWhereIn($table.'.source', ['system', 'free']))

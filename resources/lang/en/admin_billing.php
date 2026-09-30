@@ -1,6 +1,15 @@
 <?php
 
 return [
+    'legacy_provider_coverage' => 'Legacy Provider Coverage',
+    'renewal_stopped' => 'Renewal stopped',
+    'coverage_through' => 'Coverage through',
+    'approved_coverage' => 'Approved for cutover; retained authority is not active yet.',
+    'retained_coverage' => 'Retained bounded coverage; access remains subject to the effective subscription and expiry.',
+    'pre_v2_provider_provenance' => 'Pre-V2 financial provenance. Not current V2 revenue.',
+    'original_payment' => 'Original Payment',
+    'cancellation_event' => 'Cancellation evidence event',
+
     'provider_mismatch' => 'Payment evidence conflict recorded',
     'subscription' => 'Service subscription',
     'addon' => 'Add-on credits',

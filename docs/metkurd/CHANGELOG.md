@@ -1,5 +1,21 @@
 # Architectural and behavioral decisions
 
+## 2026-09-30 — Audited provider coverage disposition before cutover
+
+Added a first-class immutable approved/retained provider coverage record, additive
+migration source and default-read-only `billing:disposition-provider-coverage`.
+Explicit merchant-reviewed dates, exact identities, authenticated cancellation event,
+finance/reconcile capabilities and durable AdminOperationRunner replay are required.
+Cutover revalidates, binds the record to its committed boundary, preserves the existing
+subscription under the approved term and verifies full fingerprints/effective access.
+Shared plan authority consumes exact bounded coverage; recurring allocation authority
+does not. Admin evidence is read-only and localized. Corroborated fake/manual Intent
+history and its orders/transactions are preserved separately from remote obligations.
+DRAFT/non_cancelable remains unresolved. No production access, migration execution,
+provider calls, local corrective writes, or cutover. See
+[review, evidence and operator sequence](PROVIDER-OBLIGATION-REVIEW.md).
+
+
 ## 2026-09-30 — Legacy authenticated cancellation evidence at cutover
 
 FibStatusEvidence now validates the latest matched persisted subscription GET event,

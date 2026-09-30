@@ -47,6 +47,9 @@ class SubscriptionCyclePolicy
 
     public function boundary(CustomerServiceSubscription|CustomerStorageSubscription $subscription): ?CarbonInterface
     {
+        if ($retained = app(ProviderCoverageDispositions::class)->retainedFor($subscription)) {
+            return FibSubscriptionTimestamp::parse($retained->coverage_end);
+        }
         $payment = $subscription->payment;
         // Explicit paid-through evidence wins over date-only scheduling hints.
         $end = $payment?->active_until;

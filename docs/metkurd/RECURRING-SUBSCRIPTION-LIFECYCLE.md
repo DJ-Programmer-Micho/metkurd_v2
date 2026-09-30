@@ -1,5 +1,20 @@
 # Recurring subscription actions — 2026-09-14
 
+## Retained provider coverage at cutover — 2026-09-30
+
+`ProviderCoverageDispositions` records operator-reviewed bounded pre-V2 paid access
+with original provider/payment/event/subscription provenance. Approval alone does
+not change access or dates. Cutover revalidates and activates the record, retains the
+original subscription with the approved term and stops local renewal; committed
+boundary membership and the audited immutable approval bind effective access.
+The shared billing resolver recognizes it until the exact exclusive end, including
+provider milliseconds. Recurring `SubscriptionCyclePolicy` lifecycle/allocation
+authority excludes retained coverage: no monthly refill, provider call or new sale.
+Expiry uses normal effective-plan fallback without wallet/add-on changes. Replacement
+status/supersession remains authoritative. Existing allocation/payment FKs still block
+unsafe processing deletion. See [approval and acceptance](PROVIDER-OBLIGATION-REVIEW.md).
+
+
 ## Legacy cancellation evidence review — 2026-09-30
 
 The shared cancellation service now exposes read-only confirmation from canonical

@@ -62,7 +62,8 @@ class PaymentDomainCutover
                 throw new PaymentHistoryResetRefused('Cutover refused: blockers or changed review. Run the dry run again.');
             }
             $boundary = ['starts_at' => now()->toDateTimeString(), 'credit_order_id' => DB::table('credit_orders')->max('id') ?? 0,
-                'payment_id' => DB::table('payments')->max('id') ?? 0];
+                'payment_id' => DB::table('payments')->max('id') ?? 0,
+                'provider_coverage_ids' => array_keys($review['patches']['provider_coverage_dispositions'] ?? [])];
             $audit = new AdminAudit;
             $audit->reason = $reason;
             $audit->record(BillingReportingBoundary::ACTION, self::class, $hash, [], ['review_hash' => $hash],
@@ -140,6 +141,12 @@ class PaymentDomainCutover
         foreach (self::PROCESSING as $table) {
             $delete[$table] = DB::table($table)->orderBy('id')->pluck('id')->all();
         }
+        $retainedIntents = DB::table('payment_intents')->get()->filter(fn ($intent) => LegacyFakeIntentEvidence::matches($intent))->pluck('id')->all();
+        $delete['payment_intents'] = array_values(array_diff($delete['payment_intents'], $retainedIntents));
+        foreach (['payment_transactions', 'payment_webhook_events'] as $table) {
+            $retainedChildren = DB::table($table)->whereIn('payment_intent_id', $retainedIntents)->pluck('id')->all();
+            $delete[$table] = array_values(array_diff($delete[$table], $retainedChildren));
+        }
         foreach ($tables as $table) {
             $columns = Schema::getColumns($table);
             $keys = Schema::getForeignKeys($table);
@@ -152,6 +159,11 @@ class PaymentDomainCutover
                 }
             }
             foreach ($keys as $key) {
+                if (in_array($key['foreign_table'], self::PROCESSING, true) && in_array($table, self::PROCESSING, true)
+                    && count($key['columns']) === 1 && $key['foreign_columns'] === ['id']
+                    && DB::table($table)->whereNotIn('id', $delete[$table])->whereIn($key['columns'][0], $delete[$key['foreign_table']])->exists()) {
+                    $blockers[] = $table.': retained financial history references processing rows selected for retirement';
+                }
                 if (! in_array($key['foreign_table'], self::PROCESSING, true) || in_array($table, self::PROCESSING, true)) {
                     continue;
                 }
@@ -162,7 +174,7 @@ class PaymentDomainCutover
                 }
                 $column = $key['columns'][0];
                 $nullable = collect($columns)->firstWhere('name', $column)['nullable'];
-                foreach (DB::table($table)->whereIn($column, DB::table($key['foreign_table'])->select('id'))->orderBy('id')->get() as $row) {
+                foreach (DB::table($table)->whereIn($column, $delete[$key['foreign_table']])->orderBy('id')->get() as $row) {
                     if (! in_array($table, self::LINKS, true) || ! $nullable || ! in_array($column, ['payment_id', 'payment_intent_id'], true)) {
                         $blockers[] = $table.':'.$row->id.': retained evidence cannot be detached from '.$column;
 
@@ -229,7 +241,7 @@ class PaymentDomainCutover
                 ->selectRaw('COUNT(*) AS count, COALESCE(SUM(balance_credits),0) AS balance, COALESCE(SUM(subscription_balance_credits),0) AS subscription_balance, COALESCE(SUM(addon_balance_credits),0) AS addon_balance')->first();
         }
         $result = ['policy' => 'payment-domain-cutover-v2', 'target' => $target, 'database' => $identity,
-            'readiness' => $readiness, 'provider_obligations' => $obligations, 'counts' => $counts,
+            'retained_financial_intent_ids' => $retainedIntents, 'readiness' => $readiness, 'provider_obligations' => $obligations, 'counts' => $counts,
             'reporting_boundary_projection' => ['starts_at' => 'transaction commit time',
                 'credit_order_id' => DB::table('credit_orders')->max('id') ?? 0, 'payment_id' => DB::table('payments')->max('id') ?? 0],
             'delete_counts' => array_map('count', $delete), 'delete_ids' => $delete, 'delete_order' => $order,
@@ -276,6 +288,21 @@ class PaymentDomainCutover
                 if ($local && $provider) {
                     $blockers[] = $table.':'.$row->id.': local access has conflicting provider authority';
                 } elseif ($provider) {
+                    $payment = $row->payment_id ? Payment::find($row->payment_id) : null;
+                    $disposition = $payment ? app(ProviderCoverageDispositions::class)->approvedFor($payment) : null;
+                    if ($disposition && $disposition->subscription_kind === $kind && (int) $disposition->subscription_id === (int) $row->id) {
+                        $start = \App\Domain\Payments\Support\FibSubscriptionTimestamp::parse($disposition->coverage_start)->setTimezone(config('app.timezone'));
+                        $end = \App\Domain\Payments\Support\FibSubscriptionTimestamp::parse($disposition->coverage_end)->setTimezone(config('app.timezone'));
+                        $patches[$table][$row->id] = array_merge($patches[$table][$row->id] ?? [], [
+                            'payment_id' => null, 'status' => 'active', 'auto_renew' => 0,
+                            'starts_at' => $start->toDateTimeString(), 'ends_at' => $end->copy()->ceilSecond()->toDateTimeString()]);
+                        $patches['provider_coverage_dispositions'][$disposition->id] = ['status' => 'retained'];
+                        $normalized[$table][] = ['id' => $row->id, 'customer_id' => $row->customer_id, 'disposition_id' => $disposition->id];
+                        $selected[$row->customer_id] = ['subscription_id' => $row->id, 'plan_id' => $row->$planColumn, 'kind' => 'legacy_provider_coverage'];
+                        $preserved[$table][] = ['id' => $row->id, 'customer_id' => $row->customer_id, 'disposition_id' => $disposition->id];
+
+                        continue;
+                    }
                     $patches[$table][$row->id] = array_merge($patches[$table][$row->id] ?? [], ['status' => 'ended', 'auto_renew' => 0]);
                     // No timestamp, source, provider metadata or remote cancellation status is changed.
                     $normalized[$table][] = ['id' => $row->id, 'customer_id' => $row->customer_id, 'previous_status' => $row->status, 'previous_auto_renew' => $row->auto_renew];
@@ -398,7 +425,7 @@ class PaymentDomainCutover
                             unset($parentsById[$id]);
                         }
                     }
-                    $ids[$table] = $sorted;
+                    $ids[$table] = array_values(array_intersect($sorted, $ids[$table]));
                 }
             }
         }

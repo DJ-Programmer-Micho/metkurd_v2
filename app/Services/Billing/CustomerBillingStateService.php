@@ -38,6 +38,7 @@ class CustomerBillingStateService
         $currentPlan = $subscription?->servicePlan instanceof ServicePlan
             ? $subscription->servicePlan
             : $defaultPlan;
+        $retained = $subscription ? app(ProviderCoverageDispositions::class)->retainedFor($subscription) : null;
         $periodEndsAt = $this->resolveSubscriptionPeriodEnd($subscription);
         $cancellationScheduled = $subscription instanceof CustomerServiceSubscription
             && $subscription->canceled_at !== null
@@ -64,6 +65,7 @@ class CustomerBillingStateService
             'current_plan_id' => (int) $currentPlan->id,
             'source' => $subscription?->source ?? 'system',
             'access_type' => match (true) {
+                $retained !== null => 'legacy_provider_coverage',
                 (bool) $currentPlan->is_free => 'free',
                 $subscription?->source === ServiceAgreementLifecycle::SOURCE => 'external',
                 $subscription && ! CustomerServiceSubscription::whereKey($subscription->id)->excludingComplimentary()->exists() => 'complimentary',
@@ -82,7 +84,7 @@ class CustomerBillingStateService
             'has_active_paid_main_plan' => $hasPaidPlan,
             'should_hide_free_plan' => $hasPaidPlan,
             'externally_managed' => $subscription?->source === ServiceAgreementLifecycle::SOURCE,
-            'cancelable' => $hasPaidPlan && ! $cancellationScheduled && $subscription?->source !== ServiceAgreementLifecycle::SOURCE,
+            'cancelable' => ! $retained && $hasPaidPlan && ! $cancellationScheduled && $subscription?->source !== ServiceAgreementLifecycle::SOURCE,
             'cancellation_scheduled' => $cancellationScheduled,
             'period_ends_at' => $periodEndsAt,
             'scheduled_plan' => $cancellationScheduled ? $defaultPlan : null,
@@ -124,6 +126,7 @@ class CustomerBillingStateService
             ?? 0);
         $currentLimitMb = max(1, (int) ($currentPlan->quota_mb ?? 512));
         $currentLimitBytes = $currentLimitMb * 1024 * 1024;
+        $retained = $subscription ? app(ProviderCoverageDispositions::class)->retainedFor($subscription) : null;
         $periodEndsAt = $this->resolveSubscriptionPeriodEnd($subscription);
         $cancellationScheduled = $subscription instanceof CustomerStorageSubscription
             && $subscription->canceled_at !== null
@@ -146,7 +149,7 @@ class CustomerBillingStateService
             'default_plan' => $defaultPlan,
             'current_plan_id' => (int) $currentPlan->id,
             'has_paid_storage_plan' => $hasPaidStoragePlan,
-            'cancelable' => $hasPaidStoragePlan && ! $cancellationScheduled,
+            'cancelable' => ! $retained && $hasPaidStoragePlan && ! $cancellationScheduled,
             'cancellation_scheduled' => $cancellationScheduled,
             'period_ends_at' => $periodEndsAt,
             'scheduled_plan' => $scheduledPlan,

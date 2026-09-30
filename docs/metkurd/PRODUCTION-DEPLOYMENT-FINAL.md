@@ -2,11 +2,12 @@
 
 ## 1. Release freeze — [LOCAL WORKSTATION]
 
-**2026-09-30 provider-obligation follow-up:** apply the source/evidence review in
-[PROVIDER-OBLIGATION-REVIEW.md](PROVIDER-OBLIGATION-REVIEW.md) before re-running the
-production cutover review. Confirmed renewal cancellation does not resolve future
-paid coverage or the independent legacy intent/order blockers. Its optional audited
-GET-only workflow is separate from cutover and does not authorize execution.
+**2026-09-30 provider-disposition follow-up:** follow
+[PROVIDER-OBLIGATION-REVIEW.md](PROVIDER-OBLIGATION-REVIEW.md) before the final cutover
+review. The release adds one retained-coverage migration and an audited, explicit
+approval workflow. Cancellation alone does not certify November coverage. Confirmed
+fake/manual history is preserved, not deleted; DRAFT 159/160 remain unresolved.
+No migration, production connection, disposition or cutover was executed by this task.
 
 **Status: operator procedure prepared; production execution is NOT accepted yet.**
 Reviewed 2026-09-30 against source base `2814d4fb032c136416986fd91be570793ff0b1d5`.
@@ -382,7 +383,7 @@ business caches or releasing live locks. Review compiled caches per release.
 
 ## 9. Shared migration run — [ONE VM ONLY — SHARED DATABASE OPERATION]
 
-Appendix A inventories **86 source migrations: 65 original-snapshot baseline + 21
+Appendix A inventories **87 source migrations: 65 original-snapshot baseline + 22
 later files**. This is not a production pending count. **Actual production
 `php artisan migrate:status` wins**, including unknown or partially applied migrations.
 The legacy snapshot already contains the original API tables/wallet channels;
@@ -544,6 +545,18 @@ Preserve Harakat's separate identity. Do not change inference settings as an unr
 deployment workaround. This runbook does not implement any of these alternatives.
 
 ## 12. Pre-cutover preflight and provider disposition — [ONE APP NODE ONLY] [FIB]
+
+Before this phase can pass, complete the separately reviewed
+[provider coverage disposition procedure](PROVIDER-OBLIGATION-REVIEW.md#exact-operator-sequence-after-separately-approved-deployment).
+The new table must be migrated under this runbook's one-node migration controls. Explicitly
+review Payment 161's full interval, preview and execute its approval on ONE node with
+all other writers stopped, then fingerprint-check the allowed disposition/operation/
+audit append only. Source Payments/events/subscriptions/wallets/ledgers stay unchanged
+at this step. Independently resolve DRAFT and remaining evidence blockers. Cutover
+activates retained coverage only transactionally; the existing final hash, backup,
+maintenance, identity and zero-blocker requirements are unchanged. Do not revert to
+code without retained-coverage authority after activation.
+
 
 After complete migrations/catalog/Admin review, still offline:
 
@@ -1066,7 +1079,7 @@ production acceptance. MCP rows may be deferred only while its gate remains fals
 
 ## Appendix A. Exact migration inventory from source
 
-All names below are under `database/migrations/`. Source review found **86 files**.
+All names below are under `database/migrations/`. Source review found **87 files**.
 The documented original `eu-metkurd-v1-260906.sql` baseline has 65 migration records,
 ending with channel separation; the already-mutated local R1 copy had a different
 inventory. The **21-file delta below is relative to that original snapshot only**.
@@ -1099,6 +1112,7 @@ requires native rehearsal. Catalog/data migrations require economic/data review.
 | `2026_09_26_000600_support_mcp_client_metadata.php` | Schema: CIMD URL identity/scopes/type/hash | Four client-ID columns from previous steps | Widens indexed IDs to 512 ASCII/ascii_bin on MySQL; requires native index/collation/retained-row acceptance. Down never truncates identities. |
 | `2026_09_27_120000_retire_translation_landing_publication.php` | Data: inactive Translation landing flag + system audit | Landing pages and Admin audit | Narrow conditional update; preserves editorial/media/timestamps/history. Down cannot republish or erase audit. |
 | `2026_09_27_140000_add_service_agreement_concurrency.php` | Schema: nullable agreement concurrent_jobs_limit | Service agreements | Additive; null preserves plan concurrency; populated override down refused. No customer credit/access rewrite. |
+| `2026_09_30_000001_create_provider_coverage_dispositions.php` | Schema: immutable reviewed legacy-provider coverage + restricted customer/Admin/operation FKs | Existing subscriptions and Admin operation schema | Additive; no approvals/backfill, HTTP or credits. Historical Payment/event IDs survive processing retirement. Populated rollback refused. Native MySQL JSON/date/transaction acceptance required. |
 
 No separate migration for Process Queue, dynamic discovery, Admin layout, Harakat API
 route or V1 retirement flag. Their dependencies are in the inventory above/baseline.

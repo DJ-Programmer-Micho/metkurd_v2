@@ -115,7 +115,8 @@ service/storage access from preserved balances and provenance. The same eligibil
 is used by CustomerBillingStateService, current Customer relations/helpers, checkout
 application assessment, Admin metrics and cycle operations. Manual metadata deadlines
 are strictly parsed; expired/ambiguous terms are not indefinite grants. Old provider
-rows have no current authority. New online coverage requires an owned, plan-matched,
+rows have no current authority unless an explicit audited provider-coverage disposition
+is retained by the cutover (see below). New online coverage requires an owned, plan-matched,
 paid current-epoch Payment and valid term. Cash access requires the actual agreement.
 Lifecycle authority permits expiry of current obligations while refusing refills/expiry
 mutations from grants already expired at cutover. Reads do not rewrite those rows.
@@ -127,6 +128,20 @@ reads, checkout blockers, provider reconciliation and fulfillment use the same b
 Legacy Admin history remains separately readable. ML jobs, files, usage and ledger activity
 are continuous. See [the launch runbook and table matrix](V1-TO-V2-PRODUCTION-RUNBOOK.md).
 
+
+## Reviewed retained provider coverage — 2026-09-30
+
+`ProviderCoverageDispositions` stores a first-class bounded legacy paid-provider term,
+not a manual/cash grant or new Payment. The operator approves exact identities, dates
+and authenticated cancellation evidence through AdminOperationRunner. Cutover alone
+activates it, records its ID in BillingReportingBoundary, and verifies full-row
+fingerprints and effective plan identity. The existing normalized subscription retains
+its provider provenance and approved period; no second subscription authority is added.
+Shared effective-plan reads permit access until the exact exclusive millisecond end;
+newer history/supersession prevents resurrection. Recurring lifecycle/allocation reads
+exclude it. Fake/manual intents proven to have no remote identity are preserved with
+their financial children/order links, separately from unresolved remote obligations.
+See [the disposition contract and operator flow](PROVIDER-OBLIGATION-REVIEW.md).
 
 ## Local payment-domain cutover — 2026-09-15
 
