@@ -1,5 +1,15 @@
 # Batch provider obligation retirement — 2026-09-30
 
+## Historical FIB environment follow-up
+
+See [the read-only provenance audit](FIB-PROVENANCE-AUDIT.md). Manifests now expose
+creation provenance and the additional `nonproduction_provider_history` category.
+Corroborated staging creation evidence excludes an object from production remote
+actions, including retry-reviewed selection; it does not claim remote cancellation.
+Existing financial and paid-coverage blockers remain. Unknown and production 404s
+receive no retirement exemption. No new migration/configuration. Source/evidence
+hashes change: regenerate review worksheets rather than editing old packets.
+
 Source implementation and isolated acceptance only. No production access, deployment,
 application migration, real FIB request or application cutover was performed. The
 local reproduction database was inspected read-only. This supplements the
@@ -31,7 +41,7 @@ approval. Production still requires native MySQL/RDS identity and readiness chec
 
 The bulk snapshot streams events and loads financial evidence without per-obligation
 SQL in inventory. Categories remain confirmed_retired, paid_coverage, draft_unpaid,
-active_trial, conflict, retained_fake_history and unresolved. They are not final
+active_trial, conflict, retained_fake_history, nonproduction_provider_history and unresolved. They are not final
 cutover blocker counts. Remote eligibility is separate: stale GET can be refreshed;
 missing/unsafe identity, ownership/reference mismatch, financial review, duplicate
 objects or synthetic/mock/revenue-excluded Payments cannot trigger HTTP. Ordinary

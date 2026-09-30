@@ -1,5 +1,16 @@
 # Architectural and behavioral decisions
 
+## 2026-09-30 — Historical FIB creation provenance
+
+Corroborated subscription creation responses/events now distinguish staging from
+production in provider review and cutover inventory. Exact FIB checkout hosts and
+matching creation identities are evidence; current APP_ENV/FIB_ENV, 404s and local
+status are not. Proven staging objects are excluded from production remote actions,
+without claiming cancellation or bypassing paid-coverage/financial guards. Unknown
+provenance receives no exemption. No data/config change or migration; existing bulk
+snapshots, review hashes and retained audit structures are reused. See the
+[read-only evidence audit](FIB-PROVENANCE-AUDIT.md).
+
 ## 2026-09-30 — Legacy payment event source aliases
 
 Added exact checkout/renewal aliases before scheduled policy/failure handling and

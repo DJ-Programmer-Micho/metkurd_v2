@@ -57,12 +57,13 @@ class ProviderObligationInventory
             }
             $confirmation = app(ProviderSubscriptionCancellation::class)->confirmation($payment, $snapshot);
             $terminal = $retirement->terminal($snapshot, $payment);
+            $provenance = $snapshot->provenance($payment);
             [$classification, $reason] = isset($approved[$payment->id])
                 ? ['approved_coverage_to_preserve', 'audited_bounded_term_and_confirmed_renewal_stop']
-                : ($terminal ? ['retired_confirmed_cancelled', $terminal['kind']] : $this->classify($payment, $confirmation));
+                : ($terminal ? ['retired_confirmed_cancelled', $terminal['kind']] : $this->classify($payment, $confirmation, $provenance));
             $items[] = ['payment_id' => $payment->id, 'customer_id' => $payment->customer_id,
                 'subscriptions' => $linked[$payment->id] ?? [], 'classification' => $classification, 'reason' => $reason,
-                'cancellation_evidence' => $confirmation, 'retirement_evidence' => $terminal];
+                'cancellation_evidence' => $confirmation, 'retirement_evidence' => $terminal, 'provider_provenance' => $provenance];
         }
         // Legacy provider schedules can exist without a native Payment or normalized
         // subscription. No current evidence service proves their remote retirement.
@@ -73,14 +74,14 @@ class ProviderObligationInventory
                 'classification' => \App\Services\Billing\LegacyFakeIntentEvidence::matches($intent) ? 'financial_legacy_preserved' : 'unresolved_remote_obligation',
                 'reason' => \App\Services\Billing\LegacyFakeIntentEvidence::matches($intent) ? 'fake_manual_without_remote_schedule' : 'legacy_recurring_intent_requires_provider_disposition'];
         }
-        $summary = array_fill_keys(['approved_coverage_to_preserve', 'financial_legacy_preserved', 'retired_confirmed_cancelled', 'valid_coverage_to_preserve', 'requires_operator_review', 'unresolved_remote_obligation'], 0);
+        $summary = array_fill_keys(['approved_coverage_to_preserve', 'financial_legacy_preserved', 'retired_confirmed_cancelled', 'nonproduction_provider_history', 'valid_coverage_to_preserve', 'requires_operator_review', 'unresolved_remote_obligation'], 0);
         foreach ($items as $item) {
             $summary[$item['classification']]++;
         }
         $blockers = [];
         if ($target === 'production') {
             foreach ($items as $item) {
-                if (! in_array($item['classification'], ['retired_confirmed_cancelled', 'approved_coverage_to_preserve', 'financial_legacy_preserved'], true)) {
+                if (! in_array($item['classification'], ['retired_confirmed_cancelled', 'nonproduction_provider_history', 'approved_coverage_to_preserve', 'financial_legacy_preserved'], true)) {
                     $blockers[] = 'Provider obligation '.($item['payment_id'] ?? $item['table'].':'.$item['id']).': '.$item['classification'].' ('.$item['reason'].').';
                 }
             }
@@ -90,7 +91,7 @@ class ProviderObligationInventory
             'summary' => $summary, 'items' => $items, 'blockers' => $blockers];
     }
 
-    public function classify(Payment $payment, array $confirmation): array
+    public function classify(Payment $payment, array $confirmation, array $provenance = []): array
     {
         $context = (array) data_get($payment->meta, 'provider_cancellation', []);
         $ends = [];
@@ -120,13 +121,16 @@ class ProviderObligationInventory
             || data_get($payment->meta, 'provider_evidence_rejection')) {
             return ['requires_operator_review', 'financial_review_unresolved'];
         }
-        if (! $confirmation['confirmed']) {
+        $testProvider = ($provenance['classification'] ?? null) === 'confirmed_test_or_staging';
+        if (! $confirmation['confirmed'] && ! $testProvider) {
             return ['unresolved_remote_obligation', 'no_authenticated_cancellation_confirmation'];
         }
         if ($hasCollection && ! $ends) {
             return ['requires_operator_review', 'paid_coverage_boundary_missing'];
         }
 
-        return ['retired_confirmed_cancelled', 'confirmed_renewal_stop_and_no_remaining_coverage'];
+        return $testProvider
+            ? ['nonproduction_provider_history', 'creation_evidence_proves_staging_not_production_cancellation']
+            : ['retired_confirmed_cancelled', 'confirmed_renewal_stop_and_no_remaining_coverage'];
     }
 }

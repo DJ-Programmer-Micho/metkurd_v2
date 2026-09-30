@@ -10,7 +10,7 @@ use Symfony\Component\Process\Process;
 
 class ProviderObligationBatchReview
 {
-    public const CATEGORIES = ['confirmed_retired', 'paid_coverage', 'draft_unpaid', 'active_trial', 'conflict', 'retained_fake_history', 'unresolved'];
+    public const CATEGORIES = ['confirmed_retired', 'paid_coverage', 'draft_unpaid', 'active_trial', 'conflict', 'retained_fake_history', 'nonproduction_provider_history', 'unresolved'];
 
     public function review(string $target): array
     {
@@ -41,6 +41,7 @@ class ProviderObligationBatchReview
                 $boundSubscriptions[$sub['kind'].':'.$sub['row']['id']] = true;
             }
             $observation = $snapshot->observation($payment);
+            $provenance = $snapshot->provenance($payment);
             $status = $observation['status'] ?? null;
             $terminal = app(ProviderRetirementEvidence::class)->terminal($snapshot, $payment);
             $latest = app(ProviderRetirementEvidence::class)->latest($snapshot, $payment);
@@ -116,6 +117,17 @@ class ProviderObligationBatchReview
             if ($disposition && $category === 'paid_coverage') {
                 $reason = 'existing_disposition_requires_cutover_revalidation';
             }
+            if ($provenance['classification'] === 'confirmed_test_or_staging') {
+                [$testClass, $testReason] = app(\App\Services\Billing\Cutover\ProviderObligationInventory::class)->classify(
+                    $payment, ['confirmed' => false, 'observed_active_until' => $status?->activeUntil?->format(DATE_ATOM)], $provenance);
+                $remaining = collect($subscriptions)->contains(fn ($s) => collect([$s['row']['ends_at'], data_get(json_decode($s['row']['meta'] ?? '{}', true), 'period_ends_at'),
+                    data_get(json_decode($s['row']['meta'] ?? '{}', true), 'provider_active_until')])->contains(fn ($raw) => $raw !== null && (! ($end = FibSubscriptionTimestamp::parse($raw)) || $end->gt($at))));
+                if ($remaining) {
+                    [$category, $reason] = ['conflict', 'retained_subscription_coverage_needs_disposition'];
+                } elseif ($testClass === 'nonproduction_provider_history' && (! $conflict || $conflictReason === 'persisted_get_not_current_or_valid')) {
+                    [$category, $reason] = [$testClass, $testReason];
+                }
+            }
             $item = ['key' => 'payment:'.$id, 'payment_id' => $id, 'customer_id' => $payment->customer_id,
                 'existing_disposition_id' => $disposition['id'] ?? null,
                 'subscriptions' => array_map(fn ($s) => ['kind' => $s['kind'], 'id' => $s['row']['id']], $subscriptions),
@@ -129,7 +141,8 @@ class ProviderObligationBatchReview
                 'paid' => (bool) ($payment->paid_at || $payment->last_payment_at || $payment->isFulfilled()),
                 'applied' => $payment->isFulfilled(), 'verified_start' => $status?->lastPaymentAt?->format('Y-m-d\TH:i:s.vP'),
                 'verified_end' => $status?->activeUntil?->format('Y-m-d\TH:i:s.vP'), 'evidence_event_id' => $latest['evidence_event_id'] ?? $terminal['evidence_event_id'] ?? $observation['event_id'] ?? null,
-                'category' => $category, 'reason' => $reason, 'operator_action_required' => $category !== 'confirmed_retired',
+                'provider_provenance' => $provenance,
+                'category' => $category, 'reason' => $reason, 'operator_action_required' => ! in_array($category, ['confirmed_retired', 'nonproduction_provider_history'], true),
                 'proposed_actions' => match ($category) {
                     'draft_unpaid' => $latest && $latest['outcome'] === 'unresolved'
                         && in_array($latest['kind'], ['draft_get', 'remote_retirement'], true)
@@ -141,6 +154,9 @@ class ProviderObligationBatchReview
                     default => (! $conflict || $conflictReason === 'persisted_get_not_current_or_valid') && $category !== 'confirmed_retired' && $category !== 'active_trial'
                         && $payment->provider_subscription_status === 'DRAFT' && $snapshot->unpaidUnbound($payment) ? ['draft_get'] : [],
                 }];
+            if ($provenance['classification'] === 'confirmed_test_or_staging') {
+                $item['proposed_actions'] = []; // No production GET/POST or merchant retirement of a staging object.
+            }
             $priorRemote = collect($snapshot->rows['provider_obligation_reviews'])->contains(fn ($r) => (int) $r['original_payment_id'] === (int) $id && $r['kind'] === 'remote_retirement');
             $item['remote_review_eligible'] = ! $disposition && $snapshot->remoteEligible($payment);
             $item['remote_previously_reviewed'] = $priorRemote;

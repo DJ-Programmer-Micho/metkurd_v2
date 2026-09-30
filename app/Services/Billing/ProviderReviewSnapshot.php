@@ -22,6 +22,8 @@ class ProviderReviewSnapshot
 
     private array $collectionEvidence = [];
 
+    private array $creationEvents = [];
+
     public static function hash(mixed $value): string
     {
         $canonical = function ($item) use (&$canonical) {
@@ -59,6 +61,9 @@ class ProviderReviewSnapshot
             $hash = self::hash((array) $event);
             $hashes[] = $hash;
             $self->eventHashes[$event->payment_id][] = $hash;
+            if ($event->event_type === 'provider_subscription_created') {
+                $self->creationEvents[$event->payment_id][] = (new PaymentEvent)->newFromBuilder((array) $event);
+            }
             $payload = json_decode($event->payload ?? '{}', true);
             if (in_array($event->before_status, ['paid', 'refunded', 'refund_requested'], true)
                 || in_array($event->after_status, ['paid', 'refunded', 'refund_requested'], true)
@@ -161,6 +166,9 @@ class ProviderReviewSnapshot
 
     public function remoteEligible(Payment $payment): bool
     {
+        if ($this->provenance($payment)['classification'] === 'confirmed_test_or_staging') {
+            return false;
+        }
         if ($payment->provider?->value !== 'fib' || ! $payment->isProviderSubscriptionObject()
             || ! preg_match('/^[a-zA-Z0-9_-]{1,190}$/D', (string) $payment->fib_subscription_id)
             || $payment->review_required_at || $payment->requiresReview() || $payment->status?->value === 'refund_requested'
@@ -184,6 +192,17 @@ class ProviderReviewSnapshot
         }
 
         return true;
+    }
+
+    public function provenance(Payment $payment): array
+    {
+        $result = (new FibProviderProvenance)->classify($payment, $this->creationEvents[$payment->id] ?? []);
+        if ($payment->fib_subscription_id && count(array_filter($this->rows['payments'],
+            fn ($row) => $row['fib_subscription_id'] === $payment->fib_subscription_id)) !== 1) {
+            return ['classification' => 'unknown_environment', 'evidence_event_id' => null, 'creation_host' => null];
+        }
+
+        return $result;
     }
 
     public function matchedManualHistory(array $row, string $kind): bool

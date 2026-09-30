@@ -628,12 +628,15 @@ it('sends no reason parameter and disables cancellation transport retry', functi
     expect(Http::recorded(fn ($r) => $r->method() === 'GET'))->toHaveCount(2);
 });
 
-it('persists authenticated FIB 404 as unresolved batch evidence independently of sync failure recording', function ($remote) {
+it('persists authenticated FIB 404 as unresolved batch evidence independently of sync failure recording', function ($remote, $productionProvenance) {
     $draft = batchDraft($this);
+    if ($productionProvenance) {
+        batchCreationProvenance($draft, 'p.fib.iq');
+    }
     $packet = $remote ? remotePacket($this, [$draft->id]) : batchPacket($this, [$draft->id]);
     $before = batchPreservedTables();
     $this->mock(\App\Services\Payments\PaymentSyncFailureService::class)->shouldNotReceive('capture', 'captureRenewalFailure');
-    config(['fib.enabled' => true, 'payments.providers.fib.enabled' => true, 'fib.profiles.subscription.base_url' => 'https://fib-stage.fib.iq',
+    config(['fib.enabled' => true, 'payments.providers.fib.enabled' => true, 'fib.profiles.subscription.base_url' => 'https://fib.prod.fib.iq',
         'fib.profiles.subscription.client_id' => 'fixture-client', 'fib.profiles.subscription.client_secret' => 'fixture-secret',
         'fib.http.retries' => 1, 'fib.http.retry_sleep_ms' => 1]);
     Http::fake(['*openid-connect/token' => Http::response(['access_token' => 'fixture-token', 'expires_in' => 3600]),
@@ -657,7 +660,12 @@ it('persists authenticated FIB 404 as unresolved batch evidence independently of
     Http::assertSent(fn ($r) => $r->method() === 'GET' && $r->hasHeader('Authorization', 'Bearer fixture-token'));
     expect(Http::recorded(fn ($r) => $r->method() === 'GET'))->toHaveCount(1);
     Http::assertNotSent(fn ($r) => $r->method() === 'POST' && ! str_ends_with($r->url(), '/openid-connect/token'));
-})->with([true, false]);
+    $fresh = collect($this->batch->review('production')['review']['items'])->firstWhere('payment_id', $draft->id);
+    expect($fresh['provider_provenance']['classification'])->toBe($productionProvenance ? 'confirmed_production' : 'unknown_environment')
+        ->and($fresh['provider_status'])->toBeNull();
+    expect(collect(app(ProviderObligationInventory::class)->inspect('production', [])['items'])->firstWhere('payment_id', $draft->id)['classification'])
+        ->toBe('unresolved_remote_obligation');
+})->with([[true, true], [true, false], [false, true], [false, false]]);
 
 it('never reuses older paid cancellation proof after pending failed or contradictory remote review', function ($fault) {
     $packet = remotePacket($this, [$this->payment->id]);
@@ -724,4 +732,98 @@ it('blocks a second claimant while the first remote object has a live lease', fu
     });
     $mock->shouldNotReceive('cancel');
     expect($this->actions->apply($packet, $this->operation, $this->reason, $preview['review_hash'], true)['observations'][0]['outcome'])->toBe('unresolved');
+});
+
+function batchCreationProvenance(Payment $payment, string $host = 'p-stage.fib.iq'): \App\Domain\Payments\Models\PaymentEvent
+{
+    $response = ['subscriptionId' => $payment->fib_subscription_id, 'appLink' => 'https://'.$host.'/private-fixture-path?token=private-fixture'];
+    $request = ['description' => $payment->local_reference, 'statusCallbackUrl' => 'https://merchant.example.test/callback'];
+    $payment->update(['create_response' => $response, 'create_payload' => $request, 'provider_links' => ['app' => $response['appLink']]]);
+
+    return app(PaymentEventRecorder::class)->record($payment, ['event_type' => 'provider_subscription_created',
+        'source' => 'customer_checkout', 'payload' => $response, 'meta' => ['create_payload' => $request]]);
+}
+
+it('classifies corroborated creation provenance and skips staging remote work without rewriting history', function ($host, $expected) {
+    $draft = batchDraft($this);
+    $event = batchCreationProvenance($draft, $host);
+    $before = batchPreservedTables();
+    $packet = $this->batch->review('production');
+    $item = collect($packet['review']['items'])->firstWhere('payment_id', $draft->id);
+    expect($item['provider_provenance'])->toBe(['classification' => $expected, 'evidence_event_id' => $event->id, 'creation_host' => $host]);
+    $staging = $expected === 'confirmed_test_or_staging';
+    expect($item['remote_review_eligible'])->toBe(! $staging)
+        ->and($item['category'])->toBe($staging ? 'nonproduction_provider_history' : 'draft_unpaid');
+    $cutover = app(ProviderObligationInventory::class)->inspect('production', []);
+    expect(collect($cutover['items'])->firstWhere('payment_id', $draft->id)['classification'])
+        ->toBe($staging ? 'nonproduction_provider_history' : 'unresolved_remote_obligation');
+    if ($staging) {
+        expect($item['proposed_actions'])->toBe([])
+            ->and(collect($this->batch->selectRemote($packet, 25, true)['decisions'])->pluck('payment_id')->all())->not->toContain($draft->id);
+        $inventory = (new \App\Services\Billing\CutoverInventoryReader(DB::connection()))->inspect();
+        expect($inventory['nonproduction_unpaid_provider_ids'])->toContain($draft->id)
+            ->and($inventory['confirmed_retired_provider_ids'])->not->toContain($draft->id);
+    }
+    expect(batchPreservedTables())->toBe($before)
+        ->and(json_encode($packet))->not->toContain('private-fixture', 'merchant.example.test');
+    Http::assertNothingSent();
+})->with([['p-stage.fib.iq', 'confirmed_test_or_staging'], ['p.fib.iq', 'confirmed_production']]);
+
+it('fails closed on insufficient or conflicting FIB creation provenance', function ($fault) {
+    $draft = batchDraft($this);
+    $event = batchCreationProvenance($draft);
+    match ($fault) {
+        'missing event' => $event->delete(),
+        'callback only' => $event->update(['event_type' => 'callback_received']),
+        'wrong source' => $event->update(['source' => 'manual']),
+        'wrong identity' => $event->update(['fib_subscription_id' => 'other']),
+        'wrong local reference' => $event->update(['local_reference' => 'other']),
+        'response changed' => $draft->update(['create_response' => ['subscriptionId' => 'other', 'appLink' => 'https://p-stage.fib.iq/private']]),
+        'request changed' => $event->update(['meta' => ['create_payload' => ['description' => 'other']]]),
+        'duplicate creation' => $event->replicate()->save(),
+        'mock' => $draft->update(['meta' => ['mock' => true]]),
+        'conflicting link' => $draft->update(['provider_links' => ['app' => 'https://p.fib.iq/private']]),
+    };
+    config(['fib.environment' => 'staging', 'app.env' => 'production']);
+    $snapshot = \App\Services\Billing\ProviderReviewSnapshot::capture();
+    expect($snapshot->provenance($draft->fresh())['classification'])->toBe('unknown_environment');
+    $item = collect(app(ProviderObligationInventory::class)->inspect('production', [])['items'])->firstWhere('payment_id', $draft->id);
+    expect($item['classification'])->toBe('unresolved_remote_obligation');
+    Http::assertNothingSent();
+})->with(['missing event', 'callback only', 'wrong source', 'wrong identity', 'wrong local reference', 'response changed',
+    'request changed', 'duplicate creation', 'mock', 'conflicting link']);
+
+it('does not recognize deceptive or unrecognized FIB checkout hosts', function ($host) {
+    $draft = batchDraft($this);
+    batchCreationProvenance($draft, $host);
+    expect(\App\Services\Billing\ProviderReviewSnapshot::capture()->provenance($draft->fresh())['classification'])->toBe('unknown_environment');
+})->with(['p-stage.fib.iq.example.test', 'p-stage.fib.iq@evil.example.test', 'user@p-stage.fib.iq', 'p-stage.fib.iq:8443', 'unknown.example.test']);
+
+it('preserves independent financial and paid coverage blockers for proven staging history', function ($fault, $reason) {
+    batchCreationProvenance($this->payment);
+    $this->payment->update(['active_until' => null, 'meta' => []]);
+    match ($fault) {
+        'future coverage' => $this->payment->update(['active_until' => now()->addMonth()]),
+        'financial review' => $this->payment->update(['review_required_at' => now()]),
+        'missing boundary' => null,
+    };
+    $provenance = \App\Services\Billing\ProviderReviewSnapshot::capture()->provenance($this->payment->fresh());
+    expect($provenance['classification'])->toBe('confirmed_test_or_staging');
+    $result = app(ProviderObligationInventory::class)->classify($this->payment->fresh(), ['confirmed' => false, 'observed_active_until' => null], $provenance);
+    expect($result[1])->toBe($reason);
+    Http::assertNothingSent();
+})->with([['future coverage', 'paid_through_boundary_not_finished'], ['financial review', 'financial_review_unresolved'], ['missing boundary', 'paid_coverage_boundary_missing']]);
+
+it('keeps linked future coverage visible for staging and refuses forged production remote selection', function () {
+    batchCreationProvenance($this->payment);
+    $packet = $this->batch->review('production');
+    $item = collect($packet['review']['items'])->firstWhere('payment_id', $this->payment->id);
+    expect($item['provider_provenance']['classification'])->toBe('confirmed_test_or_staging')
+        ->and($item['operator_action_required'])->toBeTrue()
+        ->and($item['reason'])->toBe('retained_subscription_coverage_needs_disposition')
+        ->and($item['proposed_actions'])->toBe([])->and($item['remote_review_eligible'])->toBeFalse();
+    $packet['decisions'] = [['action' => 'remote_retire', 'selected' => true, 'payment_id' => $this->payment->id,
+        'customer_id' => $this->payment->customer_id, 'provider_subscription_id' => $this->payment->fib_subscription_id]];
+    expect(fn () => $this->actions->apply($packet, $this->operation, $this->reason))->toThrow(\Exception::class);
+    Http::assertNothingSent();
 });

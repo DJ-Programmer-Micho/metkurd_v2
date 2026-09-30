@@ -39,13 +39,19 @@ final class CutoverInventoryReader
         $orders = $this->table('credit_orders')->get();
         $snapshot = ProviderReviewSnapshot::capture(db: $this->db);
         $terminalIds = [];
+        $nonproductionUnpaidIds = [];
         $retirement = new ProviderRetirementEvidence;
         foreach ($payments as $p) {
             if ($retirement->terminal($snapshot, $snapshot->payment($p->id))) {
                 $terminalIds[] = $p->id;
             }
+            if ($snapshot->provenance($snapshot->payment($p->id))['classification'] === 'confirmed_test_or_staging'
+                && $snapshot->unpaidUnbound($snapshot->payment($p->id))) {
+                $nonproductionUnpaidIds[] = $p->id;
+            }
         }
         $report['confirmed_retired_provider_ids'] = $terminalIds;
+        $report['nonproduction_unpaid_provider_ids'] = $nonproductionUnpaidIds;
         $paymentGroups = [];
         foreach ($payments as $payment) {
             $labels = [];
@@ -65,7 +71,7 @@ final class CutoverInventoryReader
                 || ! in_array($payment->internal_status, ['applied', 'failed', 'canceled', 'expired', 'refunded'], true)
                 || ($payment->status === 'paid' && ! $payment->fulfilled_at)
                 || ($payment->fulfilled_at && ! in_array($payment->status, ['paid', 'refunded'], true))) {
-                if (! in_array($payment->id, $terminalIds, true)) {
+                if (! in_array($payment->id, $terminalIds, true) && ! in_array($payment->id, $nonproductionUnpaidIds, true)) {
                     $labels[] = 'unresolved';
                 }
             }
