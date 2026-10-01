@@ -40,11 +40,11 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     public function updatedDocumentFile():void{$this->resetValidation();$this->submissionKey=(string)\Illuminate\Support\Str::uuid();$this->submissionError='';if(!$this->currentJob?->isActive()){$this->currentJobId=null;$this->showJobStatus=false;$this->viewingPreviousResult=false;$this->forgetJobView();}$this->validateOnly('documentFile');if(!$this->documentFile)return;try{$this->documentFileName=(string)$this->documentFile->getClientOriginalName();$this->documentFileMime=strtolower((string)($this->documentFile->getMimeType()?:'application/octet-stream'));$this->documentFileExt=strtolower((string)($this->documentFile->getClientOriginalExtension()?:pathinfo($this->documentFileName,PATHINFO_EXTENSION)));$this->documentFileBytes=(int)$this->documentFile->getSize();if(!in_array($this->documentFileExt,self::EXTENSIONS,true))throw new \RuntimeException(__('Only PDF and common image files are allowed.'));$path=$this->documentFile->getRealPath();$this->documentHash=$path&&is_file($path)?hash_file('sha256',$path):sha1($this->documentFileName.'|'.$this->documentFileBytes);$this->verifiedPageCount=app(\App\Services\OCR\OcrDocumentProbe::class)->pageCount($this->documentFile);if(!$this->isPdf()){$this->clientPdfPageCount=1;$this->pageMode='all';$this->pageRange='';}}catch(\Throwable $e){$this->removeDocument();$this->addError('documentFile',\App\Support\CustomerFacingError::message($e->getMessage()));}}
     public function updatedPageMode():void{$this->resetValidation(['pageMode','pageRange']);$this->submissionError='';unset($this->creditsCost);if($this->pageMode==='all')$this->pageRange='';$this->dispatch('v2-ocr-preview-range',range:$this->pageRange,custom:$this->pageMode==='custom');}
     public function updatedPageRange():void{$this->resetValidation('pageRange');$this->submissionError='';unset($this->creditsCost);$this->dispatch('v2-ocr-preview-range',range:$this->pageRange,custom:$this->pageMode==='custom');}
-    public function updatedClientPdfPageCount():void{$this->clientPdfPageCount=max(1,min(3888,(int)$this->clientPdfPageCount));}
+    public function updatedClientPdfPageCount():void{$this->clientPdfPageCount=max(1,(int)$this->clientPdfPageCount);}
     public function removeDocument():void{$this->resetValidation();$this->submissionError='';unset($this->creditsCost);$this->documentFile=null;$this->documentFileName=$this->documentFileMime=$this->documentFileExt=$this->documentHash=null;$this->documentFileBytes=$this->clientPdfPageCount=$this->verifiedPageCount=null;$this->pageMode='all';$this->pageRange='';$this->dispatch('v2-ocr-document-cleared');}
     public function resetOcr():void{$this->removeDocument();$this->runLlmCorrector=$this->exportDocx=$this->exportTxt=true;$this->exportMarkdown=$this->exportHtml=$this->exportZip=false;}
     public function isPdf():bool{return $this->documentFileExt==='pdf'||$this->documentFileMime==='application/pdf';}
-    private function selectedPages():array{return app(\App\Services\OCR\OcrDocumentProbe::class)->selectedPages(max(1,(int)$this->verifiedPageCount),$this->pageMode==='all'||!$this->isPdf()?'all':$this->pageRange);}
+    private function selectedPages():array{return app(\App\Services\OCR\OcrDocumentProbe::class)->selectedPages($this->isPdf()?$this->verifiedPageCount:1,$this->pageMode==='all'||!$this->isPdf()?'all':$this->pageRange);}
     private function estimatedPages():int{try{return count($this->selectedPages());}catch(\Throwable){return 0;}}
     #[Computed] public function creditsCost():int{$customer=auth('app')->user();return $customer&&$this->documentFile?max(0,(int)$customer->priceCreditsFor('ocr.standard',['metric_code'=>'page','pages'=>$this->estimatedPages(),'page_count'=>$this->estimatedPages(),'files'=>1])):0;}
     #[Computed] public function currentJob():?MlJob{return $this->currentJobId?MlJob::query()->with('tool')->whereKey($this->currentJobId)->where('customer_id',auth('app')->id())->where('job_kind','ocr')->where('input->v2',true)->first():null;}
@@ -132,13 +132,13 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     </div>
     @if($documentFileName)<div class="v2-ocr-file"><i class="ri-file-text-line"></i><span><strong dir="auto">{{ $documentFileName }}</strong><small>{{ number_format(($documentFileBytes??0)/1048576,1) }} MB · {{ $this->isPdf()?__('PDF document'):__('Image') }}</small></span><button wire:click="removeDocument" class="btn btn-sm btn-outline-info">{{ __('Remove') }}</button></div>@endif
     @error('documentFile')<small class="text-danger d-block mt-2">{{ $message }}</small>@enderror
-    <div id="v2-ocr-preview" class="v2-ocr-preview" wire:ignore data-thumbnails-label="{{ __('PDF thumbnails') }}" data-invalid-range-label="{{ __('Enter a valid page range.') }}" data-choose-pages-label="{{ __('Choose pages to preview.') }}" data-upload-preview-label="{{ __('Upload a document to preview.') }}" data-image-preview-label="{{ __('Image preview') }}" data-pages-selected-label="{{ __('pages selected') }}" data-all-pages-label="{{ __('All pages') }}">
+    <div id="v2-ocr-preview" data-max-pages="{{ \App\Services\OCR\OcrDocumentProbe::MAX_PAGES }}" class="v2-ocr-preview" wire:ignore data-thumbnails-label="{{ __('PDF thumbnails') }}" data-invalid-range-label="{{ __('Enter a valid page range.') }}" data-choose-pages-label="{{ __('Choose pages to preview.') }}" data-upload-preview-label="{{ __('Upload a document to preview.') }}" data-image-preview-label="{{ __('Image preview') }}" data-pages-selected-label="{{ __('pages selected') }}" data-all-pages-label="{{ __('All pages') }}">
         <div class="v2-ocr-preview-toolbar"><button id="v2-ocr-prev" type="button" class="btn btn-sm btn-outline-info">{{ __('Prev') }}</button><button id="v2-ocr-next" type="button" class="btn btn-sm btn-outline-info">{{ __('Next') }}</button><span id="v2-ocr-page-info">{{ __('Upload a document to preview.') }}</span><span id="v2-ocr-preview-selection" class="v2-ocr-preview-selection"></span><button id="v2-ocr-expand" type="button" class="btn btn-sm btn-outline-info" title="{{ __('Open fullscreen preview') }}"><i class="ri-fullscreen-line"></i></button><label>{{ __('Zoom') }} <input id="v2-ocr-zoom" type="range" min="60" max="180" value="100"></label></div>
         <div class="v2-ocr-preview-grid"><aside id="v2-ocr-thumbs"><small>{{ __('PDF thumbnails') }}</small></aside><button id="v2-ocr-stage" type="button" title="{{ __('Open fullscreen preview') }}"><div class="v2-empty-state">{{ __('Your PDF or image preview will appear here.') }}</div><canvas id="v2-ocr-canvas"></canvas><img id="v2-ocr-image" alt=""></button></div>
     </div>
     <div id="v2-ocr-modal" class="v2-ocr-modal" aria-hidden="true" wire:ignore><div class="v2-ocr-modal-content"><button id="v2-ocr-modal-close" type="button" class="btn btn-sm btn-outline-light v2-ocr-modal-close" title="{{ __('Close preview') }}"><i class="ri-close-line"></i></button><div id="v2-ocr-modal-stage"><canvas id="v2-ocr-modal-canvas"></canvas><img id="v2-ocr-modal-image" alt=""></div></div></div>
 </main>
-<aside class="v2-workspace-panel v2-ocr-options-panel"><div class="v2-panel-heading"><span>{{ __('OCR Options') }}</span><button wire:click="resetOcr" class="btn btn-sm btn-outline-info">{{ __('Reset') }}</button></div><div class="v2-ocr-option-group"><strong>{{ __('Pages') }}</strong><div class="v2-segmented"><button type="button" wire:click="$set('pageMode','all')" @class(['is-active'=>$pageMode==='all'])>{{ __('All pages') }}</button><button type="button" wire:click="$set('pageMode','custom')" @class(['is-active'=>$pageMode==='custom'])>{{ __('Custom range') }}</button></div>@if($pageMode==='custom')<input wire:model.live="pageRange" class="form-control v2-control mt-2" placeholder="1-5,8,10-12"><small>{{ __('Use commas and ranges.') }}</small>@endif</div><label class="v2-ocr-intelligent"><span><strong>{{ __('Intelligent') }} <em>{{ __('Beta') }}</em></strong><small>{{ __('Improve extracted text with AI correction.') }}</small></span><span class="v2-asr-switch"><input type="checkbox" wire:model="runLlmCorrector" role="switch" aria-label="{{ __('Enable Intelligent Correction') }}"><i></i></span></label><div class="v2-ocr-option-group"><strong>{{ __('Output Formats') }}</strong><div class="v2-ocr-format-grid"><label><input type="checkbox" wire:model="exportTxt"> TXT</label><label><input type="checkbox" wire:model="exportDocx"> DOCX</label><label><input type="checkbox" wire:model="exportMarkdown"> Markdown</label><label><input type="checkbox" wire:model="exportHtml"> HTML</label><label><input type="checkbox" wire:model="exportZip"> ZIP</label></div></div><div class="v2-editor-footer mt-3"><span>{{ __('Estimated cost') }} · {{ $documentFile?$this->estimatedPages():0 }} {{ __('pages') }}</span><span>{{ number_format($this->creditsCost) }} {{ __('credits') }}</span></div>@if($errors->any())<div class="v2-ocr-failed" role="alert"><ul class="mb-0">@foreach(array_unique($errors->all()) as $error)<li>{{ \App\Support\CustomerFacingError::message($error) }}</li>@endforeach</ul></div>@endif @if($submissionError)<div class="v2-ocr-failed" role="alert">{{ \App\Support\CustomerFacingError::message($submissionError) }}</div>@endif @php($presentation=$this->presentation)<div class="v2-create-actions"><button type="button" wire:click="submitOcr" wire:loading.attr="disabled" wire:target="submitOcr,documentFile" @disabled(!$documentFile||$presentation['is_active']) class="btn btn-info px-4"><span wire:loading.remove wire:target="submitOcr,documentFile">{{ __('Scan Document') }}</span><span wire:loading wire:target="submitOcr,documentFile">{{ __('Preparing…') }}</span></button></div>@if($presentation['is_active'])<button wire:click="cancelOcr" data-v2-confirm="{{ __('Cancel this OCR job?') }}" class="btn btn-sm btn-outline-danger mt-2">{{ __('Cancel job') }}</button>@endif</aside>
+<aside class="v2-workspace-panel v2-ocr-options-panel"><div class="v2-panel-heading"><span>{{ __('OCR Options') }}</span><button wire:click="resetOcr" class="btn btn-sm btn-outline-info">{{ __('Reset') }}</button></div><div class="v2-ocr-option-group"><strong>{{ __('Pages') }}</strong><div class="v2-segmented"><button type="button" wire:click="$set('pageMode','all')" @class(['is-active'=>$pageMode==='all'])>{{ __(':start - :end Pages', ['start' => 1, 'end' => min(\App\Services\OCR\OcrDocumentProbe::MAX_PAGES, $verifiedPageCount ?? \App\Services\OCR\OcrDocumentProbe::MAX_PAGES)]) }}</button><button type="button" wire:click="$set('pageMode','custom')" @class(['is-active'=>$pageMode==='custom'])>{{ __('Custom range') }}</button></div>@if($pageMode==='custom')<input wire:model.live="pageRange" class="form-control v2-control mt-2" placeholder="1-5,8,10-12"><small>{{ __('Use commas and ranges. Select 1 to 20 pages per job.') }}</small>@endif</div><label class="v2-ocr-intelligent"><span><strong>{{ __('Intelligent') }} <em>{{ __('Beta') }}</em></strong><small>{{ __('Improve extracted text with AI correction.') }}</small></span><span class="v2-asr-switch"><input type="checkbox" wire:model="runLlmCorrector" role="switch" aria-label="{{ __('Enable Intelligent Correction') }}"><i></i></span></label><div class="v2-ocr-option-group"><strong>{{ __('Output Formats') }}</strong><div class="v2-ocr-format-grid"><label><input type="checkbox" wire:model="exportTxt"> TXT</label><label><input type="checkbox" wire:model="exportDocx"> DOCX</label><label><input type="checkbox" wire:model="exportMarkdown"> Markdown</label><label><input type="checkbox" wire:model="exportHtml"> HTML</label><label><input type="checkbox" wire:model="exportZip"> ZIP</label></div></div><div class="v2-editor-footer mt-3"><span>{{ __('Estimated cost') }} · {{ $documentFile?$this->estimatedPages():0 }} {{ __('pages') }}</span><span>{{ number_format($this->creditsCost) }} {{ __('credits') }}</span></div>@if($errors->any())<div class="v2-ocr-failed" role="alert"><ul class="mb-0">@foreach(array_unique($errors->all()) as $error)<li>{{ \App\Support\CustomerFacingError::message($error) }}</li>@endforeach</ul></div>@endif @if($submissionError)<div class="v2-ocr-failed" role="alert">{{ \App\Support\CustomerFacingError::message($submissionError) }}</div>@endif @php($presentation=$this->presentation)<div class="v2-create-actions"><button type="button" wire:click="submitOcr" wire:loading.attr="disabled" wire:target="submitOcr,documentFile" @disabled(!$documentFile||$presentation['is_active']) class="btn btn-info px-4"><span wire:loading.remove wire:target="submitOcr,documentFile">{{ __('Scan Document') }}</span><span wire:loading wire:target="submitOcr,documentFile">{{ __('Preparing…') }}</span></button></div>@if($presentation['is_active'])<button wire:click="cancelOcr" data-v2-confirm="{{ __('Cancel this OCR job?') }}" class="btn btn-sm btn-outline-danger mt-2">{{ __('Cancel job') }}</button>@endif</aside>
 <aside class="v2-workspace-panel v2-ocr-result-panel">
     <div class="v2-panel-heading"><span>{{ __('Extracted Text') }}</span><small>{{ $this->currentJob ? ($viewingPreviousResult ? __('Previous result') : __('Current job')) : __('Extracted Text') }}</small></div>
     @if($this->currentJob)
@@ -217,6 +217,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
     let pdf = null, page = 1, scale = 1, url = null, imageUrl = null, visiblePages = [];
     const $ = id => ctx.root.querySelector(`#${id}`);
     const preview = $('v2-ocr-preview');
+    const maxPages = Number(preview.dataset.maxPages);
     const labels = {
         thumbnails: preview?.dataset.thumbnailsLabel || 'PDF thumbnails',
         invalidRange: preview?.dataset.invalidRangeLabel || 'Enter a valid page range.',
@@ -238,8 +239,9 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
             const match = part.match(/^(\d+)(?:-(\d+))?$/);
             if (!match) return [];
             const start = Number(match[1]), end = Number(match[2] || match[1]);
-            if (start < 1 || end < start || end > maximum) return [];
+            if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start || (maximum !== null && end > maximum) || end - start + 1 > maxPages) return [];
             for (let value = start; value <= end; value++) pages.add(value);
+            if (pages.size > maxPages) return [];
         }
         return [...pages].sort((a, b) => a - b);
     };
@@ -247,8 +249,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
     const selectedPreviewPages = () => {
         if (!pdf) return [];
         const custom = livewire()?.get('pageMode') === 'custom';
-        if (!custom) return Array.from({ length: Math.min(pdf.numPages, 24) }, (_, index) => index + 1);
-        return pageRange(livewire()?.get('pageRange'), pdf.numPages).slice(0, 48);
+        if (!custom) return Array.from({ length: Math.min(pdf.numPages, maxPages) }, (_, index) => index + 1);
+        return pageRange(livewire()?.get('pageRange'), pdf.numPages).slice(0, maxPages);
     };
 
     const updateSelectionLabel = () => {
@@ -260,7 +262,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
         }
         const custom = livewire()?.get('pageMode') === 'custom';
         const selected = custom ? pageRange(livewire()?.get('pageRange'), pdf.numPages) : [];
-        selection.textContent = custom ? (selected.length ? `${selected.length} ${labels.pagesSelected}` : labels.invalidRange) : `${pdf.numPages} ${labels.allPages}`;
+        selection.textContent = custom ? (selected.length ? `${selected.length} ${labels.pagesSelected}` : labels.invalidRange) : `${Math.min(pdf.numPages, maxPages)} ${labels.pagesSelected}`;
     };
 
     const render = async (pageNumber, canvas, renderScale) => {
@@ -370,14 +372,19 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4
         const version = revision;
         url = URL.createObjectURL(file);
         if (isPdf(file)) {
-            loadingTask = pdfjs.getDocument(url);
             try {
+                loadingTask = pdfjs.getDocument(url);
                 const loaded = await loadingTask.promise;
                 if (!ctx.alive() || version !== revision) { await loaded.destroy(); return; }
                 pdf = loaded;
-            } catch (_) { return; }
-            livewire()?.set('clientPdfPageCount', pdf.numPages);
-            await drawThumbnails();
+            } catch (_) {
+                // Preview support does not decide whether the server accepts a PDF.
+                if (!ctx.alive() || version !== revision) return;
+            }
+            if (pdf) {
+                livewire()?.set('clientPdfPageCount', pdf.numPages);
+                await drawThumbnails();
+            }
         } else {
             imageUrl = url;
             $('v2-ocr-image').src = url;

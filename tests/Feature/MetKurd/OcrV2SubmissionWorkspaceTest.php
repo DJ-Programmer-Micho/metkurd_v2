@@ -8,7 +8,6 @@ use App\Services\MetKurd\Jobs\OcrV2SubmissionService;
 use App\Services\MetKurd\V2\InputBoundary;
 use App\Services\OCR\OcrJobSyncService;
 use App\Services\Providers\RunPodProvider;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Process;
@@ -29,24 +28,24 @@ beforeEach(function () {
         'status' => 1, 'email_verify' => true, 'phone_verify' => true]);
     CreditWallet::updateOrCreate(['customer_id' => $this->customer->id, 'wallet_type' => 'app'],
         ['balance_credits' => 1000000, 'subscription_balance_credits' => 1000000, 'addon_balance_credits' => 0]);
-    $this->pdf = fn () => UploadedFile::fake()->create('174-pages.pdf', 1, 'application/pdf');
+    $this->pdf = fn () => \Tests\Support\PdfFixture::upload(174);
     $this->workspace = fn () => Livewire::actingAs($this->customer, 'app')->test('app::v2.pages.tools.app-ocr');
 });
 
-it('preserves all and compact custom expressions across the independently verified input boundary', function (string $range) {
+it('preserves capped default and compact custom expressions across the independently verified input boundary', function (string $range) {
     $options = app(InputBoundary::class)->document(($this->pdf)(), ['pages' => $range]);
-    expect($options['pages'])->toBe($range)->and($options['estimated_pages'])->toBe(174);
-})->with(['all', '1-174']);
+    expect($options['pages'])->toBe($range)->and($options['estimated_pages'])->toBe(20);
+})->with(['all', '1-20']);
 
-it('submits all 174 pages once with visible processing exact billing and the normal queue event', function (string $locale) {
+it('submits the first 20 pages of a 174 page PDF once with visible processing exact billing and the normal queue event', function (string $locale) {
     app()->setLocale($locale);
     Lang::addJsonPath(resource_path('lang/app'));
     $provider = Mockery::mock(RunPodProvider::class);
-    $provider->shouldReceive('runWithPolicy')->once()->with('test-ocr', Mockery::on(fn ($input) => $input['options']['pages'] === 'all'),
+    $provider->shouldReceive('runWithPolicy')->once()->with('test-ocr', Mockery::on(fn ($input) => $input['options']['pages'] === implode(',', range(1, 20))),
         ['executionTimeout' => 900000, 'ttl' => 1200000], Mockery::type('int'))->andReturn(['id' => 'remote-all-pages']);
     app()->instance(RunPodProvider::class, $provider);
     $apiBalance = CreditWallet::where('customer_id', $this->customer->id)->where('wallet_type', 'api')->value('balance_credits');
-    $cost = $this->customer->priceCreditsFor('ocr.standard', ['channel' => 'app', 'metric_code' => 'page', 'pages' => 174, 'page_count' => 174, 'files' => 1, 'file_count' => 1]);
+    $cost = $this->customer->priceCreditsFor('ocr.standard', ['channel' => 'app', 'metric_code' => 'page', 'pages' => 20, 'page_count' => 20, 'files' => 1, 'file_count' => 1]);
     $component = ($this->workspace)()->set('documentFile', ($this->pdf)())
         ->assertSet('verifiedPageCount', 174)->assertSet('pageMode', 'all')->assertSet('pageRange', '')
         ->assertSet('exportTxt', true)->assertSet('exportDocx', true)->assertSee('wire:model="exportTxt"', false)
@@ -55,8 +54,8 @@ it('submits all 174 pages once with visible processing exact billing and the nor
         ->assertSet('showJobStatus', true)->assertDispatched('metkurd:job-submitted')
         ->assertSee(__('Scanning your document…'))->assertSee(__('Current job'));
     $job = MlJob::sole();
-    expect($job->status)->toBe('running')->and($job->input['page_range'])->toBe('all')
-        ->and($job->input['pages_estimated'])->toBe(174)->and((int) $job->credits_charged)->toBe((int) $cost);
+    expect($job->status)->toBe('running')->and($job->input['page_range'])->toBe(implode(',', range(1, 20)))
+        ->and($job->input['pages_estimated'])->toBe(20)->and((int) $job->credits_charged)->toBe((int) $cost);
     $component->call('submitOcr')->assertSee(__('An OCR job is already in progress.'));
     // A stale/concurrent replay also hits the existing durable submission identity.
     $options = app(InputBoundary::class)->document(($this->pdf)(), array_merge($job->input['exports'], [
@@ -68,6 +67,30 @@ it('submits all 174 pages once with visible processing exact billing and the nor
     expect(CreditWallet::where('customer_id', $this->customer->id)->where('wallet_type', 'api')->value('balance_credits'))->toBe($apiBalance);
 })->with(['en', 'ar', 'ku']);
 
+it('accepts an unknown total and submits only the bounded default without inventing a verified count', function () {
+    Process::fake(['*' => Process::result(exitCode: 127)]);
+    app()->instance(App\Services\OCR\OcrDocumentProbe::class, new class extends App\Services\OCR\OcrDocumentProbe
+    {
+        protected function structuralPageCount(string $path): ?int
+        {
+            return null;
+        }
+    });
+    $this->mock(RunPodProvider::class)->shouldReceive('runWithPolicy')->once()
+        ->with('test-ocr', Mockery::on(fn ($input) => $input['options']['pages'] === implode(',', range(1, 20))), Mockery::type('array'), Mockery::type('int'))
+        ->andReturn(['id' => 'unknown-count-bounded']);
+    ($this->workspace)()->set('documentFile', \Tests\Support\PdfFixture::upload(10, true))
+        ->assertHasNoErrors()->assertSet('verifiedPageCount', null)->assertSee('1 - 20 Pages')
+        ->assertSee('data-max-pages="20"', false)->call('submitOcr')->assertHasNoErrors();
+    expect(MlJob::sole()->input['pages_estimated'])->toBe(20);
+});
+
+it('defaults the visible range to the smaller of the actual total and twenty', function (int $pages) {
+    Process::fake(['*' => Process::result(output: "Pages: $pages\n")]);
+    ($this->workspace)()->set('documentFile', \Tests\Support\PdfFixture::upload($pages))
+        ->assertHasNoErrors()->assertSet('verifiedPageCount', $pages)->assertSee('1 - '.min(20, $pages).' Pages');
+})->with([1, 7, 10, 20, 100]);
+
 it('requires a valid custom range and clears stale errors when switching modes', function (string $range) {
     $submission = Mockery::mock(OcrV2SubmissionService::class);
     $submission->shouldNotReceive('submit');
@@ -78,7 +101,7 @@ it('requires a valid custom range and clears stale errors when switching modes',
     $component->set('pageMode', 'all')->assertSet('pageRange', '')->assertHasNoErrors()->assertSet('submissionError', '')
         ->assertDontSee('role="alert"', false);
     expect(MlJob::count())->toBe(0)->and(CreditLedger::where('direction', 'debit')->count())->toBe(0);
-})->with(['', 'bad', '0', '175', '5-1', '1,,3']);
+})->with(['', 'bad', '0', '175', '5-1', '1,,3', '1-21']);
 
 it('submits validated custom ranges and bills unique selected pages', function (string $range, int $count, string $sent) {
     $provider = Mockery::mock(RunPodProvider::class);
@@ -90,7 +113,7 @@ it('submits validated custom ranges and bills unique selected pages', function (
     $job = MlJob::sole();
     $cost = $this->customer->priceCreditsFor('ocr.standard', ['channel' => 'app', 'metric_code' => 'page', 'pages' => $count, 'page_count' => $count, 'files' => 1, 'file_count' => 1]);
     expect($job->input['pages_estimated'])->toBe($count)->and((int) $job->credits_charged)->toBe((int) $cost);
-})->with([['1', 1, '1'], ['1-5', 5, '1,2,3,4,5'], ['1-5,8,10-12', 9, '1,2,3,4,5,8,10,11,12'], ['1-5,3,5', 5, '1,2,3,4,5'], ['1-174', 174, implode(',', range(1, 174))]]);
+})->with([['1', 1, '1'], ['1-5', 5, '1,2,3,4,5'], ['1-5,8,10-12', 9, '1,2,3,4,5,8,10,11,12'], ['1-5,3,5', 5, '1,2,3,4,5'], ['21-40', 20, implode(',', range(21, 40))]]);
 
 it('shows validation and service blockers beside Scan Document in each locale', function (string $locale) {
     app()->setLocale($locale);

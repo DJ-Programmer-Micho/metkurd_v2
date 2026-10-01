@@ -28,7 +28,7 @@ class OcrV2SubmissionService
         $probe = app(\App\Services\OCR\OcrDocumentProbe::class);
         $selected = $probe->selectedPages($probe->pageCount($file), (string) $options['pages']);
         $options['estimated_pages'] = count($selected);
-        $options['pages'] = $options['pages'] === 'all' ? 'all' : implode(',', $selected);
+        $options['pages'] = implode(',', $selected);
         $action = 'ocr.standard';
         $credits = max(0, (int) $customer->priceCreditsFor($action, [
             'channel' => $context->channel(),

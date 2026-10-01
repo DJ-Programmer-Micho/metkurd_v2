@@ -1,5 +1,16 @@
 # MetKurd MCP V2
 
+## OCR page selection — 2026-10-01
+
+MCP OCR uses the same Laravel InputBoundary/native submission limit as App/API:
+1–20 unique requested pages. `all`/omitted pages means the first 20 or fewer when
+the document total is known; custom ranges such as 21-40 remain supported. Upload
+handoff accepts digital and scanned PDFs. Poppler and the PHP structural fallback
+never require extractable text; unknown totals remain unknown. The tool schema
+now describes this limit. Existing ownership, API credits and job lifecycle stay
+in force; see SERVICES.md for unknown-count acceptance limits.
+
+
 Source implementation: 2026-09-26. **Disabled by default; no deployment or external
 client acceptance is implied.** This document is the engineering contract for the
 remote external-client interface. See [API V2](API-V2.md) for the shared native

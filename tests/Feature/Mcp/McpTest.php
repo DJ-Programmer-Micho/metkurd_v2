@@ -511,6 +511,25 @@ function mcpAllScopes($test): void
     $test->principal = new App\Services\Mcp\McpConnectionPrincipal($test->connection->id, $scopes);
 }
 
+it('enforces the twenty page OCR limit through MCP upload handoff before reserving credits', function () {
+    mcpAllScopes($this);
+    config(['runpod.endpoints.kocr_v2' => 'test-ocr']);
+    Illuminate\Support\Facades\Process::fake(['*' => Illuminate\Support\Facades\Process::result(output: "Pages: 100\n", exitCode: 0)]);
+    $files = app(App\Services\Mcp\Files::class);
+    $session = $files->createUpload($this->principal, ['purpose' => 'ocr', 'request_id' => (string) Illuminate\Support\Str::uuid()]);
+    $record = $files->upload($this->principal, $session['upload_session_id'], \Tests\Support\PdfFixture::upload(100));
+    $args = ['request_id' => (string) Illuminate\Support\Str::uuid(), 'file_id' => $record->id, 'pages' => '1-21'];
+    $tools = app(App\Services\Mcp\Tools::class);
+    expect($tools->call($this->principal, 'ocr', $args)->isError)->toBeTrue();
+    expect(MlJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0);
+    $this->mock(RunPodProvider::class)->shouldReceive('runWithPolicy')->once()
+        ->with('test-ocr', Mockery::on(fn ($input) => $input['options']['pages'] === implode(',', range(21, 40))), Mockery::type('array'), Mockery::type('int'))->andReturn(['id' => 'mcp-twenty-pages']);
+    $result = $tools->call($this->principal, 'ocr', array_replace($args, ['pages' => '21-40']));
+    expect($result->structuredContent)->not->toHaveKey('error');
+    expect($result->isError)->toBeFalse();
+    expect(MlJob::sole()->input['pages_estimated'])->toBe(20);
+});
+
 it('maps every remaining processing tool to one native API job and honors replay', function ($tool, $action, $outcome) {
     mcpAllScopes($this);
     config(['runpod.endpoints.stem' => 'test-stem', 'runpod.endpoints.kocr_v2' => 'test-ocr', 'runpod.endpoints.tashkeel_v1' => 'test-harakat']);
@@ -530,7 +549,7 @@ it('maps every remaining processing tool to one native API job and honors replay
             'clone_voice', 'theta' => 'voice_reference', 'transcribe' => 'transcription', default => $tool
         };
         $session = $files->createUpload($this->principal, ['purpose' => $purpose, 'request_id' => (string) Illuminate\Support\Str::uuid()]);
-        $file = $tool === 'ocr' ? UploadedFile::fake()->createWithContent('document.pdf', "%PDF-1.4\n%test\n") : UploadedFile::fake()->createWithContent('input.wav', mcpWav());
+        $file = $tool === 'ocr' ? \Tests\Support\PdfFixture::upload(2) : UploadedFile::fake()->createWithContent('input.wav', mcpWav());
         $record = $files->upload($this->principal, $session['upload_session_id'], $file);
         $args += in_array($tool, ['clone_voice', 'theta']) ? ['reference_id' => $record->id] : ['file_id' => $record->id];
     }

@@ -277,9 +277,12 @@ Livewire overrides, PHP upload_max_filesize/post_max_size and ingress limits.
 No production infrastructure limits, migration status or worker images were
 verified by this repository task.
 
-PDF OCR now requires a maintained Poppler pdfinfo executable on each application
-server, selectable with OCR_PDFINFO_BINARY. Its process is argument-array invoked
-with a 30-second timeout; unavailable/unreadable page counts reject the upload
-before debit. No binary was installed on production. Verify PDF probing on the
+PDF OCR prefers a maintained Poppler pdfinfo executable, selectable with
+OCR_PDFINFO_BINARY, invoked with an argument array and a 30-second timeout. The
+locked Composer dependency smalot/pdfparser supplies a structural page-count
+fallback (image content retention disabled, per-stream decode memory bounded).
+Run the normal composer install when shipping this source. Inspection failure
+alone is not an unreadable-PDF rejection; unknown totals use a maximum 20-page
+selection. Corrupt/password-blocked files are rejected before debit. No binary was installed on production. Verify PDF probing on the
 actual temporary-upload disk. Shared-disk uploads are streamed into a bounded
 local temporary file for probing and removed afterward.

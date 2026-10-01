@@ -22,7 +22,7 @@ function harness() {
         }},
     };
     const api = installNavigation(win, doc);
-    const mount = () => { root = {isConnected: true, dataset: {maxUploadKib: '102400'}, closest: () => ({getAttribute: () => 'current'})}; return root; };
+    const mount = () => { root = {isConnected: true, dataset: {maxUploadKib: '102400', maxPages: '20'}, closest: () => ({getAttribute: () => 'current'})}; return root; };
     const emit = (event, detail) => (events.get(event) || []).forEach(cb => cb({detail}));
     const flush = async () => { const pending = [...frames.values()]; frames.clear(); pending.forEach(cb => cb()); await new Promise(resolve => setImmediate(resolve)); };
     return {api, win, doc, mount, emit, flush, hooks, subscriptions, events, color: () => color};
@@ -72,7 +72,7 @@ test('progress follows destination including history navigation and keeps unknow
 
 test('plugins wait for all library globals, register once and omit unused image preview', async () => {
     const scripts = [], registrations = [];
-    const win = {}, doc = {createElement: () => ({dataset: {maxUploadKib: '102400'}}), head: {append: script => scripts.push(script)}};
+    const win = {}, doc = {createElement: () => ({dataset: {maxUploadKib: '102400', maxPages: '20'}}), head: {append: script => scripts.push(script)}};
     globalThis.window = win; globalThis.document = doc;
     try {
         const first = filePond(), second = filePond();
@@ -92,7 +92,7 @@ test('plugins wait for all library globals, register once and omit unused image 
 test('navigation cancels an in-flight temporary upload and ignores its late callbacks', () => {
     let active = true, args, cancelled = 0, loaded = 0, destroyed = 0, options;
     const cleanups = [], wire = {upload(...input) {args = input;}, cancelUpload() {cancelled++;}};
-    const input = {dataset: {maxUploadKib: '102400'}, isConnected: true};
+    const input = {dataset: {maxUploadKib: '102400', maxPages: '20'}, isConnected: true};
     const ctx = {root: {querySelector: () => input}, component: () => active ? wire : null, alive: () => active, on() {}, cleanup: cb => cleanups.push(cb)};
     const ui = mountUpload(ctx, {input: '#file', property: 'audioFile'}, {FilePond: {find() {}, create(_, config) {options = config; return {destroy() {destroyed++;}};}}});
     options.server.process('', {}, {}, () => loaded++, assert.fail, assert.fail, () => {});
@@ -101,7 +101,7 @@ test('navigation cancels an in-flight temporary upload and ignores its late call
 });
 
 test('a FilePond replacement element survives Livewire morphs without recreating the upload', () => {
-    const field = {dataset: {maxUploadKib: '102400'}, isConnected: true}, wrapper = {isConnected: true};
+    const field = {dataset: {maxUploadKib: '102400', maxPages: '20'}, isConnected: true}, wrapper = {isConnected: true};
     let node = field, creates = 0, destroyed = 0;
     const ctx = {root: {querySelector: () => node}, component: () => ({}), alive: () => true, on() {}, cleanup() {}};
     const ui = mountUpload(ctx, {input: '#file'}, {FilePond: {find() {}, create() {
@@ -126,7 +126,7 @@ test('OCR unsubscribes stale clear handlers and rejects a PDF finishing after na
     const h = harness(); let resolvePdf, destroyed = 0, uploads = 0;
     const root = h.mount(), nodes = new Map(), handlers = new Map();
     root.querySelector = selector => {
-        if (!nodes.has(selector)) nodes.set(selector, {dataset: {maxUploadKib: '102400'}, style: {}, classList: {remove() {},toggle() {}}, setAttribute() {},
+        if (!nodes.has(selector)) nodes.set(selector, {dataset: {maxUploadKib: '102400', maxPages: '20'}, style: {}, classList: {remove() {},toggle() {}}, setAttribute() {},
             addEventListener(name, cb) {handlers.set(selector+name, cb);}, removeEventListener(name) {handlers.delete(selector+name);}});
         return nodes.get(selector);
     };
@@ -142,4 +142,39 @@ test('OCR unsubscribes stale clear handlers and rejects a PDF finishing after na
     stale(); resolvePdf({destroy: async () => {destroyed++;}}); await loading;
     assert.equal(h.subscriptions.get('v2-ocr-document-cleared').size, 0);
     assert.equal(uploads, 0); assert.ok(destroyed > 0);
+});
+
+test('OCR uploads valid PDF bytes even when the optional browser preview fails', async () => {
+    const source = readFileSync(new URL('../../resources/views/app/v2/pages/tools/⚡app-ocr.blade.php', import.meta.url), 'utf8')
+        .match(/<script type="module" data-navigate-once>([\s\S]*?)<\/script>/)[1].replace(/import \* as pdfjs[^;]+;/, '');
+    const h = harness(); let uploads = 0;
+    const root = h.mount(), nodes = new Map(), handlers = new Map();
+    root.querySelector = selector => {
+        if (!nodes.has(selector)) nodes.set(selector, {dataset: {maxUploadKib: '102400', maxPages: '20'}, style: {}, classList: {remove() {},toggle() {}}, setAttribute() {},
+            addEventListener(name, cb) {handlers.set(selector+name, cb);}, removeEventListener(name) {handlers.delete(selector+name);}});
+        return nodes.get(selector);
+    };
+    h.win.Livewire.find = () => ({cancelUpload() {}, upload() {uploads++;}});
+    vm.runInNewContext(source, {window: h.win, document: {addEventListener() {}, removeEventListener() {}},
+        navigator: {}, URL: {createObjectURL: () => 'blob:fixture', revokeObjectURL() {}},
+        pdfjs: {GlobalWorkerOptions: {}, getDocument: () => ({promise: Promise.reject(new Error('Unsupported preview')), destroy() {}})}});
+    await h.flush();
+    await handlers.get('#v2-ocr-filechange')({target: {files: [{name:'fixture.pdf',type:'application/pdf'}]}});
+    assert.equal(uploads, 1);
+});
+
+test('OCR browser range selection matches the 1 to 20 page backend contract', () => {
+    const view = readFileSync(new URL('../../resources/views/app/v2/pages/tools/⚡app-ocr.blade.php', import.meta.url), 'utf8');
+    const body = view.match(/const pageRange = ([\s\S]*?);\r?\n\s*const selectedPreviewPages/)[1];
+    const select = vm.runInNewContext(`const maxPages = 20; (${body})`);
+    for (const total of [null, 100]) {
+        assert.equal(select('1-20', total).length, 20);
+        assert.equal(select('1-21', total).length, 0);
+        assert.equal(select('21-40', total).length, 20);
+        assert.equal(select('1-20,21', total).length, 0);
+        assert.equal(select('0', total).length, 0);
+        assert.equal(select('5-1', total).length, 0);
+    }
+    assert.equal(select('1-10', 10).length, 10);
+    assert.equal(select('1-11', 10).length, 0);
 });

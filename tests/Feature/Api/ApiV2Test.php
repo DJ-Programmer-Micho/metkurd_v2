@@ -279,7 +279,7 @@ it('counts OCR pages on the server validates ranges and preserves requested expo
     $provider = Mockery::mock(RunPodProvider::class);
     $provider->shouldReceive('runWithPolicy')->once()->andReturn(['id' => 'remote-ocr']);
     app()->instance(RunPodProvider::class, $provider);
-    $file = UploadedFile::fake()->create('document.pdf', 1, 'application/pdf');
+    $file = \Tests\Support\PdfFixture::upload(4);
     $this->postJson('/api/v2/ocr', ['file' => $file, 'pages' => '1-5'], $this->headers)->assertUnprocessable();
     expect(ApiJob::count())->toBe(0);
     $this->postJson('/api/v2/ocr', ['file' => $file, 'pages' => '1-3', 'estimated_pages' => 1, 'page_count' => 1, 'exports' => ['txt', 'html']], $this->headers)->assertAccepted();
@@ -287,6 +287,18 @@ it('counts OCR pages on the server validates ranges and preserves requested expo
     expect($job->status)->toBe('running')->and(data_get($job->input, 'page_range'))->toBe('1,2,3')
         ->and(data_get($job->input, 'exports.export_html'))->toBeTrue()->and(data_get($job->input, 'exports.export_docx'))->toBeFalse();
     expect(ApiCreditReservation::first()->amount)->toBe($this->customer->priceCreditsFor('ocr.standard', ['channel' => 'api', 'metric_code' => 'page', 'pages' => 3, 'page_count' => 3, 'files' => 1, 'file_count' => 1]));
+});
+
+it('enforces the twenty page OCR limit for API requests before reserving credits', function () {
+    config()->set('runpod.endpoints.kocr_v2', 'test-ocr');
+    Illuminate\Support\Facades\Process::fake(['*' => Illuminate\Support\Facades\Process::result(output: "Pages: 100\n", exitCode: 0)]);
+    $provider = $this->mock(RunPodProvider::class);
+    $provider->shouldReceive('runWithPolicy')->once()->with('test-ocr', Mockery::on(fn ($input) => $input['options']['pages'] === implode(',', range(21, 40))), Mockery::type('array'), Mockery::type('int'))->andReturn(['id' => 'api-twenty-pages']);
+    $file = \Tests\Support\PdfFixture::upload(100);
+    $this->postJson('/api/v2/ocr', ['file' => $file, 'pages' => '1-21'], $this->headers)->assertUnprocessable();
+    expect(MlJob::count())->toBe(0)->and(ApiCreditReservation::count())->toBe(0);
+    $this->postJson('/api/v2/ocr', ['file' => $file, 'pages' => '21-40'], $this->headers)->assertAccepted();
+    expect(MlJob::sole()->input['pages_estimated'])->toBe(20);
 });
 
 it('documents OCR local uploads in five clients using authoritative formats and limits', function () {
@@ -354,7 +366,7 @@ it('keeps OCR uploaded bytes server signed URLs billing and persisted authentica
     }), ['executionTimeout' => 900000, 'ttl' => 1200000], Mockery::type('int'))->andReturn(['id' => 'remote-ocr-docs']);
     $provider->shouldReceive('status')->once()->andReturn(['status' => 'COMPLETED', 'output' => ['text' => 'Extracted document text']]);
     app()->instance(RunPodProvider::class, $provider);
-    $file = UploadedFile::fake()->create('document.pdf', 1, 'application/pdf');
+    $file = \Tests\Support\PdfFixture::upload(4);
     $payload = ['file' => $file, 'pages' => '1', 'exports' => ['txt'], 'intelligent' => '1', 'storage_mode' => 'temporary',
         'file_url' => 'https://untrusted.example/document.pdf', 'job_id' => 'foreign-job', 'options' => ['dpi' => 999]];
     $accepted = $this->postJson('/api/v2/ocr', $payload, $this->headers)->assertAccepted()->assertJsonPath('result', null);

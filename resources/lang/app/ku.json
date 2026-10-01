@@ -1835,5 +1835,11 @@
     "View result": "بینینی ئەنجام",
     "No diacritization history yet.": "هێشتا مێژووی حەرەکەدانان نییە.",
     "Arabic diacritization could not be completed. Please try again.": "حەرەکەدانانی دەقی عەرەبی تەواو نەبوو. تکایە دووبارە هەوڵ بدەوە.",
-    "Maximum file size is :size MiB": "زۆرترین قەبارەی پەڕگە :size MiB"
+    "Maximum file size is :size MiB": "زۆرترین قەبارەی پەڕگە :size MiB",
+    ":start - :end Pages": ":start - :end لاپەڕە",
+    "Use commas and ranges. Select 1 to 20 pages per job.": "کۆما و مەودا بەکاربهێنە. بۆ هەر کارێک لە ١ بۆ ٢٠ لاپەڕە هەڵبژێرە.",
+    "Choose between 1 and 20 pages per OCR job.": "بۆ هەر کارێکی OCR لە ١ بۆ ٢٠ لاپەڕە هەڵبژێرە.",
+    "This PDF is invalid or corrupt. Please upload a valid PDF.": "ئەم فایلەی PDF نادروستە یان تێکچووە. تکایە فایلێکی PDF دروست باربکە.",
+    "This PDF is password-protected. Please upload an unlocked PDF.": "ئەم فایلەی PDF بە وشەی نهێنی پارێزراوە. تکایە وەشانێکی بێ قوفڵ باربکە.",
+    "OCR supports 1 to 20 selected pages per job, including ranges in longer PDFs. Supported audio formats are WAV, MP3, M4A, AAC, OGG, WebM and FLAC; Vector excludes FLAC.": "OCR بۆ هەر کارێک لە ١ بۆ ٢٠ لاپەڕەی هەڵبژێردراو پشتگیری دەکات، لەناو PDFی درێژتریش. شێوەکانی دەنگ WAV، MP3، M4A، AAC، OGG، WebM و FLACن؛ Vector پشتگیری FLAC ناکات."
 }

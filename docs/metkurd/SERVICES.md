@@ -337,15 +337,27 @@ See [lifecycle](GPU-JOB-LIFECYCLE.md).
 
 ## OCR
 
-The view validates documents (100 MB), verifies PDF pages with OcrDocumentProbe,
-and selects bounded, deduplicated page ranges and exports. Submission verifies
-the count again before charging ocr.standard; browser page counts are preview
-metadata only. pdfinfo must be available (OCR_PDFINFO_BINARY override); unreadable,
-unverified or over-3888-page PDFs fail before billing. Image inputs retain the
-existing one-page contract. The input boundary preserves the validated `all` or
-compact custom range expression until submission's independent probe: expanding
-174 pages into a comma-separated list here previously exceeded the range-input
-length limit at that second validation. All-pages mode excludes custom-range
+V2 App/API/MCP OCR accepts digital and scanned PDFs up to 100 MiB. PDF signature
+and basic completeness checks precede Poppler `pdfinfo`; the PHP structural parser
+`smalot/pdfparser` counts page objects if Poppler fails. Neither path requires
+extractable text. Read-password and clearly corrupt PDFs produce specific errors.
+Unsupported inspection may return null, never a fabricated total. Browser PDF.js
+preview failure no longer prevents the upload reaching server validation.
+
+`OcrDocumentProbe::MAX_PAGES` is a selected-page limit of 20, not a document-length
+limit. Default/`all` means pages 1 through min(20, known total), or 1-20 when unknown.
+Custom ranges such as 21-40 remain supported, with 1-20 unique selected pages and
+known-total bounds. Both InputBoundary and the native submission revalidate;
+submission always sends an explicit bounded list, never worker `all`. Browser
+page counts are preview-only. Image inputs retain the one-page contract.
+The existing price/charge/reservation lifecycle uses the requested selected-page
+count (up to 20 when total is unknown); no new post-result settlement was added.
+An unknown total is not evidence of 20 physical pages. Runtime handling of a
+shorter document with an unknown count still needs worker acceptance; no worker
+source was supplied or endpoint called. The structural fallback handles ordinary
+short digital/scanned PDFs without relying on that unknown-count path.
+
+All-pages mode excludes custom-range
 validation; custom mode requires a valid range. The workspace renders field and
 service errors beside Scan Document and clears stale range errors when switching
 modes. Its selectable exports are TXT, DOCX, Markdown, HTML and ZIP, with TXT and

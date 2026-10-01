@@ -1,5 +1,20 @@
 # Architectural and behavioral decisions
 
+## 2026-10-01 — OCR structural acceptance and twenty-page jobs
+
+App, API and MCP share a 1–20 selected-page limit, with default 1–20 clipped to
+known shorter totals. Longer PDFs and custom ranges remain supported. Poppler
+failures fall back to a locked PHP structural parser without requiring PDF text;
+unknown totals are not fabricated. Preview failure does not block upload. Jobs
+send explicit page selections through the existing adapter, pricing, reservations,
+storage and idempotency path. No migration, production access or endpoint call.
+See SERVICES.md for unknown-total billing and remaining worker acceptance limits.
+Verification: 103 distinct focused PHP tests and 27 frontend tests passed; Vite
+build, focused lint/Pint and diff checks passed. Real local Poppler also counted
+10/100-page digital and 7-page image-only fixtures correctly. No live worker
+acceptance is implied by mocked submission tests.
+
+
 ## 2026-10-01 — V2 upload byte boundary alignment
 
 V2 FilePond now receives integer bytes derived from InputBoundary's server-rendered

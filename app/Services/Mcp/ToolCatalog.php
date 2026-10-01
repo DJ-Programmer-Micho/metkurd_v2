@@ -36,7 +36,7 @@ class ToolCatalog
         foreach (['transcribe' => 'transcriptions', 'caption' => 'captions', 'ocr' => 'ocr', 'stem' => 'stem'] as $name => $service) {
             $properties = ['request_id' => $call, 'file_id' => $file];
             $properties += match ($service) {
-                'ocr' => ['pages' => $string + ['maxLength' => 255], 'exports' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => \App\Services\CustomerApi\V2\ApiSubmission::OCR_EXPORTS], 'maxItems' => 5], 'intelligent' => $boolean],
+                'ocr' => ['pages' => $string + ['maxLength' => 255, 'description' => 'Select 1 to 20 unique pages, for example 1-10 or 21-40. Omit or use all for the first 20 pages, or fewer in a shorter document.'], 'exports' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => \App\Services\CustomerApi\V2\ApiSubmission::OCR_EXPORTS], 'maxItems' => 5], 'intelligent' => $boolean],
                 'stem' => ['mode' => ['type' => 'integer', 'enum' => [2, 4]]],
                 default => ['language' => $language, 'intelligent' => $boolean],
             };
