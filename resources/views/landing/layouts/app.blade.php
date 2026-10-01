@@ -346,13 +346,6 @@
     <meta name="twitter:image" content="{{ $twitterImage }}">
     <meta name="twitter:image:alt" content="{{ $pageImageAlt }}">
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Arabic:wght@400;500;700&display=swap"
-        rel="stylesheet"
-    >
-
     {{-- JSON-LD helps search engines understand the brand, website, and current localized page. --}}
     <script type="application/ld+json">
         @json($structuredData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_PRETTY_PRINT)

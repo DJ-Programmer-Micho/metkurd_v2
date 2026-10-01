@@ -1,5 +1,6 @@
 
 :root{
+  --vz-font-sans-serif:"Segoe UI", Arial, sans-serif;
   --bg:#07111f;
   --bg-soft:#0b1730;
   --bg-card:rgba(255,255,255,.08);
@@ -27,7 +28,7 @@ html{
   overflow-x:hidden;
 }
 body{
-  font-family:'Inter',system-ui,sans-serif;
+  font-family:"Segoe UI", Arial, sans-serif;
   background:
     radial-gradient(circle at 15% 20%, rgba(124,92,255,.25), transparent 22%),
     radial-gradient(circle at 85% 15%, rgba(6,214,255,.18), transparent 20%),
@@ -39,6 +40,7 @@ body{
   max-width:100%;
 }
 .h1, .h2, .h3, .h4, .h5, .h6, h1, h2, h3, h4, h5, h6 {
+  font-family:"Segoe UI", Arial, sans-serif;
   color: var(--text);
 }
 [data-theme="light"] body{
@@ -392,7 +394,7 @@ a{text-decoration:none}
 .form-control:focus,.form-select:focus{box-shadow:0 0 0 .2rem rgba(124,92,255,.18);border-color:rgba(124,92,255,.55);background:rgba(255,255,255,.05);color:var(--text)}
 .badge-soft{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .7rem;border-radius:999px;background:rgba(67,231,168,.12);color:#86f2c7;border:1px solid rgba(67,231,168,.18)}
 .kbd-soft{padding:.25rem .55rem;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid var(--stroke);font-size:.85rem;color:var(--muted)}
-.landing-rtl{font-family:'Noto Sans Arabic','Inter',system-ui,sans-serif}
+.landing-rtl{font-family:"Segoe UI", Arial, sans-serif}
 .landing-rtl .step-item{flex-direction:row-reverse;text-align:right}
 .landing-rtl .step-item .step-number{direction:ltr;unicode-bidi:isolate}
 .landing-rtl .check-list li{text-align:right}
@@ -634,7 +636,7 @@ a{text-decoration:none}
   margin:0;
   white-space:pre-wrap;
   word-break:break-word;
-  font:500 .93rem/1.75 'Inter',system-ui,sans-serif;
+  font:500 .93rem/1.75 "Segoe UI", Arial, sans-serif;
   color:var(--text);
   background:rgba(5,10,20,.5);
   border:1px solid var(--stroke);
@@ -987,7 +989,7 @@ a{text-decoration:none}
   white-space:pre-wrap;
   word-break:break-word;
   overflow-wrap:anywhere;
-  font:500 .93rem/1.75 'Inter',system-ui,sans-serif;
+  font:500 .93rem/1.75 "Segoe UI", Arial, sans-serif;
   color:var(--text);
   background:rgba(7,14,26,.55);
   border:1px solid var(--stroke);
