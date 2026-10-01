@@ -26,7 +26,8 @@ class ProcessFibPaymentStatus implements ShouldQueue
 
     public function handle(ConfirmFibPayment $confirm, PaymentEventRecorder $events): void
     {
-        $payment = null;
+        $payment = Payment::query()->where('provider', 'fib')->where('provider_object_type', $this->providerObjectType)
+            ->where($this->providerObjectType === 'subscription' ? 'fib_subscription_id' : 'fib_payment_id', $this->providerReference)->first();
 
         try {
             $objectType = PaymentProviderObjectType::from($this->providerObjectType);
@@ -51,18 +52,7 @@ class ProcessFibPaymentStatus implements ShouldQueue
                 return;
             }
 
-            $events->record($payment, [
-                'event_type' => 'callback_processed',
-                'source' => $this->source,
-                'event_key' => $this->eventKey('processed'),
-                'before_status' => $payment->status->value,
-                'after_status' => $payment->status->value,
-                'payload' => $this->payload,
-                'meta' => [
-                    'provider_object_type' => $objectType->value,
-                    'internal_status' => $payment->internal_status?->value,
-                ],
-            ]);
+            // Successful GET transitions are recorded by SyncFibCheckoutStatus; no callback echo event.
         } catch (\Throwable $exception) {
             Log::error('Queued FIB callback processing failed.', [
                 'provider_object_type' => $this->providerObjectType,
@@ -71,20 +61,25 @@ class ProcessFibPaymentStatus implements ShouldQueue
                 'message' => $exception->getMessage(),
             ]);
 
-            $events->record($payment, [
-                'event_type' => 'callback_failed',
-                'source' => $this->source,
-                'event_key' => $this->eventKey('failed'),
-                'fib_payment_id' => $this->providerObjectType === PaymentProviderObjectType::PAYMENT->value ? $this->providerReference : null,
-                'fib_subscription_id' => $this->providerObjectType === PaymentProviderObjectType::SUBSCRIPTION->value ? $this->providerReference : null,
-                'before_status' => $payment?->status?->value,
-                'after_status' => $payment?->status?->value,
-                'payload' => $this->payload,
-                'meta' => [
-                    'provider_object_type' => $this->providerObjectType,
-                    'message' => $exception->getMessage(),
-                ],
-            ]);
+            if ($payment instanceof Payment) {
+                app(\App\Services\Payments\PaymentSyncFailureService::class)->captureCallbackFailure($payment, $exception, $this->source);
+            } else {
+                $events->record($payment, [
+                    'event_type' => 'callback_failed',
+                    'source' => $this->source,
+                    'event_key' => $this->eventKey('failed'),
+                    'fib_payment_id' => $this->providerObjectType === PaymentProviderObjectType::PAYMENT->value ? $this->providerReference : null,
+                    'fib_subscription_id' => $this->providerObjectType === PaymentProviderObjectType::SUBSCRIPTION->value ? $this->providerReference : null,
+                    'before_status' => $payment?->status?->value,
+                    'after_status' => $payment?->status?->value,
+                    'payload' => $this->payload,
+                    'meta' => [
+                        'provider_object_type' => $this->providerObjectType,
+                        'message' => $exception->getMessage(),
+                    ],
+                ]);
+
+            }
 
             throw $exception;
         }

@@ -1,5 +1,17 @@
 # Storage, cache and history
 
+## V2 checkout QR cache — 2026-10-01
+
+New V2 Payment QR images use a disposable private cache scoped to customer and
+Payment UUID, never the Payments table or a SQL-backed cache. The owned checkout
+page retains its existing image safety checks and app-link/readable-code fallbacks.
+QR TTL follows the known checkout deadline exactly, including lifetimes over 24 hours;
+it never uses the subscription's paid term. No deadline means no cached QR.
+Redis/Memcached/file/array stores are allowed; database/other cache drivers fall back
+to the private file store. QR loss is a presentation fallback, never a reason to
+recreate or poll a paid provider object. See [limits, expiry and multi-node
+considerations](PAYMENT-PERSISTENCE-V2.md#qr-display-without-mysql-image-persistence).
+
 ## API Theta references and Harakat results — 2026-09-26
 
 `POST /api/v2/references` uses the existing MultiSpeakerReferences uploader with

@@ -34,7 +34,9 @@ final class FibProviderProvenance
         }
         // These are FIB-returned checkout links, not merchant references or callback URLs.
         // Exact HTTPS hosts only. Never publish the private path/query/QR code.
-        $url = is_string($response['appLink'] ?? null) ? parse_url($response['appLink']) : false;
+        $url = $payment->usesCompactPersistence() && is_string($response['appLinkHost'] ?? null)
+            ? ['scheme' => 'https', 'host' => $response['appLinkHost']]
+            : (is_string($response['appLink'] ?? null) ? parse_url($response['appLink']) : false);
         if (! $url || ($url['scheme'] ?? null) !== 'https' || isset($url['user']) || isset($url['pass']) || isset($url['port'])) {
             return $unknown;
         }
@@ -44,7 +46,9 @@ final class FibProviderProvenance
             default => 'unknown_environment',
         };
         if ($classification === 'unknown_environment'
-            || (data_get($payment->provider_links, 'app') !== null && data_get($payment->provider_links, 'app') !== $response['appLink'])) {
+            || (data_get($payment->provider_links, 'app') !== null && ($payment->usesCompactPersistence()
+                ? parse_url(data_get($payment->provider_links, 'app'), PHP_URL_HOST) !== $url['host']
+                : data_get($payment->provider_links, 'app') !== $response['appLink']))) {
             return $unknown;
         }
 

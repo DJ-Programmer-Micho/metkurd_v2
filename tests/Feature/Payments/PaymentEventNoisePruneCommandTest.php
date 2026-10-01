@@ -120,19 +120,19 @@ it('keeps only the newest noisy rows per group when forced', function () {
         ->all())->toBe(collect($expectedRemainingIds)->sort()->values()->all());
 });
 
-it('refuses to prune protected audit event types', function () {
+it('refuses to prune protected audit event types', function (string $type) {
     $payment = pruneNoisePayment(pruneNoiseCustomer());
-    pruneNoiseEvent($payment, 'callback_received', '1', 'fib_callback');
+    pruneNoiseEvent($payment, $type, '1', 'fib_callback');
 
     $this->artisan('payments:prune-event-noise', [
-        '--event' => 'callback_received',
+        '--event' => $type,
         '--dry-run' => true,
     ])
-        ->expectsOutputToContain('Refusing to prune protected audit event type [callback_received].')
+        ->expectsOutputToContain('Refusing to prune protected audit event type ['.$type.'].')
         ->assertExitCode(1);
 
     expect(PaymentEvent::query()
         ->where('payment_id', $payment->id)
-        ->where('event_type', 'callback_received')
+        ->where('event_type', $type)
         ->count())->toBe(1);
-});
+})->with(['callback_received', 'provider_status_changed', 'provider_collection_verified', 'provider_evidence_changed']);

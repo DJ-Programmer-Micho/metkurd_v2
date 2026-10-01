@@ -22,12 +22,14 @@ class ProviderSubscriptionCancellation
             return $remote;
         }
         $evidence = app(\App\Domain\Payments\Support\FibStatusEvidence::class);
-        $observation = $evidence->persistedSubscriptionObservation($payment);
+        $observation = $snapshot ? $snapshot->observation($payment) : $evidence->persistedSubscriptionObservation($payment);
         $status = $observation['status'] ?? null;
         $result = ['confirmed' => false, 'evidence_event_id' => $observation['event_id'] ?? null,
             'observed_active_until' => $status?->activeUntil?->format('Y-m-d\TH:i:s.vP'),
             'observed_last_payment_at' => $status?->lastPaymentAt?->format('Y-m-d\TH:i:s.vP')];
-        if ($payment->provider?->value !== 'fib' || ! $payment->isProviderSubscriptionObject()
+        if (\App\Domain\Payments\Support\ProviderObservation::pending($payment)
+            || (data_get($payment->meta, 'provider_observation') !== null && $observation === null)
+            || $payment->provider?->value !== 'fib' || ! $payment->isProviderSubscriptionObject()
             || ! $payment->fib_subscription_id
             || ! in_array(strtoupper((string) $payment->provider_subscription_status), ['CANCELED', 'CANCELLED'], true)) {
             return $result;
@@ -89,6 +91,8 @@ class ProviderSubscriptionCancellation
                     || $payment->requiresReview() || $payment->review_required_at) {
                     throw new \RuntimeException('Cancellation evidence target requires separate review.');
                 }
+                $beforeObservation = \App\Domain\Payments\Support\ProviderObservation::state($payment);
+                $eventWatermark = (int) $payment->events()->max('id');
                 $status = app(\App\Domain\Payments\Fib\FibSubscriptionService::class)->getStatus($payment);
                 if (app(\App\Domain\Payments\Support\FibStatusEvidence::class)->rejection($payment, $status) !== null
                     || ! in_array($status->status, ['CANCELED', 'CANCELLED'], true)
@@ -123,6 +127,8 @@ class ProviderSubscriptionCancellation
                 $payment->forceFill(['meta' => $meta, 'provider_status' => $status->status,
                     'provider_subscription_status' => $status->status, 'status_response' => $status->raw,
                     'last_status_checked_at' => now()])->save();
+                \App\Domain\Payments\Support\ProviderObservation::record($payment, $beforeObservation, 'operator_cancellation_review',
+                    \App\Domain\Payments\Support\ProviderObservation::callbackVersion($payment), $eventWatermark);
                 // Preserve every pre-existing paid/history date. The observed provider
                 // boundary is retained for review; do not infer a collection or a grant.
                 $this->project($payment, false);

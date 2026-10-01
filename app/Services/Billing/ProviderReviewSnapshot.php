@@ -67,13 +67,14 @@ class ProviderReviewSnapshot
             $payload = json_decode($event->payload ?? '{}', true);
             if (in_array($event->before_status, ['paid', 'refunded', 'refund_requested'], true)
                 || in_array($event->after_status, ['paid', 'refunded', 'refund_requested'], true)
+                || data_get($payload, 'unmapped_collection_evidence') === true
                 || collect(['lastPaymentAt', 'lastPaidAt', 'activeUntil', 'lastSuccessfulPaymentAt', 'latestPaidAt',
                     'payment.lastPaymentAt', 'payment.lastPaidAt', 'latestPayment.lastPaymentAt', 'latestPayment.lastPaidAt',
                     'subscription.lastPaymentAt', 'subscription.lastPaidAt'])
                     ->contains(fn ($key) => data_get($payload, $key) !== null)) {
                 $self->collectionEvidence[$event->payment_id] = true;
             }
-            if (in_array($event->event_type, ['provider_status_checked', 'provider_status_ignored'], true)) {
+            if (in_array($event->event_type, [...\App\Domain\Payments\Support\ProviderObservation::EVENTS, 'provider_status_checked', 'provider_status_ignored'], true)) {
                 $self->events[$event->payment_id] = (new PaymentEvent)->newFromBuilder((array) $event);
             }
             if ($event->event_type === 'callback_received') {
@@ -98,7 +99,7 @@ class ProviderReviewSnapshot
         $event = $this->events[$payment->id] ?? null;
 
         return (new FibStatusEvidence)->validatePersistedObservation($payment, $event,
-            ($this->callbacks[$payment->id] ?? 0) > ($event?->id ?? 0));
+            ($this->callbacks[$payment->id] ?? 0) > ($event?->id ?? 0), (int) ($this->callbacks[$payment->id] ?? 0));
     }
 
     public function subscriptions(Payment $payment): array
@@ -149,7 +150,7 @@ class ProviderReviewSnapshot
                 }
             }
         }
-        foreach (['verified_subscription_collection', 'provider_cancellation.effective_access_until',
+        foreach (['verified_subscription_collection', 'provider_callback.unmapped_collection_evidence', 'provider_cancellation.effective_access_until',
             'provider_cancellation.observed_active_until', 'provider_cancellation.retained_active_until'] as $key) {
             if (data_get($payment->meta, $key)) {
                 return false;
@@ -161,7 +162,7 @@ class ProviderReviewSnapshot
 
     public function hasStatusObservation(Payment $payment): bool
     {
-        return isset($this->events[$payment->id]);
+        return isset($this->events[$payment->id]) || data_get($payment->meta, 'provider_observation') !== null;
     }
 
     public function remoteEligible(Payment $payment): bool

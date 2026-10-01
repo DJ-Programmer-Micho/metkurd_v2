@@ -55,7 +55,7 @@ abstract class PaymentPage extends Component
                     $links[$name] = $url;
                 }
             }
-            $rawQr = (string) $payment->qr_code;
+            $rawQr = (string) \App\Domain\Payments\Support\CheckoutQrCache::read($payment);
             if (preg_match('~^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=\r\n]+$~', $rawQr) || $this->safeProviderUrl($rawQr)) {
                 $qr = $rawQr;
             }

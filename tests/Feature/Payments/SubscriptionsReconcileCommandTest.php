@@ -611,8 +611,10 @@ it('keeps subscriptions reconcile focused on unresolved checkout rows and avoids
         ->count())->toBe(0)
         ->and(PaymentEvent::query()
             ->where('payment_id', $awaitingPayment->id)
-            ->where('event_type', 'provider_status_checked')
-            ->count())->toBeGreaterThan(0)
+            ->where('event_type', 'provider_status_changed')
+            ->count())->toBe(0)
+        ->and($awaitingPayment->fresh()->last_status_checked_at->equalTo(now()))->toBeTrue()
+        ->and(data_get($awaitingPayment->fresh()->meta, 'provider_observation.valid'))->toBeTrue()
         ->and($activeSubscription->fresh()->status)->toBe('active')
         ->and(data_get($activeSubscription->fresh()->meta, 'renewal_metadata_missing'))->toBeTrue();
 });

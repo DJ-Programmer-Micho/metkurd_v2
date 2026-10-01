@@ -160,9 +160,9 @@ it('shows key and retention metadata while excluding secrets and storage keys', 
     $this->get(route('admin.operations', ['locale' => 'en', 'section' => 'files', 'job' => $j->id]))->assertOk()->assertDontSee('PRIVATE_OBJECT_PATH');
 });
 
-it('traces payment fulfillment order subscription ledger and redacted evidence with least privilege', function () {
+it('traces payment fulfillment order subscription ledger and redacted evidence with least privilege', function (bool $compact) {
     $plan = ServicePlan::where('code', 'student')->firstOrFail();
-    $p = Payment::create(['uuid' => (string) Str::uuid(), 'customer_id' => $this->customer->id, 'provider' => 'fib', 'purchase_type' => 'plan_subscription', 'payment_mode' => 'one_time', 'provider_object_type' => 'payment', 'status' => 'paid', 'internal_status' => 'applied', 'amount' => 100, 'currency' => 'IQD', 'purchasable_type' => ServicePlan::class, 'purchasable_id' => $plan->id, 'local_reference' => 'P2-payment', 'idempotency_key' => (string) Str::uuid(), 'fulfilled_at' => now(), 'status_response' => ['status' => 'PAID', 'secret' => 'NEVER_SHOW_ME', 'untrusted_body' => 'NEVER_SHOW_ME'], 'fib_payment_id' => 'finance-evidence-reference']);
+    $p = Payment::create(['uuid' => (string) Str::uuid(), 'customer_id' => $this->customer->id, 'provider' => 'fib', 'purchase_type' => 'plan_subscription', 'payment_mode' => 'one_time', 'provider_object_type' => 'payment', 'status' => 'paid', 'internal_status' => 'applied', 'amount' => 100, 'currency' => 'IQD', 'purchasable_type' => ServicePlan::class, 'purchasable_id' => $plan->id, 'local_reference' => 'P2-payment', 'idempotency_key' => (string) Str::uuid(), 'fulfilled_at' => now(), 'status_response' => ['status' => 'PAID', 'secret' => 'NEVER_SHOW_ME', 'untrusted_body' => 'NEVER_SHOW_ME'], 'fib_payment_id' => 'finance-evidence-reference', 'meta' => $compact ? ['persistence_version' => 2] : null]);
     $order = CreditOrder::create(['customer_id' => $this->customer->id, 'payment_id' => $p->id, 'order_type' => 'addon', 'status' => 'paid', 'credits_amount' => 100, 'amount_usd' => 1, 'currency' => 'IQD']);
     $sub = CustomerServiceSubscription::create(['customer_id' => $this->customer->id, 'payment_id' => $p->id, 'service_plan_id' => $plan->id, 'status' => 'expired', 'source' => 'fib']);
     CreditLedger::create(['customer_id' => $this->customer->id, 'wallet_type' => 'app', 'type' => 'addon', 'source_type' => 'addon', 'direction' => 'credit', 'bucket' => 'addon', 'amount' => 100, 'credits_delta' => 100, 'balance_after' => 100, 'related_type' => CreditOrder::class, 'related_id' => $order->id]);
@@ -174,7 +174,7 @@ it('traces payment fulfillment order subscription ledger and redacted evidence w
     $this->operator->forceFill(['admin_capabilities' => ['admin.finance']])->save();
     $this->get($url)->assertOk()->assertSee('finance-evidence-reference')->assertDontSee('NEVER_SHOW_ME');
     Http::assertNothingSent();
-});
+})->with([false, true]);
 
 it('bounds customer lookup and ledger pagination with database queries', function () {
     for ($i = 0; $i < 30; $i++) {

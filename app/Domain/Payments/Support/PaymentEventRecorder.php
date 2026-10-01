@@ -24,6 +24,9 @@ class PaymentEventRecorder
      */
     public function record(?Payment $payment, array $attributes): PaymentEvent
     {
+        if ($payment?->usesCompactPersistence()) {
+            $attributes = PaymentPersistence::event($attributes);
+        }
         $source = self::canonicalSource((string) Arr::get($attributes, 'source', 'system'));
         if (strlen($source) > 40) {
             throw new \InvalidArgumentException('Payment event source exceeds its schema contract.');

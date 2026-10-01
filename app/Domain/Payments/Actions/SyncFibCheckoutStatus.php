@@ -16,6 +16,7 @@ use App\Domain\Payments\Models\Payment;
 use App\Domain\Payments\Support\PaymentEventRecorder;
 use App\Domain\Payments\Support\PaymentReconciliationPolicy;
 use App\Domain\Payments\Support\PaymentTransitions;
+use App\Domain\Payments\Support\ProviderObservation;
 use App\Events\Payments\PaymentConfirmed;
 use App\Services\Billing\SyncProviderSubscriptionLifecycle;
 use App\Services\Coupons\CouponRedemptionService;
@@ -53,7 +54,7 @@ class SyncFibCheckoutStatus
         }
         $source = $this->reconciliationPolicy->normalizeScheduledSource($payment, $source);
 
-        if ($dispatchFulfillment
+        if ($callbackPayload === null && ! ProviderObservation::pending($payment) && $dispatchFulfillment
             && $payment->status === PaymentStatus::PAID
             && $payment->fulfilled_at === null
             && $payment->internal_status !== PaymentInternalStatus::REQUIRES_REVIEW
@@ -84,6 +85,8 @@ class SyncFibCheckoutStatus
             return $payment;
         }
 
+        $callbackVersion = ProviderObservation::callbackVersion($payment);
+        $eventWatermark = (int) $payment->events()->max('id');
         $objectType = $payment->provider_object_type ?? PaymentProviderObjectType::PAYMENT;
         $shouldDispatch = false;
         $rejected = false;
@@ -92,10 +95,16 @@ class SyncFibCheckoutStatus
             $status = $this->subscriptions->getStatus($payment);
             $audit = [];
 
-            $payment = DB::transaction(function () use ($payment, $status, $source, $callbackPayload, &$shouldDispatch, &$audit, &$rejected) {
+            $payment = DB::transaction(function () use ($payment, $status, $source, $callbackPayload, $callbackVersion, $eventWatermark, &$shouldDispatch, &$audit, &$rejected) {
                 \App\Models\Customer::whereKey($payment->customer_id)->lockForUpdate()->firstOrFail();
                 /** @var Payment $locked */
                 $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
+                if (ProviderObservation::callbackVersion($locked) !== $callbackVersion) {
+                    $rejected = true;
+
+                    return $locked->fresh();
+                }
+                $beforeObservation = ProviderObservation::state($locked);
                 if ($reason = app(\App\Domain\Payments\Support\FibStatusEvidence::class)->rejection($locked, $status)) {
                     $rejected = true;
 
@@ -144,17 +153,7 @@ class SyncFibCheckoutStatus
                     $audit['local_new_status'] = $locked->status->value;
                     $audit['transition_ignored'] = true;
 
-                    $this->events->record($locked, [
-                        'event_type' => 'provider_status_ignored',
-                        'source' => $source,
-                        'before_status' => $currentStatus->value,
-                        'after_status' => $currentStatus->value,
-                        'payload' => $status->raw,
-                        'meta' => [
-                            'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
-                            'requested_status' => $nextStatus->value,
-                        ],
-                    ]);
+                    ProviderObservation::record($locked, $beforeObservation, $source, $callbackVersion, $eventWatermark, ['transition_ignored' => $requestedTransitionBlocked]);
 
                     if ($this->isPaidToFailedLikeTransition($currentStatus, $nextStatus)) {
                         Log::warning('Ignored invalid paid-to-terminal FIB subscription transition.', array_merge(
@@ -192,18 +191,7 @@ class SyncFibCheckoutStatus
                 $audit['local_new_status'] = $locked->status->value;
                 $audit['transition_ignored'] = false;
 
-                $this->events->record($locked, [
-                    'event_type' => 'provider_status_checked',
-                    'source' => $source,
-                    'before_status' => $currentStatus->value,
-                    'after_status' => $locked->status->value,
-                    'payload' => $status->raw,
-                    'meta' => [
-                        'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
-                        'callback_present' => $callbackPayload !== null,
-                        'corrective_reversion' => $correctiveReversion,
-                    ],
-                ]);
+                ProviderObservation::record($locked, $beforeObservation, $source, $callbackVersion, $eventWatermark, ['transition_ignored' => $requestedTransitionBlocked]);
 
                 $shouldDispatch = $locked->status === PaymentStatus::PAID
                     && $locked->fulfilled_at === null
@@ -241,10 +229,16 @@ class SyncFibCheckoutStatus
         $nextStatus = $this->paymentMapper->toLocalStatus($status);
         $audit = [];
 
-        $payment = DB::transaction(function () use ($payment, $status, $nextStatus, $source, $callbackPayload, &$shouldDispatch, &$audit, &$rejected) {
+        $payment = DB::transaction(function () use ($payment, $status, $nextStatus, $source, $callbackPayload, $callbackVersion, $eventWatermark, &$shouldDispatch, &$audit, &$rejected) {
             \App\Models\Customer::whereKey($payment->customer_id)->lockForUpdate()->firstOrFail();
             /** @var Payment $locked */
             $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
+            if (ProviderObservation::callbackVersion($locked) !== $callbackVersion) {
+                $rejected = true;
+
+                return $locked->fresh();
+            }
+            $beforeObservation = ProviderObservation::state($locked);
             if ($reason = app(\App\Domain\Payments\Support\FibStatusEvidence::class)->rejection($locked, $status)) {
                 $rejected = true;
 
@@ -271,17 +265,7 @@ class SyncFibCheckoutStatus
                 $audit['local_new_status'] = $locked->status->value;
                 $audit['transition_ignored'] = true;
 
-                $this->events->record($locked, [
-                    'event_type' => 'provider_status_ignored',
-                    'source' => $source,
-                    'before_status' => $currentStatus->value,
-                    'after_status' => $currentStatus->value,
-                    'payload' => $status->raw,
-                    'meta' => [
-                        'provider_object_type' => PaymentProviderObjectType::PAYMENT->value,
-                        'requested_status' => $nextStatus->value,
-                    ],
-                ]);
+                ProviderObservation::record($locked, $beforeObservation, $source, $callbackVersion, $eventWatermark, ['transition_ignored' => $requestedTransitionBlocked]);
 
                 if ($this->isPaidToFailedLikeTransition($currentStatus, $nextStatus)) {
                     Log::warning('Ignored invalid paid-to-terminal FIB one-time transition.', array_merge(
@@ -315,17 +299,7 @@ class SyncFibCheckoutStatus
             $audit['local_new_status'] = $locked->status->value;
             $audit['transition_ignored'] = false;
 
-            $this->events->record($locked, [
-                'event_type' => 'provider_status_checked',
-                'source' => $source,
-                'before_status' => $currentStatus->value,
-                'after_status' => $locked->status->value,
-                'payload' => $status->raw,
-                'meta' => [
-                    'provider_object_type' => PaymentProviderObjectType::PAYMENT->value,
-                    'callback_present' => $callbackPayload !== null,
-                ],
-            ]);
+            ProviderObservation::record($locked, $beforeObservation, $source, $callbackVersion, $eventWatermark, ['transition_ignored' => $requestedTransitionBlocked]);
 
             $shouldDispatch = $locked->status === PaymentStatus::PAID
                 && $locked->fulfilled_at === null
@@ -516,6 +490,12 @@ class SyncFibCheckoutStatus
             return false;
         }
         try {
+            if (data_get($payment->meta, 'provider_observation') !== null) {
+                $anchor = $payment->events()->whereIn('event_type', [...ProviderObservation::EVENTS, 'provider_status_checked', 'provider_status_ignored'])->latest('id')->first();
+                if (! ProviderObservation::validReceipt($payment, $anchor)) {
+                    return false;
+                }
+            }
             $status = $payment->isProviderSubscriptionObject()
                 ? FibSubscriptionStatusData::fromArray($payment->status_response)
                 : FibPaymentStatusData::fromArray($payment->status_response);
@@ -536,6 +516,7 @@ class SyncFibCheckoutStatus
         // Commit safe review evidence without applying the rejected observation.
         $meta = (array) $payment->meta;
         $meta['provider_evidence_rejection'] = $reason;
+        $meta['provider_observation']['valid'] = false;
         if ($reason !== 'stale_subscription_observation') {
             $payment->review_required_at ??= now();
             if ($payment->fulfilled_at === null || $reason === 'collection_after_cancellation_or_supersession') {

@@ -39,8 +39,12 @@ class AdminProviderEvidence
         return false;
     }
 
-    private function containsCollectionEvidence(array $payload): bool
+    public function containsCollectionEvidence(array $payload): bool
     {
+        // Compact V2 evidence may retain a blocker instead of an unrecognized raw structure.
+        if (($payload['unmapped_collection_evidence'] ?? false) === true) {
+            return true;
+        }
         foreach ($payload as $key => $value) {
             if (is_array($value)) {
                 if ($this->containsCollectionEvidence($value)) {

@@ -39,14 +39,14 @@ beforeEach(function () {
         'base_amount_iqd' => 24000, 'amount_usd' => 16, 'created_at' => '2026-01-01']);
 });
 
-function cutoverPayment(Customer $customer): Payment
+function cutoverPayment(Customer $customer, array $overrides = []): Payment
 {
-    return Payment::create(['uuid' => Str::uuid(), 'customer_id' => $customer->id, 'provider' => 'fib',
+    return Payment::create(array_replace(['uuid' => Str::uuid(), 'customer_id' => $customer->id, 'provider' => 'fib',
         'purchase_type' => 'plan_subscription', 'payment_mode' => 'recurring', 'provider_object_type' => 'subscription',
         'status' => 'awaiting_customer_action', 'internal_status' => 'requires_review', 'fib_subscription_id' => 'old-'.Str::uuid(),
         'provider_subscription_status' => 'DRAFT', 'local_reference' => Str::uuid(), 'idempotency_key' => Str::uuid(),
         'amount' => 24000, 'currency' => 'IQD', 'purchasable_type' => ServicePlan::class,
-        'purchasable_id' => ServicePlan::where('code', 'pro')->value('id')]);
+        'purchasable_id' => ServicePlan::where('code', 'pro')->value('id')], $overrides));
 }
 
 function cutoverOptions($test): array
@@ -76,6 +76,8 @@ it('reviews unknown remote state without writes HTTP storage access or secret ex
 });
 
 it('retires every payment locally preserving full rows except exact reviewed links and subscription authority', function () {
+    $compact = cutoverPayment($this->owner, ['meta' => ['persistence_version' => 2], 'qr_code' => 'data:image/png;base64,fixture']);
+    expect($compact->fresh()->qr_code)->toBeNull()->and($compact->usesCompactPersistence())->toBeTrue();
     DB::table('payment_events')->insert(['payment_id' => $this->payment->id, 'provider' => 'fib', 'event_type' => 'created', 'source' => 'fixture']);
     $intent = DB::table('payment_intents')->insertGetId(['uuid' => Str::uuid(), 'customer_id' => $this->owner->id, 'provider' => 'fake',
         'purpose_type' => 'service_plan', 'status' => 'failed', 'base_amount_iqd' => 1000, 'gross_amount_iqd' => 1000,

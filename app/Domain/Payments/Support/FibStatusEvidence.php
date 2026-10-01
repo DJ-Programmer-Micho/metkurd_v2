@@ -12,11 +12,10 @@ final class FibStatusEvidence
 {
     /**
      * Read the latest persisted authenticated GET, never a callback or a local status.
-     * These two event types are emitted only by SyncFibCheckoutStatus after GET.
-     * Legacy writers did not populate the durable cancellation context/date columns.
-     * Revalidate their raw response instead of trusting their old DTO interpretation.
+     * Current receipts advance without appending events for unchanged observations.
+     * Legacy rows retain strict raw response/event matching.
      *
-     * @return array{status: FibSubscriptionStatusData, event_id: int}|null
+     * @return array{status: FibSubscriptionStatusData, event_id: int|null}|null
      */
     public function persistedSubscriptionObservation(Payment $payment): ?array
     {
@@ -27,18 +26,39 @@ final class FibStatusEvidence
         }
         // Select before validating: never fall back past newer contradictory/bad evidence.
         $event = PaymentEvent::where('payment_id', $payment->id)
-            ->whereIn('event_type', ['provider_status_checked', 'provider_status_ignored'])
+            ->whereIn('event_type', [...ProviderObservation::EVENTS, 'provider_status_checked', 'provider_status_ignored'])
             ->latest('id')->first();
 
-        return $this->validatePersistedObservation($payment, $event, $event && PaymentEvent::where('payment_id', $payment->id)
-            ->where('id', '>', $event->id)->where('event_type', 'callback_received')->exists());
+        $callbackId = (int) PaymentEvent::where('payment_id', $payment->id)->where('event_type', 'callback_received')->max('id');
+
+        return $this->validatePersistedObservation($payment, $event, $callbackId > ($event?->id ?? 0), $callbackId);
     }
 
     /** Same validator for a bulk-loaded snapshot; this method performs no queries. */
-    public function validatePersistedObservation(Payment $payment, ?PaymentEvent $event, bool $newerCallback): ?array
+    public function validatePersistedObservation(Payment $payment, ?PaymentEvent $event, bool $newerCallback, ?int $callbackId = null): ?array
     {
         if (! $payment->isProviderSubscriptionObject() || $payment->provider !== PaymentProvider::FIB
             || ! $payment->fib_subscription_id || ! $payment->last_status_checked_at || $payment->last_status_checked_at->isFuture()) {
+            return null;
+        }
+        if (data_get($payment->meta, 'provider_observation') !== null) {
+            if (! ProviderObservation::validReceipt($payment, $event)
+                || ($newerCallback && ($callbackId === null || $callbackId > (int) data_get($payment->meta, 'provider_observation.observed_event_watermark', 0)))) {
+                return null;
+            }
+            $status = FibSubscriptionStatusData::fromArray((array) $payment->status_response);
+            $requestedAt = FibSubscriptionTimestamp::parse(data_get($payment->meta, 'provider_cancellation.requested_at'));
+            if ($this->rejection($payment, $status) !== null
+                || $status->status !== strtoupper((string) $payment->provider_subscription_status)
+                || ($status->lastPaymentAt && ($status->lastPaymentAt->isFuture()
+                    || ($status->activeUntil && ! $status->activeUntil->gt($status->lastPaymentAt))))
+                || ($requestedAt && $requestedAt->gt($payment->last_status_checked_at))) {
+                return null;
+            }
+
+            return ['status' => $status, 'event_id' => $event?->id];
+        }
+        if (ProviderObservation::pending($payment)) {
             return null;
         }
         if (! $event || (int) $event->payment_id !== (int) $payment->id

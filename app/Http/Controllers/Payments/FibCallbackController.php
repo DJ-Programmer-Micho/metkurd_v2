@@ -67,17 +67,9 @@ class FibCallbackController extends Controller
             ->where('fib_payment_id', (string) $validation['payment_id'])
             ->first();
 
-        $events->record($payment, [
-            'event_type' => 'callback_received',
-            'source' => 'fib_callback',
-            'event_key' => 'callback-received:'.(string) $validation['payment_id'].':'.sha1(json_encode($payload)),
-            'fib_payment_id' => (string) $validation['payment_id'],
-            'response_code' => 202,
-            'payload' => $payload,
-            'meta' => [
-                'provider_object_type' => PaymentProviderObjectType::PAYMENT->value,
-            ],
-        ]);
+        if ($payment instanceof Payment) {
+            \App\Domain\Payments\Support\FibCallbackNotification::received($payment, $payload);
+        }
 
         if (! $payment instanceof Payment) {
             Log::warning('FIB one-time callback did not match a local payment.', [

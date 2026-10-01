@@ -177,7 +177,9 @@ it('starts fresh V2 checkout through each real action after a known expiry', fun
     }
     $client = Mockery::mock(\App\Domain\Payments\Fib\FibOneTimePaymentClient::class);
     $client->shouldReceive('createPayment')->once()->with(Mockery::on(fn ($request) => str_contains($request->toArray()['redirectUri'], '/app-v2/payments/fib/')))
-        ->andReturn(\App\Domain\Payments\Data\FibCreatePaymentResponseData::fromArray(['paymentId' => Str::uuid(), 'validUntil' => now()->addHour()->utc()->toIso8601String()]));
+        ->andReturn(\App\Domain\Payments\Data\FibCreatePaymentResponseData::fromArray(['paymentId' => Str::uuid(), 'validUntil' => now()->addHour()->utc()->toIso8601String(),
+            'readableCode' => 'ONE-TIME-CODE', 'personalAppLink' => 'https://fib.iq/personal/fixture-checkout',
+            'qrCode' => 'data:image/png;base64,'.str_repeat('A', 60000), 'debug' => str_repeat('PRIVATE_DEBUG', 10000)]));
     app()->instance(\App\Domain\Payments\Fib\FibOneTimePaymentClient::class, $client);
     $kind = match ($model) {
         ServicePlan::class => 'service', StoragePlan::class => 'storage', default => 'addon'
@@ -188,8 +190,59 @@ it('starts fresh V2 checkout through each real action after a known expiry', fun
     expect($new->id)->not->toBe($old->id)->and($again->id)->toBe($new->id)->and(Payment::count())->toBe(2)
         ->and($old->fresh()->status->value)->toBe('expired')->and($old->fresh()->fulfilled_at)->toBeNull()
         ->and($new->fulfilled_at)->toBeNull()->and(app(PaymentCheckoutState::class)->state($new))->toBe('awaiting');
+    expect($new->usesCompactPersistence())->toBeTrue()->and($new->qr_code)->toBeNull()
+        ->and($new->meta)->not->toHaveKeys(['fee_quote', 'coupon', 'payment_driver', 'provider_object_type'])
+        ->and(json_encode($new->getAttributes()).$new->events()->get()->toJson())->not->toContain('base64', 'PRIVATE_DEBUG');
+    $this->get(route('app.v2.payments.fib.show', ['locale' => 'en', 'payment' => $new]))
+        ->assertOk()->assertSee('data:image/png;base64,', false);
+    Cache::forget('payment-checkout-qr:'.$new->customer_id.':'.$new->uuid);
+    $before = $new->fresh()->getRawOriginal();
+    $eventCount = $new->events()->count();
+    $this->get(route('app.v2.payments.fib.show', ['locale' => 'en', 'payment' => $new]))
+        ->assertOk()->assertDontSee('data:image/png;base64,', false)
+        ->assertSee('ONE-TIME-CODE')->assertSee('https://fib.iq/personal/fixture-checkout', false);
+    expect($entry->start($this->customer, $kind, $target->id, 'monthly', 'one_time', 'fib', null)->id)->toBe($new->id)
+        ->and($new->fresh()->getRawOriginal())->toBe($before)->and($new->events()->count())->toBe($eventCount)
+        ->and(Payment::count())->toBe(2);
     Http::assertNothingSent();
 })->with('checkout kinds');
+
+it('keeps recurring V2 creation compact and preserves QR presentation and environment evidence', function ($model, $locale) {
+    config(['payments.providers.fib.enabled' => true, 'fib.enabled' => true, 'fib.callback_base_url' => 'https://metkurd.test',
+        'fib.profiles.subscription.base_url' => 'https://fib-stage.fib.iq', 'fib.profiles.subscription.client_id' => 'fixture', 'fib.profiles.subscription.client_secret' => 'fixture']);
+    $target = $model === ServicePlan::class ? ServicePlan::where('code', 'pro')->firstOrFail()
+        : StoragePlan::create(['code' => 'compact-storage', 'name' => 'Storage fixture', 'quota_mb' => 1024, 'price_iqd' => 5000, 'is_active' => true]);
+    $target->update(['payment_mode' => 'recurring', 'billing_intervals' => ['monthly']]);
+    $client = Mockery::mock(\App\Domain\Payments\Fib\FibSubscriptionClient::class);
+    $client->shouldReceive('createSubscription')->once()->andReturn(\App\Domain\Payments\Data\FibCreateSubscriptionResponseData::fromArray([
+        'subscriptionId' => (string) Str::uuid(), 'status' => 'DRAFT', 'readableCode' => 'FIXTURE-1234',
+        'appLink' => 'https://p-stage.fib.iq/fixture-checkout', 'validUntil' => now()->addHour()->toIso8601String(),
+        'qrCode' => 'data:image/png;base64,aGVsbG8=', 'debug' => str_repeat('PRIVATE_DEBUG', 10000),
+    ]));
+    app()->instance(\App\Domain\Payments\Fib\FibSubscriptionClient::class, $client);
+    $payment = app(\App\Services\Payments\CustomerPurchaseCheckout::class)->start($this->customer,
+        $model === ServicePlan::class ? 'service' : 'storage', $target->id, 'monthly', 'recurring', 'fib', null)->fresh();
+    expect($payment->usesCompactPersistence())->toBeTrue()->and($payment->qr_code)->toBeNull()
+        ->and($payment->provider_interval)->not->toBeNull()
+        ->and(json_encode($payment->getAttributes()).$payment->events()->get()->toJson())->not->toContain('base64', 'PRIVATE_DEBUG');
+    $event = $payment->events()->where('event_type', 'provider_subscription_created')->sole();
+    expect(app(\App\Services\Billing\FibProviderProvenance::class)->classify($payment, [$event])['classification'])->toBe('confirmed_test_or_staging');
+    app()->setLocale($locale);
+    $this->get(route('app.v2.payments.fib.show', ['locale' => $locale, 'payment' => $payment]))
+        ->assertOk()->assertSee('data:image/png;base64,aGVsbG8=', false)->assertSee('FIXTURE-1234')->assertSee($target->name)
+        ->assertDontSee('payment_v2.')->assertDontSee('PRIVATE_DEBUG');
+    Cache::forget('payment-checkout-qr:'.$payment->customer_id.':'.$payment->uuid);
+    $before = $payment->getRawOriginal();
+    $eventCount = $payment->events()->count();
+    $this->get(route('app.v2.payments.fib.show', ['locale' => $locale, 'payment' => $payment]))
+        ->assertOk()->assertDontSee('data:image/png;base64,', false)
+        ->assertSee('FIXTURE-1234')->assertSee('https://p-stage.fib.iq/fixture-checkout', false);
+    $again = app(\App\Services\Payments\CustomerPurchaseCheckout::class)->start($this->customer,
+        $model === ServicePlan::class ? 'service' : 'storage', $target->id, 'monthly', 'recurring', 'fib', null);
+    expect($again->id)->toBe($payment->id)->and(Payment::count())->toBe(1)
+        ->and($payment->fresh()->getRawOriginal())->toBe($before)->and($payment->events()->count())->toBe($eventCount);
+    Http::assertNothingSent();
+})->with([[ServicePlan::class], [StoragePlan::class]])->with(['en', 'ar', 'ku']);
 
 it('does not fulfill an expired checkout from a late paid callback observation', function () {
     $payment = v2CheckoutFixture($this->customer, CreditProduct::class, ['valid_until' => now()->subMonths(4)]);

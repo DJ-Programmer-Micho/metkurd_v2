@@ -1,5 +1,18 @@
 # V2 checkout lifetime and payment status
 
+## Bounded checkout persistence — 2026-10-01
+
+New V2 checkout rows use the [minimal Payment contract](PAYMENT-PERSISTENCE-V2.md).
+The existing owned checkout UI retains app links, readable code and a transient QR
+image from a private non-database cache. Cache loss leaves the existing continuation
+options; it never triggers a new provider checkout. Legacy rows remain readable.
+Review reasons are bounded local codes; commercial snapshots are immutable. Provider
+verification, fulfillment and cancellation authority remain unchanged.
+Unchanged provider polls update only bounded current state/check time; they do not
+append PaymentEvents. Duplicate callbacks are bounded wake-ups, and identical
+failures share a count/first/last-seen aggregate. Meaningful transitions, collections
+and fulfillment retain durable events; see the linked event-frequency contract.
+
 ## Customer abandonment of unavailable checkout — 2026-09-14
 
 V2 Payment now offers **Cancel this checkout** through the existing V2 SweetAlert

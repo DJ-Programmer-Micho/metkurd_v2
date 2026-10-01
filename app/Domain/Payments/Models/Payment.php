@@ -20,6 +20,18 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Payment extends Model
 {
+    protected static function booted(): void
+    {
+        static::saving(fn (Payment $payment) => \App\Domain\Payments\Support\PaymentPersistence::apply($payment));
+    }
+
+    public function usesCompactPersistence(): bool
+    {
+        $meta = $this->exists ? json_decode($this->getRawOriginal('meta') ?? '{}', true) : $this->meta;
+
+        return data_get($meta, 'persistence_version') === 2;
+    }
+
     public function scopeCurrentBillingPeriod(Builder $query): Builder
     {
         return app(\App\Services\Billing\BillingReportingBoundary::class)->apply($query, 'payments');
@@ -198,7 +210,19 @@ class Payment extends Model
      */
     public function snapshot(): array
     {
-        return is_array($this->purchase_snapshot) ? $this->purchase_snapshot : [];
+        $snapshot = is_array($this->purchase_snapshot) ? $this->purchase_snapshot : [];
+        if ($this->usesCompactPersistence()) {
+            $snapshot += ['original_amount_iqd' => $this->original_amount_iqd, 'discount_amount_iqd' => $this->discount_amount_iqd,
+                'amount_iqd' => $this->discounted_amount_iqd, 'gross_amount_iqd' => $this->amount,
+                'intended_plan' => ['id' => $this->purchasable_id, 'code' => $snapshot['code'] ?? null, 'name' => $snapshot['name'] ?? null]];
+            $snapshot['base_display'] ??= $snapshot['display'] ?? null;
+            $snapshot['original_display'] ??= $snapshot['display'] ?? null;
+            if (isset($snapshot['fee_quote'])) {
+                $snapshot['fee_quote'] = $this->feeQuote();
+            }
+        }
+
+        return $snapshot;
     }
 
     /**
@@ -213,6 +237,9 @@ class Payment extends Model
         }
 
         $snapshotQuote = data_get($this->purchase_snapshot, 'fee_quote', []);
+        if ($this->usesCompactPersistence() && is_array($snapshotQuote)) {
+            $snapshotQuote += ['base_amount_iqd' => (int) ($this->discounted_amount_iqd ?? $this->amount), 'gross_amount_iqd' => (int) $this->amount];
+        }
 
         return is_array($snapshotQuote) ? $snapshotQuote : [];
     }

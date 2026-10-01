@@ -49,6 +49,11 @@ class PaymentSyncFailureService
         );
     }
 
+    public function captureCallbackFailure(Payment $payment, \Throwable $exception, string $source): array
+    {
+        return $this->captureFailure($payment, $exception, $source, 'callback_failed', 'latest_callback_failure', false);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -89,6 +94,7 @@ class PaymentSyncFailureService
             /** @var Payment $locked */
             $locked = Payment::query()->lockForUpdate()->findOrFail($payment->id);
             $meta = (array) ($locked->meta ?? []);
+            $meta['provider_observation']['valid'] = false;
             $previousSignature = trim((string) data_get($meta, $metaPrefix.'_signature', ''));
             $sameFailure = $previousSignature !== '' && hash_equals($previousSignature, $signature);
             $failureCount = $sameFailure
@@ -135,7 +141,9 @@ class PaymentSyncFailureService
                 $locked->forceFill([
                     'internal_status' => PaymentInternalStatus::REQUIRES_REVIEW,
                     'review_required_at' => $locked->review_required_at ?? $now,
-                    'mismatch_reason' => (string) ($details['safe_message'] ?? 'Manual verification required.'),
+                    'mismatch_reason' => $locked->usesCompactPersistence()
+                        ? (($details['http_status'] ?? null) === 404 ? 'provider_not_found' : 'provider_sync_failed')
+                        : (string) ($details['safe_message'] ?? 'Manual verification required.'),
                     'status_reason' => (string) ($details['safe_message'] ?? $locked->status_reason),
                     'meta' => $meta,
                 ])->save();
@@ -219,11 +227,14 @@ class PaymentSyncFailureService
             ],
         ]);
 
+        $total = $event->wasRecentlyCreated ? 1 : (int) data_get($event->meta, 'failure_count', 0) + 1;
+        $firstSeenAt = (string) data_get($event->meta, 'first_seen_at', $firstSeenAt);
         $event->forceFill([
             'response_code' => $this->responseCode($details['http_status'] ?? null),
             'payload' => $this->safePayload($details),
             'meta' => [
-                'failure_count' => $failureCount,
+                'failure_count' => $total,
+                'consecutive_failure_count' => $failureCount,
                 'first_seen_at' => $firstSeenAt,
                 'last_seen_at' => $now->toIso8601String(),
                 'signature' => $signature,
@@ -238,16 +249,12 @@ class PaymentSyncFailureService
 
     protected function failureEventKey(Payment $payment, array $details, string $signature, CarbonInterface $now, string $eventType): string
     {
-        $intervalHours = max(1, (int) ($details['event_interval_hours'] ?? 24));
-        $bucket = (int) floor($now->getTimestamp() / ($intervalHours * 3600));
-
         return sprintf(
-            '%s:%d:%s:%s:%d',
+            '%s:%d:%s:%s',
             $eventType,
             (int) $payment->id,
             (string) ($details['source'] ?? 'system'),
-            sha1($signature),
-            $bucket,
+            hash('sha256', $payment->providerReference().'|'.$signature),
         );
     }
 
@@ -274,6 +281,7 @@ class PaymentSyncFailureService
     protected function signature(array $details): string
     {
         return implode('|', [
+            (string) ($details['provider_reference'] ?? ''),
             (string) ($details['provider_reference_type'] ?? ''),
             (string) ($details['source'] ?? ''),
             (string) ($details['endpoint'] ?? ''),

@@ -196,6 +196,7 @@ class CreateStorageSubscriptionPayment
                 'meta' => [
                     'locale' => app()->getLocale(),
                     'checkout_ui' => $v2Checkout ? 'v2' : 'v1',
+                    'persistence_version' => $v2Checkout ? 2 : 1,
                     'fee_quote' => $feeQuote,
                     'payment_method_code' => (string) $paymentMethod->code,
                     'payment_driver' => (string) $paymentMethod->driver,
@@ -239,6 +240,8 @@ class CreateStorageSubscriptionPayment
             $request = $result['request'];
             /** @var \App\Domain\Payments\Data\FibCreateSubscriptionResponseData $response */
             $response = $result['response'];
+
+            \App\Domain\Payments\Support\CheckoutQrCache::remember($payment, $response->qrCode, $response->validUntil);
 
             $payment->forceFill([
                 'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,
@@ -330,6 +333,8 @@ class CreateStorageSubscriptionPayment
             $request = $result['request'];
             /** @var \App\Domain\Payments\Data\FibCreatePaymentResponseData $response */
             $response = $result['response'];
+
+            \App\Domain\Payments\Support\CheckoutQrCache::remember($payment, $response->qrCode, $response->validUntil);
 
             $payment->forceFill([
                 'status' => PaymentStatus::AWAITING_CUSTOMER_ACTION,

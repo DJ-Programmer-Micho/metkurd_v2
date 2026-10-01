@@ -67,17 +67,9 @@ class FibSubscriptionCallbackController extends Controller
             ->where('fib_subscription_id', (string) $validation['subscription_id'])
             ->first();
 
-        $events->record($payment, [
-            'event_type' => 'callback_received',
-            'source' => 'fib_subscription_callback',
-            'event_key' => 'subscription-callback-received:'.(string) $validation['subscription_id'].':'.sha1(json_encode($payload)),
-            'fib_subscription_id' => (string) $validation['subscription_id'],
-            'response_code' => 202,
-            'payload' => $payload,
-            'meta' => [
-                'provider_object_type' => PaymentProviderObjectType::SUBSCRIPTION->value,
-            ],
-        ]);
+        if ($payment instanceof Payment) {
+            \App\Domain\Payments\Support\FibCallbackNotification::received($payment, $payload);
+        }
 
         if (! $payment instanceof Payment) {
             Log::warning('FIB subscription callback did not match a local payment.', [

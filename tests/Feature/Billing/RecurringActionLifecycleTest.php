@@ -31,7 +31,7 @@ afterEach(function () {
     Carbon::setTestNow();
 });
 
-function actionLifecycleFixture(bool $fulfilled = true): array
+function actionLifecycleFixture(bool $fulfilled = true, bool $compact = false): array
 {
     $customer = Customer::create([
         'username' => 'audit_'.Str::lower(Str::random(12)),
@@ -64,6 +64,7 @@ function actionLifecycleFixture(bool $fulfilled = true): array
         'active_until' => '2026-06-01 10:00:00',
         'provider_subscription_status' => 'ACTIVE',
         'purchase_snapshot' => ['billing_cycle' => 'monthly', 'name' => $plan->name, 'code' => $plan->code],
+        'meta' => $compact ? ['persistence_version' => 2] : null,
     ]);
     $subscription = $fulfilled ? app(PlanSwitcher::class)->switchServicePlan($customer, $plan->id, [
         'provider' => 'fib',
@@ -131,8 +132,8 @@ function actionLifecycleHttp(Payment $payment, string $status = 'ACTIVE', int $c
     ]);
 }
 
-it('commits cancellation before an empty-body POST and preserves access and finances through duplicate requests', function () {
-    [$customer, $plan, $payment, $sub] = actionLifecycleFixture();
+it('commits cancellation before an empty-body POST and preserves access and finances through duplicate requests', function (bool $compact) {
+    [$customer, $plan, $payment, $sub] = actionLifecycleFixture(compact: $compact);
     actionLifecycleHttp($payment);
     $state = actionLifecycleFinancialState($customer);
     $service = app(\App\Services\Billing\ScheduleServicePlanCancellation::class);
@@ -153,7 +154,7 @@ it('commits cancellation before an empty-body POST and preserves access and fina
         ->and($sub->fresh()->status)->toBe('ended')
         ->and($payment->fresh()->status)->toBe(PaymentStatus::PAID)
         ->and(actionLifecycleFinancialState($customer))->toBe($state);
-});
+})->with([false, true]);
 
 it('retains a failed cancellation intent and confirms it through bounded scheduler retry', function () {
     [$customer, , $payment, $sub] = actionLifecycleFixture();

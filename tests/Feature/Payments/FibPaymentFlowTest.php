@@ -501,7 +501,7 @@ it('updates storage subscription state from a validated callback and fulfills it
             ->exists())->toBeTrue()
         ->and(PaymentEvent::query()
             ->where('payment_id', $payment->id)
-            ->where('event_type', 'callback_processed')
+            ->where('event_type', 'provider_status_changed')
             ->count())->toBe(1);
 
     Notification::assertSentOnDemand(
@@ -908,7 +908,7 @@ it('ignores duplicate callbacks without double-fulfilling addon credits', functi
         ->and($payment->fulfilled_at)->not->toBeNull()
         ->and(CreditOrder::query()->where('payment_id', $payment->id)->count())->toBe(1)
         ->and(PaymentEvent::query()->where('payment_id', $payment->id)->where('event_type', 'payment_fulfilled')->count())->toBe(1)
-        ->and(PaymentEvent::query()->where('payment_id', $payment->id)->where('event_type', 'callback_processed')->count())->toBe(1)
+        ->and(PaymentEvent::query()->where('payment_id', $payment->id)->where('event_type', 'provider_status_changed')->count())->toBe(1)
         ->and((int) ($wallet?->addon_balance_credits ?? 0))->toBe((int) $product->credits_amount);
 
     Notification::assertSentOnDemandTimes(TelegramPayment::class, 1);

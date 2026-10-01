@@ -1,5 +1,37 @@
 # Architectural and behavioral decisions
 
+## 2026-10-01 — Preserve QR for the full actionable checkout lifetime
+
+Removed the QR cache's arbitrary 24-hour cap and unknown-deadline one-hour guess.
+The cache now follows the provider checkout deadline, with the shared deadline
+resolver as fallback; unknown deadlines already require checkout review. QR remains
+private non-SQL presentation, absent from new V2 Payment columns/responses/events.
+Cache-loss regressions verify durable code/link fallbacks and reuse of the same
+one-time/recurring provider object without another creation request.
+
+## 2026-10-01 — Payment events describe transitions, not polls
+
+Native FIB GETs update one bounded verified-observation receipt instead of appending
+unchanged status events. Locked transition revisions preserve real repeated transitions
+and new collections. Owned callbacks retain bounded wake-up metadata rather than echo
+events; callback sequence changes fence in-flight GETs. Identical failure signatures
+update one count/first/last-seen aggregate across time buckets. Fulfillment, renewal,
+cancellation, provenance and Admin evidence remain durable. Cancellation/cutover
+readers share receipt validation while retaining legacy event validation. Historical
+events are untouched; no migration, provider calls or policy change. QR checkout
+presentation remains in the private non-SQL cache. See [the event-frequency contract](PAYMENT-PERSISTENCE-V2.md#paymentevent-frequency-contract).
+
+## 2026-10-01 — Compact new V2 Payment persistence
+
+New V2 checkouts now use a versioned bounded persistence contract. Commercial facts
+live once in an immutable purchase snapshot/normalized columns; operational metadata
+and local reason codes are separate. QR images use a private non-database cache;
+raw callbacks/provider debug bodies no longer enter new Payments or creation events.
+Minimal matched creation/GET/cancellation evidence preserves recovery and provenance.
+Legacy rows are not rewritten and columns are not dropped while legacy consumers
+remain. No migration or business-policy change. See [the contract and dependency
+audit](PAYMENT-PERSISTENCE-V2.md).
+
 ## 2026-09-30 — Historical FIB creation provenance
 
 Corroborated subscription creation responses/events now distinguish staging from

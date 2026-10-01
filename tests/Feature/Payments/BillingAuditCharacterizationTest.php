@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
-// Phase 1/2 cases assert safe behavior. Event-volume characterization remains deferred to Phase 3.
+// Financial safety and unchanged-status event suppression use isolated fixtures.
 beforeEach(function () {
     expect(config('database.default'))->toBe('sqlite');
     expect(config('database.connections.sqlite.database'))->toBe(':memory:');
@@ -152,17 +152,18 @@ it('uses verified provider renewal instead of an independent paid calendar refil
         ->and(CreditMonthlyGrant::where('customer_id', $customer->id)->where('year_month', '2026-06')->count())->toBe(0);
 });
 
-it('characterizes unchanged subscription status polls creating separate events', function () {
+it('does not append events for repeated identical subscription status polls', function () {
     [, , $payment] = billingAuditFixture();
     $status = FibSubscriptionStatusData::fromArray([
         'id' => $payment->fib_subscription_id, 'status' => 'ACTIVE',
         'activeUntil' => '2026-06-01T10:00:00Z', 'lastPaymentAt' => '2026-05-01T10:00:00Z',
     ]);
     $this->partialMock(FibSubscriptionService::class)->shouldReceive('getStatus')->twice()->andReturn($status);
-    foreach ([1, 2] as $attempt) {
-        app(SyncFibCheckoutStatus::class)->handle($payment, 'audit', null, false, false);
-    }
-    expect(PaymentEvent::where('payment_id', $payment->id)->where('event_type', 'provider_status_checked')->count())->toBe(2);
+    app(SyncFibCheckoutStatus::class)->handle($payment, 'audit', null, false, false);
+    $count = $payment->events()->count();
+    app(SyncFibCheckoutStatus::class)->handle($payment, 'audit', null, false, false);
+    expect($payment->events()->count())->toBe($count)
+        ->and($payment->events()->where('event_type', 'provider_status_checked')->count())->toBe(0);
 });
 
 it('rejects subscription response identity mismatch before financial writes', function () {
@@ -374,8 +375,11 @@ it('persists scheduled checkout and renewal events within a strict source width 
     });
     $status = FibSubscriptionStatusData::fromArray(['id' => $payment->fib_subscription_id, 'status' => 'ACTIVE',
         'lastPaymentAt' => '2026-05-01T10:00:00Z', 'activeUntil' => '2026-06-01T10:00:00Z']);
-    $this->partialMock(FibSubscriptionService::class)->shouldReceive('getStatus')->twice()->andReturn($status);
+    $renewal = FibSubscriptionStatusData::fromArray(['id' => $payment->fib_subscription_id, 'status' => 'ACTIVE',
+        'lastPaymentAt' => '2026-06-01T10:00:00Z', 'activeUntil' => '2026-07-01T10:00:00Z']);
+    $this->partialMock(FibSubscriptionService::class)->shouldReceive('getStatus')->twice()->andReturn($status, $renewal);
     app(SyncFibCheckoutStatus::class)->handle($payment, $legacy ? 'scheduled_subscription_checkout_reconciliation' : 'scheduled_sub_checkout');
+    $this->travel(32)->days(); // Source-width coverage needs a real new collection, not an unchanged poll event.
     app(SyncFibCheckoutStatus::class)->handle($payment, $legacy ? 'scheduled_subscription_renewal_reconciliation' : 'scheduled_sub_renewal');
     expect($payment->fresh()->fulfilled_at)->not->toBeNull();
     foreach (['scheduled_sub_checkout', 'scheduled_sub_renewal'] as $source) {

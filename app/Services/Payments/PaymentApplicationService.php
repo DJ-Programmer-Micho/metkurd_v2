@@ -41,6 +41,9 @@ class PaymentApplicationService
      */
     public function markRequiresReview(Payment $payment, string $reason, array $context = []): void
     {
+        if ($payment->usesCompactPersistence()) {
+            $reason = 'application_state_mismatch';
+        }
         $meta = array_merge((array) $payment->meta, [
             'application_review' => array_filter([
                 'reason' => $reason,

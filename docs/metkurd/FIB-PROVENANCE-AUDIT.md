@@ -1,5 +1,10 @@
 # Historical FIB environment provenance — 2026-09-30
 
+New V2 Payments created under the [2026-10-01 compact contract](PAYMENT-PERSISTENCE-V2.md)
+retain the exact HTTPS creation host instead of the full response link. Creation
+row/event identities, request and response must still match. The historical branch
+and the counts/evidence below are unchanged; no historical row is converted.
+
 ## Scope and evidence
 
 Read-only investigation of loopback database `metkurd_local_260930`; no production
