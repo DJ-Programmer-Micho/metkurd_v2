@@ -26,7 +26,22 @@ class BillingReportingBoundary
             throw new \RuntimeException('The persisted billing reporting boundary is invalid.');
         }
 
+        if (($boundary['mode'] ?? null) === PaymentDomainCutover::FULL_LOCAL_RESET) {
+            foreach (['customer_service_subscriptions', 'customer_storage_subscriptions', 'service_plan_agreements'] as $key) {
+                if (! isset($boundary[$key]) || ! is_int($boundary[$key]) || $boundary[$key] < 0) {
+                    throw new \RuntimeException('The full reset entitlement boundary is invalid.');
+                }
+            }
+        }
+
         return $boundary;
+    }
+
+    public function fullReset(): ?array
+    {
+        $boundary = $this->current();
+
+        return ($boundary['mode'] ?? null) === PaymentDomainCutover::FULL_LOCAL_RESET ? $boundary : null;
     }
 
     public function apply($query, string $table = 'credit_orders')

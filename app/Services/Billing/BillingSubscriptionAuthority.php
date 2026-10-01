@@ -24,6 +24,9 @@ class BillingSubscriptionAuthority
         $at ??= now();
         $model = $query->getModel();
         $table = $model->getTable();
+        if (($boundary['mode'] ?? null) === PaymentDomainCutover::FULL_LOCAL_RESET) {
+            $query->where($table.'.id', '>', $boundary[$table]);
+        }
         $service = $model instanceof CustomerServiceSubscription;
         $planKey = $service ? 'service_plan_id' : 'storage_plan_id';
         $planClass = $service ? ServicePlan::class : StoragePlan::class;
@@ -58,7 +61,7 @@ class BillingSubscriptionAuthority
             }
         }
 
-        $retainedIds = $lifecycle ? [] : app(ProviderCoverageDispositions::class)->eligibleIds($model::class, $at);
+        $retainedIds = ($lifecycle || ($boundary['mode'] ?? null) === PaymentDomainCutover::FULL_LOCAL_RESET) ? [] : app(ProviderCoverageDispositions::class)->eligibleIds($model::class, $at);
 
         return $query->where(function (Builder $eligible) use ($table, $planKey, $planClass, $service, $localIds, $onlineIds, $retainedIds, $at, $lifecycle) {
             $eligible->whereIn($table.'.id', $localIds)

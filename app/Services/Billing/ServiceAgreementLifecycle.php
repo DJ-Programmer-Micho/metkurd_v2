@@ -54,6 +54,10 @@ class ServiceAgreementLifecycle
     /** Caller holds the checkout lock, customer row lock and transaction. */
     public function processLocked(ServicePlanAgreement $agreement, Customer $customer): string
     {
+        $boundary = app(BillingReportingBoundary::class)->fullReset();
+        if ($boundary && $agreement->id <= $boundary['service_plan_agreements']) {
+            return 'ended'; // Retired agreements cannot refill carried credits, including queued stale models.
+        }
         if ($agreement->status === 'ended' || $agreement->starts_at->isFuture()) {
             return $agreement->status;
         }

@@ -22,6 +22,17 @@ class Payment extends Model
 {
     protected static function booted(): void
     {
+        static::creating(function (Payment $payment) {
+            if ($boundary = app(\App\Services\Billing\BillingReportingBoundary::class)->fullReset()) {
+                if (($payment->id !== null && $payment->id <= $boundary['payment_id'])
+                    || ($payment->created_at && $payment->created_at->lt($boundary['starts_at']))) {
+                    throw new \LogicException('Retired Payment identities cannot be recreated in the new billing epoch.');
+                }
+                // New epoch checkouts always use compact persistence, including older callers.
+                $payment->meta = array_merge($payment->meta ?? [], ['persistence_version' => 2]);
+                \App\Domain\Payments\Support\PaymentPersistence::apply($payment);
+            }
+        });
         static::saving(fn (Payment $payment) => \App\Domain\Payments\Support\PaymentPersistence::apply($payment));
     }
 

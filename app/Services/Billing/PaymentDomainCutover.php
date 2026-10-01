@@ -16,6 +16,10 @@ class PaymentDomainCutover
 {
     public const PROCESSING = ['payment_events', 'payment_webhook_events', 'payment_transactions', 'payments', 'payment_intents'];
 
+    public const FULL_LOCAL_RESET = 'full-local-reset';
+
+    public const PRESERVE_ACCESS = 'preserve-access';
+
     private const LINKS = ['credit_orders', 'customer_service_subscriptions', 'customer_storage_subscriptions', 'coupon_redemptions', 'ad_conversion_events'];
 
     private const SUBSCRIPTIONS = ['customer_service_subscriptions', 'customer_storage_subscriptions'];
@@ -25,7 +29,7 @@ class PaymentDomainCutover
         return app(Cutover\CutoverIdentity::class)->inspect($target);
     }
 
-    public function review(string $target, ?int $adminId = null): array
+    public function review(string $target, ?int $adminId = null, string $mode = self::PRESERVE_ACCESS): array
     {
         $this->identity($target);
         if (DB::connection()->getDriverName() === 'mysql') {
@@ -33,15 +37,15 @@ class PaymentDomainCutover
             DB::statement('SET TRANSACTION READ ONLY');
         }
 
-        return DB::transaction(fn () => $this->inspect($target, $adminId));
+        return DB::transaction(fn () => $this->inspect($target, $adminId, $mode));
     }
 
-    public function execute(string $target, string $hash, string $reason, bool $workersStopped, ?int $adminId = null, bool $backupConfirmed = false, bool $restoreConfirmed = false): array
+    public function execute(string $target, string $hash, string $reason, bool $workersStopped, ?int $adminId = null, bool $backupConfirmed = false, bool $restoreConfirmed = false, string $mode = self::PRESERVE_ACCESS): array
     {
         $this->identity($target);
         $this->authorize($workersStopped);
-        if ($target === 'production' && (! $backupConfirmed || ! $restoreConfirmed || $adminId !== auth('admin')->id())) {
-            throw new PaymentHistoryResetRefused('Production requires the reviewed Admin and explicit backup/restore confirmations.');
+        if (($target === 'production' || $mode === self::FULL_LOCAL_RESET) && (! $backupConfirmed || ! $restoreConfirmed || $adminId !== auth('admin')->id())) {
+            throw new PaymentHistoryResetRefused('This mode requires the reviewed Admin and explicit backup/restore confirmations.');
         }
         if (! preg_match('/^[a-f0-9]{64}$/D', $hash) || mb_strlen(trim($reason)) < 10 || mb_strlen($reason) > 1000) {
             throw new PaymentHistoryResetRefused('A reviewed hash and substantive reason are required.');
@@ -51,23 +55,32 @@ class PaymentDomainCutover
             DB::statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         }
 
-        return DB::transaction(function () use ($target, $hash, $reason, $workersStopped, $adminId) {
+        return DB::transaction(function () use ($target, $hash, $reason, $workersStopped, $adminId, $mode) {
             foreach (array_unique(['customers', 'payments', ...$this->tables()]) as $table) {
                 foreach (DB::table($table)->lockForUpdate()->cursor() as $ignored) {
                 }
             }
             $this->authorize($workersStopped);
-            $review = $this->inspect($target, $adminId);
+            $review = $this->inspect($target, $adminId, $mode);
             if ($review['blockers'] || ! hash_equals($review['review_hash'], $hash)) {
                 throw new PaymentHistoryResetRefused('Cutover refused: blockers or changed review. Run the dry run again.');
             }
             $boundary = ['starts_at' => now()->toDateTimeString(), 'credit_order_id' => DB::table('credit_orders')->max('id') ?? 0,
                 'payment_id' => DB::table('payments')->max('id') ?? 0,
                 'provider_coverage_ids' => array_keys($review['patches']['provider_coverage_dispositions'] ?? [])];
+            if ($mode === self::FULL_LOCAL_RESET) {
+                $boundary['mode'] = $mode;
+                foreach ([...self::SUBSCRIPTIONS, 'service_plan_agreements'] as $table) {
+                    $boundary[$table] = (int) (DB::table($table)->max('id') ?? 0);
+                }
+            }
             $audit = new AdminAudit;
             $audit->reason = $reason;
             $audit->record(BillingReportingBoundary::ACTION, self::class, $hash, [], ['review_hash' => $hash],
-                ['reporting_boundary' => $boundary, 'manifest' => $review]);
+                ['reporting_boundary' => $boundary] + ($mode === self::FULL_LOCAL_RESET
+                    ? ['reset_verification' => array_intersect_key($review, array_flip(['mode', 'target', 'review_hash', 'schema_hash',
+                        'counts', 'delete_counts', 'fingerprints', 'expected_after', 'detach_links', 'wallet_totals']))]
+                    : ['manifest' => $review]));
             $ids = DB::table('admin_audit_events')->where('action', BillingReportingBoundary::ACTION)
                 ->where('target_type', self::class)->where('target_id', $hash)->pluck('id')->all();
             if (count($ids) !== 1 || $this->fingerprint('admin_audit_events', [], $ids) !== $review['fingerprints']['admin_audit_events']) {
@@ -99,7 +112,7 @@ class PaymentDomainCutover
                 throw new PaymentHistoryResetRefused('Current billing did not start empty; cutover rolled back.');
             }
 
-            return ['target' => $target, 'review_hash' => $hash, 'deleted' => $review['delete_counts'], 'reporting_boundary' => $boundary,
+            return ['target' => $target, 'mode' => $mode, 'review_hash' => $hash, 'deleted' => $review['delete_counts'], 'reporting_boundary' => $boundary,
                 'effective_after' => $review['effective_after'], 'preservation' => 'all expected full-row fingerprints matched',
                 'current_revenue' => 0, 'current_online_sales' => 0, 'current_payment_count' => 0, 'audit_id' => $ids[0]];
         });
@@ -122,10 +135,13 @@ class PaymentDomainCutover
         return $tables;
     }
 
-    private function inspect(string $target, ?int $adminId): array
+    private function inspect(string $target, ?int $adminId, string $mode): array
     {
+        if (! in_array($mode, [self::PRESERVE_ACCESS, self::FULL_LOCAL_RESET], true)) {
+            throw new PaymentHistoryResetRefused('Unknown cutover mode.');
+        }
         $identity = $this->identity($target);
-        $readiness = app(Cutover\CutoverReadiness::class)->inspect($target, $adminId);
+        $readiness = app(Cutover\CutoverReadiness::class)->inspect($target, $adminId, $mode === self::FULL_LOCAL_RESET);
         $tables = $this->tables();
         foreach ([...self::PROCESSING, ...self::SUBSCRIPTIONS, 'customers', 'credit_orders', 'credit_wallets', 'credit_ledgers',
             'subscription_credit_allocations', 'admin_audit_events', 'service_plan_agreements'] as $required) {
@@ -142,9 +158,9 @@ class PaymentDomainCutover
         foreach (self::PROCESSING as $table) {
             $delete[$table] = DB::table($table)->orderBy('id')->pluck('id')->all();
         }
-        // All five processing tables start empty. Corroborated fake/manual provenance
-        // survives in the immutable cutover audit, never as live V2 processing rows.
-        $archivedIntents = DB::table('payment_intents')->get()->filter(fn ($intent) => LegacyFakeIntentEvidence::matches($intent));
+        // Compatibility mode archives corroborated fake/manual evidence. Full reset
+        // deliberately copies none of the retired processing rows into history.
+        $archivedIntents = $mode === self::FULL_LOCAL_RESET ? collect() : DB::table('payment_intents')->get()->filter(fn ($intent) => LegacyFakeIntentEvidence::matches($intent));
         $legacyProvenance = $archivedIntents->map(fn ($intent) => [
             'intent' => array_intersect_key((array) $intent, array_flip(['id', 'uuid', 'customer_id', 'provider', 'payment_method',
                 'purpose_type', 'purpose_id', 'status', 'paid_at', 'fulfilled_at', 'base_amount_iqd', 'gross_amount_iqd',
@@ -160,7 +176,8 @@ class PaymentDomainCutover
             $columns = Schema::getColumns($table);
             $keys = Schema::getForeignKeys($table);
             $schema[$table] = ['columns' => $columns, 'keys' => $keys, 'indexes' => Schema::getIndexes($table)];
-            // Include undeclared compatibility links, but never rewrite immutable ledger/allocation evidence.
+            // Include undeclared compatibility links. Full reset also detaches the known
+            // nullable allocation Payment FK; financial facts and ledgers never change.
             foreach (['payment_id' => 'payments', 'payment_intent_id' => 'payment_intents'] as $column => $parent) {
                 if (in_array($column, array_column($columns, 'name'), true)
                     && ! collect($keys)->contains(fn ($key) => $key['columns'] === [$column] && $key['foreign_table'] === $parent)) {
@@ -184,7 +201,7 @@ class PaymentDomainCutover
                 $column = $key['columns'][0];
                 $nullable = collect($columns)->firstWhere('name', $column)['nullable'];
                 foreach (DB::table($table)->whereIn($column, $delete[$key['foreign_table']])->orderBy('id')->get() as $row) {
-                    if (! in_array($table, self::LINKS, true) || ! $nullable || ! in_array($column, ['payment_id', 'payment_intent_id'], true)) {
+                    if (! in_array($table, [...self::LINKS, ...($mode === self::FULL_LOCAL_RESET ? ['subscription_credit_allocations'] : [])], true) || ! $nullable || ! in_array($column, ['payment_id', 'payment_intent_id'], true)) {
                         $blockers[] = $table.':'.$row->id.': retained evidence cannot be detached from '.$column;
 
                         continue;
@@ -207,8 +224,11 @@ class PaymentDomainCutover
                 }
             }
         }
-        [$normalizations, $effective, $preserved] = $this->subscriptions($patches, $blockers);
-        $obligations = app(Cutover\ProviderObligationInventory::class)->inspect($target, $normalizations);
+        [$normalizations, $effective, $preserved] = $mode === self::FULL_LOCAL_RESET
+            ? $this->resetSubscriptions($patches) : $this->subscriptions($patches, $blockers);
+        $obligations = $mode === self::FULL_LOCAL_RESET
+            ? ['policy' => 'old provider domain retired locally; no remote disposition asserted', 'blockers' => []]
+            : app(Cutover\ProviderObligationInventory::class)->inspect($target, $normalizations);
         $blockers = array_merge($blockers, $obligations['blockers']);
         foreach ($patches as $table => &$rows) {
             foreach ($rows as $id => &$patch) {
@@ -249,7 +269,7 @@ class PaymentDomainCutover
             $wallets[$type] = (array) DB::table('credit_wallets')->where('wallet_type', $type)
                 ->selectRaw('COUNT(*) AS count, COALESCE(SUM(balance_credits),0) AS balance, COALESCE(SUM(subscription_balance_credits),0) AS subscription_balance, COALESCE(SUM(addon_balance_credits),0) AS addon_balance')->first();
         }
-        $result = ['policy' => 'payment-domain-cutover-v2', 'target' => $target, 'database' => $identity,
+        $result = ['policy' => 'payment-domain-cutover-v2', 'mode' => $mode, 'target' => $target, 'database' => $identity,
             'archived_financial_intent_ids' => $archivedIntents->pluck('id')->all(), 'legacy_processing_provenance' => $legacyProvenance,
             'readiness' => $readiness, 'provider_obligations' => $obligations, 'counts' => $counts,
             'reporting_boundary_projection' => ['starts_at' => 'transaction commit time',
@@ -263,9 +283,55 @@ class PaymentDomainCutover
             'revenue_before' => ['paid_order_count' => \App\Models\CreditOrder::revenueIncluded()->where('status', 'paid')->count(),
                 'base_amount_iqd' => (string) \App\Models\CreditOrder::revenueIncluded()->where('status', 'paid')->sum('base_amount_iqd')],
             'fingerprints' => $fingerprints, 'expected_after' => $expected, 'schema_hash' => $this->hash($schema), 'blockers' => $blockers];
+        if ($mode === self::FULL_LOCAL_RESET) {
+            unset($result['archived_financial_intent_ids'], $result['legacy_processing_provenance'], $result['payments']);
+        }
         $result['review_hash'] = $this->hash($result);
 
         return $result;
+    }
+
+    /** End local authority directly: never invoke expiry/refill or claim remote cancellation. */
+    private function resetSubscriptions(array &$patches): array
+    {
+        $effective = [];
+        $resolver = new CustomerBillingStateService;
+        foreach (self::SUBSCRIPTIONS as $table) {
+            $kind = $table === self::SUBSCRIPTIONS[0] ? 'service' : 'storage';
+            $default = $kind === 'service' ? $resolver->defaultServicePlan() : $resolver->defaultStoragePlan();
+            if (($kind === 'service' && ! $default->is_free) || ($kind === 'storage' && ((float) $default->price_iqd !== 0.0 || (float) $default->price_usd !== 0.0))) {
+                throw new PaymentHistoryResetRefused('The default plan must be Free before a full local reset.');
+            }
+            foreach (DB::table($table)->orderBy('id')->cursor() as $row) {
+                $meta = json_decode($row->meta ?? '{}', true, flags: JSON_THROW_ON_ERROR) ?? [];
+                // Keep commercial/history facts; remove old remote lifecycle and identifiers.
+                $meta = array_filter($meta, fn ($key) => ! preg_match('/^(fib_|provider_|payment_|merchant_|cancel|renewal_)/', $key)
+                    && ! in_array($key, ['billing_source', 'active_until', 'last_payment_at', 'last_allocated_payment_at'], true), ARRAY_FILTER_USE_KEY);
+                $patches[$table][$row->id] = array_merge($patches[$table][$row->id] ?? [], [
+                    'status' => 'ended', 'auto_renew' => 0, 'provider_ref' => null,
+                    'customer_payment_method_id' => null, 'next_renewal_on' => null, 'renewal_strategy' => 'manual_renewal',
+                    'meta' => $meta ? $this->databaseJson($meta) : null,
+                ]);
+            }
+            foreach (DB::table('customers')->orderBy('id')->pluck('id') as $id) {
+                $effective[$kind][$id] = ['subscription_id' => null, 'plan_id' => $default->id, 'kind' => 'free'];
+            }
+        }
+        foreach (DB::table('service_plan_agreements')->orderBy('id')->cursor() as $row) {
+            $patches['service_plan_agreements'][$row->id] = ['status' => 'ended'];
+        }
+
+        return [[], $effective, []];
+    }
+
+    private function databaseJson(array $value): string
+    {
+        $json = json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        // Native MySQL canonicalizes JSON storage (spacing/key order). Project the
+        // exact stored representation so full-row preservation hashes remain exact.
+        return DB::connection()->getDriverName() === 'mysql'
+            ? DB::selectOne('SELECT CAST(? AS JSON) AS normalized', [$json])->normalized : $json;
     }
 
     private function subscriptions(array &$patches, array &$blockers): array

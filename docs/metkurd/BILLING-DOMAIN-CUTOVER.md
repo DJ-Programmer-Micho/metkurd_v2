@@ -1,5 +1,112 @@
 # V2 payment-domain cutover
 
+## Full local billing reset — 2026-10-01 (current business contract)
+
+The approved final semantics use **`--mode=full-local-reset`**. This section supersedes
+older access-preservation/provider-disposition instructions below for this explicit
+mode. `preserve-access` remains the compatibility default; an old command/hash cannot
+silently acquire the more destructive all-customers-Free semantics. Mode, deployment
+target, operator, readiness, schema and row fingerprints are bound into the review.
+“Local” describes retirement of MetKurd's domain: the existing local-rehearsal versus
+production identity policies still apply unchanged. This is source support, not
+permission to execute on any application database.
+
+- All existing service/storage subscriptions become `ended`, with renewal disabled.
+  Provider references and operational provider/cancellation metadata are removed from
+  those subscription rows; commercial history, plan identities and dates remain.
+  Existing cash agreements, including future scheduled terms, become `ended`.
+  No remote cancellation status or timestamp is fabricated. Every customer resolves
+  to Free; old grants, cash agreements and provider coverage cannot refill wallets.
+- Every row in **payments, payment_events, payment_intents, payment_transactions,
+  payment_webhook_events** is deleted, regardless of status. No processing row is
+  migrated or archived elsewhere. There is **no legacy FIB exit manifest** or retained
+  provider-ID cleanup queue. Merchant-side cleanup is outside MetKurd after this reset.
+- ProviderObligationInventory and ProviderCoverageDispositions are not consulted in
+  this mode. Old missing/conflicting provider evidence, unresolved financial review
+  and retained coverage do not block it and are not relabelled CANCELLED/REJECTED.
+- Customers, App/API wallets (including both credit buckets), balances, credits,
+  ledgers, jobs, files, storage usage and history retain exact full-row fingerprints.
+  CreditOrders retain financial/revenue facts. Known nullable Payment/Intent FKs in
+  orders, subscriptions, coupons, conversions and subscription allocations are detached;
+  only these local row/column/ID mappings are audited. Allocation facts/cycle identity
+  remain intact; ledgers are never rewritten. Unexpected/nonnullable dependencies
+  still block. Existing immutable revenue/Admin review history is preserved as history,
+  never as a provider-processing fallback or future cleanup authority.
+- The single cutover audit contains `reporting_boundary` and `reset_verification`
+  (counts, hashes, wallet totals and local detach mappings). It contains no copied
+  Payment/Intent/transaction payloads, provider object IDs or exit manifest. All
+  existing Admin audit rows remain byte-for-byte unchanged.
+- Backup and restore evidence plus explicit confirmations, full migration/Admin
+  readiness, maintenance, stopped writers, correct deployment identity, transactional
+  schema, exact review hash and before/after preservation checks remain mandatory on
+  **both** targets. No FK disabling, TRUNCATE, counter reset or generic repair SQL.
+  A database with an existing committed cutover remains ineligible for a second reset.
+
+### New epoch fence
+
+The committed audit records subscription/agreement ID watermarks as well as the
+existing Payment/order timestamp and ID boundary. Old local subscriptions remain
+ineligible even if a stale process marks them active or they are future-dated. Old
+agreements cannot activate/refill. No old provider coverage disposition confers access.
+Payment IDs remain monotonic; “first V2 Payment” means first current-epoch Payment,
+not ID 1. Do not import/reuse old IDs or provider objects after reset.
+
+Native FIB callbacks may wake up only a known current-epoch Payment. Unknown, old or
+unmatched malformed callbacks return 202 without retaining the provider ID, creating
+orphan events or dispatching status work. Old queued callback jobs likewise exit.
+The retired generic FIB PaymentIntent webhook returns 410 before recording anything.
+Other legacy webhook deliveries must resolve a known new-epoch intent before recording
+anything; old/unknown deliveries return 410. Old provider batch-review packets cannot
+be generated after this reset.
+New epoch Payments always use compact persistence. Actionable QR presentation remains
+in CheckoutQrCache/private non-SQL storage with checkout-lifetime TTL; durable
+readable_code/provider_links remain fallback. A cache miss never creates a new FIB
+object. Unchanged polling and duplicate callbacks add no lifecycle events; repeated
+failure evidence stays aggregated. See [the persistence contract](PAYMENT-PERSISTENCE-V2.md).
+
+### Verification for the full reset
+
+`FullLocalBillingResetTest` covers populated processing tables, App/API credit buckets,
+ledger/customer/job/file/storage-usage fingerprints, retained order/allocation facts,
+all-Free manual/provider/active-cash/future-cash access, stale lifecycle refusal,
+unknown native and compatibility callbacks, no provider manifest/disposition, new
+compact paid fulfillment, 100 repeated checks/duplicate callbacks, stale Payment
+identity imports, mode-bound CLI confirmation and structural/readiness rollback.
+
+Final isolated SQLite run: **130 tests / 1,807 assertions passed** across that file,
+PaymentEventFrequencyTest, PaymentPersistenceTest, PaymentWebhookFlowTest and
+V2PaymentCheckoutTest. PHP lint/Pint and diff checks passed. A broader billing/payments,
+checkout and Admin run had 802 passes and two failures: the new timestamp-import
+fixture was corrected (mass assignment had ignored its timestamp) and passed on rerun;
+the existing V2LaunchPricingMigrationTest API-scope fixture still fails at line 208.
+That separate failure reproduces with all 12 changed application classes loaded from
+unchanged HEAD: a loaded Pro relation is not persisted eligible access. No authorization
+policy or unrelated fixture was changed to conceal it. Native MySQL/RDS transaction,
+JSON storage, locking and actual deployment acceptance remain unverified. No application
+database cutover/migration, production access, FIB call or deployment was performed.
+
+### Review and execution contract (operator-only; not executed here)
+
+Configure the existing disabled-by-default `BILLING_CUTOVER_*` identity, Admin, backup
+and restore assertions for the specifically approved target; never guess a DB identity.
+A read-only preliminary review uses:
+
+```sh
+php artisan billing:cutover-reset-payment-domain --target=local-rehearsal --mode=full-local-reset --dry-run --admin="$ADMIN_ID"
+```
+
+Use `--target=production` only under separately approved production operations. Require
+zero **structural/readiness** blockers, all effective plans Free, preserved balances,
+and all five deletion counts reviewed. Under maintenance and stopped writers, obtain
+a fresh review immediately before any independently authorized execution. The existing
+`--execute --review-hash=... --admin=... --reason=... --workers-stopped --backup-confirmed
+--restore-confirmed` options are all required. Exact confirmation is
+`RESET-V2-BILLING-DOMAIN-ALL-CUSTOMERS-FREE` for local-rehearsal or
+`RESET-V2-PRODUCTION-BILLING-DOMAIN-ALL-CUSTOMERS-FREE` for production. The command does
+not take backups, validate an external restore, stop workers or enter maintenance.
+No source change or passing SQLite test authorizes execution; native MySQL/RDS
+transaction/locking and deployment acceptance remain outstanding.
+
 ## Batch provider review — 2026-09-30
 
 [Batch review](PROVIDER-OBLIGATION-BATCH-REVIEW.md) now provides grouped private

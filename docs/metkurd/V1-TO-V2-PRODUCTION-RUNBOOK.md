@@ -1,5 +1,15 @@
 # V1 → V2 production launch runbook
 
+> **2026-10-01 correction:** The final business reset uses explicit
+> `--mode=full-local-reset`: every customer becomes Free, all five processing tables
+> empty, carried credits/history preserved, no provider exit manifest or remote
+> disposition required. Follow the current [full-reset procedure](BILLING-DOMAIN-CUTOVER.md#full-local-billing-reset--2026-10-01-current-business-contract).
+> Older preserve-access/provider-obligation procedures below describe the compatibility
+> mode only and are **not** the final approved reset procedure. Identity, backup/restore,
+> schema, Admin authority, maintenance, stopped-writer and fingerprint checks remain
+> mandatory. No deployment or execution is implied.
+
+
 > **Current operator entry point — 2026-09-30:** Follow
 > [PRODUCTION-DEPLOYMENT-FINAL.md](PRODUCTION-DEPLOYMENT-FINAL.md) as the single
 > authoritative execution sequence for the current VM2/VM3 production release.
@@ -378,6 +388,11 @@ Exit 0 covers only these checks: it explicitly does not certify running processe
 remote callbacks, backup recovery or native MySQL migration acceptance.
 
 ## 6. Billing cutover — explicit deployment target
+
+For the final full reset, follow the linked 2026-10-01 procedure above. The commands
+and provider-disposition discussion below apply to `--mode=preserve-access` only;
+omitting `--mode` deliberately preserves that older contract. Never reuse its
+hash/confirmation for a full reset.
 
 `CutoverIdentity` checks deployment assertions about Laravel's **normal connection**.
 LocalRehearsalIdentityPolicy and ProductionIdentityPolicy differ only in identity/

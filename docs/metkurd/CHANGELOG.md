@@ -1,5 +1,21 @@
 # Architectural and behavioral decisions
 
+## 2026-10-01 — explicit full local billing reset
+
+Added hash-bound `full-local-reset` mode to the existing cutover algorithm. Ends all
+old service/storage/grant/cash access without touching credits; deletes every row of
+the five processing tables without copying provider state to a manifest. Provider
+obligations/dispositions do not gate this mode; identity, full readiness, backup/restore,
+maintenance, writer-stop, authorization and exact fingerprints still do. Reviewed
+nullable allocation links detach while preserving allocation facts and all ledgers.
+The committed boundary fences old subscriptions/agreements and unknown FIB callbacks;
+fresh Payments retain compact persistence and private non-SQL QR presentation.
+No schema migration, application cutover, provider call or deployment performed.
+Focused reset/compact/QR/event/webhook coverage: 130 tests, 1,807 assertions passed.
+The broad run exposed one separate pre-existing API-scope fixture failure, reproduced
+against unchanged HEAD; see the cutover contract for verification limits.
+
+
 ## 2026-10-01 — Preserve QR for the full actionable checkout lifetime
 
 Removed the QR cache's arbitrary 24-hour cap and unknown-deadline one-hour guess.

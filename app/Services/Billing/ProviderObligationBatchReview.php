@@ -27,6 +27,9 @@ class ProviderObligationBatchReview
 
     public function manifest(ProviderReviewSnapshot $snapshot, array $identity, string $reviewedAt): array
     {
+        if (app(BillingReportingBoundary::class)->fullReset()) {
+            throw new PaymentHistoryResetRefused('The old provider domain was retired locally; no legacy review or cleanup manifest is available.');
+        }
         $at = CarbonImmutable::parse($reviewedAt);
         $items = [];
         $boundSubscriptions = [];

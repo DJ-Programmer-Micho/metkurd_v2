@@ -21,6 +21,14 @@ class FibCallbackController extends Controller
     ): JsonResponse {
         $payload = \App\Domain\Payments\Support\FibCallbackNotification::payload($request);
         $validation = $validator->validate($request);
+        // An unknown callback after the full reset is outside the new processing epoch.
+        // Do not retain its old provider reference, create orphan events or dispatch work.
+        if (app(\App\Services\Billing\BillingReportingBoundary::class)->fullReset()
+            && ! Payment::query()->currentBillingPeriod()->where('provider', 'fib')
+                ->where('provider_object_type', 'payment')
+                ->where('fib_payment_id', (string) $validation['payment_id'])->exists()) {
+            return response()->json(['ok' => true, 'status' => 'accepted'], 202);
+        }
 
         Log::info('FIB one-time callback received.', [
             'provider_object_type' => 'payment',
@@ -61,7 +69,7 @@ class FibCallbackController extends Controller
             ], 406);
         }
 
-        $payment = Payment::query()
+        $payment = Payment::query()->currentBillingPeriod()
             ->where('provider', 'fib')
             ->where('provider_object_type', PaymentProviderObjectType::PAYMENT)
             ->where('fib_payment_id', (string) $validation['payment_id'])

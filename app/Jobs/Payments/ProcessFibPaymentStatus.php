@@ -26,8 +26,12 @@ class ProcessFibPaymentStatus implements ShouldQueue
 
     public function handle(ConfirmFibPayment $confirm, PaymentEventRecorder $events): void
     {
-        $payment = Payment::query()->where('provider', 'fib')->where('provider_object_type', $this->providerObjectType)
+        $payment = Payment::query()->currentBillingPeriod()->where('provider', 'fib')->where('provider_object_type', $this->providerObjectType)
             ->where($this->providerObjectType === 'subscription' ? 'fib_subscription_id' : 'fib_payment_id', $this->providerReference)->first();
+
+        if (app(\App\Services\Billing\BillingReportingBoundary::class)->fullReset() && ! $payment) {
+            return;
+        }
 
         try {
             $objectType = PaymentProviderObjectType::from($this->providerObjectType);

@@ -1,5 +1,17 @@
 # MetKurd architecture
 
+## Full local billing reset correction — 2026-10-01
+
+Explicit `--mode=full-local-reset` supersedes older retained-access cutover policy:
+all customers become Free, all five processing tables empty, no legacy provider exit
+manifest or provider-disposition requirement. Preserve balances, ledgers, customers,
+workloads and required revenue/Admin history. Structural/identity/backup/restore and
+stopped-writer checks remain mandatory. Subscription/agreement watermarks and
+current-Payment-only callbacks fence the new epoch. Read the current section of
+[the cutover contract](BILLING-DOMAIN-CUTOVER.md) before changing this path.
+No application cutover/deployment is authorized by source or isolated tests.
+
+
 ## Batch provider disposition — 2026-09-30
 
 The private CLI review bulk-loads provider obligations and excludes ordinary Free

@@ -20,6 +20,8 @@ class PaymentWebhookService
     public function handle(string $provider, Request $request): PaymentWebhookEvent
     {
         $provider = strtolower(trim($provider));
+        // Native V2 FIB callbacks have their own current-Payment-only endpoints.
+        abort_if($provider === 'fib' && app(\App\Services\Billing\BillingReportingBoundary::class)->fullReset(), 410);
         // Reject before recording or resolving any financial intent. A configured
         // header is a local delivery agreement, not an invented provider signature.
         abort_unless($this->providers->isEnabled($provider), 403);
@@ -57,6 +59,8 @@ class PaymentWebhookService
             }
 
             $intent = $this->resolveIntent($provider, $normalized);
+            $boundary = app(\App\Services\Billing\BillingReportingBoundary::class)->fullReset();
+            abort_if($boundary && (! $intent || ! $intent->created_at || $intent->created_at->lt($boundary['starts_at'])), 410);
 
             /** @var PaymentWebhookEvent $event */
             $event = $existing ?? PaymentWebhookEvent::create([

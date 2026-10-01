@@ -1,5 +1,14 @@
 # Minimal V2 Payment persistence — 2026-10-01
 
+The 2026-10-01 [explicit full local reset](BILLING-DOMAIN-CUTOVER.md) deletes all five
+processing tables without a provider exit manifest and starts every customer on Free.
+Required existing financial/Admin history and carried credits remain intact. The
+compact QR/event contract below remains active; newly created Payments in that epoch
+are always compact. Unknown/old callbacks cannot recreate orphan evidence, Payments,
+entitlements or credit refills. Older preserve-access cutover statements below are
+compatibility history, not the final reset contract.
+
+
 This is a source persistence contract, not approval to execute a migration, cutover,
 provider operation or production deployment. Existing historical rows are not rewritten.
 The three native checkout actions mark **new V2** Payments with

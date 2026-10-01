@@ -10,6 +10,7 @@ class CutoverResetPaymentDomain extends Command
 {
     protected $signature = 'billing:cutover-reset-payment-domain
         {--target= : Required: local-rehearsal or production; must match deployment assertions}
+        {--mode=preserve-access : preserve-access or explicit full-local-reset (every customer becomes Free)}
         {--dry-run : Read-only review (default)}
         {--execute : Execute the reviewed target cutover}
         {--review-hash= : Exact dry-run hash}
@@ -17,8 +18,8 @@ class CutoverResetPaymentDomain extends Command
         {--admin= : Active finance and reconcile Admin ID}
         {--reason= : Audit reason (10-1000 characters)}
         {--workers-stopped : Attest workers, schedulers, callbacks and other writers are stopped}
-        {--backup-confirmed : Confirm the configured production backup belongs to this target and is available}
-        {--restore-confirmed : Confirm the configured production restore rehearsal evidence has been reviewed}';
+        {--backup-confirmed : Confirm the configured target backup belongs to this target and is available}
+        {--restore-confirmed : Confirm the configured target restore rehearsal evidence has been reviewed}';
 
     protected $description = 'Review or execute one V2 payment-domain cutover using an explicitly authorized deployment target.';
 
@@ -27,27 +28,31 @@ class CutoverResetPaymentDomain extends Command
         $guard = auth('admin');
         $previous = $guard->user();
         try {
+            $mode = (string) $this->option('mode');
             $target = (string) $this->option('target');
             $cutover->identity($target);
             $operator = $this->option('admin') ?? config('billing_cutover.admin_id');
             $adminId = ctype_digit((string) $operator) ? (int) $operator : null;
-            // Local review may be performed without an operator. Production binds its exact operator.
-            $reviewAdmin = $target === 'production' ? $adminId : null;
+            // Compatibility local review may omit Admin; full reset and production bind the operator.
+            $reviewAdmin = ($target === 'production' || $mode === PaymentDomainCutover::FULL_LOCAL_RESET) ? $adminId : null;
             if (! $this->option('execute')) {
-                $review = $cutover->review($target, $reviewAdmin);
+                $review = $cutover->review($target, $reviewAdmin, $mode);
                 $this->line(json_encode($review, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
-                $this->info('DRY RUN: no writes. Review this private manifest before execution.');
+                $this->info('DRY RUN: no writes. Review this private safety report before execution.');
 
                 return $review['blockers'] ? self::FAILURE : self::SUCCESS;
             }
             $confirmation = $target === 'production' ? 'RESET-V2-PRODUCTION-BILLING-DOMAIN' : 'RESET-V2-BILLING-DOMAIN';
+            if ($mode === PaymentDomainCutover::FULL_LOCAL_RESET) {
+                $confirmation .= '-ALL-CUSTOMERS-FREE';
+            }
             if ($this->option('dry-run') || $this->option('confirm') !== $confirmation
                 || ! $this->option('workers-stopped') || ! $adminId
                 || ! $guard->onceUsingId($adminId)) {
                 throw new PaymentHistoryResetRefused('Execution requires exact confirmation, Admin identity and stopped-writers attestation; do not combine --dry-run with --execute.');
             }
             $result = $cutover->execute($target, (string) $this->option('review-hash'), trim((string) $this->option('reason')), true,
-                $reviewAdmin, (bool) $this->option('backup-confirmed'), (bool) $this->option('restore-confirmed'));
+                $reviewAdmin, (bool) $this->option('backup-confirmed'), (bool) $this->option('restore-confirmed'), $mode);
             $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
             $this->info('Reviewed target cutover committed; exact preservation and current zero-revenue checks passed.');
 
