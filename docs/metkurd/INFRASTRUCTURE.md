@@ -232,6 +232,39 @@ shared cache/locks, scheduler and worker operation, storage ACL/CORS/retention,
 worker contract acceptance, network timeout semantics and backup recovery.
 None of these live checks was established merely by documenting the repository.
 
+## V2 upload file limits and transport overhead — 2026-10-01
+
+`InputBoundary` owns the V2 file limits in KiB: audio/document uploads accept
+102400 KiB (100 MiB / 104857600 bytes), and Vector/Theta reference audio accepts
+20480 KiB (20 MiB / 20971520 bytes). V2 Livewire rules and the shared upload-size
+Blade partial use these constants. `v2-upload-size.js` converts the rendered KiB
+to integer bytes for FilePond; binary display units and translated maximum-size
+messages match validation. The exact boundary is accepted; one byte more fails.
+
+STEM 2 and STEM 4 share the same component and limit. Leo/Caption use the shared
+FilePond helper. OCR uses its native input/preview and Laravel validation, not
+FilePond. No global FilePond limit or second custom JS size validator was found
+on these V2 paths. The legacy `STEM_MAX_UPLOAD_KB` option belongs to V1 only.
+Previously FilePond's `100MB` parsed to 100000000 bytes (about 95.37 MiB), while
+Laravel allowed 104857600 bytes. Reference uploads had the equivalent decimal
+20MB/binary 20MiB mismatch. Product limits have not increased.
+
+Transport limits apply to the multipart request, not just file bytes. For these
+single-file uploads, provision a small body allowance above 100 MiB, for example
+Nginx `client_max_body_size 102M;` (2 MiB overhead), with PHP
+`upload_max_filesize` at least 100M and `post_max_size` above the file limit.
+The reported PHP 200M/200M limits already leave room; the reported Nginx 100M
+does not allow the exact 100 MiB file plus multipart overhead. The application
+still rejects files over 100 MiB regardless of a higher transport cap.
+Do not lower the product boundary to compensate for transport framing.
+
+`LIVEWIRE_TEMP_UPLOAD_MAX_KB` remains an operator override, defaulting to the
+shared 102400 KiB limit; a lower configured value will still reject uploads.
+Verify all ingress hops, effective Livewire configuration, shared temporary
+storage and a real multipart boundary upload during deployment acceptance.
+Source/plugin/isolated Laravel tests do not verify production transport limits.
+No infrastructure configuration was changed or deployed by this fix.
+
 ## Hardening rollout requirements
 
 Apply the additive poll-coordination migration before deploying callers using

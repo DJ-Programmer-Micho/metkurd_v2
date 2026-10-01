@@ -32,7 +32,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     public bool $runLlmCorrector=true,$exportDocx=true,$exportTxt=true,$exportMarkdown=false,$exportHtml=false,$exportZip=false;
     public ?string $currentJobId=null; public bool $showJobStatus=false; public bool $viewingPreviousResult=false; protected $paginationTheme='bootstrap';
     public function mount():void{$this->submissionKey=(string)\Illuminate\Support\Str::uuid();$this->hydrateCurrentJob();$this->openProcessQueueJob();}
-    protected function rules():array{return ['documentFile'=>'required|file|mimes:pdf,png,jpg,jpeg,webp,bmp,gif,tif,tiff|max:102400','pageMode'=>'required|in:all,custom','pageRange'=>$this->isPdf()?'exclude_unless:pageMode,custom|required|string|max:255':'exclude','runLlmCorrector'=>'boolean','exportDocx'=>'boolean','exportTxt'=>'boolean','exportMarkdown'=>'boolean','exportHtml'=>'boolean','exportZip'=>'boolean'];}
+    protected function rules():array{return ['documentFile'=>'required|file|mimes:pdf,png,jpg,jpeg,webp,bmp,gif,tif,tiff|max:'.\App\Services\MetKurd\V2\InputBoundary::DOCUMENT_MAX_KIB,'pageMode'=>'required|in:all,custom','pageRange'=>$this->isPdf()?'exclude_unless:pageMode,custom|required|string|max:255':'exclude','runLlmCorrector'=>'boolean','exportDocx'=>'boolean','exportTxt'=>'boolean','exportMarkdown'=>'boolean','exportHtml'=>'boolean','exportZip'=>'boolean'];}
     protected function messages(): array
     {
         return ['pageRange.required' => __('Enter pages like 1-5,8,10-12.'), 'pageRange.max' => __('Enter pages like 1-5,8,10-12.')];

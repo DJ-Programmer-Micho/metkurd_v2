@@ -43,7 +43,7 @@ test('Theta FilePond remounts after navigation and reuses the current Livewire u
     }}};
     const page = () => {
         const cleanups = [], events = {}, uploads = [], calls = [], cancelled = [];
-        const field = {isConnected: true, dataset: {}};
+        const field = {isConnected: true, dataset: {maxUploadKib: '20480'}};
         const component = {upload: (...args) => uploads.push(args), call: name => { calls.push(name); return Promise.resolve(); }, cancelUpload: name => cancelled.push(name)};
         const ctx = {root: {querySelector: selector => { assert.equal(selector, '#v2-theta-reference-pond'); return field; }}, alive: () => true,
             component: () => component, cleanup: fn => cleanups.push(fn), on: (name, fn) => events[name] = fn};

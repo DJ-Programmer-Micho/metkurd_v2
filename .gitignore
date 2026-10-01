@@ -32,3 +32,4 @@ docs/*
 !docs/metkurd/
 docs/metkurd/*
 !docs/metkurd/*.md
+/.rnd

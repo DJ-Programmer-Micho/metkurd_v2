@@ -22,7 +22,7 @@ function harness() {
         }},
     };
     const api = installNavigation(win, doc);
-    const mount = () => { root = {isConnected: true, dataset: {}, closest: () => ({getAttribute: () => 'current'})}; return root; };
+    const mount = () => { root = {isConnected: true, dataset: {maxUploadKib: '102400'}, closest: () => ({getAttribute: () => 'current'})}; return root; };
     const emit = (event, detail) => (events.get(event) || []).forEach(cb => cb({detail}));
     const flush = async () => { const pending = [...frames.values()]; frames.clear(); pending.forEach(cb => cb()); await new Promise(resolve => setImmediate(resolve)); };
     return {api, win, doc, mount, emit, flush, hooks, subscriptions, events, color: () => color};
@@ -72,7 +72,7 @@ test('progress follows destination including history navigation and keeps unknow
 
 test('plugins wait for all library globals, register once and omit unused image preview', async () => {
     const scripts = [], registrations = [];
-    const win = {}, doc = {createElement: () => ({dataset: {}}), head: {append: script => scripts.push(script)}};
+    const win = {}, doc = {createElement: () => ({dataset: {maxUploadKib: '102400'}}), head: {append: script => scripts.push(script)}};
     globalThis.window = win; globalThis.document = doc;
     try {
         const first = filePond(), second = filePond();
@@ -92,7 +92,7 @@ test('plugins wait for all library globals, register once and omit unused image 
 test('navigation cancels an in-flight temporary upload and ignores its late callbacks', () => {
     let active = true, args, cancelled = 0, loaded = 0, destroyed = 0, options;
     const cleanups = [], wire = {upload(...input) {args = input;}, cancelUpload() {cancelled++;}};
-    const input = {dataset: {}, isConnected: true};
+    const input = {dataset: {maxUploadKib: '102400'}, isConnected: true};
     const ctx = {root: {querySelector: () => input}, component: () => active ? wire : null, alive: () => active, on() {}, cleanup: cb => cleanups.push(cb)};
     const ui = mountUpload(ctx, {input: '#file', property: 'audioFile'}, {FilePond: {find() {}, create(_, config) {options = config; return {destroy() {destroyed++;}};}}});
     options.server.process('', {}, {}, () => loaded++, assert.fail, assert.fail, () => {});
@@ -101,7 +101,7 @@ test('navigation cancels an in-flight temporary upload and ignores its late call
 });
 
 test('a FilePond replacement element survives Livewire morphs without recreating the upload', () => {
-    const field = {dataset: {}, isConnected: true}, wrapper = {isConnected: true};
+    const field = {dataset: {maxUploadKib: '102400'}, isConnected: true}, wrapper = {isConnected: true};
     let node = field, creates = 0, destroyed = 0;
     const ctx = {root: {querySelector: () => node}, component: () => ({}), alive: () => true, on() {}, cleanup() {}};
     const ui = mountUpload(ctx, {input: '#file'}, {FilePond: {find() {}, create() {
@@ -126,7 +126,7 @@ test('OCR unsubscribes stale clear handlers and rejects a PDF finishing after na
     const h = harness(); let resolvePdf, destroyed = 0, uploads = 0;
     const root = h.mount(), nodes = new Map(), handlers = new Map();
     root.querySelector = selector => {
-        if (!nodes.has(selector)) nodes.set(selector, {dataset: {}, style: {}, classList: {remove() {},toggle() {}}, setAttribute() {},
+        if (!nodes.has(selector)) nodes.set(selector, {dataset: {maxUploadKib: '102400'}, style: {}, classList: {remove() {},toggle() {}}, setAttribute() {},
             addEventListener(name, cb) {handlers.set(selector+name, cb);}, removeEventListener(name) {handlers.delete(selector+name);}});
         return nodes.get(selector);
     };

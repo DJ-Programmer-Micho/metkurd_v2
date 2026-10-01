@@ -120,7 +120,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     public function updatedReferenceAudio(): void
     {
         if (($this->toolDefinition['kind'] ?? null) !== 'omni_clone') return;
-        $this->validateOnly('referenceAudio', ['referenceAudio' => 'nullable|file|mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm|max:20480']);
+        $this->validateOnly('referenceAudio', ['referenceAudio' => 'nullable|file|mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm|max:'.\App\Services\MetKurd\V2\InputBoundary::REFERENCE_MAX_KIB]);
         $this->selectedReferenceId = null;
         $this->referenceAudioName = $this->referenceAudio?->getClientOriginalName();
         $this->referenceAudioBytes = $this->referenceAudio ? (int) $this->referenceAudio->getSize() : null;
@@ -190,7 +190,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         $this->validate([
             'text' => ['required', 'string', 'min:1', 'max:'.$this->maxCharacters],
             'language' => ['required', 'in:ckb,en,ar'],
-            'referenceAudio' => ['nullable', 'file', 'mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm', 'max:20480'],
+            'referenceAudio' => ['nullable', 'file', 'mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm', 'max:'.\App\Services\MetKurd\V2\InputBoundary::REFERENCE_MAX_KIB],
         ]);
         try {
             $boundary = app(\App\Services\MetKurd\V2\InputBoundary::class);

@@ -1,0 +1,23 @@
+/* Shared V2 typography, including standalone MCP pages and body-mounted overlays.
+   Keep icon and code/monospace fonts intact; change no sizing or layout tokens. */
+html.metkurd-v2-typography,
+.metkurd-v2-typography body {
+    --v2-font-family: "Segoe UI", Arial, sans-serif;
+    --vz-font-sans-serif: var(--v2-font-family);
+    --vz-body-font-family: var(--v2-font-family);
+    --vz-btn-font-family: var(--v2-font-family);
+    font-family: var(--v2-font-family);
+}
+
+/* Explicit theme/plugin fonts need a scoped override, including FilePond CSS
+   loaded later by Livewire workspaces. Do not target icon pseudo-elements. */
+.metkurd-v2-typography :is(
+    h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6,
+    .ff-base, .ff-secondary,
+    input, button, select, textarea, optgroup, .btn,
+    .form-control, .form-select,
+    .modal, .dropdown-menu, .tooltip, .popover,
+    .filepond--root, .swal2-popup, .swal2-close
+) {
+    font-family: var(--v2-font-family);
+}

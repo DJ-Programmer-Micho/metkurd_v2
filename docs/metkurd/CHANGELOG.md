@@ -1,5 +1,14 @@
 # Architectural and behavioral decisions
 
+## 2026-10-01 — V2 upload byte boundary alignment
+
+V2 FilePond now receives integer bytes derived from InputBoundary's server-rendered
+KiB limits instead of decimal `100MB`/`20MB` strings. STEM 2/4, Leo, Caption and
+reference uploads share the conversion and report binary units; OCR retains its
+native uploader with the same backend document limit. No business limit changed.
+Documented multipart transport headroom separately in INFRASTRUCTURE.md; live
+ingress acceptance remains an operator check. No production access or deployment.
+
 ## 2026-10-01 — explicit full local billing reset
 
 Added hash-bound `full-local-reset` mode to the existing cutover algorithm. Ends all

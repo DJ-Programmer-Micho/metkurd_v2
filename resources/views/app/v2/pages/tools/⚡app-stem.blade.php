@@ -55,7 +55,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     protected function rules(): array
     {
         return [
-            'audioFile' => 'required|file|mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac,audio/x-flac|max:102400',
+            'audioFile' => 'required|file|mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac,audio/x-flac|max:'.\App\Services\MetKurd\V2\InputBoundary::AUDIO_MAX_KIB,
         ];
     }
 
@@ -287,7 +287,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             <div class="v2-workspace-panel v2-create-panel v2-stem-create-panel">
                 <div class="v2-panel-heading"><span>{{ __('Create separation') }}</span><small>{{ __('Upload a source track') }}</small></div>
                 <div class="v2-stem-mode mb-3"><i class="ri-git-branch-line"></i><span><strong>{{ $stems }} {{ __('Stems') }}</strong><small>{{ $stems === 2 ? __('Vocals and instrumental') : __('Vocals, drums, bass, and other') }}</small></span></div>
-                <div wire:ignore><input id="v2-stem-audio-pond" data-upload-error="{{ __('Upload failed') }}" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,.flac,audio/*"></div>
+                <div wire:ignore><input id="v2-stem-audio-pond" @include('app.v2.components.upload-size', ['maxKib' => \App\Services\MetKurd\V2\InputBoundary::AUDIO_MAX_KIB]) data-upload-error="{{ __('Upload failed') }}" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,.flac,audio/*"></div>
                 <div class="v2-stem-source-preview" wire:ignore data-v2-stem-source-preview hidden><div class="v2-stem-source-preview-heading"><span class="v2-stem-source-preview-icon"><i class="ri-headphone-line"></i></span><span><strong>{{ __('Source preview') }}</strong><br><small>{{ __('Listen before starting separation') }}</small></span><span class="v2-stem-source-preview-state mx-3" data-stem-source-state>{{ __('Ready to review') }}</span></div><div class="v2-stem-source-wave" data-v2-stem-source-wave></div><audio preload="metadata" data-v2-stem-source-audio hidden></audio><div class="v2-stem-source-preview-footer"><div class="v2-stem-source-transport"><button type="button" class="v2-stem-source-play btn btn-success btn-sm mb-1" data-stem-source-toggle aria-pressed="false" aria-label="{{ __('Play source preview') }}"><i class="ri-play-fill"></i><span data-stem-source-toggle-label>{{ __('Play') }}</span></button><span class="mx-3" data-stem-source-time>00:00 / --:--</span></div><button type="button" class="btn btn-warning btn-sm" data-stem-upload-source><i class="ri-upload-cloud-2-line"></i> {{ __('Upload audio') }}</button></div><small>{{ __('Happy with this track? Upload it when you are ready.') }}</small></div>
                 @if($audioName)<div class="v2-stem-file"><i class="ri-file-music-line"></i><span><strong>{{ $audioName }}</strong><small>{{ $audioMime }} · {{ number_format((float) $audioDurationSec, 1) }}s</small></span><button type="button" wire:click="removeAudio" class="btn btn-sm btn-outline-warning">{{ __('Remove') }}</button></div>@endif
                 @error('audioFile')<small class="text-danger mt-2">{{ $message }}</small>@enderror
@@ -377,7 +377,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
             instantUpload: false,
             credits: false,
             acceptedFileTypes: ['audio/wav','audio/x-wav','audio/mpeg','audio/mp3','audio/mp4','audio/x-m4a','audio/aac','audio/ogg','audio/webm','audio/flac','audio/x-flac'],
-            maxFileSize: '100MB',
+            ...window.MetKurdV2Assets.uploadSizeOptions(input),
             onaddfile: (_, fileItem) => previewSourceFile(fileItem?.file),
             onremovefile: () => clearSourcePreview(),
             onprocessfile: (error, fileItem) => { if (error) { setSourcePreviewState('ready', t('Ready to retry upload')); return; } setSourcePreviewState('uploaded', t('Uploaded and ready to separate')); notifyUploadComplete(fileItem?.filename); },

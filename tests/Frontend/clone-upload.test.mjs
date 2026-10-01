@@ -11,7 +11,7 @@ function setup({ ready = false } = {}) {
     const mount = id => {
         const wire = {uploads: [], cancelled: [], calls: [], upload(...args) { this.uploads.push(args); },
             cancelUpload(name) { this.cancelled.push(name); }, call(name) { this.calls.push(name); return this.result ?? Promise.resolve(); }};
-        page.id = id; page.host = {getAttribute: () => id}; page.field = {isConnected: true, dataset: {}};
+        page.id = id; page.host = {getAttribute: () => id}; page.field = {isConnected: true, dataset: {maxUploadKib: '20480'}};
         return wire;
     };
     const wire = mount('vector-1');
@@ -28,7 +28,7 @@ function setup({ ready = false } = {}) {
             root: {querySelector: () => page.field}, alive: () => active,
             component: () => active ? components.get(page.id) : null,
             on: (name, callback) => { listeners[name] = callback; }, cleanup: callback => cleanups.push(callback),
-        }, {input: '#fixture', property: 'referenceAudio', maxSize: '20MB', remove: 'removeReferenceAudio', clear: 'ctts-reference-audio-cleared'}, win);
+        }, {input: '#fixture', property: 'referenceAudio', remove: 'removeReferenceAudio', clear: 'ctts-reference-audio-cleared'}, win);
         controller.update();
     };
     events['livewire:navigating'] = () => { cleanups.forEach(fn => fn()); cleanups = []; active = false; controller?.destroy(); controller = null; };
@@ -88,7 +88,7 @@ test('selecting a saved reference releases the removed uploader and switching ba
     state.page.field = null;
     state.hooks.morphed();
     assert.equal(state.ponds[0].destroyed, true);
-    state.page.field = { isConnected: true, dataset: {} };
+    state.page.field = { isConnected: true, dataset: {maxUploadKib: '20480'} };
     state.hooks.morphed();
     assert.equal(state.ponds.length, 2);
     upload(state.ponds[1]);

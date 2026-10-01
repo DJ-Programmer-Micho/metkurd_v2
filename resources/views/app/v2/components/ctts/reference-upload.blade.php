@@ -21,7 +21,7 @@
         @endif
     @else
         <p class="v2-muted mb-3">{{ __('Upload the voice you want to clone. Clean speech between 10 and 30 seconds works best.') }}</p>
-        <div wire:ignore><input type="file" id="v2-ctts-reference-pond" data-upload-error="{{ __('Upload failed') }}" data-label-idle="{{ __('Drop a reference audio file') }} &lt;span class=&quot;filepond--label-action&quot;&gt;{{ __('Browse') }}&lt;/span&gt;" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,audio/*"></div>
+        <div wire:ignore><input type="file" id="v2-ctts-reference-pond" @include('app.v2.components.upload-size', ['maxKib' => \App\Services\MetKurd\V2\InputBoundary::REFERENCE_MAX_KIB]) data-upload-error="{{ __('Upload failed') }}" data-label-idle="{{ __('Drop a reference audio file') }} &lt;span class=&quot;filepond--label-action&quot;&gt;{{ __('Browse') }}&lt;/span&gt;" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,audio/*"></div>
         <div wire:loading wire:target="referenceAudio" class="small text-danger mt-2">{{ __('Uploading reference audio…') }}</div>
         @if($referenceAudioName)<div class="v2-ctts-uploaded-reference"><i class="ri-file-music-line"></i><span><strong>{{ $referenceAudioName }}</strong><small>{{ $referenceAudioMime ?: 'audio/*' }} · {{ number_format(($referenceAudioBytes ?? 0) / 1024, 1) }} KB</small></span><button type="button" class="btn btn-sm btn-outline-danger" wire:click="removeReferenceAudio">{{ __('Remove') }}</button></div>@endif
         @error('referenceAudio')<div class="text-danger small mt-2">{{ $message }}</div>@enderror

@@ -1834,5 +1834,6 @@
     ":count input characters": ":count input characters",
     "View result": "View result",
     "No diacritization history yet.": "No diacritization history yet.",
-    "Arabic diacritization could not be completed. Please try again.": "Arabic diacritization could not be completed. Please try again."
+    "Arabic diacritization could not be completed. Please try again.": "Arabic diacritization could not be completed. Please try again.",
+    "Maximum file size is :size MiB": "Maximum file size is :size MiB"
 }

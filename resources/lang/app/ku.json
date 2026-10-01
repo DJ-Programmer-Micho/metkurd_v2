@@ -1834,5 +1834,6 @@
     ":count input characters": ":count پیتی تێکراو",
     "View result": "بینینی ئەنجام",
     "No diacritization history yet.": "هێشتا مێژووی حەرەکەدانان نییە.",
-    "Arabic diacritization could not be completed. Please try again.": "حەرەکەدانانی دەقی عەرەبی تەواو نەبوو. تکایە دووبارە هەوڵ بدەوە."
+    "Arabic diacritization could not be completed. Please try again.": "حەرەکەدانانی دەقی عەرەبی تەواو نەبوو. تکایە دووبارە هەوڵ بدەوە.",
+    "Maximum file size is :size MiB": "زۆرترین قەبارەی پەڕگە :size MiB"
 }

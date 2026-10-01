@@ -1,3 +1,5 @@
+import {uploadSizeOptions} from './v2-upload-size.js';
+
 const loading = new Map();
 const registered = new WeakMap();
 const assets = {
@@ -40,4 +42,4 @@ export function disposePond(pond, win = window, doc = globalThis.document) {
     pond.destroy();
 }
 
-if (typeof window !== 'undefined') window.MetKurdV2Assets = {load: loadAsset, filePond, disposePond};
+if (typeof window !== 'undefined') window.MetKurdV2Assets = {load: loadAsset, filePond, disposePond, uploadSizeOptions};

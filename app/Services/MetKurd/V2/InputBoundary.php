@@ -17,7 +17,11 @@ class InputBoundary
 {
     public const DOCUMENT_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff'];
 
-    public const DOCUMENT_MAX_KIB = 102400;
+    public const AUDIO_MAX_KIB = 102400;
+
+    public const REFERENCE_MAX_KIB = 20480;
+
+    public const DOCUMENT_MAX_KIB = self::AUDIO_MAX_KIB;
 
     public const AUDIO_MIMES = 'audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac,audio/x-flac';
 
@@ -48,7 +52,7 @@ class InputBoundary
 
     public function audio(UploadedFile $file, bool $reference = false): array
     {
-        Validator::make(['audioFile' => $file], ['audioFile' => ['required', 'file', 'mimetypes:'.($reference ? str_replace(',audio/flac,audio/x-flac', '', self::AUDIO_MIMES) : self::AUDIO_MIMES), 'max:'.($reference ? 20480 : 102400)]])->validate();
+        Validator::make(['audioFile' => $file], ['audioFile' => ['required', 'file', 'mimetypes:'.($reference ? str_replace(',audio/flac,audio/x-flac', '', self::AUDIO_MIMES) : self::AUDIO_MIMES), 'max:'.($reference ? self::REFERENCE_MAX_KIB : self::AUDIO_MAX_KIB)]])->validate();
         try {
             $info = app(AudioProbeService::class)->probeUploadedFile($file);
             $seconds = (float) ($info['duration_sec'] ?? 0);
@@ -90,11 +94,11 @@ class InputBoundary
                 throw new \RuntimeException('Could not prepare reference inspection.');
             }
             try {
-                $bytes = stream_copy_to_stream($stream, $target, 20480 * 1024 + 1);
+                $bytes = stream_copy_to_stream($stream, $target, self::REFERENCE_MAX_KIB * 1024 + 1);
             } finally {
                 fclose($target);
             }
-            if ($bytes === false || $bytes > 20480 * 1024) {
+            if ($bytes === false || $bytes > self::REFERENCE_MAX_KIB * 1024) {
                 throw ValidationException::withMessages(['reference_id' => __('Upload failed')]);
             }
             $this->audio(new UploadedFile($temporary, basename($file->path), null, null, true), true);

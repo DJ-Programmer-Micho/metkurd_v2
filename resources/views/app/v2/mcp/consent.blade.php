@@ -1,6 +1,6 @@
 <!doctype html>
-<html lang="{{ app()->getLocale() }}" dir="{{ in_array(app()->getLocale(), ['ar', 'ku']) ? 'rtl' : 'ltr' }}">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ __('mcp.connect') }}</title><link rel="stylesheet" href="{{ asset('app/css/bootstrap.min.css') }}"><link rel="stylesheet" href="{{ asset('app/css/app.min.css') }}"></head>
+<html class="metkurd-v2-typography" lang="{{ app()->getLocale() }}" dir="{{ in_array(app()->getLocale(), ['ar', 'ku']) ? 'rtl' : 'ltr' }}">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ __('mcp.connect') }}</title><link rel="stylesheet" href="{{ asset('app/css/bootstrap.min.css') }}"><link rel="stylesheet" href="{{ asset('app/css/app.min.css') }}">@vite('resources/css/v2-typography.css')</head>
 <body class="bg-dark text-light">
 <main class="container py-5"><div class="row justify-content-center"><div class="col-12 col-md-8 col-lg-6"><div class="card card-body">
     <h1>{{ __('mcp.connect') }}</h1>

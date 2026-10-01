@@ -135,7 +135,7 @@ return [
 
     'temporary_file_upload' => [
         'disk' => env('LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK') ?: env('LIVEWIRE_TEMP_DISK') ?: null, // Use shared disk (e.g. s3) in multi-node production
-        'rules' => ['required', 'file', 'max:'.(int) env('LIVEWIRE_TEMP_UPLOAD_MAX_KB', 102400)], // Default overridden for audio uploads (100MB)
+        'rules' => ['required', 'file', 'max:'.(int) env('LIVEWIRE_TEMP_UPLOAD_MAX_KB', \App\Services\MetKurd\V2\InputBoundary::AUDIO_MAX_KIB)], // KiB; transport body limits must leave multipart overhead above this file limit.
         'directory' => env('LIVEWIRE_TEMP_DIRECTORY', null),  // Example: 'tmp'                     | Default: 'livewire-tmp'
         'middleware' => null,                                 // Example: 'throttle:5,1'            | Default: 'throttle:60,1'
         'preview_mimes' => [                                  // Supported file types for temporary pre-signed file URLs...

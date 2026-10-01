@@ -151,7 +151,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
     public function saveReference(): void
     {
         abort_unless($this->isClone, 404);
-        $this->validate(['referenceAudio' => 'required|file|max:20480']);
+        $this->validate(['referenceAudio' => 'required|file|max:'.\App\Services\MetKurd\V2\InputBoundary::REFERENCE_MAX_KIB]);
         try {
             $file = app(MultiSpeakerReferences::class)->upload(auth('app')->user(), $this->referenceAudio);
             foreach ($this->segmentOrder as $id) {
@@ -233,7 +233,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
                 @endif
                 @if($this->isClone)
                     <p>{{ __('Save a reference once, then select it in any segment.') }}</p>
-                    <div wire:ignore><input type="file" id="v2-theta-reference-pond" aria-label="{{ __('Reference audio') }}" data-upload-error="{{ __('Upload failed') }}" data-label-idle="{{ __('Drop a reference audio file') }} &lt;span class=&quot;filepond--label-action&quot;&gt;{{ __('Browse') }}&lt;/span&gt;" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,audio/*"></div>
+                    <div wire:ignore><input type="file" id="v2-theta-reference-pond" @include('app.v2.components.upload-size', ['maxKib' => \App\Services\MetKurd\V2\InputBoundary::REFERENCE_MAX_KIB]) aria-label="{{ __('Reference audio') }}" data-upload-error="{{ __('Upload failed') }}" data-label-idle="{{ __('Drop a reference audio file') }} &lt;span class=&quot;filepond--label-action&quot;&gt;{{ __('Browse') }}&lt;/span&gt;" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,audio/*"></div>
                     <div wire:loading wire:target="referenceAudio,saveReference" class="v2-muted mt-2">{{ __('Uploading reference audio…') }}</div>
                     @if($referenceAudio)<button type="button" class="btn btn-danger" wire:click="saveReference" wire:loading.attr="disabled">{{ __('Save reference') }}</button>@endif
                     <p class="v2-muted mt-2">{{ __('Saved references remain in your storage until you delete them.') }}</p>

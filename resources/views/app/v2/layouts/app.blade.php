@@ -6,7 +6,7 @@
     if ($v2ServiceSlug === 'stem') $v2ServiceTheme = 'stem';
     if (! in_array($v2ServiceTheme, ['primary', 'danger', 'success', 'info', 'warning', 'stem'], true)) $v2ServiceTheme = 'primary';
 @endphp
-<html lang="{{ app()->getLocale() }}" dir="{{ in_array(app()->getLocale(), ['ar', 'ku'], true) ? 'rtl' : 'ltr' }}" data-bs-theme="dark">
+<html class="metkurd-v2-typography" lang="{{ app()->getLocale() }}" dir="{{ in_array(app()->getLocale(), ['ar', 'ku'], true) ? 'rtl' : 'ltr' }}" data-bs-theme="dark">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -19,7 +19,7 @@
     <link href="{{ asset('app/css/icons.min.css') }}" rel="stylesheet">
     <link href="{{ asset('app/libs/sweetalert2/sweetalert2.min.css') }}" rel="stylesheet">
     <link href="{{ asset('app/css/app.min.css') }}" rel="stylesheet">
-    @vite('resources/js/app.js')
+    @vite(['resources/js/app.js', 'resources/css/v2-typography.css'])
     @livewireStyles
     <style>
         /* V1 visual primitives, shared by the V2 shell without its sidebar. */

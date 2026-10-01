@@ -1,3 +1,4 @@
+import {uploadSizeOptions} from './v2-upload-size.js';
 import {filePond, disposePond} from './v2-assets.js';
 
 export function mountUpload(ctx, options, win = window) {
@@ -23,7 +24,7 @@ export function mountUpload(ctx, options, win = window) {
         pond = win.FilePond.create(input, {
             allowMultiple: false, credits: false,
             acceptedFileTypes: ['audio/wav','audio/x-wav','audio/mpeg','audio/mp3','audio/mp4','audio/x-m4a','audio/aac','audio/ogg','audio/webm', ...(options.flac ? ['audio/flac','audio/x-flac'] : [])],
-            maxFileSize: options.maxSize,
+            ...uploadSizeOptions(input),
             ...(input.dataset.labelIdle ? {labelIdle: input.dataset.labelIdle} : {}),
             onaddfile: (error, item) => { if (!error && ctx.alive()) options.preview?.set(item.file); },
             onremovefile: () => { if (ctx.alive()) options.preview?.destroy(); },
@@ -55,7 +56,7 @@ export function mountUpload(ctx, options, win = window) {
 }
 
 export function mountThetaUpload(ctx, win = window) {
-    return mountUpload(ctx, {input: '#v2-theta-reference-pond', property: 'referenceAudio', maxSize: '20MB', remove: 'removeReferenceAudio', clear: 'theta-reference-audio-cleared'}, win);
+    return mountUpload(ctx, {input: '#v2-theta-reference-pond', property: 'referenceAudio', remove: 'removeReferenceAudio', clear: 'theta-reference-audio-cleared'}, win);
 }
 
 if (typeof window !== 'undefined') {
@@ -63,7 +64,7 @@ if (typeof window !== 'undefined') {
     register({key: 'theta-upload', selector: '.v2-theta-workspace', prepare: filePond,
         boot: ctx => mountThetaUpload(ctx)});
     register({key: 'vector-upload', selector: '.v2-ctts-workspace', prepare: filePond,
-        boot: ctx => mountUpload(ctx, {input: '#v2-ctts-reference-pond', property: 'referenceAudio', maxSize: '20MB', remove: 'removeReferenceAudio', clear: 'ctts-reference-audio-cleared'})});
+        boot: ctx => mountUpload(ctx, {input: '#v2-ctts-reference-pond', property: 'referenceAudio', remove: 'removeReferenceAudio', clear: 'ctts-reference-audio-cleared'})});
     for (const kind of ['leo', 'caption']) {
         register({key: `${kind}-upload`, selector: `.v2-${kind}-page`, prepare: filePond, boot(ctx) {
             let objectUrl = null;
@@ -73,7 +74,7 @@ if (typeof window !== 'undefined') {
                 sync() { const wave = ctx.root.querySelector(`[data-${kind}-upload-waveform]`); if (ctx.alive() && wave && objectUrl) { wave.dataset.url = objectUrl; window.MetKurdWaveform?.mount(); } },
             };
             ctx.on(kind === 'leo' ? 'leo-copy-transcript' : 'caption-copy-result', event => navigator.clipboard?.writeText(event.text || ''));
-            return mountUpload(ctx, {input: `#v2-${kind}-audio-pond`, property: 'audioFile', maxSize: '100MB', flac: true, remove: 'removeAudio', clear: `${kind}-audio-cleared`, preview});
+            return mountUpload(ctx, {input: `#v2-${kind}-audio-pond`, property: 'audioFile', flac: true, remove: 'removeAudio', clear: `${kind}-audio-cleared`, preview});
         }});
     }
 }

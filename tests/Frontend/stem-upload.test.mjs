@@ -1,3 +1,4 @@
+import {uploadSizeOptions} from '../../resources/js/v2-upload-size.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -13,7 +14,7 @@ function setup({ libraryReady = true, componentReady = true } = {}) {
         const host = { getAttribute: () => `stem-${mode}` };
         state.page = { dataset: {}, closest: () => host, isConnected: true, querySelectorAll: () => [],
             querySelector: selector => selector === '#v2-stem-audio-pond' ? state.input : null, addEventListener() {} };
-        state.input = {};
+        state.input = {dataset: {maxUploadKib: '102400', sizeExceeded: 'File is too large', maxSizeLabel: 'Maximum file size is 100 MiB'}};
         const wire = { uploads: [], cancelled: [],
             upload(...args) { this.uploads.push(args); },
             cancelUpload(name) { this.cancelled.push(name); },
@@ -31,7 +32,7 @@ function setup({ libraryReady = true, componentReady = true } = {}) {
         ponds.push(pond);
         return pond;
     } };
-    const window = { MetKurdV2Assets: {disposePond: pond => pond?.destroy()}, Livewire: {
+    const window = { MetKurdV2Assets: {uploadSizeOptions, disposePond: pond => pond?.destroy()}, Livewire: {
         find: id => components.get(id),
         on: (name, callback) => { listeners[name] = callback; },
         hook: (name, callback) => { hooks[name] = callback; },
@@ -104,4 +105,16 @@ test('morphs preserve a connected uploader and replace a removed uploader', () =
     state.hooks.morphed();
     assert.equal(state.ponds[0].destroyed, true);
     assert.equal(state.ponds.length, 2);
+});
+
+
+test('STEM 2 and STEM 4 keep the same binary upload boundary after navigation', () => {
+    const state = setup();
+    assert.equal(state.ponds[0].options.maxFileSize, 104857600);
+    assert.equal(state.ponds[0].options.fileSizeBase, 1024);
+    state.events['livewire:navigating']();
+    state.mount(4);
+    state.events['livewire:navigated']();
+    assert.equal(state.ponds[1].options.maxFileSize, state.ponds[0].options.maxFileSize);
+    assert.equal(state.ponds[1].options.maxTotalFileSize, null);
 });

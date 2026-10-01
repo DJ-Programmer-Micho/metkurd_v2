@@ -1834,5 +1834,6 @@
     ":count input characters": ":count حرفاً في النص المدخل",
     "View result": "عرض النتيجة",
     "No diacritization history yet.": "لا توجد عمليات تشكيل سابقة بعد.",
-    "Arabic diacritization could not be completed. Please try again.": "تعذر إكمال تشكيل النص العربي. يرجى المحاولة مجدداً."
+    "Arabic diacritization could not be completed. Please try again.": "تعذر إكمال تشكيل النص العربي. يرجى المحاولة مجدداً.",
+    "Maximum file size is :size MiB": "الحد الأقصى لحجم الملف هو :size MiB"
 }
