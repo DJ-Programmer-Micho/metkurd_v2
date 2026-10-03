@@ -121,7 +121,7 @@ new class extends Component
 
                 <div class="col-lg-5 icon-chip tool-square-chip" style="width: 256px; height: 256px;">
                     <a href="https://t.me/metkurd_ai">
-                        <img src="{{ asset('/app/logo/qr_tele.png') }}" alt="metkurd_ai-telegram_channel" width="100%">
+                        <img src="{{ asset('landing/images/qr_tele.webp') }}" alt="metkurd_ai-telegram_channel" width="512" height="512" style="width:100%;height:auto" loading="lazy" decoding="async">
                     </a>
                 </div>
             </div>
@@ -140,7 +140,7 @@ new class extends Component
 
                 <div class="col-lg-5 icon-chip tool-square-chip" style="width: 132px; height: 132px;">
                     <a href="https://g.page/r/CZCtbaL1YK6FEAI/review">
-                        <img src="{{ app('g_review') }}" alt="https://t.me/metkurd_ai" width="100%">
+                        <img src="{{ asset('landing/images/google_review.webp') }}" alt="{{ LandingContent::text('google_review.g_copy') }}" width="132" height="132" style="width:100%;height:auto" loading="lazy" decoding="async">
                     </a>
                 </div>
             </div>
@@ -152,12 +152,16 @@ new class extends Component
                     <span class="brand-badge">
                         <img
                             class="brand-logo brand-logo--dark"
-                            src="{{ asset(app('logo_1024_tran_black')) }}"
+                            src="{{ asset('landing/images/white_logo-44.webp') }}"
+                        srcset="{{ asset('landing/images/white_logo-44.webp') }} 44w, {{ asset('landing/images/white_logo-88.webp') }} 88w"
+                        sizes="22px" width="44" height="40" loading="lazy" decoding="async"
                             alt="{{ LandingContent::text('site.name') }}"
                         >
                         <img
                             class="brand-logo brand-logo--light"
-                            src="{{ asset(app('logo_1024_tran')) }}"
+                            src="{{ asset('landing/images/black_logo-44.webp') }}"
+                        srcset="{{ asset('landing/images/black_logo-44.webp') }} 44w, {{ asset('landing/images/black_logo-88.webp') }} 88w"
+                        sizes="22px" width="44" height="40" loading="lazy" decoding="async"
                             alt="{{ LandingContent::text('site.name') }}"
                         >
                     </span>

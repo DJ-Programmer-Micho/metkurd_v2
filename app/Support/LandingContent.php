@@ -902,7 +902,10 @@ class LandingContent
     {
         $public = app(\App\Support\Landing\PublicWebsiteContent::class);
         $catalog = app(\App\Support\Landing\PublicProductCatalog::class);
-        if (in_array($path, ['site.meta_description', 'site.subject', 'home.meta.description', 'footer.copy',
+        if ($path === 'home.meta.description') {
+            return $public->homeDescription();
+        }
+        if (in_array($path, ['site.meta_description', 'site.subject', 'footer.copy',
             'overview_page.meta.description', 'overview_page.one_sentence'], true)) {
             return $public->entity();
         }

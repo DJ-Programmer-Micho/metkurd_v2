@@ -8,6 +8,14 @@ use Illuminate\Support\Facades\Route;
 Route::get('law/terms-conditions', [LawController::class, 'termsCondition'])->name('law.terms');
 Route::get('law/privacy-policy', [LawController::class, 'privacyPolicy'])->name('law.privacy');
 
+// Public filename aliases converge on the existing session-aware locale entry.
+// The web server must also normalize direct /index.php before its front controller.
+Route::get('/{indexAlias}', function () {
+    $query = request()->getQueryString();
+
+    return redirect('/'.($query ? '?'.$query : ''), 301);
+})->where('indexAlias', 'index\.(html|htm|php)');
+
 Route::get('/', function () {
     $locale = session('applocale', config('app.locale'));
 

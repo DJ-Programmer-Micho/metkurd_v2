@@ -1,5 +1,14 @@
 # Architectural and behavioral decisions
 
+## 2026-10-03 — Public discovery identity
+
+Landing canonicals, hreflang, local social images, schema and sitemap/llms links
+share `https://metkurd.ai` through a discovery-only helper. Customer/auth/signed
+navigation remains unchanged. Public filename aliases converge on existing root
+locale negotiation; ingress redirects and crawler/LCP acceptance remain operator
+checks. See [the public SEO audit](PUBLIC-SEO-ACCEPTANCE.md). No deployment,
+production access, Cloudflare changes or migration.
+
 ## 2026-10-01 — OCR structural acceptance and twenty-page jobs
 
 App, API and MCP share a 1–20 selected-page limit, with default 1–20 clipped to

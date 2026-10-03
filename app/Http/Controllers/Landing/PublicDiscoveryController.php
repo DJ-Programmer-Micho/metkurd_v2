@@ -45,7 +45,10 @@ class PublicDiscoveryController extends Controller
         if ($catalog->mcpEnabled()) {
             $lines[] = $copy->text('mcp_available', [], 'en');
         }
-        $lines = array_merge($lines, ['', '## Privacy', $copy->text('privacy', [], 'en'), '', '## Public pages']);
+        $lines = array_merge($lines, ['', '## Terminology',
+            $copy->text('home_faq.terminology.copy', [], 'en'),
+            'Source: '.PublicWebsiteContent::TERMINOLOGY_SOURCE_URL,
+            '', '## Privacy', $copy->text('privacy', [], 'en'), '', '## Public pages']);
         foreach (self::ROUTES as $route) {
             $lines[] = '- '.$this->publicUrl($route, ['locale' => 'en']);
         }
@@ -59,6 +62,6 @@ class PublicDiscoveryController extends Controller
 
     private function publicUrl(string $route, array $parameters): string
     {
-        return rtrim(config('app.url'), '/').route($route, $parameters, false);
+        return \App\Support\Landing\PublicSiteUrl::route($route, $parameters);
     }
 }

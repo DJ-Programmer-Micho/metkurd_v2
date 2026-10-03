@@ -3,6 +3,22 @@
 Updated 2026-09-26. This describes source implementation and isolated local
 verification, not a deployed release or approval to enable API/MCP.
 
+## SEO readiness follow-up — 2026-10-03
+
+The [Search Console refinement](PUBLIC-SEARCH-BASELINE.md) records the supplied
+three-month baseline, descriptive localized H1, TTS/ASR intent copy, sourced
+SI terminology note/FAQ, unchanged Pricing snippets and Translation retirement
+options. AI remains the primary term; no new explainer route or service is added.
+
+Public metadata and discovery now share the fixed canonical origin independently
+of request host/APP_URL, with EN/AR/KU reciprocal alternates and English x-default.
+Homepage descriptions are concise and availability-aware. Filename aliases return
+to the existing locale entry; ingress still needs direct index.php normalization.
+Local logo/QR WebP variants preserve the design and reduce transferred asset bytes.
+See [the full source audit and production acceptance matrix](PUBLIC-SEO-ACCEPTANCE.md)
+for measurements, remote-artwork limitations, test scope and proposed ingress rules.
+No production/Cloudflare access or deployment occurred.
+
 ## Admin effective visibility follow-up — 2026-09-27
 
 Admin Landing Tool Pages now reads the same current-family and public-family
@@ -173,7 +189,8 @@ identity; no sample audio, OCR output or celebrity clone was fabricated.
 - Public copy is translated into EN/AR/KU; AR/KU use the existing RTL layouts.
   Technical product labels use LTR isolation where mixed with translated copy.
 - `PublicDiscoveryController` serves `/sitemap.xml` and `/llms.txt` dynamically
-  from the small cached catalog and current flags. Links use configured `APP_URL`.
+  from the small cached catalog and current flags.
+  Public identity now uses `PublicSiteUrl`, not APP_URL (see the follow-up above).
   With all five families active, the sitemap contains 45 public localized routes;
   disabling a family removes its three detail routes.
 - Static `public/sitemap.xml` and `public/llms.txt` were removed to prevent the web

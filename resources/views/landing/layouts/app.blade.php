@@ -9,6 +9,7 @@
 @php
     use App\Support\Landing\SiteMetaSettingsRepository;
     use App\Support\LandingContent;
+    use App\Support\Landing\PublicSiteUrl;
     use Illuminate\Support\Str;
 
     $locale = app()->getLocale();
@@ -35,7 +36,7 @@
     $defaultImageAlt = LandingContent::text('site.default_image_alt', [], $siteName);
     $metaSettings = app(SiteMetaSettingsRepository::class);
 
-    $sanitizeMeta = static fn (?string $value): string => trim(Str::squish(strip_tags((string) $value)));
+    $sanitizeMeta = static fn (?string $value): string => trim(Str::squish(strip_tags(html_entity_decode((string) $value, ENT_QUOTES | ENT_HTML5, 'UTF-8'))));
     $absoluteAssetUrl = static function (?string $value): ?string {
         $value = trim((string) $value);
 
@@ -43,9 +44,7 @@
             return null;
         }
 
-        return filter_var($value, FILTER_VALIDATE_URL)
-            ? $value
-            : asset(ltrim($value, '/'));
+        return PublicSiteUrl::asset($value);
     };
     $absolutePageUrl = static function (?string $value): ?string {
         $value = trim((string) $value);
@@ -54,9 +53,7 @@
             return null;
         }
 
-        return filter_var($value, FILTER_VALIDATE_URL)
-            ? $value
-            : url(ltrim($value, '/'));
+        return PublicSiteUrl::page($value);
     };
     $assetWithVersion = static function (string $path): string {
         $trimmed = ltrim(trim($path), '/');
@@ -117,7 +114,7 @@
         : $defaultTitle;
     $pageDescription = $rawDescription ?: ($settingsDefaultMetaDescription !== '' ? $settingsDefaultMetaDescription : $siteDescription);
     $pageKeywords = $sanitizeMeta($keywords) ?: $siteKeywords;
-    $canonicalUrl = $absolutePageUrl($canonical) ?: url()->current();
+    $canonicalUrl = $absolutePageUrl($canonical) ?: PublicSiteUrl::page(request()->getPathInfo());
 
     $defaultFaviconIco = $assetWithVersion('favicon.ico');
     $defaultFaviconSvg = $assetWithVersion('favicon.svg');
@@ -182,18 +179,15 @@
     $currentRouteName = $currentRoute?->getName();
     if ($currentRouteName === 'landing.home.localized') {
         $currentRouteName = 'landing.home';
-        $canonicalUrl = route('landing.home', ['locale' => $locale]);
-    }
-    if ($currentRouteName === 'landing.home.localized') {
-        $currentRouteName = 'landing.home';
-        $canonicalUrl = route('landing.home', ['locale' => $locale]);
+        $canonicalUrl = PublicSiteUrl::route('landing.home', ['locale' => $locale]);
     }
     $routeParameters = $currentRoute?->parameters() ?? [];
 
     if ($currentRouteName && array_key_exists('locale', $routeParameters)) {
+        $canonicalUrl = PublicSiteUrl::route($currentRouteName, $routeParameters);
         foreach ($supportedLocales as $supportedLocale) {
             try {
-                $alternateUrls[$supportedLocale] = route($currentRouteName, array_merge($routeParameters, [
+                $alternateUrls[$supportedLocale] = PublicSiteUrl::route($currentRouteName, array_merge($routeParameters, [
                     'locale' => $supportedLocale,
                 ]));
             } catch (\Throwable $e) {
@@ -202,11 +196,11 @@
         }
     }
 
-    $xDefaultLocale = config('app.locale', 'en');
+    $xDefaultLocale = 'en';
     $xDefaultUrl = $alternateUrls[$xDefaultLocale] ?? ($alternateUrls['en'] ?? $canonicalUrl);
 
-    $organizationId = url('/') . '#organization';
-    $websiteId = url('/') . '#website';
+    $organizationId = PublicSiteUrl::ORIGIN . '#organization';
+    $websiteId = PublicSiteUrl::ORIGIN . '#website';
     $webpageId = $canonicalUrl . '#webpage';
     $organizationLogo = $appIcon512 ?: ($configuredOgImage ?: $safeFallbackSocialImage);
 
@@ -219,7 +213,7 @@
                 'name' => $siteName,
                 'alternateName' => $siteTagline,
                 'slogan' => $siteTagline,
-                'url' => url('/'),
+                'url' => PublicSiteUrl::ORIGIN,
                 'description' => $siteDescription,
                 'email' => $authorEmail !== '' ? $authorEmail : null,
                 'founder' => array_values(array_filter([
@@ -245,7 +239,7 @@
             [
                 '@type' => 'WebSite',
                 '@id' => $websiteId,
-                'url' => url('/'),
+                'url' => PublicSiteUrl::ORIGIN,
                 'name' => $siteName,
                 'alternateName' => $siteTagline,
                 'description' => $siteDescription,

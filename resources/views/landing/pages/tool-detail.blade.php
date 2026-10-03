@@ -29,7 +29,7 @@ new #[Layout('landing::layouts.app')] class extends Component
     $toolSquareImage = (string) data_get($tool, 'square_image_url', '');
     $featureCards = (array) data_get($tool, 'feature_cards', []);
     $locale = app()->getLocale();
-    $toolUrl = route('landing.tools.show', ['locale' => $locale, 'slug' => $canonicalSlug]);
+    $toolUrl = \App\Support\Landing\PublicSiteUrl::route('landing.tools.show', ['locale' => $locale, 'slug' => $canonicalSlug]);
 
     if ($featureCards === []) {
         $featureCards = collect((array) data_get($tool, 'feature_bullets', []))
@@ -52,13 +52,13 @@ new #[Layout('landing::layouts.app')] class extends Component
                 '@type' => 'ListItem',
                 'position' => 1,
                 'name' => LandingContent::text('nav.home'),
-                'item' => route('landing.home', ['locale' => $locale]),
+                'item' => \App\Support\Landing\PublicSiteUrl::route('landing.home', ['locale' => $locale]),
             ],
             [
                 '@type' => 'ListItem',
                 'position' => 2,
                 'name' => LandingContent::text('nav.tools'),
-                'item' => route('landing.tools', ['locale' => $locale]),
+                'item' => \App\Support\Landing\PublicSiteUrl::route('landing.tools', ['locale' => $locale]),
             ],
             [
                 '@type' => 'ListItem',
@@ -106,7 +106,7 @@ new #[Layout('landing::layouts.app')] class extends Component
                 <div class="col-lg-6 reveal">
                     <span class="hero-badge mb-3">
                         @if($toolSquareImage !== '')
-                            <img src="{{ $toolSquareImage }}" alt="{{ $title }}" class="tool-badge-image" loading="lazy">
+                            <img src="{{ $toolSquareImage }}" alt="{{ $title }}" class="tool-badge-image" width="24" height="24">
                         @else
                             <span class="tool-fallback-letter">{{ \Illuminate\Support\Str::upper(\Illuminate\Support\Str::substr($title, 0, 1)) }}</span>
                         @endif

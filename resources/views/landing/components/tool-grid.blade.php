@@ -91,7 +91,7 @@ new class extends Component
                             <img
                                 src="{{ $tool['square_image_url'] }}"
                                 alt="{{ $tool['title'] ?? $tool['name'] }}"
-                                class="tool-square-image"
+                                class="tool-square-image" width="64" height="64"
                                 loading="lazy"
                             >
                         </div>
@@ -99,7 +99,7 @@ new class extends Component
                         <img
                             src="{{ $tool['card_image_url'] }}"
                             alt="{{ $tool['title'] ?? $tool['name'] }}"
-                            class="img-fluid rounded-3 w-100 tool-card-cover"
+                            class="img-fluid rounded-3 w-100 tool-card-cover" width="640" height="360" style="height:auto"
                             loading="lazy"
                         >
                     @else

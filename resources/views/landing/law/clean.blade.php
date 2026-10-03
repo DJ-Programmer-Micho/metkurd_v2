@@ -9,6 +9,7 @@
 @php
     use App\Support\Landing\SiteMetaSettingsRepository;
     use App\Support\LandingContent;
+    use App\Support\Landing\PublicSiteUrl;
     use Illuminate\Support\Str;
 
     $locale = app()->getLocale();
@@ -35,7 +36,7 @@
     $defaultImageAlt = LandingContent::text('site.default_image_alt', [], $siteName);
     $metaSettings = app(SiteMetaSettingsRepository::class);
 
-    $sanitizeMeta = static fn (?string $value): string => trim(Str::squish(strip_tags((string) $value)));
+    $sanitizeMeta = static fn (?string $value): string => trim(Str::squish(strip_tags(html_entity_decode((string) $value, ENT_QUOTES | ENT_HTML5, 'UTF-8'))));
     $absoluteAssetUrl = static function (?string $value): ?string {
         $value = trim((string) $value);
 
@@ -43,9 +44,7 @@
             return null;
         }
 
-        return filter_var($value, FILTER_VALIDATE_URL)
-            ? $value
-            : asset(ltrim($value, '/'));
+        return PublicSiteUrl::asset($value);
     };
     $absolutePageUrl = static function (?string $value): ?string {
         $value = trim((string) $value);
@@ -54,9 +53,7 @@
             return null;
         }
 
-        return filter_var($value, FILTER_VALIDATE_URL)
-            ? $value
-            : url(ltrim($value, '/'));
+        return PublicSiteUrl::page($value);
     };
     $assetWithVersion = static function (string $path): string {
         $trimmed = ltrim(trim($path), '/');
@@ -92,7 +89,7 @@
         : $defaultTitle;
     $pageDescription = $rawDescription ?: ($settingsDefaultMetaDescription !== '' ? $settingsDefaultMetaDescription : $siteDescription);
     $pageKeywords = $sanitizeMeta($keywords) ?: $siteKeywords;
-    $canonicalUrl = $absolutePageUrl($canonical) ?: url()->current();
+    $canonicalUrl = $absolutePageUrl($canonical) ?: PublicSiteUrl::page(request()->getPathInfo());
 
     $defaultFaviconIco = $assetWithVersion('favicon.ico');
     $defaultFaviconSvg = $assetWithVersion('favicon.svg');
@@ -105,7 +102,7 @@
     $appIcon192 = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appIcon192Path())) ?: null;
     $appIcon512 = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->appIcon512Path())) ?: null;
     $defaultLogo = $appIcon512
-        ?: (app()->bound('logo_1024') ? asset(app('logo_1024')) : $defaultFaviconIco);
+        ?: (app()->bound('logo_1024') ? PublicSiteUrl::asset(app('logo_1024')) : PublicSiteUrl::asset($defaultFaviconIco));
     $defaultOgImage = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->ogImagePath())) ?: $defaultLogo;
     $defaultTwitterImage = $absoluteAssetUrl($metaSettings->publicUrl($metaSettings->twitterImagePath())) ?: $defaultOgImage;
     $pageImage = $absoluteAssetUrl($image) ?: $defaultOgImage;
@@ -129,7 +126,7 @@
     if ($currentRouteName && array_key_exists('locale', $routeParameters)) {
         foreach ($supportedLocales as $supportedLocale) {
             try {
-                $alternateUrls[$supportedLocale] = route($currentRouteName, array_merge($routeParameters, [
+                $alternateUrls[$supportedLocale] = PublicSiteUrl::route($currentRouteName, array_merge($routeParameters, [
                     'locale' => $supportedLocale,
                 ]));
             } catch (\Throwable $e) {
@@ -138,11 +135,11 @@
         }
     }
 
-    $xDefaultLocale = config('app.locale', 'en');
+    $xDefaultLocale = 'en';
     $xDefaultUrl = $alternateUrls[$xDefaultLocale] ?? ($alternateUrls['en'] ?? $canonicalUrl);
 
-    $organizationId = url('/') . '#organization';
-    $websiteId = url('/') . '#website';
+    $organizationId = PublicSiteUrl::ORIGIN . '#organization';
+    $websiteId = PublicSiteUrl::ORIGIN . '#website';
     $webpageId = $canonicalUrl . '#webpage';
     $organizationLogo = $appIcon512 ?: $defaultLogo;
 
@@ -155,7 +152,7 @@
                 'name' => $siteName,
                 'alternateName' => $siteTagline,
                 'slogan' => $siteTagline,
-                'url' => url('/'),
+                'url' => PublicSiteUrl::ORIGIN,
                 'description' => $siteDescription,
                 'email' => $authorEmail !== '' ? $authorEmail : null,
                 'founder' => array_values(array_filter([
@@ -181,7 +178,7 @@
             [
                 '@type' => 'WebSite',
                 '@id' => $websiteId,
-                'url' => url('/'),
+                'url' => PublicSiteUrl::ORIGIN,
                 'name' => $siteName,
                 'alternateName' => $siteTagline,
                 'description' => $siteDescription,
@@ -313,12 +310,16 @@
                 <span class="brand-badge">
                     <img
                         class="brand-logo brand-logo--dark"
-                        src="{{ asset(app('logo_1024_tran_black')) }}"
+                        src="{{ asset('landing/images/white_logo-44.webp') }}"
+                        srcset="{{ asset('landing/images/white_logo-44.webp') }} 44w, {{ asset('landing/images/white_logo-88.webp') }} 88w"
+                        sizes="22px" width="44" height="40"
                         alt="{{ __('MetKurd AI') }}"
                     >
                     <img
                         class="brand-logo brand-logo--light"
-                        src="{{ asset(app('logo_1024_tran')) }}"
+                        src="{{ asset('landing/images/black_logo-44.webp') }}"
+                        srcset="{{ asset('landing/images/black_logo-44.webp') }} 44w, {{ asset('landing/images/black_logo-88.webp') }} 88w"
+                        sizes="22px" width="44" height="40"
                         alt="{{ __('MetKurd AI') }}"
                     >
                 </span>

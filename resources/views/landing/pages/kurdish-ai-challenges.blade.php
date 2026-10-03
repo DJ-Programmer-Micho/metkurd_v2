@@ -21,13 +21,13 @@ new #[Layout('landing::layouts.app')] class extends Component
                 '@type' => 'ListItem',
                 'position' => 1,
                 'name' => LandingContent::text('nav.home'),
-                'item' => route('landing.home', ['locale' => $locale]),
+                'item' => \App\Support\Landing\PublicSiteUrl::route('landing.home', ['locale' => $locale]),
             ],
             [
                 '@type' => 'ListItem',
                 'position' => 2,
                 'name' => LandingContent::text('kurdish_ai_challenges_page.title'),
-                'item' => route('landing.kurdish-ai-challenges', ['locale' => $locale]),
+                'item' => \App\Support\Landing\PublicSiteUrl::route('landing.kurdish-ai-challenges', ['locale' => $locale]),
             ],
         ],
     ];

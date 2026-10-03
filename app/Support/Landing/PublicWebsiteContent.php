@@ -6,6 +6,8 @@ use App\Support\AreaJsonTranslations;
 
 class PublicWebsiteContent
 {
+    public const TERMINOLOGY_SOURCE_URL = 'https://www.whitehouse.gov/presidential-actions/2026/09/inaugurating-the-era-of-super-intelligence/';
+
     public function text(string $key, array $replace = [], ?string $locale = null): string
     {
         $value = AreaJsonTranslations::get('public.'.$key, 'landing', $locale) ?? '';
@@ -14,6 +16,15 @@ class PublicWebsiteContent
         }
 
         return $value;
+    }
+
+    public function homeDescription(): string
+    {
+        $catalog = app(PublicProductCatalog::class);
+        $complete = $catalog->family('tts') !== [] && $catalog->family('ctts') !== []
+            && $catalog->family('asr') !== [] && $catalog->has('scanner');
+
+        return $this->text($complete ? 'home_description' : 'home_description_limited');
     }
 
     public function entity(?string $locale = null): string

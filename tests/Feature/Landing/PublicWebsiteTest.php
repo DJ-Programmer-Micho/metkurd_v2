@@ -216,8 +216,8 @@ it('renders multiple configured examples under the correct current product label
 ]);
 
 it('uses the primary localized home canonical for the home alias', function () {
-    $this->get('/ar/home')->assertOk()->assertSee('<link rel="canonical" href="'.route('landing.home', ['locale' => 'ar']).'">', false)
-        ->assertSee('hreflang="en" href="'.route('landing.home', ['locale' => 'en']).'"', false);
+    $this->get('/ar/home')->assertOk()->assertSee('<link rel="canonical" href="'.\App\Support\Landing\PublicSiteUrl::route('landing.home', ['locale' => 'ar']).'">', false)
+        ->assertSee('hreflang="en" href="'.\App\Support\Landing\PublicSiteUrl::route('landing.home', ['locale' => 'en']).'"', false);
 });
 
 it('does not promote OCR when only Arabic Harakat is active', function () {
@@ -316,4 +316,149 @@ it('publishes distinct localized page titles and descriptions and complete trans
             }
         }
     }
+})->with(['en', 'ar', 'ku']);
+
+it('measures rendered public homepage responses locally', function (string $locale) {
+    $html = $this->get('/'.$locale)->assertOk()->getContent();
+    if (getenv('LANDING_MEASURE')) {
+        $directory = storage_path('framework/testing/landing-seo');
+        if (! is_dir($directory)) {
+            mkdir($directory, 0755, true);
+        }
+        file_put_contents($directory.'/'.getenv('LANDING_MEASURE').'-'.$locale.'.html', $html);
+        fwrite(STDERR, json_encode(['locale' => $locale, 'html_bytes' => strlen($html), 'gzip6_bytes' => strlen(gzencode($html, 6))]).PHP_EOL);
+    }
+    expect($html)->not->toContain('data:image/');
+})->with(['en', 'ar', 'ku']);
+
+it('publishes one canonical metadata set with reciprocal locale identities', function (string $locale) {
+    config(['app.url' => 'http://www.metkurd.ai', 'app.locale' => 'ku']);
+    foreach (['', '/tools', '/tools/tts', '/tools/ctts', '/tools/asr', '/tools/ocr', '/tools/stem', '/pricing', '/contact', '/metkurd-ai-overview', '/research-development', '/kurdish-ai-challenges', '/how-metkurd-ai-was-built', '/privacy', '/terms'] as $path) {
+        // Laravel's test client stays in process: these are NOT network requests.
+        $html = $this->get('http://www.metkurd.ai/'.$locale.$path.'?utm_source=test')->assertOk()->getContent();
+        $dom = new DOMDocument;
+        $errors = libxml_use_internal_errors(true);
+        $dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+        libxml_clear_errors();
+        libxml_use_internal_errors($errors);
+        $xpath = new DOMXPath($dom);
+        $canonical = $xpath->query('//link[@rel="canonical"]');
+        expect($canonical)->toHaveCount(1)
+            ->and($canonical->item(0)->getAttribute('href'))->toBe('https://metkurd.ai/'.$locale.$path)
+            ->and($dom->documentElement->getAttribute('dir'))->toBe($locale === 'en' ? 'ltr' : 'rtl');
+        foreach (['en', 'ar', 'ku', 'x-default'] as $language) {
+            $links = $xpath->query('//link[@hreflang="'.$language.'"]');
+            expect($links)->toHaveCount(1)
+                ->and($links->item(0)->getAttribute('href'))->toBe('https://metkurd.ai/'.($language === 'x-default' ? 'en' : $language).$path);
+        }
+        foreach (['og:title', 'og:description', 'og:url', 'og:type', 'og:image'] as $property) {
+            $tags = $xpath->query('//meta[@property="'.$property.'"]');
+            expect($tags)->toHaveCount(1)->and($tags->item(0)->getAttribute('content'))->not->toBe('');
+        }
+        foreach (['twitter:card', 'twitter:title', 'twitter:description', 'twitter:image'] as $name) {
+            expect($xpath->query('//meta[@name="'.$name.'"]'))->toHaveCount(1);
+        }
+        foreach (['//meta[@property="og:url"]', '//meta[@property="og:image"]', '//meta[@name="twitter:image"]'] as $selector) {
+            expect($xpath->query($selector)->item(0)->getAttribute('content'))->toStartWith('https://metkurd.ai/');
+        }
+        foreach ($xpath->query('//script[@type="application/ld+json"]') as $script) {
+            $schema = json_decode($script->textContent, true, flags: JSON_THROW_ON_ERROR);
+            expect($schema)->toHaveKey('@context');
+            expect($script->textContent)->not->toContain('http://www.metkurd.ai', 'HowTo', 'AggregateRating');
+        }
+        if ($path === '') {
+            expect($xpath->query('//title')->item(0)->textContent)->not->toContain('&amp;');
+            $description = $xpath->query('//meta[@name="description"]')->item(0)->getAttribute('content');
+            expect(mb_strlen($description))->toBeBetween(140, 160);
+            expect($xpath->query('//meta[@property="og:description"]')->item(0)->getAttribute('content'))->toBe($description);
+            expect($xpath->query('//meta[@name="twitter:description"]')->item(0)->getAttribute('content'))->toBe($description);
+            foreach ($xpath->query('//img') as $img) {
+                expect((int) $img->getAttribute('width'))->toBeGreaterThan(0)
+                    ->and((int) $img->getAttribute('height'))->toBeGreaterThan(0);
+                if ($xpath->query('ancestor::footer', $img)->length) {
+                    expect($img->getAttribute('loading'))->toBe('lazy');
+                }
+            }
+        }
+    }
+    Http::assertNothingSent();
+})->with(['en', 'ar', 'ku']);
+
+it('keeps discovery canonical independently of request or application host', function () {
+    config(['app.url' => 'http://www.metkurd.ai']);
+    $xml = simplexml_load_string($this->get('/sitemap.xml')->assertOk()->getContent());
+    foreach ($xml->url as $node) {
+        expect((string) $node->loc)->toStartWith('https://metkurd.ai/');
+        expect(isset($node->lastmod))->toBeFalse();
+    }
+    $this->get('/llms.txt')->assertOk()->assertDontSee('www.metkurd.ai')->assertSee('https://metkurd.ai/en');
+});
+
+it('normalizes filename aliases without replacing locale negotiation', function (string $alias) {
+    $this->get('/'.$alias.'?utm_source=example')->assertStatus(301)->assertRedirect('/?utm_source=example');
+    $this->withSession(['applocale' => 'ar'])->get('/')->assertStatus(302)
+        ->assertRedirect(route('landing.home', ['locale' => 'ar']));
+})->with(['index.html', 'index.htm', 'index.php']);
+
+it('reserves existing product artwork slots without loading media on the server', function () {
+    LandingToolPage::create(['slug' => 'tts', 'is_active' => true, 'square_image_path' => 'web-setting/tools/square/fixture.webp']);
+    LandingToolPage::create(['slug' => 'ctts', 'is_active' => true, 'card_image_path' => 'web-setting/tools/fixture.webp']);
+    $this->get('/en')->assertOk()->assertSee('width="64" height="64"', false)
+        ->assertSee('width="640" height="360"', false);
+    Http::assertNothingSent();
+});
+
+it('keeps short descriptions factual when a core family is disabled', function (string $locale) {
+    LandingToolPage::create(['slug' => 'tts', 'is_active' => false]);
+    $html = $this->get('/'.$locale)->assertOk()->getContent();
+    preg_match('#<meta name="description" content="([^"]*)"#', $html, $match);
+    $copy = app(PublicWebsiteContent::class)->text('home_description_limited', [], $locale);
+    expect(html_entity_decode($match[1], ENT_QUOTES, 'UTF-8'))->toBe($copy)
+        ->and(mb_strlen($copy))->toBeBetween(140, 160);
+})->with(['en', 'ar', 'ku']);
+
+it('renders localized search intent and a sourced terminology note without replacing AI', function (string $locale) {
+    $copy = app(PublicWebsiteContent::class);
+    $html = $this->get('/'.$locale)->assertOk()->getContent();
+    $dom = new DOMDocument;
+    $errors = libxml_use_internal_errors(true);
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+    libxml_clear_errors();
+    libxml_use_internal_errors($errors);
+    $xpath = new DOMXPath($dom);
+    expect($xpath->query('//h1'))->toHaveCount(1);
+    $heading = $xpath->query('//h1')->item(0)->textContent;
+    if ($locale === 'en') {
+        expect($heading)->toBe('Kurdish AI for Sorani Speech, Voice, OCR & Audio');
+    } else {
+        expect($heading)->not->toContain('Kurdish AI for');
+        expect($copy->text('terminology.note', [], $locale))->toContain("\u{2066}AI\u{2069}", "\u{2066}Super Intelligence (SI)\u{2069}");
+    }
+    $note = $xpath->query('//p[@data-public-terminology]');
+    expect($note)->toHaveCount(1)
+        ->and($note->item(0)->textContent)->toContain($copy->text('terminology.note', [], $locale))
+        ->and($xpath->query('.//a', $note->item(0))->item(0)->getAttribute('href'))->toBe(PublicWebsiteContent::TERMINOLOGY_SOURCE_URL);
+    // The existing shared FAQ-parity test also checks this new answer in JSON-LD.
+    expect($html)->toContain(e($copy->text('home_faq.terminology.title', [], $locale)), e($copy->text('home_faq.terminology.copy', [], $locale)));
+    foreach (['tts', 'asr'] as $family) {
+        $this->get('/'.$locale.'/tools/'.$family)->assertOk()
+            ->assertSee($copy->text('tools.'.$family.'.about_title', [], $locale))
+            ->assertSee($copy->text('tools.'.$family.'.about_copy', [], $locale));
+    }
+    Http::assertNothingSent();
+})->with(['en', 'ar', 'ku']);
+
+it('keeps terminology in machine discovery factual and tied to the same FAQ source', function () {
+    $this->get('/llms.txt')->assertOk()
+        ->assertSee(app(PublicWebsiteContent::class)->text('home_faq.terminology.copy', [], 'en'), false)
+        ->assertSee(PublicWebsiteContent::TERMINOLOGY_SOURCE_URL, false);
+    $this->get('/en/tools/tts')->assertOk()->assertSee('Kurdish TTS')->assertSee('Kurdish AI voice')->assertSee('Sorani Kurdish text to speech');
+    $this->get('/en/tools/asr')->assertOk()->assertSee('Kurdish speech to text')->assertSee('Kurdish voice to text');
+});
+
+it('keeps retired Translation pages as genuine not-found responses despite historical publication', function (string $locale) {
+    LandingToolPage::create(['slug' => 'translation', 'is_active' => true, 'content' => [$locale => ['title' => 'Legacy Translation']]]);
+    $this->get('/'.$locale.'/tools/translation')->assertNotFound()->assertHeaderMissing('Location');
+    $this->get('/sitemap.xml')->assertOk()->assertDontSee('/tools/translation');
+    $this->get('/llms.txt')->assertOk()->assertDontSee('/tools/translation');
 })->with(['en', 'ar', 'ku']);

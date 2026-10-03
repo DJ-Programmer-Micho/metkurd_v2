@@ -81,12 +81,16 @@ new class extends Component
                 <span class="brand-badge">
                     <img
                         class="brand-logo brand-logo--dark"
-                        src="{{ asset(app('logo_1024_tran_black')) }}"
+                        src="{{ asset('landing/images/white_logo-44.webp') }}"
+                        srcset="{{ asset('landing/images/white_logo-44.webp') }} 44w, {{ asset('landing/images/white_logo-88.webp') }} 88w"
+                        sizes="22px" width="44" height="40"
                         alt="{{ LandingContent::text('site.name') }}"
                     >
                     <img
                         class="brand-logo brand-logo--light"
-                        src="{{ asset(app('logo_1024_tran')) }}"
+                        src="{{ asset('landing/images/black_logo-44.webp') }}"
+                        srcset="{{ asset('landing/images/black_logo-44.webp') }} 44w, {{ asset('landing/images/black_logo-88.webp') }} 88w"
+                        sizes="22px" width="44" height="40"
                         alt="{{ LandingContent::text('site.name') }}"
                     >
                 </span>

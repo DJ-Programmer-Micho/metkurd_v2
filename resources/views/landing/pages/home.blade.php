@@ -57,7 +57,7 @@ new #[Layout('landing::layouts.app')] class extends Component
                 '@type' => 'ListItem',
                 'position' => 1,
                 'name' => LandingContent::text('nav.home'),
-                'item' => route('landing.home', ['locale' => $locale]),
+                'item' => \App\Support\Landing\PublicSiteUrl::route('landing.home', ['locale' => $locale]),
             ],
         ],
     ];
@@ -89,6 +89,7 @@ new #[Layout('landing::layouts.app')] class extends Component
                     </span>
                     <h1 class="display-hero mb-4 reveal">{!! $hero['title_html'] !!}</h1>
                     <p class="lead-soft mb-4 reveal">{{ $hero['lead'] }}</p>
+
 
                     <div class="d-flex flex-wrap gap-3 mb-4 reveal">
                         <a href="{{ route('app.signup') }}" class="btn btn-glow btn-lg rounded-pill px-4" wire:navigate>
@@ -379,6 +380,10 @@ new #[Layout('landing::layouts.app')] class extends Component
                             <i class="bi bi-question-circle"></i>
                             {{ $faqHeading['badge'] }}
                         </span>
+                        <p class="text-muted-soft small mb-4 reveal" data-public-terminology>
+                            {{ app(\App\Support\Landing\PublicWebsiteContent::class)->text('terminology.note') }}
+                            <a href="{{ \App\Support\Landing\PublicWebsiteContent::TERMINOLOGY_SOURCE_URL }}">{{ app(\App\Support\Landing\PublicWebsiteContent::class)->text('terminology.source_label') }}</a>
+                        </p>
                         <div class="row g-4">
                             @foreach((array) $faqs as $faq)
                                 <div class="col-12 col-sm-6 col-md-4">

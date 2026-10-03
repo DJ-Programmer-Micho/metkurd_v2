@@ -19,13 +19,13 @@ new #[Layout('landing::layouts.app')] class extends Component
                 '@type' => 'ListItem',
                 'position' => 1,
                 'name' => LandingContent::text('nav.home'),
-                'item' => route('landing.home', ['locale' => $locale]),
+                'item' => \App\Support\Landing\PublicSiteUrl::route('landing.home', ['locale' => $locale]),
             ],
             [
                 '@type' => 'ListItem',
                 'position' => 2,
                 'name' => LandingContent::text('tools_page.title'),
-                'item' => route('landing.tools', ['locale' => $locale]),
+                'item' => \App\Support\Landing\PublicSiteUrl::route('landing.tools', ['locale' => $locale]),
             ],
         ],
     ];
