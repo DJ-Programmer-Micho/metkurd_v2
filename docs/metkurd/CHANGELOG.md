@@ -1,5 +1,15 @@
 # Architectural and behavioral decisions
 
+## 2026-10-03 — Stable ML stale-job deadlines
+
+Apply the existing 30/60-minute local timeout to acknowledged RunPod jobs, preserving
+unknown-submission and interrupted paid-preparation exclusions. Use started_at,
+then submission_attempted_at, then created_at for processing; never poll-driven
+updated_at. Reuse terminal reconciliation for API status/reservation release and
+App refund recovery. Retain locked late-result guards and Admin's review-only age
+marker. No schema, pricing, provider contract or deployment change. See
+[the lifecycle contract](GPU-JOB-LIFECYCLE.md#stable-stale-job-deadlines--2026-10-03).
+
 ## 2026-10-03 — API results in V2 My Storage
 
 Expose owned active API temporary results alongside permanent files using the

@@ -44,6 +44,18 @@ function devConnection(Customer $owner): CustomerMcpConnection
     return CustomerMcpConnection::create(['customer_id' => $owner->id, 'client_id' => (string) Str::uuid(), 'name' => 'Fixture assistant', 'scopes' => ['v2:ocr'], 'status' => 'active']);
 }
 
+it('keeps age a read-only review marker until stale lifecycle resolution', function () {
+    $job = devJob($this->owner, ['provider' => 'runpod', 'provider_job_id' => 'fixture-remote', 'created_at' => now()->subHours(3), 'started_at' => now()->subHours(3)]);
+    $job->forceFill(['created_at' => now()->subHours(3)])->save();
+    $rows = fn () => $this->reader->rows($this->reader->query('jobs', ['job' => $job->id])->get())->first();
+    expect($rows()['problems'])->toContain('stale');
+    expect($job->fresh()->status)->toBe('running');
+    $this->artisan('ml-jobs:mark-stale-failed')->expectsOutput('Updated: 1')->assertSuccessful();
+    expect($rows()['problems'])->not->toContain('stale');
+    expect($job->fresh()->status)->toBe('failed');
+    Http::assertNothingSent();
+});
+
 it('classifies persisted App API MCP origins without inferring MCP from missing keys', function () {
     $app = devJob($this->owner);
     $rest = devJob($this->owner);

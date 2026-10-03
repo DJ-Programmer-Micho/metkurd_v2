@@ -77,3 +77,19 @@ it('never refunds or resubmits an ambiguous dispatch', function ($failure) {
     expect($result->failure_stage)->toBe('provider_submission_unknown')->and($result->status)->toBe('queued')->and($result->refunded_at)->toBeNull()->and($created)->toBeFalse();
     expect(CreditLedger::where('customer_id', $this->owner->id)->where('direction', 'refund')->count())->toBe(0);
 })->with(['timeout', 'server_error']);
+
+it('refunds a stale acknowledged App job exactly once through existing recovery', function (bool $customerCancelled) {
+    [$job] = ($this->begin)();
+    $job->update(['status' => 'running', 'provider' => 'runpod', 'provider_job_id' => 'accepted', 'failure_stage' => null, 'started_at' => now()->subMinutes(61)]);
+    if ($customerCancelled) {
+        $job->update(['input' => $job->input + ['customer_cancel_requested' => true]]);
+    }
+    $this->artisan('ml-jobs:mark-stale-failed')->expectsOutput('Updated: 1')->assertSuccessful();
+    $this->artisan('ml-jobs:mark-stale-failed')->assertSuccessful();
+    (new App\Jobs\ReconcileMlJob($job->id))->handle();
+    expect($job->fresh()->status)->toBe('failed')->and($job->fresh()->refunded_at !== null)->toBe(! $customerCancelled)
+        ->and(data_get($job->fresh()->error, 'code'))->toBe('stale_timeout');
+    expect(CreditLedger::where('reference_code', "ml-job:{$job->id}:refund")->count())->toBe($customerCancelled ? 0 : 1);
+    expect(CreditWallet::where('customer_id', $this->owner->id)->where('wallet_type', 'app')->value('balance_credits'))->toBe($customerCancelled ? 990 : 1000);
+    expect(CreditWallet::where('customer_id', $this->owner->id)->where('wallet_type', 'api')->value('balance_credits'))->toBe(1000);
+})->with([false, true]);

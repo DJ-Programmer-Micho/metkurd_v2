@@ -49,6 +49,8 @@ it('keeps accepted V2 jobs retryable when their endpoint is unconfigured and nev
 ]);
 
 it('finishes without a browser and never queries a completed job even with stale browser state', function () {
+    $this->job->update(['started_at' => now()->subMinutes(10)]);
+    $this->artisan('ml-jobs:mark-stale-failed')->expectsOutput('No stale ML jobs matched the current filters.')->assertSuccessful();
     $provider = Mockery::mock(RunPodProvider::class);
     $provider->shouldReceive('status')->once()->andReturn(['status' => 'COMPLETED', 'output' => ['audio_base64' => base64_encode('result')]]);
     app()->instance(RunPodProvider::class, $provider);
@@ -57,6 +59,9 @@ it('finishes without a browser and never queries a completed job even with stale
     expect($this->job->fresh()->status)->toBe('done')->and(CustomerFile::count())->toBe(1);
     app(XttsJobSyncService::class)->sync($stale, $this->tool);
     (new ReconcileMlJob($this->job->id))->handle();
+    $this->travel(2)->hours();
+    $this->artisan('ml-jobs:mark-stale-failed')->expectsOutput('No stale ML jobs matched the current filters.')->assertSuccessful();
+    expect($this->job->fresh()->status)->toBe('done')->and(CustomerFile::count())->toBe(1);
 });
 
 it('shares a poll interval across browser sessions and server checks', function () {
@@ -93,11 +98,11 @@ it('does not poll terminal or leased jobs', function ($status) {
     expect($this->job->fresh()->status)->toBe($status);
 })->with(['done', 'failed', 'deleted', 'deleting', 'delete_failed', 'cancelled', 'running']);
 
-it('does not let stale cleanup fail accepted or ambiguous remote submissions', function () {
+it('times out acknowledged jobs but preserves ambiguous remote submissions', function () {
     $this->job->update(['started_at' => now()->subHours(2)]);
     $this->artisan('ml-jobs:mark-stale-failed')->assertSuccessful();
-    expect($this->job->fresh()->status)->toBe('running');
-    $this->job->update(['provider_job_id' => null, 'submission_attempted_at' => now()->subHours(2)]);
+    expect($this->job->fresh()->status)->toBe('failed');
+    $this->job->refresh()->update(['status' => 'running', 'provider_job_id' => null, 'submission_attempted_at' => now()->subHours(2), 'failure_stage' => 'provider_submission_unknown']);
     $this->artisan('ml-jobs:mark-stale-failed')->assertSuccessful();
     expect($this->job->fresh()->status)->toBe('running');
 });

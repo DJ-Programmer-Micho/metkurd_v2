@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\ReconcileMlJob;
 use App\Models\MlJob;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 class MarkStaleMlJobsFailed extends Command
@@ -44,10 +46,7 @@ class MarkStaleMlJobsFailed extends Command
         }
 
         $timeouts = $this->resolveTimeouts($statuses);
-        $query = MlJob::query()
-            ->whereNull('provider_job_id')
-            ->whereNull('charge_reference')
-            ->whereNull('submission_attempted_at')
+        $query = $this->eligibleJobs()
             ->where(function ($builder) use ($statuses, $timeouts) {
                 foreach ($statuses as $status) {
                     $timeout = $timeouts[$status] ?? null;
@@ -67,17 +66,7 @@ class MarkStaleMlJobsFailed extends Command
                             return;
                         }
 
-                        $statusQuery->where(function ($timeQuery) use ($threshold) {
-                            $timeQuery
-                                ->where(function ($started) use ($threshold) {
-                                    $started->whereNotNull('started_at')->where('started_at', '<=', $threshold);
-                                })
-                                ->orWhere(function ($fallback) use ($threshold) {
-                                    $fallback
-                                        ->whereNull('started_at')
-                                        ->where('updated_at', '<=', $threshold);
-                                });
-                        });
+                        $statusQuery->whereRaw('COALESCE(started_at, submission_attempted_at, created_at) <= ?', [$threshold]);
                     });
                 }
             });
@@ -129,12 +118,13 @@ class MarkStaleMlJobsFailed extends Command
                         if ($previewPrinted < 20) {
                             $previewPrinted++;
                             $this->line(sprintf(
-                                '[dry-run] job_id=%s customer_id=%d status=%s updated_at=%s started_at=%s',
+                                '[dry-run] job_id=%s customer_id=%d status=%s updated_at=%s started_at=%s lifecycle_at=%s',
                                 (string) $job->id,
                                 (int) $job->customer_id,
                                 (string) $job->status,
                                 (string) optional($job->updated_at)?->toIso8601String(),
                                 (string) optional($job->started_at)?->toIso8601String(),
+                                (string) $this->referenceTimeForStatus($job, (string) $job->status)?->toIso8601String(),
                             ));
                         }
 
@@ -143,6 +133,9 @@ class MarkStaleMlJobsFailed extends Command
 
                     if ($this->markFailed($job, $timeouts)) {
                         $updated++;
+                        // The committed terminal state prevents polling. Reuse existing
+                        // refund/API synchronization authorities, including retry recovery.
+                        (new ReconcileMlJob((string) $job->id))->handle();
                     }
                 }
 
@@ -237,11 +230,24 @@ class MarkStaleMlJobsFailed extends Command
             return $job->started_at;
         }
 
-        if ($job->updated_at instanceof CarbonInterface) {
-            return $job->updated_at;
+        if ($job->submission_attempted_at instanceof CarbonInterface) {
+            return $job->submission_attempted_at;
         }
 
         return $job->created_at instanceof CarbonInterface ? $job->created_at : null;
+    }
+
+    protected function eligibleJobs(): Builder
+    {
+        return MlJob::query()
+            ->where(fn ($query) => $query->whereNull('failure_stage')->orWhere('failure_stage', '!=', 'provider_submission_unknown'))
+            ->where(function ($query) {
+                // A durable remote ID acknowledges submission, not provider failure.
+                $query->where(fn ($accepted) => $accepted->where('provider', 'runpod')
+                    ->whereNotNull('provider_job_id')->where('provider_job_id', '!=', ''))
+                    ->orWhere(fn ($local) => $local->whereNull('provider_job_id')
+                        ->whereNull('charge_reference')->whereNull('submission_attempted_at'));
+            });
     }
 
     /**
@@ -258,7 +264,7 @@ class MarkStaleMlJobsFailed extends Command
             }
 
             // Dispatch may have begun after the command selected its candidates.
-            if ($locked->provider_job_id || $locked->charge_reference || $locked->submission_attempted_at) {
+            if (! $this->eligibleJobs()->whereKey($locked->id)->exists()) {
                 return false;
             }
 
@@ -287,6 +293,14 @@ class MarkStaleMlJobsFailed extends Command
                 'locked_by_session_id' => null,
                 'locked_by_fingerprint' => null,
                 'lock_expires_at' => null,
+                'poll_token' => null,
+                'poll_locked_until' => null,
+                'next_poll_at' => null,
+                'failure_stage' => $locked->charge_reference && ! $locked->refunded_at
+                    && ! data_get($locked->input, 'api_job_id')
+                    && ! data_get($locked->input, 'customer_cancel_requested')
+                    && data_get($locked->error, 'type') !== 'eliminated_by_customer'
+                    ? 'refund_pending' : $locked->failure_stage,
             ])->save();
 
             return true;

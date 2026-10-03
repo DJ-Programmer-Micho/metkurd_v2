@@ -258,6 +258,83 @@ it('submits through native OMNI once charges only the API wallet and persists wi
     $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk()->assertJsonPath('result.expired', true)->assertJsonPath('result.files', []);
 })->with([['1.5', 'temporary'], ['2.0', 'temporary'], ['1.5', 'permanent'], ['2.0', 'permanent']]);
 
+it('resolves an API Apollo stale timeout despite repeated running polls and ignores late completion', function (bool $inFlightCompletion) {
+    $this->freezeTime();
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('run')->once()->with('test-omni', Mockery::on(fn ($input) => $input['model'] === 'model_2'), Mockery::type('int'))
+        ->andReturn(['id' => 'accepted-stale-test']);
+    $provider->shouldReceive('status')->times(14)->andReturn(['status' => 'IN_PROGRESS']);
+    app()->instance(RunPodProvider::class, $provider);
+    $wallets = fn () => CreditWallet::where('customer_id', $this->customer->id)->orderBy('wallet_type')->pluck('balance_credits', 'wallet_type')->all();
+    $before = $wallets();
+    $id = $this->postJson('/api/v2/speech', $this->speech, $this->headers)->assertAccepted()->json('id');
+    $api = ApiJob::findOrFail($id);
+    $job = MlJob::findOrFail($api->ml_job_id);
+    $started = $job->started_at->toIso8601String();
+    for ($poll = 1; $poll <= 14; $poll++) {
+        $this->travel(10)->minutes();
+        (new ReconcileMlJob($job->id))->handle();
+        $job->refresh();
+        expect($job->status)->toBe('running')->and($job->started_at->toIso8601String())->toBe($started)
+            ->and($job->updated_at->getTimestamp())->toBe(now()->getTimestamp())->and($job->poll_attempts)->toBe($poll)
+            ->and($job->next_poll_at->isFuture())->toBeTrue()->and($job->poll_token)->toBeNull();
+    }
+    $reservation = ApiCreditReservation::where('api_job_id', $api->id)->firstOrFail();
+    expect($api->fresh()->status)->toBe('processing')->and($reservation->status)->toBe('reserved');
+    $options = ['--status' => ['running'], '--job-kind' => 'omni_tts', '--customer-id' => $this->customer->id, '--processing-minutes' => 60, '--limit' => 20];
+    $this->artisan('ml-jobs:mark-stale-failed', $options + ['--dry-run' => true])->expectsOutput('Would Update: 1')->assertSuccessful();
+    expect($job->fresh()->status)->toBe('running')->and($reservation->fresh()->status)->toBe('reserved');
+    if ($inFlightCompletion) {
+        $provider->shouldReceive('status')->once()->andReturnUsing(function () use ($options) {
+            // Timeout wins while the provider GET is in flight; finalizer must recheck.
+            $this->artisan('ml-jobs:mark-stale-failed', $options)->expectsOutput('Updated: 1')->assertSuccessful();
+
+            return ['status' => 'COMPLETED', 'output' => ['audio_base64' => base64_encode('late audio')]];
+        });
+        $this->travel(61)->seconds();
+        (new ReconcileMlJob($job->id))->handle();
+    } else {
+        $this->artisan('ml-jobs:mark-stale-failed', $options)->expectsOutput('Updated: 1')->assertSuccessful();
+    }
+    expect($job->fresh()->status)->toBe('failed')->and(data_get($job->fresh()->error, 'code'))->toBe('stale_timeout')
+        ->and($api->fresh()->status)->toBe('failed')->and($api->fresh()->completed_at)->not->toBeNull()
+        ->and($api->fresh()->final_credits)->toBe(0)->and($reservation->fresh()->status)->toBe('released')
+        ->and($reservation->fresh()->settled_at)->toBeNull()->and($wallets())->toBe($before)
+        ->and(CustomerFile::count())->toBe(0)->and(MlJob::count())->toBe(1);
+    $released = App\Models\CreditLedger::where('customer_id', $this->customer->id)->where('type', 'api_reservation_release')->count();
+    expect($released)->toBe(1);
+    $this->artisan('ml-jobs:mark-stale-failed', $options)->expectsOutput('No stale ML jobs matched the current filters.')->assertSuccessful();
+    (new ReconcileMlJob($job->id))->handle();
+    app(App\Services\XTTS\XttsJobSyncService::class)->sync($job, $job->tool);
+    $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk()->assertJsonPath('status', 'failed')
+        ->assertJsonPath('error.code', 'processing_failed')->assertDontSee('accepted-stale-test')->assertDontSee('stale_timeout');
+    $this->postJson('/api/v2/speech', $this->speech, $this->headers)->assertOk()->assertJsonPath('id', $id)->assertJsonPath('status', 'failed');
+    expect($wallets())->toBe($before)->and(CustomerFile::count())->toBe(0)
+        ->and(App\Models\CreditLedger::where('customer_id', $this->customer->id)->where('type', 'api_reservation_release')->count())->toBe($released);
+})->with([false, true]);
+
+it('recovers API release after a stale terminal commit if financial synchronization fails', function () {
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('run')->once()->andReturn(['id' => 'accepted-release-recovery']);
+    $provider->shouldNotReceive('status');
+    app()->instance(RunPodProvider::class, $provider);
+    $id = $this->postJson('/api/v2/speech', $this->speech, $this->headers)->assertAccepted()->json('id');
+    $api = ApiJob::findOrFail($id);
+    $job = MlJob::findOrFail($api->ml_job_id);
+    $job->update(['started_at' => now()->subMinutes(61)]);
+    $real = app(App\Services\CustomerApi\CustomerApiCreditReservationService::class);
+    $broken = Mockery::mock(App\Services\CustomerApi\CustomerApiCreditReservationService::class);
+    $broken->shouldReceive('release')->once()->andThrow(new RuntimeException('Test financial write unavailable'));
+    app()->instance(App\Services\CustomerApi\CustomerApiCreditReservationService::class, $broken);
+    expect(fn () => Illuminate\Support\Facades\Artisan::call('ml-jobs:mark-stale-failed'))->toThrow(RuntimeException::class);
+    expect($job->fresh()->status)->toBe('failed')->and($api->fresh()->status)->toBe('processing')
+        ->and(ApiCreditReservation::where('api_job_id', $id)->first()->status)->toBe('reserved');
+    app()->instance(App\Services\CustomerApi\CustomerApiCreditReservationService::class, $real);
+    $this->artisan('ml-jobs:reconcile')->assertSuccessful();
+    expect($api->fresh()->status)->toBe('failed')->and(ApiCreditReservation::where('api_job_id', $id)->first()->status)->toBe('released')
+        ->and(CustomerFile::count())->toBe(0);
+});
+
 it('rejects invalid speech inputs before creating jobs', function (array $change) {
     $this->postJson('/api/v2/speech', array_merge($this->speech, $change), $this->headers)->assertUnprocessable()->assertJsonPath('error.code', 'invalid_request');
     expect(ApiJob::count())->toBe(0)->and(MlJob::count())->toBe(0);

@@ -1,5 +1,63 @@
 # GPU job lifecycle
 
+## Stable stale-job deadlines — 2026-10-03
+
+`ml-jobs:mark-stale-failed` now applies the existing local timeout to acknowledged
+RunPod jobs as well as uncharged, unattempted local jobs. This explicitly supersedes
+the older blanket exclusion of accepted jobs below. It is a **local deadline**,
+not evidence of remote provider failure; provider identity and history are retained.
+Unknown submission outcomes (`provider_submission_unknown`), attempts without a
+remote ID and interrupted paid preparation remain excluded from automatic correction.
+
+The previous query rejected every row with provider_job_id, charge_reference or
+submission_attempted_at before checking age. That alone excludes the operator's
+reported Apollo job. There was also a separate unstable fallback: running,
+processing and saving used started_at, otherwise updated_at. JobPollCoordinator
+updates updated_at through its lease/attempt save and lease-release Eloquent update;
+XttsJobSyncService explicitly updates it on each unchanged running/queued response.
+If started_at was populated, polling did not affect that original age branch.
+
+Processing age now uses `COALESCE(started_at, submission_attempted_at, created_at)`
+in both candidate selection and the locked recheck. Queue/queued uses created_at.
+No polling timestamp is a fallback. Native V2 submission services already set
+started_at: Apollo/Vector/Leo/Caption/Zeta/Theta on acknowledged dispatch; OCR/STEM
+at the start of their native submission lifecycle. Older rows without started_at
+use the durable attempt timestamp, then creation as the last existing lifecycle
+evidence. No backfill or new column is required. The scheduled queue/processing
+limits stay **30/60 minutes**. Dry-run shows the actual lifecycle_at used.
+
+The command commits failed/stale_timeout under a row lock, rechecking eligibility,
+status and age. It clears execution/poll leases, retains provider references,
+records a local timeout error and invokes the existing ReconcileMlJob terminal
+path. Eligible App debits use refund_pending and the existing idempotent refund
+service, retaining the existing customer-cancellation/elimination exclusions;
+API jobs use CustomerApiJobSyncService and ApiCreditReservation release authority.
+No new charge, dispatch, provider cancel, settlement algorithm or Admin action exists.
+If financial propagation fails, the terminal MlJob stays committed and the existing
+reconcile scheduler recovers pending App refunds or active ApiJobs linked to failed
+MlJobs. Already-settled reservations are not released by the reservation service.
+
+Terminal reconciliation performs no provider GET. A completion already in flight
+must pass the existing finalizer's locked active-state check; if stale failure won,
+it cannot save output, settle spend or revive the job. If completion won first,
+stale resolution's locked status recheck leaves the completed result untouched.
+Remote computation may continue; this change does not claim remote cancellation.
+Admin's two-hour created_at review marker remains read-only and is not an SLA.
+
+Investigation and verification use source and isolated tests only; the supplied
+production IDs were not queried and no production command or migration was run.
+
+Verification: the combined stale-command, JobReconciliation, DurableUploadSubmission,
+API V2 and AdminDeveloperWorkspace suites passed **159 tests / 2,903 assertions**
+with SQLite memory, fake storage and mocked providers. Coverage includes repeated
+Apollo 2 polling for 140 minutes, dry-run immutability, all five active status
+spellings and timestamp fallbacks, exact timeout boundaries, one API release/App
+refund, preserved cancellation exclusions, interrupted financial propagation,
+in-flight late completion, normal completion and unchanged Admin review behavior.
+Scoped Pint, PHP lint and diff checks passed. No frontend assets changed; no Vite
+rebuild was needed. Native MySQL and deployed scheduler acceptance remain operator
+checks; automated tests do not authorize deployment or live stale execution.
+
 ## Process Queue observation — 2026-09-26
 
 The global V2 queue reads MlJob only. Queued/running/saving remain active even
@@ -136,10 +194,10 @@ MetKurd state. Scheduler overlap guards are retained; queue workers must actuall
 run. Reconciliation jobs have timeout 240 seconds and one queue attempt; later
 scheduler passes recover unfinished work. Queue retry_after must exceed timeout.
 
-Stale cleanup now excludes jobs with a provider ID, charge reference or attempted
-submission. Age alone does not prove remote failure and cannot replace completion
-reconciliation. Long-running/unavailable provider jobs still need operational
-monitoring; there is no invented terminal outcome from a network timeout.
+Stale cleanup uses the stable local deadlines and eligibility described above.
+An individual transport error still leaves the job retryable; it does not itself
+prove provider failure. Acknowledged jobs can later reach the local deadline,
+while unknown submission outcomes remain held for review.
 
 ## Results, failure and cancellation
 
