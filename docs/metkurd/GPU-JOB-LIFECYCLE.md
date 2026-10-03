@@ -1,5 +1,40 @@
 # GPU job lifecycle
 
+## App refund bucket integrity — 2026-10-03
+
+`MlJobRefundService` restores the original App debit allocation through
+`CreditService::refundFromCharge`. Under the job and App wallet locks it reads
+**all** debit rows scoped to the customer, App wallet and charge reference,
+groups subscription/addon amounts, and requires their sum to equal credits_charged.
+Charges spend subscription first and may write two debit rows under one reference.
+Refunds likewise write one row per nonzero bucket under the existing refund reference,
+with one combined wallet/lifetime_refunded increment. Wallet, ledger and job marker
+commit atomically. The generic CreditService::refund default remains unchanged.
+
+Before a new correction, missing/invalid debit evidence, unsupported buckets,
+contradictory job/customer/wallet links or incomplete/conflicting refund evidence
+fail closed. The service returns false and logs only job ID and a bounded code in
+ML_JOB_REFUND_EVIDENCE_INVALID; existing refund_pending recovery remains pending.
+References are not globally unique: unrelated owners/wallets are not evidence for
+this refund. Existing complete matching refund rows are an idempotent no-op and
+allow recovery of a missing job marker; they are never topped up piecemeal.
+An already-set refunded_at retains its existing no-op behavior. This is **not** a
+historical repair and does not rewrite previously misallocated completed refunds.
+
+Failed-only, unknown-submission, eliminated-customer and API exclusions are retained.
+Stale timeout and ordinary provider failure share this correction path; API
+reservation release, pricing, monthly allowances and timeout values are unchanged.
+No schema migration or live data correction is involved. Isolated coverage includes
+subscription/addon/split refunds, repeated recovery, conflicting evidence, second-row
+write rollback, wallet totals/lifetime_refunded and both terminal failure paths.
+
+Verification: **255 tests / 3,507 assertions** passed across MlJobRefundService,
+DurableUploadSubmission, JobReconciliation, OmniSubmissionLifecycle, MultiSpeaker,
+Harakat, stale-command, separate-wallet and API V2 suites using SQLite memory,
+array cache/session and mocked providers. Focused Pint, PHP lint and diff checks
+passed. Native MySQL concurrency remains a deployment acceptance check; no live
+provider, production database, historical correction or deployment was performed.
+
 ## Stable stale-job deadlines — 2026-10-03
 
 `ml-jobs:mark-stale-failed` now applies the existing local timeout to acknowledged

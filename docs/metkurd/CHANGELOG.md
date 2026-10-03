@@ -1,5 +1,15 @@
 # Architectural and behavioral decisions
 
+## 2026-10-03 — App MlJob refunds preserve debit buckets
+
+Reconstruct refunds from all owned App debit rows rather than the generic add-on
+default. Validate the full allocation and existing refund evidence under the wallet
+lock; write split refund rows atomically under one logical reference. Inconsistent
+evidence stays pending with a bounded diagnostic. Retain existing completed-refund
+markers without historical repair. Generic refunds, API reservations and allowance
+economics are unchanged. No migration or production operation. See
+[the refund contract](GPU-JOB-LIFECYCLE.md#app-refund-bucket-integrity--2026-10-03).
+
 ## 2026-10-03 — Stable ML stale-job deadlines
 
 Apply the existing 30/60-minute local timeout to acknowledged RunPod jobs, preserving

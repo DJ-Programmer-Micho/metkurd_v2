@@ -2,10 +2,10 @@
 
 namespace App\Services\MetKurd\Jobs;
 
-use App\Models\CreditLedger;
 use App\Models\MlJob;
 use App\Services\Billing\CreditService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /** Applies the single financial correction associated with a failed MlJob. */
 class MlJobRefundService
@@ -31,27 +31,30 @@ class MlJobRefundService
                 || data_get($fresh->input, 'api_job_id')) {
                 return false;
             }
-            $debit = CreditLedger::query()->where('customer_id', $fresh->customer_id)
-                ->where('wallet_type', 'app')->where('direction', 'debit')
-                ->where('reference_code', $fresh->charge_reference ?: "ml-job:{$fresh->id}:charge")->exists();
-            if (! $debit) {
+            $reference = (string) ($fresh->refund_reference ?: "ml-job:{$fresh->id}:refund");
+            try {
+                $this->credits->refundFromCharge(
+                    customerId: (int) $fresh->customer_id,
+                    credits: (int) $fresh->credits_charged,
+                    chargeReference: (string) ($fresh->charge_reference ?: "ml-job:{$fresh->id}:charge"),
+                    type: 'ml_job_refund',
+                    meta: [
+                        'reference_code' => $reference,
+                        'related_type' => 'ml_job',
+                        'related_id' => (string) $fresh->id,
+                        'ml_job_id' => (string) $fresh->id,
+                        'tool_action' => (string) $fresh->toolAction?->full_code,
+                        'reason' => $reason,
+                    ],
+                );
+            } catch (\DomainException $exception) {
+                Log::warning('ML_JOB_REFUND_EVIDENCE_INVALID', [
+                    'job_id' => (string) $fresh->id,
+                    'code' => $exception->getMessage(),
+                ]);
+
                 return false;
             }
-
-            $reference = (string) ($fresh->refund_reference ?: "ml-job:{$fresh->id}:refund");
-            $this->credits->refund(
-                customerId: (int) $fresh->customer_id,
-                credits: (int) $fresh->credits_charged,
-                type: 'ml_job_refund',
-                meta: [
-                    'reference_code' => $reference,
-                    'related_type' => 'ml_job',
-                    'related_id' => (string) $fresh->id,
-                    'ml_job_id' => (string) $fresh->id,
-                    'tool_action' => (string) $fresh->toolAction?->full_code,
-                    'reason' => $reason,
-                ],
-            );
 
             $fresh->refund_reference = $reference;
             $fresh->refunded_at = now();

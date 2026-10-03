@@ -188,6 +188,106 @@ class CreditService
         }, 3);
     }
 
+    /**
+     * Restore a complete App MlJob charge allocation; never infer a bucket from the current wallet.
+     * Returns false only when an identical complete refund already exists.
+     * Inconsistent evidence throws before any mutation; callers must retain review/retry state.
+     */
+    public function refundFromCharge(
+        int $customerId,
+        int $credits,
+        string $chargeReference,
+        string $type,
+        array $meta,
+    ): bool {
+        return DB::transaction(function () use ($customerId, $credits, $chargeReference, $type, $meta): bool {
+            $reference = trim((string) ($meta['reference_code'] ?? ''));
+            $jobId = (string) ($meta['ml_job_id'] ?? '');
+            if ($credits <= 0 || trim($chargeReference) === '' || $reference === '' || $jobId === '' || $reference === $chargeReference) {
+                throw new \DomainException('invalid_refund_identity');
+            }
+
+            // Use the same serialization boundary as charge()/refund(), but never
+            // create a missing wallet while investigating inconsistent evidence.
+            $wallet = CreditWallet::query()->where('customer_id', $customerId)
+                ->where('wallet_type', CreditWallet::TYPE_APP)->lockForUpdate()->first();
+            if (! $wallet) {
+                throw new \DomainException('missing_app_wallet');
+            }
+
+            $owned = CreditLedger::query()->where('customer_id', $customerId)
+                ->where('wallet_type', CreditWallet::TYPE_APP);
+            // References are not globally unique. Only explicit links to this job
+            // can establish an ownership conflict outside the owned wallet.
+            $conflictingIdentity = CreditLedger::query()->whereIn('reference_code', [$chargeReference, $reference])
+                ->where(fn ($query) => $query->where('ml_job_id', $jobId)
+                    ->orWhere(fn ($related) => $related->where('related_type', 'ml_job')->where('related_id', $jobId)))
+                ->where(fn ($query) => $query->where('customer_id', '!=', $customerId)->orWhere('wallet_type', '!=', CreditWallet::TYPE_APP))
+                ->exists();
+            if ($conflictingIdentity) {
+                throw new \DomainException('conflicting_ledger_identity');
+            }
+
+            $allocation = function ($rows, string $direction) use ($jobId, $type): array {
+                $parts = ['subscription' => 0, 'addon' => 0];
+                foreach ($rows as $row) {
+                    if (! array_key_exists((string) $row->bucket, $parts) || (int) $row->amount <= 0
+                        || (int) $row->credits_delta !== ($direction === 'debit' ? -1 : 1) * (int) $row->amount
+                        || ($row->ml_job_id && (string) $row->ml_job_id !== $jobId)
+                        || ($row->related_type === 'ml_job' && (string) $row->related_id !== $jobId)
+                        || $row->api_job_id
+                        || ($direction === 'refund' && ($row->direction !== 'refund' || $row->type !== $type))) {
+                        throw new \DomainException('invalid_'.$direction.'_evidence');
+                    }
+                    $parts[$row->bucket] += (int) $row->amount;
+                }
+
+                return $parts;
+            };
+            $debits = (clone $owned)->where('direction', 'debit')->where('reference_code', $chargeReference)->lockForUpdate()->get();
+            $expected = $allocation($debits, 'debit');
+            if (array_sum($expected) !== $credits) {
+                throw new \DomainException('debit_total_mismatch');
+            }
+            $refunds = (clone $owned)->where('reference_code', $reference)->lockForUpdate()->get();
+            if ($refunds->isNotEmpty()) {
+                if ($allocation($refunds, 'refund') !== $expected) {
+                    throw new \DomainException('refund_allocation_mismatch');
+                }
+
+                return false;
+            }
+
+            $balanceBefore = (int) $wallet->balance_credits;
+            $wallet->subscription_balance_credits += $expected['subscription'];
+            $wallet->addon_balance_credits += $expected['addon'];
+            $wallet->syncCombinedBalance();
+            $wallet->lifetime_refunded = (int) $wallet->lifetime_refunded + $credits;
+            $wallet->save();
+            foreach ($expected as $bucket => $amount) {
+                if ($amount === 0) {
+                    continue;
+                }
+                $this->writeLedger(
+                    customerId: $customerId,
+                    walletType: CreditWallet::TYPE_APP,
+                    type: $type,
+                    direction: 'refund',
+                    sourceType: 'refund',
+                    bucket: $bucket,
+                    creditsDelta: $amount,
+                    amount: $amount,
+                    balanceBefore: $balanceBefore,
+                    wallet: $wallet,
+                    referenceCode: $reference,
+                    meta: array_merge($meta, ['refund_bucket' => $bucket, 'refunded_total' => $credits, 'refunded_part' => $amount]),
+                );
+            }
+
+            return true;
+        }, 3);
+    }
+
     public function grantMonthlyCredits(
         int $customerId,
         int $credits,
