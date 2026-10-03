@@ -197,8 +197,9 @@ it('documents the stable voices response and authenticated GET in four languages
     expect(array_keys($response))->toBe(['voices'])->and(array_keys($response['voices'][0]))->toBe(['id', 'name']);
 });
 
-it('submits through native OMNI once charges only the API wallet and persists without a client polling', function (string $model) {
+it('submits through native OMNI once charges only the API wallet and persists without a client polling', function (string $model, string $storageMode) {
     $this->speech['model'] = $model;
+    $this->speech['storage_mode'] = $storageMode;
     $provider = Mockery::mock(RunPodProvider::class);
     $provider->shouldReceive('run')->once()->with('test-omni', Mockery::on(fn ($input) => $input['model'] === ($model === '1.5' ? 'model_1' : 'model_2')), Mockery::type('int'))->andReturn(['id' => 'remote-v2']);
     $provider->shouldReceive('status')->once()->andReturn(['status' => 'COMPLETED', 'output' => ['audio_base64' => base64_encode('wave result')]]);
@@ -216,8 +217,32 @@ it('submits through native OMNI once charges only the API wallet and persists wi
     (new ReconcileMlJob($api->ml_job_id))->handle();
     $result = $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk()->assertJsonPath('status', 'completed');
     $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk();
-    expect(CustomerFile::count())->toBe(1)->and(CustomerFile::first()->retention_mode)->toBe('temporary')
-        ->and(CustomerFile::first()->counts_toward_quota)->toBeFalse();
+    $file = CustomerFile::firstOrFail();
+    expect(CustomerFile::count())->toBe(1)->and($file->retention_mode)->toBe($storageMode)
+        ->and($file->counts_toward_quota)->toBe($storageMode === 'permanent')
+        ->and($file->customer_id)->toBe($this->customer->id)
+        ->and($file->source_type)->toBe('api_job')->and($file->source_id)->toBe($id)
+        ->and(data_get($file->meta, 'job_id'))->toBe($api->ml_job_id)
+        ->and($file->mime)->toBe('audio/wav')
+        ->and($file->expires_at?->toIso8601String())->toBe(data_get($api->meta, 'expires_at'))
+        ->and(Storage::disk($file->disk)->get($file->path))->toBe('wave result')
+        ->and($result->json('result.files'))->toHaveCount(1)
+        ->and($result->json('result.files.0.expires_at'))->toBe($file->expires_at?->toIso8601String());
+    $link = \App\Models\ApiResultFile::findOrFail($result->json('result.files.0.id'));
+    expect($link->customer_id)->toBe($this->customer->id)->and($link->storage_file_id)->toBe($file->id);
+    $used = (int) \App\Models\CustomerUsage::where('customer_id', $this->customer->id)->value('storage_used_bytes');
+    expect($used)->toBe($storageMode === 'permanent' ? $file->size_bytes : 0);
+    config()->set('metkurd_v2.enabled', true);
+    \Livewire\Livewire::actingAs($this->customer, 'app')->test('app::v2.pages.storage.app-storage')
+        ->set('type', 'audio')->set('sort', 'newest')->assertSee('job:'.$api->ml_job_id)
+        ->assertSee($storageMode === 'temporary' ? 'Temporary' : 'Permanent')
+        ->set('product', $model === '2.0' ? 'apollo-2' : 'apollo-1')
+        ->assertSee($model === '2.0' ? 'Apollo 2.0v' : 'Apollo 1.5v')
+        ->call('openFolder', 'job:'.$api->ml_job_id)->assertSee('API')
+        ->assertSee($file->expires_at?->toIso8601String() ?? 'Permanent');
+    expect((int) \App\Models\CustomerUsage::where('customer_id', $this->customer->id)->value('storage_used_bytes'))->toBe($used);
+    $this->get(route('app.v2.storage.download', ['locale' => 'en', 'file' => $file->id]))->assertRedirect();
+    $result->assertDontSee($file->path)->assertDontSee('remote-v2')->assertDontSee('storage.example.test');
     $url = $result->json('result.files.0.download_url');
     expect($url)->toContain('/api/v2/files/');
     $this->get($url, $this->headers)->assertOk();
@@ -231,7 +256,7 @@ it('submits through native OMNI once charges only the API wallet and persists wi
     $this->getJson($url, $this->headers)->assertNotFound();
     $api->refresh()->update(['meta' => array_merge($api->meta, ['expires_at' => now()->subSecond()->toIso8601String()])]);
     $this->getJson('/api/v2/jobs/'.$id, $this->headers)->assertOk()->assertJsonPath('result.expired', true)->assertJsonPath('result.files', []);
-})->with(['1.5', '2.0']);
+})->with([['1.5', 'temporary'], ['2.0', 'temporary'], ['1.5', 'permanent'], ['2.0', 'permanent']]);
 
 it('rejects invalid speech inputs before creating jobs', function (array $change) {
     $this->postJson('/api/v2/speech', array_merge($this->speech, $change), $this->headers)->assertUnprocessable()->assertJsonPath('error.code', 'invalid_request');

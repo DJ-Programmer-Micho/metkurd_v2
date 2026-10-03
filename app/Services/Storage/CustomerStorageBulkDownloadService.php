@@ -4,6 +4,7 @@ namespace App\Services\Storage;
 
 use App\Models\Customer;
 use App\Models\CustomerFile;
+use App\Support\CustomerStorageLibrary;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -62,9 +63,7 @@ class CustomerStorageBulkDownloadService
             throw new \InvalidArgumentException('Select at least one file.');
         }
 
-        $files = CustomerFile::query()
-            ->where('customer_id', (int) $customer->id)
-            ->where('status', 'active')
+        $files = app(CustomerStorageLibrary::class)->filesFor((int) $customer->id)
             ->whereIn('id', $ids)
             ->orderBy('id')
             ->get();

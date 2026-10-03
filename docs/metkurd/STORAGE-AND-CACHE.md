@@ -1,5 +1,15 @@
 # Storage, cache and history
 
+## Unified V2 owned-result visibility — 2026-10-03
+
+V2 My Storage includes active unexpired API results in both retention modes,
+with API/Temporary/Permanent and expiry labels. The shared library query governs
+navigation, lists, counts, selection and App downloads. Temporary inputs remain
+hidden. Quota still uses CustomerUsage and counts_toward_quota, independently of
+visibility. Preview signatures are capped at file expiry; expired files cannot
+be downloaded individually or in bulk. No retention, billing or cleanup schedule
+changed. See [the source audit, matrix and service coverage](API-STORAGE-VISIBILITY.md).
+
 ## V2 checkout QR cache — 2026-10-01
 
 New V2 Payment QR images use a disposable private cache scoped to customer and
@@ -148,7 +158,7 @@ behavior; neither a GPU response nor a cache entry is the permanent customer fil
 | Uploaded job sources | Stored under application render paths, registered as CustomerFile and normally count toward quota. Audio/documents often remain for customer preview and are removed by service-specific deletion. Being an input does **not** automatically make a file temporary. |
 | Clone reference audio | Reusable customer-owned reference CustomerFile, independent of individual render deletion. Shared across clone tool versions for that customer. |
 | Web results | Private S3-compatible objects plus MlJob output / CustomerFile metadata; normal permanent retention or null historical retention, not a provider result URL. |
-| Public API temporary results | `api_storage_mode`, `api_expires_at`, ApiResultFile/CustomerFile retention metadata; excluded from normal quota where configured by the API path and cleaned by API expiry command. Keep separate from permanent web files. |
+| Public API temporary results | `api_storage_mode`, `api_expires_at`, ApiResultFile/CustomerFile retention metadata; excluded from permanent quota and cleaned by API expiry command. Visible in V2 My Storage with retention/expiry labels; temporary inputs remain hidden. |
 | ZIP downloads | Bulk storage archive uses a per-request local temp directory cleaned after streaming. STEM has a separate local ZIP cache. These are derivative downloads, not canonical results. |
 
 ## Paths, metadata and ownership

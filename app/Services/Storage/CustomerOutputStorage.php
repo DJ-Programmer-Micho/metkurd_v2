@@ -192,7 +192,8 @@ class CustomerOutputStorage
         $disk = (string) ($file->disk ?: 's3');
         $path = trim((string) $file->path);
 
-        if ($path === '' || (string) $file->status !== 'active') {
+        if ($path === '' || (string) $file->status !== 'active' || $file->deleted_at !== null
+            || ($file->expires_at && $file->expires_at->lessThanOrEqualTo(now()))) {
             return null;
         }
 
@@ -201,7 +202,12 @@ class CustomerOutputStorage
                 return null;
             }
 
-            return $this->temporaryUrlForDisk($disk, $path, now()->addMinutes(20), [
+            $expiresAt = now()->addMinutes(20);
+            if ($file->expires_at && $file->expires_at->lessThan($expiresAt)) {
+                $expiresAt = $file->expires_at;
+            }
+
+            return $this->temporaryUrlForDisk($disk, $path, $expiresAt, [
                 'ResponseContentDisposition' => $disposition.'; filename="'.basename($path).'"',
             ]);
         } catch (\Throwable $exception) {

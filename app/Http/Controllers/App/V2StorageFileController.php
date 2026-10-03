@@ -5,6 +5,7 @@ namespace App\Http\Controllers\App;
 use App\Models\CustomerFile;
 use App\Services\Storage\CustomerOutputStorage;
 use App\Services\Storage\CustomerStorageBulkDownloadService;
+use App\Support\CustomerStorageLibrary;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
@@ -14,7 +15,7 @@ class V2StorageFileController
     public function download(Request $request, string $locale, CustomerFile $file, CustomerOutputStorage $storage): RedirectResponse
     {
         $customer = $request->user('app');
-        abort_unless($customer && (int) $file->customer_id === (int) $customer->id && (string) $file->status === 'active', 404);
+        abort_unless($customer && app(CustomerStorageLibrary::class)->filesFor((int) $customer->id)->whereKey($file->id)->exists(), 404);
 
         $url = $storage->temporaryUrlForCustomerFile($file, 'attachment');
         if ($url === null) {

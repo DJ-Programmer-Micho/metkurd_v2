@@ -15,10 +15,10 @@ class CustomerApiFileLinkService
             || (data_get($job->meta, 'expires_at') && now()->greaterThanOrEqualTo(\Illuminate\Support\Carbon::parse(data_get($job->meta, 'expires_at'))))) {
             return;
         }
-        $files = CustomerFile::where('customer_id', $job->customer_id)->where('status', 'active')
+        $files = CustomerFile::where('customer_id', $job->customer_id)->where('status', 'active')->whereNull('deleted_at')
             ->where('meta->job_id', $job->ml_job_id)->whereIn('purpose', ['render', 'transcription', 'caption'])->get();
         foreach ($files as $file) {
-            if (! $file->expires_at || ! $file->expires_at->isPast()) {
+            if (! $file->expires_at || $file->expires_at->greaterThan(now())) {
                 ApiResultFile::firstOrCreate(['api_job_id' => $job->id, 'storage_file_id' => $file->id, 'result_kind' => 'artifact'],
                     ['id' => 'file_'.Str::lower((string) Str::ulid()), 'customer_id' => $job->customer_id]);
             }

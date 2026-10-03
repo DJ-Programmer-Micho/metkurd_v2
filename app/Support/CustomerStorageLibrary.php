@@ -5,10 +5,34 @@ namespace App\Support;
 use App\Models\Customer;
 use App\Models\CustomerFile;
 use App\Models\MlJob;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class CustomerStorageLibrary
 {
+    /** Visibility is independent of permanent quota accounting. */
+    public function filesFor(int $customerId): Builder
+    {
+        return CustomerFile::query()
+            ->where('customer_id', $customerId)
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+            ->where(fn ($query) => $query->whereNull('retention_mode')
+                ->orWhere('retention_mode', '!=', 'temporary')
+                ->orWhere(fn ($results) => $results->where('source_type', 'api_job')
+                    ->whereIn('purpose', ['render', 'transcription', 'caption'])));
+    }
+
+    public function retention(CustomerFile $file): array
+    {
+        return [
+            'api' => $file->source_type === 'api_job',
+            'temporary' => $file->retention_mode === 'temporary',
+            'expires_at' => $file->expires_at?->toIso8601String(),
+        ];
+    }
+
     /** @return array{key: string, service_key: string, service: string, title: string, icon_asset: string, accent: string} */
     public function identity(CustomerFile $file, ?MlJob $job = null): array
     {
@@ -44,10 +68,7 @@ class CustomerStorageLibrary
     /** @return array<int, array{key: string, label: string, icon_asset: string, accent: string, products: array<int, array<string, mixed>>, file_count: int, size_bytes: int}> */
     public function navigation(Customer $customer): array
     {
-        $files = CustomerFile::query()
-            ->where('customer_id', (int) $customer->id)
-            ->where('status', 'active')
-            ->where(fn ($query) => $query->whereNull('retention_mode')->orWhere('retention_mode', '!=', 'temporary'))
+        $files = $this->filesFor((int) $customer->id)
             ->get(['id', 'tool_code', 'path', 'size_bytes', 'meta', 'source_type', 'source_id']);
 
         $jobs = $this->jobsFor($customer, $files);

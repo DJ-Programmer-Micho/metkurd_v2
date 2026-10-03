@@ -1,5 +1,13 @@
 # Architectural and behavioral decisions
 
+## 2026-10-03 — API results in V2 My Storage
+
+Expose owned active API temporary results alongside permanent files using the
+shared library query, with retention/expiry labels and expiry-checked App delivery.
+Keep temporary input staging hidden and quota accounting independent of visibility.
+No TTL, billing, provider or schema changes. API metadata gains per-file expiry;
+all service roles remain distinct. See [API-STORAGE-VISIBILITY.md](API-STORAGE-VISIBILITY.md).
+
 ## 2026-10-03 — Public discovery identity
 
 Landing canonicals, hreflang, local social images, schema and sitemap/llms links

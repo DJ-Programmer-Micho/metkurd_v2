@@ -41,11 +41,11 @@ class ApiJobResult
 
             return $payload;
         }
-        $files = CustomerFile::query()->where('customer_id', $job->customer_id)->where('status', 'active')
+        $files = CustomerFile::query()->where('customer_id', $job->customer_id)->where('status', 'active')->whereNull('deleted_at')
             ->where('meta->job_id', $job->ml_job_id)->whereIn('purpose', ['render', 'transcription', 'caption'])->get();
         $resultFiles = [];
         foreach ($files as $file) {
-            if ($file->expires_at && $file->expires_at->isPast()) {
+            if ($file->expires_at && $file->expires_at->lessThanOrEqualTo(now())) {
                 continue;
             }
             $link = ApiResultFile::where('api_job_id', $job->id)->where('customer_id', $job->customer_id)
@@ -55,7 +55,8 @@ class ApiJobResult
                 continue;
             }
             $resultFiles[] = ['id' => $link->id, 'kind' => data_get($file->meta, 'role') ?: $file->purpose, 'mime_type' => $file->mime,
-                'size_bytes' => $file->size_bytes, 'download_url' => route('api.customer.v2.files.download', ['id' => $link->id])];
+                'size_bytes' => $file->size_bytes, 'expires_at' => $file->expires_at?->toIso8601String(),
+                'download_url' => route('api.customer.v2.files.download', ['id' => $link->id])];
         }
         $output = (array) $job->mlJob?->output;
         $service = data_get($job->meta, 'service');

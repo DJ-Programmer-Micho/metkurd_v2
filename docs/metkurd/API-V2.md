@@ -524,7 +524,8 @@ correction. Linked native jobs retain the existing durable recovery policy.
 All jobs return `id`, `status`, `service`, `created_at`, `completed_at`,
 `expires_at`, `result`. Status is queued/processing/completed/failed/cancelled.
 Failed jobs include a safe error code/message; no provider state names are public.
-Completed `result.files` entries contain id, kind, mime_type, size_bytes and an
+Completed `result.files` entries contain id, kind, mime_type, size_bytes, nullable
+per-file expires_at and an
 authenticated `/api/v2/files/{id}/download` URL. Additional service fields:
 
 - Apollo/Vector: owned audio in files.
@@ -548,6 +549,11 @@ policy. Expiry hides API results immediately (`expired: true`, empty files), eve
 if cleanup has not run. The existing cleanup command and deletion safeguards
 control physical removal; this phase does not enable destructive operations.
 Web permanent storage semantics remain unchanged.
+
+Active owned API results now also appear in V2 My Storage with API and retention
+labels and expiry. Temporary result visibility does not include permanent quota:
+temporary inputs/staging remain hidden, and expired/deleted files are unavailable
+in both surfaces. See the [source trace and behavior matrix](API-STORAGE-VISIBILITY.md).
 
 Errors use `{"error":{"code":"invalid_request","message":"Check the supplied fields."}}`.
 Validation may add a list of field names. Codes: invalid_request (400/422),

@@ -69,8 +69,8 @@ class ApiController extends Controller
         $result = ApiResultFile::query()->where('customer_id', $request->user()->id)->whereNull('deleted_at')
             ->whereHas('apiJob', fn ($q) => $q->where('customer_id', $request->user()->id)->where('meta->api_version', 2))->find($id);
         $file = $result?->storageFile;
-        if (! $file || (int) $file->customer_id !== (int) $request->user()->id || $file->status !== 'active'
-            || ($file->expires_at && $file->expires_at->isPast()) || ! Storage::disk($file->disk)->exists($file->path)) {
+        if (! $file || (int) $file->customer_id !== (int) $request->user()->id || $file->status !== 'active' || $file->deleted_at !== null
+            || ($file->expires_at && $file->expires_at->lessThanOrEqualTo(now())) || ! Storage::disk($file->disk)->exists($file->path)) {
             throw new ApiProblem('file_not_found', 404);
         }
 

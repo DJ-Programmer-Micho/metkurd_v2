@@ -1841,5 +1841,9 @@
     "Choose between 1 and 20 pages per OCR job.": "اختر من صفحة واحدة إلى 20 صفحة لكل مهمة OCR.",
     "This PDF is invalid or corrupt. Please upload a valid PDF.": "ملف PDF هذا غير صالح أو تالف. يرجى رفع ملف PDF صالح.",
     "This PDF is password-protected. Please upload an unlocked PDF.": "ملف PDF محمي بكلمة مرور. يرجى رفع نسخة غير مقفلة.",
-    "OCR supports 1 to 20 selected pages per job, including ranges in longer PDFs. Supported audio formats are WAV, MP3, M4A, AAC, OGG, WebM and FLAC; Vector excludes FLAC.": "يدعم OCR من صفحة واحدة إلى 20 صفحة مختارة لكل مهمة، بما في ذلك نطاقات من ملفات PDF أطول. صيغ الصوت المدعومة WAV وMP3 وM4A وAAC وOGG وWebM وFLAC؛ لا يدعم Vector صيغة FLAC."
+    "OCR supports 1 to 20 selected pages per job, including ranges in longer PDFs. Supported audio formats are WAV, MP3, M4A, AAC, OGG, WebM and FLAC; Vector excludes FLAC.": "يدعم OCR من صفحة واحدة إلى 20 صفحة مختارة لكل مهمة، بما في ذلك نطاقات من ملفات PDF أطول. صيغ الصوت المدعومة WAV وMP3 وM4A وAAC وOGG وWebM وFLAC؛ لا يدعم Vector صيغة FLAC.",
+    "Temporary": "مؤقت",
+    "Permanent": "دائم",
+    "Expires": "تنتهي الصلاحية",
+    "Excluded from permanent storage quota": "لا يُحتسب ضمن حصة التخزين الدائم"
 }
