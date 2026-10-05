@@ -11,6 +11,7 @@ new #[Layout('landing::layouts.app')] class extends Component
 
 @php
     $locale = app()->getLocale();
+    $publicCopy = app(\App\Support\Landing\PublicWebsiteContent::class);
     $facts = LandingContent::section('overview_page.facts');
     $tools = LandingContent::section('overview_page.tools');
     $limitations = LandingContent::section('overview_page.limitations');
@@ -117,6 +118,18 @@ new #[Layout('landing::layouts.app')] class extends Component
                             @endforeach
                         </ul>
                     </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="section pt-0" aria-labelledby="official-developer-resources">
+        <div class="container">
+            <div class="policy-card glass-card reveal">
+                <h2 id="official-developer-resources" class="h4 mb-3">{{ $publicCopy->text('github.heading') }}</h2>
+                <p class="text-muted-soft">{{ $publicCopy->text('github.copy') }}</p>
+                <div class="d-flex flex-wrap gap-3">
+                    <a href="{{ \App\Support\Landing\PublicWebsiteContent::GITHUB_ORGANIZATION }}" target="_blank" rel="noopener noreferrer">{{ $publicCopy->text('github.organization') }}</a>
+                    <a href="{{ \App\Support\Landing\PublicWebsiteContent::API_REPOSITORY }}" target="_blank" rel="noopener noreferrer">{{ $publicCopy->text('github.repository') }}</a>
                 </div>
             </div>
         </div>

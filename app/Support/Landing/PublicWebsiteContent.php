@@ -6,6 +6,10 @@ use App\Support\AreaJsonTranslations;
 
 class PublicWebsiteContent
 {
+    public const GITHUB_ORGANIZATION = 'https://github.com/MetKurdAI';
+
+    public const API_REPOSITORY = 'https://github.com/MetKurdAI/metkurd-api';
+
     public const TERMINOLOGY_SOURCE_URL = 'https://www.whitehouse.gov/presidential-actions/2026/09/inaugurating-the-era-of-super-intelligence/';
 
     public function text(string $key, array $replace = [], ?string $locale = null): string

@@ -146,6 +146,28 @@ it('gates API and MCP copy independently at request time', function () {
     $this->get('/en')->assertOk()->assertSee('ChatGPT')->assertSee('Claude');
 });
 
+it('keeps obsolete API unavailability out of raw public catalogs while retaining the disabled-feature message', function (string $locale) {
+    $source = json_decode(file_get_contents(resource_path('lang/landing/'.$locale.'.json')), true, flags: JSON_THROW_ON_ERROR);
+    $catalog = \App\Support\LandingContent::translationCatalog();
+    foreach ([$source, $catalog] as $entries) {
+        expect($entries)->not->toHaveKey('home.workflow.surface.3.label')
+            ->not->toHaveKey('home.workflow.surface.3.value');
+        // Check raw source, not the runtime projection that filters legacy rows.
+        unset($entries['public.api_unavailable']);
+        expect(implode("\n", $entries))->not->toMatch('/not currently available|API.*(?:not available|غير متاح|غير متوفر|بەردەست نییە)|غير متوفر حاليا|لە ئێستادا بەردەست نییە/iu');
+    }
+    expect(array_column(\App\Support\LandingContent::rawSection('home.workflow.surface'), 'label'))
+        ->not->toContain('Public API', 'API', 'MCP');
+
+    app()->setLocale($locale);
+    $disabledMessage = $source['public.api_unavailable'];
+    expect($disabledMessage)->not->toBeEmpty();
+    config(['customer_api.v2_enabled' => false]);
+    expect(\App\Support\LandingContent::section('overview_page.limitations'))->toContain($disabledMessage);
+    config(['customer_api.v2_enabled' => true]);
+    expect(\App\Support\LandingContent::section('overview_page.limitations'))->not->toContain($disabledMessage);
+})->with(['en', 'ar', 'ku']);
+
 it('serves a sitemap containing only real localized public pages', function () {
     $response = $this->get('/sitemap.xml')->assertOk();
     $xml = simplexml_load_string($response->getContent());
@@ -462,3 +484,98 @@ it('keeps retired Translation pages as genuine not-found responses despite histo
     $this->get('/sitemap.xml')->assertOk()->assertDontSee('/tools/translation');
     $this->get('/llms.txt')->assertOk()->assertDontSee('/tools/translation');
 })->with(['en', 'ar', 'ku']);
+
+it('connects the public organization and developer resources without changing website identity', function (string $locale, string $path) {
+    config(['customer_api.v2_enabled' => true, 'mcp.enabled' => true, 'app.url' => 'https://metkurd.ai']);
+    // This is an in-process Laravel request; no network connection is made.
+    $response = $this->get('https://metkurd.ai/'.$locale.$path)->assertOk();
+    $html = $response->getContent();
+    $dom = new DOMDocument;
+    $previous = libxml_use_internal_errors(true);
+    try {
+        $dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+    } finally {
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+    }
+    $xpath = new DOMXPath($dom);
+    $organizations = [];
+    foreach ($xpath->query('//script[@type="application/ld+json"]') as $script) {
+        $schema = json_decode($script->textContent, true, flags: JSON_THROW_ON_ERROR);
+        foreach ($schema['@graph'] ?? [$schema] as $entity) {
+            if (($entity['@type'] ?? null) === 'Organization') {
+                $organizations[] = $entity;
+            }
+        }
+    }
+    expect($organizations)->toHaveCount(1);
+    expect($organizations[0]['@id'])->toBe('https://metkurd.ai#organization')
+        ->and($organizations[0]['url'])->toBe('https://metkurd.ai')
+        ->and(array_count_values($organizations[0]['sameAs'])[PublicWebsiteContent::GITHUB_ORGANIZATION])->toBe(1)
+        ->and($organizations[0]['sameAs'])->not->toContain(PublicWebsiteContent::API_REPOSITORY);
+    expect($xpath->query('//link[@rel="canonical"]')->item(0)->getAttribute('href'))->toBe('https://metkurd.ai/'.$locale.$path);
+    expect($dom->documentElement->getAttribute('dir'))->toBe($locale === 'en' ? 'ltr' : 'rtl');
+    foreach (['en', 'ar', 'ku', 'x-default'] as $alternate) {
+        $target = $alternate === 'x-default' ? 'en' : $alternate;
+        expect($xpath->query('//link[@hreflang="'.$alternate.'"]')->item(0)->getAttribute('href'))->toBe('https://metkurd.ai/'.$target.$path);
+    }
+    if (in_array($path, ['', '/tools', '/metkurd-ai-overview'], true)) {
+        foreach ([PublicWebsiteContent::GITHUB_ORGANIZATION, PublicWebsiteContent::API_REPOSITORY] as $url) {
+            $links = $xpath->query('//a[@href="'.$url.'"]');
+            expect($links->length)->toBeGreaterThan(0);
+            foreach ($links as $link) {
+                expect($link->getAttribute('rel'))->not->toContain('nofollow');
+                expect($link->getAttribute('rel'))->toContain('noopener', 'noreferrer');
+            }
+        }
+    }
+    $copy = app(PublicWebsiteContent::class);
+    if ($path === '/metkurd-ai-overview') {
+        $response->assertSee($copy->text('github.heading'))->assertSee($copy->text('github.copy'));
+    }
+    if ($path === '') {
+        $question = $copy->text('home_faq.github.title');
+        $answer = $copy->text('home_faq.github.copy');
+        $response->assertSee($question)->assertSee($answer);
+        $visibleAnswers = [];
+        $schemaAnswers = [];
+        foreach ($xpath->query('//div[contains(concat(" ", normalize-space(@class), " "), " faq-item ")]') as $card) {
+            $heading = $xpath->query('.//h4', $card)->item(0);
+            if ($heading && trim($heading->textContent) === $question) {
+                $visibleAnswers[] = trim($xpath->query('.//p', $card)->item(0)->textContent);
+            }
+        }
+        foreach ($xpath->query('//script[@type="application/ld+json"]') as $script) {
+            $schema = json_decode($script->textContent, true, flags: JSON_THROW_ON_ERROR);
+            if (($schema['@type'] ?? null) === 'FAQPage') {
+                foreach ($schema['mainEntity'] as $entry) {
+                    if ($entry['name'] === $question) {
+                        $schemaAnswers[] = $entry['acceptedAnswer']['text'];
+                    }
+                }
+            }
+        }
+        expect($visibleAnswers)->toBe([$answer])->and($schemaAnswers)->toBe($visibleAnswers);
+    }
+    foreach (['localhost', 'metkurd_git_public', 'metkurd_v2', 'RunPod', 'H:\\', 'F:\\'] as $private) {
+        expect($html)->not->toContain($private);
+    }
+    Http::assertNothingSent();
+})->with(['en', 'ar', 'ku'])->with(['', '/tools', '/metkurd-ai-overview', '/privacy', '/terms']);
+
+it('keeps public GitHub discovery independent of account access and out of the sitemap', function () {
+    foreach ([false, true] as $enabled) {
+        config(['customer_api.v2_enabled' => $enabled, 'mcp.enabled' => $enabled]);
+        $this->get('/llms.txt')->assertOk()->assertSee('## Official developer resources')
+            ->assertSee(PublicWebsiteContent::GITHUB_ORGANIZATION)->assertSee(PublicWebsiteContent::API_REPOSITORY)
+            ->assertSee('OpenAPI 3.1')->assertSee('Postman collection')->assertSee('cURL examples')
+            ->assertSee('Python examples')->assertSee('PHP examples')->assertSee('Node.js / JavaScript examples')
+            ->assertSee('It is not the source repository for the hosted MetKurd platform or models.');
+        $this->get('/en/metkurd-ai-overview')->assertOk()->assertSee(PublicWebsiteContent::API_REPOSITORY);
+        $xml = simplexml_load_string($this->get('/sitemap.xml')->assertOk()->assertDontSee('github.com')->getContent());
+        foreach ($xml->url as $entry) {
+            expect(parse_url((string) $entry->loc, PHP_URL_HOST))->toBe('metkurd.ai');
+        }
+    }
+    Http::assertNothingSent();
+});

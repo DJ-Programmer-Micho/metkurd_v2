@@ -210,6 +210,7 @@
             array_filter([
                 '@type' => 'Organization',
                 '@id' => $organizationId,
+                'sameAs' => [\App\Support\Landing\PublicWebsiteContent::GITHUB_ORGANIZATION],
                 'name' => $siteName,
                 'alternateName' => $siteTagline,
                 'slogan' => $siteTagline,

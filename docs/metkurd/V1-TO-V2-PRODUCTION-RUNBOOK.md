@@ -84,6 +84,21 @@ deployment flags, run migrations, refresh live caches or deploy.
 
 ## Independently gated MCP addition — 2026-09-26
 
+**Production follow-up, 2026-10-05:** the operator reports real MCP OAuth acceptance
+after installing one identical Passport key pair on both app nodes and disabling
+Cloudflare Free Bot Fight Mode challenges on machine traffic. Before any subsequent
+MCP deployment, complete the [mandatory signing checks](MCP.md#mandatory-passport-signing-prerequisites)
+as the PHP-FPM identity on every node and compare public fingerprints. Generate a
+pair once only if no valid pair or grants exist; never `passport:install`, per-node
+generation or `--force` over production keys. Run the separate
+[public-edge and reviewed per-node `--resolve` probes](MCP.md#machine-ingress-and-cloudflare-acceptance).
+Free Bot Fight Mode stays off for this configuration; future Super Bot Fight Mode
+requires scoped machine exceptions. Preserve OAuth/API keys, all application
+authorization/financial/traffic controls, Cloudflare DDoS/WAF/TLS and Nginx limits.
+This records operator evidence; this source update did not access or deploy production.
+
+The following paragraph records the original source-only state on 2026-09-26:
+
 MCP source adds six reviewed OAuth/connection migration files to the earlier
 78-file inventory (84 total), including CIMD identity widening and native client
 classification. No application migrations have been run for this

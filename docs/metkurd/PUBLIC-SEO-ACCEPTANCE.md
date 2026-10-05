@@ -1,5 +1,22 @@
 # Public SEO / AEO / GEO acceptance — 2026-10-03
 
+## Official GitHub discovery — 2026-10-05 source follow-up
+
+The canonical Organization identity now links to `https://github.com/MetKurdAI`
+through `sameAs` in both public layouts; the documentation repository is a separate
+resource, not an Organization alias. EN/AR/KU overview pages explain the public
+documentation/sample-code scope and proprietary hosted platform/models. The
+homepage/tools developer card and customer API portal add ordinary GitHub links.
+The homepage GitHub FAQ shares its exact localized answer with FAQPage JSON-LD.
+Dynamic `llms.txt` lists the organization, repository and example formats; sitemap,
+canonical and hreflang behavior are unchanged. API/MCP availability remains gated.
+Stale unconditional API-unavailable terms copy and overview fallback copy are
+corrected. Optional SoftwareSourceCode schema is omitted: this site has no dedicated
+public API documentation page, and its customer API portal is authenticated.
+These are local source changes, not deployment or search-engine indexing acceptance.
+
+## Earlier acceptance snapshot — 2026-10-03
+
 Source review and isolated local verification only. Production, Cloudflare and
 remote storage were not accessed. No deployment, configuration change or migration.
 

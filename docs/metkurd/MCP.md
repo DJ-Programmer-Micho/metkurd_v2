@@ -1,5 +1,34 @@
 # MetKurd MCP V2
 
+## Production acceptance lessons — 2026-10-05
+
+**CURRENT production acceptance — 2026-10-05 (operator-reported):** ChatGPT
+acceptance now includes public OAuth discovery, CIMD OAuth connection, shared
+Passport signing keys across both app nodes, corrected Cloudflare machine
+ingress, MCP `initialize`, `tools/list`, `metkurd_list_voices`, one controlled
+Apollo 2 paid speech generation, API-channel credit consumption, a persisted
+completed result, and the OAuth-protected MCP file result.
+
+**Native inline media rendering: SOURCE/LOCAL VERIFIED only.** The new native
+`AudioContent` result-delivery patch awaits deployment and real ChatGPT acceptance;
+the production evidence above does not establish acceptance of that patch.
+
+The operator reports real production OAuth acceptance after correcting two
+deployment prerequisites. With FEATURE_MCP_V2 enabled, both MCP OAuth PEM settings
+were empty and `storage/oauth-private.key` / `storage/oauth-public.key` were absent;
+the real OAuth flow threw `LogicException`. One Passport pair was generated and
+the exact same pair installed on both load-balanced app nodes. Separately,
+Cloudflare Free Bot Fight Mode returned HTTP 403, `cf-mitigated: challenge` and
+Managed Challenge / "Just a moment" HTML for `/mcp`, preventing machine requests
+from reaching the healthy origin. Standard Bot Fight Mode was disabled.
+
+This is operator-reported production evidence, not a production inspection by this
+source update. It supersedes earlier statements that real ChatGPT OAuth was
+untested; it does not establish acceptance for every paid tool or other client.
+The mandatory [signing prerequisites](#mandatory-passport-signing-prerequisites)
+and [machine ingress probes](#machine-ingress-and-cloudflare-acceptance) below now
+form part of each deployment review. No production operation is authorized here.
+
 ## OCR page selection — 2026-10-01
 
 MCP OCR uses the same Laravel InputBoundary/native submission limit as App/API:
@@ -12,7 +41,9 @@ in force; see SERVICES.md for unknown-count acceptance limits.
 
 
 Source implementation: 2026-09-26. **Disabled by default; no deployment or external
-client acceptance is implied.** This document is the engineering contract for the
+client acceptance was implied by that historical source snapshot.** Current
+production evidence is recorded in the October 5 acceptance section above.
+This document is the engineering contract for the
 remote external-client interface. See [API V2](API-V2.md) for the shared native
 submission, financial and result contracts.
 
@@ -137,7 +168,9 @@ The current [MCP authorization specification](https://modelcontextprotocol.io/sp
 and [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252.html) were reviewed 2026-09-26.
 CIMD plus preregistered public clients provides a documented setup route for the
 target hosts; none requires adding DCR now. No registration endpoint is advertised.
-This does not establish that any real external client has connected successfully.
+**Historical snapshot — 2026-09-26:** this review did not establish that any real
+external client had connected successfully. See the October 5 production
+acceptance section above for subsequent ChatGPT evidence.
 
 Access JWTs use the package's Lcobucci RS256 builder with a standard resource
 audience, issuer, subject, client ID, jti, scopes and expiry. The official SDK JWT
@@ -201,8 +234,9 @@ rows exist for each of the three plans; **all seven recognized V2 family scopes
 were missing**. At that point Student, Pro and Premium were **not MCP-ready**,
 despite their allowances. The later local runtime acceptance below supersedes
 that plan-configuration finding; it does not establish live OAuth acceptance.
-`php artisan mcp:readiness` reports plan configuration only, never customer
-identities, wallet balances, credentials or tokens. Pricing rows are configuration
+`php artisan mcp:readiness` reports local signing readiness and plan configuration,
+never customer identities, wallet balances, PEM contents, credentials or tokens.
+`--signing-only` skips plan/database reads. Pricing rows are configuration
 evidence, not a guaranteed quote: conditional rule selection, current effective-plan
 authority, customer overrides and sufficient API credits remain runtime checks.
 The read-only customer-action diagnostic uses the same Customer pricing resolver.
@@ -214,6 +248,90 @@ they should not configure plan scopes themselves. No tier is promised a tool tha
 its actual current configuration does not grant.
 
 ## Tool contract
+
+### Bounded native result delivery — 2026-10-05
+
+**SOURCE/LOCAL VERIFIED; awaiting deployment and real ChatGPT acceptance of
+native inline media rendering.** This patch is not yet production-accepted.
+
+Completed job reads and idempotent submission replays prioritize actual customer
+content. Apollo/Vector/Zeta/Theta return native MCP `AudioContent` for safe small
+WAV/MP3 results, with authoritative MIME and unchanged bytes. Leo and Harakat
+return readable text plus structured results. Caption SRT/VTT and suitable OCR
+textual exports use embedded text resources. PDF, DOCX and other binary documents
+remain protected downloads. No custom MCP App/player is included, and rendering
+inline media depends on the host; universal ChatGPT playback is not promised.
+Inline file types are WAV/MP3, plain UTF-8 text, SRT and VTT. JSON export/worker
+manifest files remain authenticated downloads too; arbitrary manifest contents
+are not promoted into model-visible resource bodies. JSON metadata descriptors
+contain only the existing safe public fields.
+
+These are **MetKurd application safety limits**, not ChatGPT limits:
+
+| Configuration / environment | Default |
+| --- | --- |
+| `mcp.inline_file_bytes` / `MCP_INLINE_FILE_BYTES` | 1,048,576 raw bytes per file (1 MiB) |
+| `mcp.inline_total_bytes` / `MCP_INLINE_TOTAL_BYTES` | 1,048,576 raw bytes per tool response (1 MiB) |
+| `mcp.response_bytes` / `MCP_RESPONSE_BYTES` | 2,097,152 serialized bytes (2 MiB) |
+
+Raw limits may be zero to disable embedding. The serialized budget has a 4 KiB
+minimum and reserves 1 KiB for framing. It measures SDK-default JSON escaping,
+base64, structured content, links and the actual RPC ID. Readable text duplicated
+in structured content is accounted for too. Very small configured response
+ceilings also reduce the transport request-body limit so an echoed RPC ID cannot
+itself exceed the response budget; default request limits are unchanged. Text
+and media exactly at 1 MiB are eligible only when
+aggregate and serialized budgets also pass; base64 escaping can push a raw file
+that fits over the wire budget. Never truncate, transcode or lower media quality
+to fit. Oversized media uses authenticated fallbacks. A pathological oversized
+manifest fails with `response_too_large` rather than returning an arbitrary subset.
+
+Every STEM track keeps its label, file ID, MIME and download. All two/four required
+stems must be present, authorized, readable and fit the aggregate/serialized
+budgets to inline any of them. `result.stem_count` comes from persisted submission
+input; never infer the requested set from whichever files remain. Unknown mode
+also prevents embedding. Otherwise no stems inline, and the complete
+available authorized fallback set is retained. Deleted or missing artifacts are
+not invented. Additional stored artifacts remain separate protected resources.
+
+Before each stream read, recheck current MCP connection, `v2:files:download`,
+same-customer ApiResultFile/CustomerFile/MlJob relationships, completed API job,
+done MlJob, active/undeleted file and link, all expiries, result purpose, and valid
+configured disk/path. Read only the remaining per-file/aggregate budget plus one
+sentinel byte and close in every case. Do not trust database `size_bytes` to prove
+the stream fits. MCP input never selects storage paths. Only allowlisted audio
+and text MIME types can inline, and detected bytes must agree; binary text,
+invalid UTF-8, HTML/executable types and MIME mismatches use fallbacks. Downloads
+retain attachment disposition and `nosniff`.
+
+Metadata and actual artifact resources are separate:
+
+| URI | Meaning |
+| --- | --- |
+| `metkurd://jobs/{job_id}` | Bounded JSON job metadata, `application/json` |
+| `metkurd://files/{file_id}` | Existing bounded JSON descriptor and authenticated download |
+| `metkurd://artifacts/{file_id}` | Bounded audio blob or textual resource using actual artifact MIME |
+
+The existing `resource_uri` field retains its JSON meaning. `artifact_uri` is
+additive. Tool resource links target artifacts, using their authoritative MIME
+(such as `audio/wav`, `application/x-subrip`, `application/pdf` or DOCX), not generic
+JSON. An artifact resource that cannot safely inline returns a bounded resource
+error directing the caller to its metadata/authenticated download. It never
+labels descriptor JSON as audio. Neither resource nor tool results expose object
+keys, S3 paths, public storage URLs or unauthenticated result links.
+
+All 14 names and safety annotations remain stable. Human-readable titles, clearer
+intent descriptions and object-root output schemas cover success and sanitized
+error envelopes in both negotiated protocols. Instructions preserve `request_id`
+after polling timeouts, require `metkurd_get_job` continuation, surface final
+artifacts, and forbid invented voice IDs, file IDs or URLs. Delivery does not
+reconcile, link files, settle/release reservations, change financial/job state or
+dispatch workers. Existing scheduler authority is unchanged.
+
+The [serialized fixture examples](MCP-RESULT-DELIVERY-EXAMPLES.md) include a small
+WAV, oversized WAV fallback, SRT and four-stem fallback. IDs/URLs are synthetic;
+the downloads still require OAuth bearer authorization. Tests use fake storage
+and mocked submissions; no production acceptance is claimed by this source patch.
 
 All names below have the `metkurd_` prefix. `request_id` is a required UUID for
 every processing/upload-session call. Strict SDK schemas reject extra fields,
@@ -286,8 +404,9 @@ files remain available subject to ownership/expiry. Caption segment arrays are
 omitted from MCP responses to bound size.
 
 `metkurd://jobs/{job_id}` returns JSON job metadata. `metkurd://files/{file_id}`
-returns safe MIME/size and an OAuth-protected `/mcp/files/{file_id}` URL, not
-base64 media. Result IDs are API result-link IDs, distinct from integer upload
+returns safe MIME/size and an OAuth-protected `/mcp/files/{file_id}` URL. Actual
+bounded content uses the separate artifact URI described above. Result IDs are
+API result-link IDs, distinct from integer upload
 CustomerFile IDs. Binary downloads stream through MetKurd and require the same
 bearer authority and file scope. A bare browser click without authorization does
 not work; a host must support authenticated fetching or the user can use normal
@@ -381,8 +500,11 @@ Revoke uses the existing `data-v2-confirm` SweetAlert bridge and retains jobs/fi
 No new global navigation handlers or asset reloads were added. Admin execution or
 impersonation was not added; existing P2 persisted jobs remain the operational view.
 
-Official documentation checked **2026-09-26**; actual external connection remains
-unverified. Host presentation (`@MetKurd`, slash commands, confirmation prompts)
+Official documentation checked **2026-09-26**; the operator subsequently confirmed
+real ChatGPT production acceptance on **2026-10-05**, including one controlled
+Apollo 2 paid generation and its protected result (see production lessons above).
+Other clients, other paid-tool flows and refresh behavior require their own acceptance.
+Host presentation (`@MetKurd`, slash commands, confirmation prompts)
 depends on the client and is not a universal MetKurd command.
 
 - **ChatGPT:** current official web documentation lists Plus, Pro, Business,
@@ -422,7 +544,7 @@ Protocol sources: [PHP SDK releases](https://github.com/modelcontextprotocol/php
 
 | Host | Identification / callback | PKCE, resource and refresh evidence |
 | --- | --- | --- |
-| ChatGPT | CIMD or public registered ID; host-provided exact HTTPS callback | Official OAuth guidance documents S256, resource and refresh; local grant enforcement tested. Real client untested. |
+| ChatGPT | CIMD or public registered ID; host-provided exact HTTPS callback | Local grant enforcement tested. Operator reports production discovery, CIMD OAuth, initialize, tools/list, list_voices, and one controlled Apollo 2 paid generation through API credit consumption, persisted completion and protected file delivery on 2026-10-05. Refresh, other paid flows and the new native inline media patch need separate acceptance. |
 | Claude web/Desktop | Public registered ID in advanced connector settings; exact HTTPS callback | Remote OAuth documented; wire-level resource/refresh behavior still needs real-client acceptance. |
 | Claude Code | CIMD where supported, or public ID + fixed localhost callback | MCP OAuth documented; local S256/native/code/refresh fixtures pass. Actual exchange untested. |
 | Codex | Automatic CIMD with loopback, or public ID + displayed callback suffix | Current guidance reviewed; local ephemeral-port OAuth fixtures pass. Actual refresh/resource exchange untested. |
@@ -488,14 +610,15 @@ Operator steps, **only after separate deployment authorization**:
    The sixth widens exact client identities for CIMD and adds native/web type and
    metadata hash fields and Passport's nullable client scope restriction. It does not truncate identities on rollback. Native MySQL
    DDL/index/retained-row acceptance is required; no application migration was run.
-4. Supply protected shared PEM keys or run `php artisan passport:keys` once on the
-   authorized deployment and securely distribute the two key files to all nodes.
-   Do not use `--force` on existing keys. Protect the private key outside web root;
-   restrict filesystem permissions. Never publish private keys or tokens.
+4. Complete the [mandatory Passport signing prerequisites](#mandatory-passport-signing-prerequisites).
+   Reuse the existing signing identity. Generate once only when no existing valid
+   pair or grants exist; distribute that same pair to every app node. Missing keys
+   with retained grants require recovery, not independent node generation.
 5. Configure the names above, explicit trusted proxy ranges, HTTPS ingress, shared
    Redis/cache/rate limiter and shared browser sessions. Configure request/upload
    limits, existing media/document probes, private storage, scheduler and queue.
-   Validate maintenance behavior at ingress. Keep FEATURE_MCP_V2 false during setup.
+   Validate maintenance behavior and [machine ingress](#machine-ingress-and-cloudflare-acceptance).
+   Keep FEATURE_MCP_V2 false during initial setup.
 6. Through existing audited Admin controls, review each plan's explicit V2 family
    scopes, API action entitlements/prices and allowances. Missing allowance is an
    access/configuration issue, not authorization to mint credits.
@@ -506,7 +629,7 @@ Operator steps, **only after separate deployment authorization**:
    outside isolated tests during implementation.
    For native fallback add `--native` and its exact loopback URI. Prefer IP literals;
    Claude Code localhost fallback requires a fixed matching port. Run
-   `php artisan mcp:readiness` to inspect plan configuration without granting access.
+   `php artisan mcp:readiness` to inspect signing and plan configuration without granting access.
 8. In an approved staging environment, explicitly enable MCP, rebuild configuration
    cache and restart app/queue instances through normal deployment procedures.
    Run the acceptance matrix below. Enable production only under separate approval.
@@ -520,9 +643,133 @@ affected connections if needed; existing jobs continue through the scheduler and
 results remain owned. Retain migrations/history; do not rollback populated OAuth
 tables, make api_key_id nonnullable, remove native jobs or regenerate APP_KEY.
 
+### Mandatory Passport signing prerequisites
+
+Complete this check before enabling MCP and repeat on every load-balanced app
+node after deployment. An enabled feature flag and healthy origin are insufficient.
+
+- Inventory the effective `MCP_OAUTH_PRIVATE_KEY` / `MCP_OAUTH_PUBLIC_KEY` settings,
+  Passport key files and retained OAuth grants without printing secrets. Nonempty
+  settings override the corresponding files. Preserve an existing valid identity;
+  if grants exist but keys are missing, recover the original pair from the approved
+  secret/backup process. Do not silently rotate it.
+- Only if **no existing valid pair or grants exist**, generate Passport keys
+  **once** with `php artisan passport:keys` under the separately authorized
+  deployment procedure. Securely install the exact same private/public pair on
+  every node. Never independently generate a pair per node. Never run
+  `passport:install`; never use `--force` over an existing production key pair.
+- Keep both files outside the web root and out of repositories, logs, command
+  output and support attachments. Recommended ownership is `root:www-data` and
+  mode `640`, subject to deployment policy and the actual PHP-FPM user/group.
+  Verify directory traversal permissions and that `www-data` can read **both**.
+  Protect inline PEM configuration through the existing secret-management policy.
+- Verify the public key derived from the private key matches the installed public
+  key. Compare SHA-256 public-key fingerprints across **every** app node. Preserve
+  the existing shared APP_KEY separately; never regenerate it for MCP.
+- Verify Passport's `AuthorizationServer` can instantiate as the PHP-FPM identity,
+  using its effective configuration and PHP runtime. A successful root CLI check
+  does not prove that the service user can read the keys.
+
+Read-only operator examples, from the reviewed release directory (substitute the
+actual protected Passport key directory; these commands were not run in this task):
+
+```bash
+set -o pipefail
+KEY_DIR='/reviewed/private/passport'
+sudo -u www-data -- test -r "$KEY_DIR/oauth-private.key"
+sudo -u www-data -- test -r "$KEY_DIR/oauth-public.key"
+sudo -u www-data -- openssl pkey -in "$KEY_DIR/oauth-private.key" -pubout -outform DER | openssl dgst -sha256
+sudo -u www-data -- openssl pkey -pubin -in "$KEY_DIR/oauth-public.key" -outform DER | openssl dgst -sha256
+sudo -u www-data -- php artisan mcp:readiness --signing-only
+```
+
+Require successful exits and identical fingerprints; a digest from a failed pipe
+is not acceptance. These pipelines print only a public-key digest, never PEM.
+For inline PEM use readiness's public fingerprints without exporting PEM to a
+terminal. Do not use `cat`, `-text`, config dumps or exception dumps to inspect keys.
+`sudo` does not automatically reproduce PHP-FPM pool environment: the operator
+must supply the same approved effective configuration/runtime and confirm FPM's
+readability. Do not put secret values on the command line.
+
+Readiness emits one `oauth_signing_keys` JSON record: configuration/file source,
+RSA key usability, each key's public SHA-256 fingerprint (DER SubjectPublicKeyInfo),
+`pair_matches`, `authorization_server` and `ready`. Invalid/missing/unreadable keys
+share a sanitized failure status; exception text and paths are suppressed. Server
+construction is attempted only for a valid matching pair, without issuing a token.
+`--signing-only` does not query plans or the database; default mode retains the
+existing read-only plan report even when signing fails. Exit 1 means signing is
+not ready or the plan audit failed. Exit 0 is not full production acceptance:
+plan rows still require review and runtime account/wallet checks still apply.
+
+The check covers the **current process only**. It does not generate, replace,
+chmod or distribute keys, compare remote nodes, impersonate PHP-FPM, query edge
+settings or access production. Ownership/mode, web-root placement, retained grants,
+cross-node equality and actual ingress remain explicit operator checks.
+
+### Machine ingress and Cloudflare acceptance
+
+MetKurd API and MCP are machine-to-machine surfaces. Never require JavaScript or
+browser challenges on `/api/*`, `/mcp` and its machine subpaths, `/oauth/token`, or
+the OAuth well-known metadata documents. On Cloudflare Free, standard Bot Fight
+Mode cannot be skipped per path with WAF custom rules or Page Rules; it must remain
+**OFF** while these machine surfaces are proxied through that configuration.
+This does not disable DDoS protection, TLS, Managed WAF, ordinary custom security
+rules or appropriate rate limiting. On a future tier supporting Super Bot Fight
+Mode, use reviewed exceptions scoped to the machine endpoints and that bot
+component, retaining normal browser protection and other security controls.
+See [Cloudflare Bot Fight Mode](https://developers.cloudflare.com/bots/get-started/bot-fight-mode/)
+and [Super Bot Fight Mode exceptions](https://developers.cloudflare.com/bots/get-started/super-bot-fight-mode/).
+
+Keep OAuth/Bearer authentication, API keys, plan/scopes/action authorization, API
+wallet authority, idempotency, customer/API throttling, the MCP outer IP throttle,
+concurrency controls, validation, Cloudflare DDoS/WAF/TLS and Nginx limits intact.
+Do not add a ChatGPT IP allowlist as a replacement for OAuth. A bot-rule exception
+does not authorize a request or bypass Laravel's controls.
+
+After separately authorized deployment, test the public edge without credentials:
+
+```bash
+curl -i https://metkurd.ai/mcp
+curl -i https://metkurd.ai/api/v2/services
+curl -i https://metkurd.ai/.well-known/oauth-protected-resource/mcp
+curl -i https://metkurd.ai/.well-known/oauth-authorization-server
+```
+
+| Probe | Required response during normal enabled service |
+| --- | --- |
+| `/mcp` | MetKurd HTTP 401 with `WWW-Authenticate: Bearer` and resource metadata pointing to `https://metkurd.ai/.well-known/oauth-protected-resource/mcp` |
+| `/api/v2/services` | HTTP 401, `Content-Type: application/json`, error code `authentication_failed` |
+| OAuth protected-resource document | HTTP 200 JSON; resource `https://metkurd.ai/mcp`, correct authorization server |
+| OAuth authorization-server document | HTTP 200 JSON; issuer `https://metkurd.ai`, correct public OAuth endpoints |
+
+None may return Cloudflare challenge HTML, `cf-mitigated: challenge`, Managed
+Challenge or "Just a moment". An HTTP status alone is insufficient: inspect
+headers and body. Maintenance or intentionally disabled gates need their own
+expected responses; do not weaken those gates to force this matrix to pass.
+
+Repeat the same four probes against **each** origin node using the reviewed
+`--resolve` method, preserving hostname, SNI and certificate verification:
+
+```bash
+NODE_IP='REVIEWED_NODE_IP'
+curl -i --resolve "metkurd.ai:443:$NODE_IP" https://metkurd.ai/mcp
+curl -i --resolve "metkurd.ai:443:$NODE_IP" https://metkurd.ai/api/v2/services
+curl -i --resolve "metkurd.ai:443:$NODE_IP" https://metkurd.ai/.well-known/oauth-protected-resource/mcp
+curl -i --resolve "metkurd.ai:443:$NODE_IP" https://metkurd.ai/.well-known/oauth-authorization-server
+```
+
+Use only approved origin connectivity and CA trust (no `-k` or firewall bypass).
+Origin success does not prove edge success: retain both sets of sanitized
+status/header evidence. Never include tokens, PEM or customer data in evidence.
+
 ## Verification and acceptance
 
 ### Local development / acceptance — 2026-09-26
+
+**Historical snapshot:** the observations and verification results in this
+September 26 section describe evidence available then. Statements that no remote
+client was connected or production was unverified remain historical facts;
+current ChatGPT production acceptance is recorded in the October 5 section above.
 
 The operator applied the six migrations and configured the paid-tier scopes before
 this runtime phase. Fresh read-only inspection confirmed all six migrations in
@@ -564,7 +811,8 @@ Local setup:
 - The dedicated listener uses these scoped settings; **the existing `.env` remains
   unchanged**. Artisan commands do not automatically inherit Apache `SetEnv`.
   Use the same explicitly scoped environment for any future acceptance client or
-  worker that needs these runtime settings. Readiness itself only reads the plans.
+  worker that needs these runtime settings. Readiness now also checks local signing
+  prerequisites (see the 2026-10-05 production lessons).
 
 ```dotenv
 APP_URL=https://localhost:8443
@@ -730,7 +978,7 @@ Initial implementation verification, 2026-09-26 (history, before this hardening)
   were fixed and retested. A Windows compiled-view replacement access error did
   not recur in the final workspace run. No vendor compiler was modified.
 
-Focused hardening verification, 2026-09-26:
+Focused hardening verification — historical snapshot, 2026-09-26:
 
 - **SOURCE VERIFIED:** MCP job/resource reads use the shared persisted-only
   serializer; durable synchronization owns settlement and artifact linking. REST
@@ -774,6 +1022,9 @@ REST/App V2 regressions and EN/AR/KU portal tests remain separate named suites.
 Native DB locking, distributed Redis and real GPU/storage cannot be inferred from
 these fixtures. Browser/mobile navigation and live OAuth return require interactive
 acceptance; translated rendered markup is not a visual browser check.
+
+**Historical verification matrix — 2026-09-26; not current production status.**
+The ChatGPT row predates the October 5 production acceptance recorded above.
 
 | Client / surface | Source tested | Locally tested | Remote client tested | Production |
 | --- | --- | --- | --- | --- |

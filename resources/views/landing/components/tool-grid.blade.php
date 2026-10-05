@@ -132,6 +132,12 @@ new class extends Component
                             </a>
                         @endif
                     @endif
+                    @if($tool['slug'] === 'developers')
+                        <div class="d-flex flex-wrap gap-3 mt-3 small">
+                            <a href="{{ \App\Support\Landing\PublicWebsiteContent::API_REPOSITORY }}" target="_blank" rel="noopener noreferrer">{{ app(\App\Support\Landing\PublicWebsiteContent::class)->text('github.documentation') }}</a>
+                            <a href="{{ \App\Support\Landing\PublicWebsiteContent::GITHUB_ORGANIZATION }}" target="_blank" rel="noopener noreferrer">{{ app(\App\Support\Landing\PublicWebsiteContent::class)->text('github.organization') }}</a>
+                        </div>
+                    @endif
                 </article>
             </div>
         @endforeach

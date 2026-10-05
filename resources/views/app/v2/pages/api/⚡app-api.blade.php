@@ -76,6 +76,7 @@ new #[Layout('app::v2.layouts.app')] class extends Component {
         $sections += ['jobs' => __('Jobs'), 'errors' => __('Errors'), 'idempotency' => __('Idempotency'), 'limits' => __('Limits'), 'retention' => __('Result retention')];
     @endphp
     <header class="api-header"><div><span class="api-eyebrow">{{ __('Developer portal') }}</span><h1>MetKurd API <small>V2</small></h1><p>{{ __('Build with speech, text and audio services through one asynchronous API.') }}</p></div><div class="api-header-actions"><a class="btn btn-outline-primary" href="#available-voices" @click="section = 'voices'">{{ __('api_v2.available_voices') }}</a><button class="btn btn-primary" @click="section = 'keys'">{{ __('API Keys') }}</button><button class="btn btn-outline-secondary" @click="section = 'limits'">{{ __('Usage and limits') }}</button></div></header>
+    <p><a href="{{ \App\Support\Landing\PublicWebsiteContent::API_REPOSITORY }}" target="_blank" rel="noopener noreferrer">{{ __('api_v2.github_documentation') }}</a></p>
     @if(!config('customer_api.v2_enabled'))<div class="alert alert-info">{{ __('API V2 is not enabled in this environment yet.') }}</div>@endif
     <div class="api-mobile-nav"><label for="api-section">{{ __('Documentation') }}</label><select id="api-section" class="form-select" x-model="section">@foreach($sections as $id => $label)<option value="{{ $id }}">{{ $label }}</option>@endforeach</select></div>
     <div class="api-grid">

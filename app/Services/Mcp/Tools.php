@@ -16,7 +16,7 @@ use Mcp\Schema\Result\CallToolResult;
 
 class Tools
 {
-    public function call(McpConnectionPrincipal $principal, string $name, array $arguments): CallToolResult
+    public function call(McpConnectionPrincipal $principal, string $name, array $arguments, string|int $requestId = 0): CallToolResult
     {
         try {
             $definition = app(ToolCatalog::class)->definitions()[$name];
@@ -38,15 +38,7 @@ class Tools
                 default => $this->submit($principal, $definition['service'], $arguments),
             };
 
-            $content = [new TextContent(json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE))];
-            if (isset($data['resource_uri'])) {
-                $content[] = new \Mcp\Schema\Content\ResourceLink($data['resource_uri'], $data['job_id'], mimeType: 'application/json');
-            }
-            foreach ($data['result']['files'] ?? [] as $file) {
-                $content[] = new \Mcp\Schema\Content\ResourceLink($file['resource_uri'], $file['id'], mimeType: 'application/json');
-            }
-
-            return new CallToolResult($content, structuredContent: $data);
+            return app(ResultDelivery::class)->tool($principal, $data, $requestId);
         } catch (ApiProblem $e) {
             return $this->error($e->errorCode);
         } catch (\Illuminate\Validation\ValidationException) {
@@ -145,6 +137,12 @@ class Tools
         unset($data['id']);
         $data['resource_uri'] = 'metkurd://jobs/'.$job->id;
         $data['credits_reserved'] = (int) $job->reserved_credits;
+        if (($data['service'] ?? null) === 'stem' && $data['status'] === 'completed' && empty($data['result']['expired'])) {
+            $mode = (int) data_get($job->mlJob?->input, 'stems', 0);
+            if (in_array($mode, [2, 4], true)) {
+                $data['result']['stem_count'] = $mode;
+            }
+        }
         foreach (['text', 'srt'] as $field) {
             if (isset($data['result'][$field]) && mb_strlen($data['result'][$field]) > 64000) {
                 $data['result'][$field] = mb_substr($data['result'][$field], 0, 64000);
@@ -156,6 +154,7 @@ class Tools
         }
         foreach ($data['result']['files'] ?? [] as $index => $file) {
             $data['result']['files'][$index]['resource_uri'] = 'metkurd://files/'.$file['id'];
+            $data['result']['files'][$index]['artifact_uri'] = 'metkurd://artifacts/'.$file['id'];
             $data['result']['files'][$index]['download_url'] = config('mcp.public_url').'/files/'.$file['id'];
         }
 

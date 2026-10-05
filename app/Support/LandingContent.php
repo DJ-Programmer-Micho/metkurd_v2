@@ -241,10 +241,6 @@ class LandingContent
                         'label' => 'Arabic and English',
                         'value' => 'Partial by tool',
                     ],
-                    [
-                        'label' => 'Public API',
-                        'value' => 'Not currently available',
-                    ],
                 ],
             ],
             'pricing_heading' => [
@@ -422,7 +418,7 @@ class LandingContent
                 ],
                 [
                     'title' => 'Service limitations',
-                    'copy' => 'AI outputs may contain mistakes and are continuously improved; public API access is not currently available.',
+                    'copy' => 'AI outputs may contain mistakes and are continuously improved; API access requires eligible configured paid access.',
                 ],
             ],
         ],
@@ -462,7 +458,7 @@ class LandingContent
             'limitations_heading' => 'Important limitations',
             'limitations' => [
                 'Kurmanji Kurdish is not currently supported.',
-                'Public API access is not currently available.',
+                'MetKurd provides REST API V2 access on eligible configured paid plans.',
                 'AI outputs may contain mistakes and are continuously improved.',
             ],
         ],

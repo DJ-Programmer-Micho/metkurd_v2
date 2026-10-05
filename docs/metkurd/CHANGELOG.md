@@ -1,5 +1,28 @@
 # Architectural and behavioral decisions
 
+## 2026-10-05 — Bounded native MCP result delivery
+
+Deliver persisted small audio as native AudioContent and safe text as embedded
+resources, preserving protected file identities/downloads. Separate artifact MIME
+and URIs from existing JSON metadata. Recheck authority before bounded streams;
+default limits are 1 MiB raw per file/aggregate and 2 MiB serialized response.
+STEM embedding is all-or-nothing; no transcoding. Add tool titles/output schemas
+without renaming tools or changing safety hints. Preserve request identity and
+async continuation. No financial mutation on reads, custom player, real paid call
+or production operation. See [MCP delivery](MCP.md#bounded-native-result-delivery--2026-10-05).
+
+## 2026-10-05 — MCP signing readiness and machine ingress prerequisites
+
+Record operator-reported production OAuth acceptance after one shared Passport
+pair was installed on both app nodes and Cloudflare Free Bot Fight Mode challenges
+were disabled. Readiness now reports local RSA usability, pair matching, public
+fingerprints and AuthorizationServer construction without emitting PEM or changing
+keys. `--signing-only` skips database/plan reads; signing failure returns exit 1.
+Document PHP-FPM identity, protected files, cross-node verification, separate edge
+and origin acceptance, and retained application/Cloudflare/Nginx security controls.
+No production access, configuration change or deployment. See the
+[MCP prerequisites](MCP.md#mandatory-passport-signing-prerequisites).
+
 ## 2026-10-03 — App MlJob refunds preserve debit buckets
 
 Reconstruct refunds from all owned App debit rows rather than the generic add-on

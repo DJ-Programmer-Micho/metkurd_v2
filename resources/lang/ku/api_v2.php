@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'github_documentation' => 'بەڵگەنامە فەرمییەکان لە ⁦GitHub⁩',
     'ocr_multipart' => 'بارکردنی Multipart',
     'ocr_upload_intro' => 'فایلێکی PDF یان وێنە ڕاستەوخۆ لە ئامێرەکەت بە multipart/form-data باربکە. پێویست ناکات فایلەکە میوانداری بکەیت یان بەستەری بدەیت.',
     'ocr_quick' => 'یەکەم داواکاریی OCR — نموونەی خێرا',

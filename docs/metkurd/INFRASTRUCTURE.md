@@ -1,5 +1,20 @@
 # Infrastructure relationships
 
+## MCP production prerequisites — 2026-10-05
+
+Operator-reported production acceptance found missing Passport keys and Cloudflare
+Free Bot Fight Mode challenges blocking MCP. All load-balanced nodes require one
+shared, protected signing pair readable by PHP-FPM. `mcp:readiness --signing-only`
+checks local key usability, pair identity and AuthorizationServer construction,
+emitting only statuses and public fingerprints; it cannot certify remote nodes or
+PHP-FPM from another process identity. Standard Free Bot Fight Mode must remain off
+while API/MCP machine endpoints use that proxied configuration. Retain all existing
+application authentication, authorization, throttles, Nginx limits and Cloudflare
+DDoS/WAF/TLS protections. Follow the mandatory
+[key checklist](MCP.md#mandatory-passport-signing-prerequisites) and separate
+[edge/per-node probes](MCP.md#machine-ingress-and-cloudflare-acceptance).
+No production connection, configuration change or deployment accompanied this update.
+
 ## MCP transport and OAuth — 2026-09-26
 
 The Laravel process serves `/mcp` with the official SDK; no sidecar is required.

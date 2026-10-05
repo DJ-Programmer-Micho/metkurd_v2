@@ -558,6 +558,7 @@ it('renders the localized V2 portal with placeholder LTR examples and one-time s
     ServicePlan::where('code', 'pro')->update(['api_allowed_tools' => ['v2:speech']]);
     $this->customer->forceFill(['phone_verified_at' => now()])->save();
     $response = $this->actingAs($this->customer, 'app')->get('/'.$locale.'/app-v2/api')->assertOk()->assertSee('dir="ltr"', false)->assertSee('YOUR_API_KEY')->assertDontSee('RunPod');
+    $response->assertSee('https://github.com/MetKurdAI/metkurd-api')->assertSee(__('api_v2.github_documentation'));
     foreach (['zeta', 'theta', 'harakat'] as $service) {
         $response->assertSee('/api/v2/'.$service)->assertSee(__('api_v2.'.$service.'_description'))->assertDontSee('api_v2.'.$service.'_description');
     }

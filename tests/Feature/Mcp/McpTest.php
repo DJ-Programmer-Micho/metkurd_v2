@@ -102,11 +102,34 @@ it('accepts current manual grants and still denies revoked connections', functio
     expect((new \App\Services\Mcp\OAuth\TokenValidator)->validate($this->token)->isAllowed())->toBeFalse();
 });
 
+it('reports signing and plan readiness without changing plan or wallet state', function () {
+    $plans = ServicePlan::orderBy('id')->get()->toArray();
+    $wallets = CreditWallet::orderBy('id')->get()->toArray();
+    $this->artisan('mcp:readiness')->expectsOutputToContain('"authorization_server":"ready"')
+        ->expectsOutputToContain('Read-only plan configuration.')->assertSuccessful();
+    config(['passport.private_key' => 'invalid fixture key']);
+    $this->artisan('mcp:readiness')->expectsOutputToContain('"ready":false')
+        ->expectsOutputToContain('Read-only plan configuration.')->assertFailed();
+    expect(ServicePlan::orderBy('id')->get()->toArray())->toBe($plans);
+    expect(CreditWallet::orderBy('id')->get()->toArray())->toBe($wallets);
+});
+
 it('protects discovery and rejects missing bearer tokens using SDK challenges', function () {
     $this->getJson('https://metkurd.test/.well-known/oauth-protected-resource/mcp')->assertOk()->assertJsonPath('resource', 'https://metkurd.test/mcp');
     $this->postJson('https://metkurd.test/mcp', [])->assertUnauthorized()->assertHeader('WWW-Authenticate');
     config(['mcp.enabled' => false]);
     $this->postJson('https://metkurd.test/mcp', [])->assertStatus(503);
+});
+
+it('serves machine acceptance probes as application responses without browser authentication redirects', function () {
+    $mcp = $this->get('https://metkurd.test/mcp')->assertUnauthorized()->assertHeader('WWW-Authenticate');
+    expect($mcp->headers->get('WWW-Authenticate'))->toContain('Bearer', 'resource_metadata=', 'https://metkurd.test/.well-known/oauth-protected-resource/mcp');
+    $this->get('https://metkurd.test/api/v2/services')->assertUnauthorized()
+        ->assertHeader('Content-Type', 'application/json')->assertJsonPath('error.code', 'authentication_failed');
+    $this->get('https://metkurd.test/.well-known/oauth-protected-resource/mcp')->assertOk()
+        ->assertHeader('Content-Type', 'application/json')->assertJsonPath('resource', 'https://metkurd.test/mcp');
+    $this->get('https://metkurd.test/.well-known/oauth-authorization-server')->assertOk()
+        ->assertHeader('Content-Type', 'application/json')->assertJsonPath('issuer', 'https://metkurd.test');
 });
 
 it('uses the official client over HTTP for discovery and one idempotent API-wallet speech job', function () {
@@ -322,7 +345,9 @@ it('keeps MCP job and resource reads financially and operationally read only', f
     $tables = ['credit_wallets', 'credit_ledgers', 'api_credit_reservations', 'api_jobs', 'ml_jobs', 'customer_files', 'api_result_files', 'api_usage_logs'];
     $snapshot = fn () => collect($tables)->mapWithKeys(fn ($table) => [$table => Illuminate\Support\Facades\DB::table($table)->orderBy('id')->get()->toJson()])->all();
     $before = $snapshot();
-    Storage::shouldReceive('disk')->never();
+    if ($terminal !== 'completed-primary') {
+        Storage::shouldReceive('disk')->never();
+    }
     $writes = [];
     Illuminate\Support\Facades\DB::listen(function ($query) use (&$writes, $tables) {
         if (preg_match('/^\s*(insert|update|delete|replace|alter)/i', $query->sql)) {
@@ -680,3 +705,252 @@ it('keeps real browser CSRF enforcement on consent without applying it to bearer
     $this->actingAs($this->customer, 'app')->post('https://metkurd.test/oauth/authorize', ['decision' => 'approve'])->assertStatus(419);
     expect(mcpTestClient($this)->callTool('metkurd_list_voices')->isError)->toBeFalse();
 });
+
+/** Completed fixtures are persisted directly after one mocked submission; no live work. */
+function mcpDeliveryFixture($test, string $service, array $artifacts, array $output = []): array
+{
+    Illuminate\Support\Facades\Queue::fake();
+    $provider = Mockery::mock(RunPodProvider::class);
+    $provider->shouldReceive('run')->once()->andReturn(['id' => 'delivery-fixture']);
+    app()->instance(RunPodProvider::class, $provider);
+    $args = $test->speech + ['request_id' => (string) Illuminate\Support\Str::uuid()];
+    app(App\Services\Mcp\Tools::class)->call($test->principal, 'speak', $args);
+    $job = ApiJob::sole();
+    $job->update(['status' => 'completed', 'completed_at' => now(), 'meta' => array_replace($job->meta, ['service' => $service])]);
+    $job->mlJob->update(['status' => 'done', 'output' => $output]);
+    if ($service === 'stem') {
+        $job->mlJob->update(['input' => array_replace($job->mlJob->input, ['stems' => 4])]);
+    }
+    $files = [];
+    foreach ($artifacts as $index => [$role, $mime, $bytes]) {
+        $path = 'private/delivery/'.$job->id.'/'.$index;
+        Storage::disk('s3')->put($path, $bytes);
+        $file = CustomerFile::create(['customer_id' => $test->customer->id, 'disk' => 's3', 'path' => $path,
+            'purpose' => 'render', 'status' => 'active', 'size_bytes' => strlen($bytes), 'mime' => $mime,
+            'expires_at' => now()->addDay(), 'meta' => ['job_id' => $job->ml_job_id, 'role' => $role]]);
+        App\Models\ApiResultFile::create(['id' => 'file_delivery_'.$index, 'api_job_id' => $job->id,
+            'storage_file_id' => $file->id, 'customer_id' => $test->customer->id, 'result_kind' => 'artifact']);
+        $files[] = $file;
+    }
+
+    return [$job, $files, $args];
+}
+
+function mcpDeliveryWav(int $size = 48, string $sample = "\0"): string
+{
+    return 'RIFF'.pack('V', $size - 8).'WAVEfmt '.pack('VvvVVvv', 16, 1, 1, 8000, 16000, 2, 16)
+        .'data'.pack('V', $size - 44).str_repeat($sample, $size - 44);
+}
+
+function mcpDeliveryExample(string $name, $result): void
+{
+    // Opt-in export for the documentation audit, outside the checkout during tests.
+    if ($directory = getenv('MCP_DELIVERY_EXAMPLE_OUTPUT')) {
+        file_put_contents($directory.'/'.$name.'.json', json_encode(new Mcp\Schema\JsonRpc\Response(1, $result), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+    }
+}
+
+it('delivers native audio across speech families with protected typed fallbacks', function ($service) {
+    [$job] = mcpDeliveryFixture($this, $service, [['audio', 'audio/wav', mcpDeliveryWav()]]);
+    $result = app(App\Services\Mcp\Tools::class)->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    expect($result->isError)->toBeFalse();
+    $audio = collect($result->content)->firstWhere('type', 'audio');
+    expect($audio)->toBeInstanceOf(Mcp\Schema\Content\AudioContent::class);
+    expect(base64_decode($audio->data))->toBe(mcpDeliveryWav())->and($audio->mimeType)->toBe('audio/wav');
+    $link = collect($result->content)->firstWhere('type', 'resource_link');
+    expect($link->mimeType)->toBe('audio/wav')->and($link->uri)->toBe('metkurd://artifacts/file_delivery_0');
+    expect($result->structuredContent['result']['files'][0]['download_url'])->toBe('https://metkurd.test/mcp/files/file_delivery_0');
+    expect(json_encode($result))->not->toContain('private/delivery', 'storage.example.test', 's3', 'RunPod');
+    if ($service === 'speech') {
+        mcpDeliveryExample('small-wav', $result);
+    }
+})->with(['speech', 'voice-clone', 'zeta', 'theta']);
+
+it('enforces actual byte boundaries and serialized escaping without trusting recorded size', function ($size, $sample, $inline) {
+    [$job] = mcpDeliveryFixture($this, 'speech', [['audio', 'audio/wav', mcpDeliveryWav($size, $sample)]]);
+    CustomerFile::query()->update(['size_bytes' => 1]);
+    $result = app(App\Services\Mcp\Tools::class)->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    expect($result->isError)->toBeFalse();
+    expect(collect($result->content)->where('type', 'audio')->count())->toBe($inline ? 1 : 0);
+    expect($result->structuredContent['result']['files'])->toHaveCount(1);
+    expect(strlen(json_encode(new Mcp\Schema\JsonRpc\Response(1, $result))))->toBeLessThanOrEqual(2097152);
+    if ($size === 1048577) {
+        CustomerFile::query()->update(['size_bytes' => $size]);
+        mcpDeliveryExample('oversized-wav', app(App\Services\Mcp\Tools::class)->call($this->principal, 'get_job', ['job_id' => $job->id]));
+    }
+})->with([[1048576, "\0", true], [1048577, "\0", false], [1048576, "\xff", false]]);
+
+it('falls back for the complete stem set when its aggregate budget overflows', function ($size, $inline) {
+    $artifacts = array_map(fn ($role) => [$role, 'audio/wav', mcpDeliveryWav($size)], ['vocals', 'drums', 'bass', 'other']);
+    [$job] = mcpDeliveryFixture($this, 'stem', $artifacts);
+    $result = app(App\Services\Mcp\Tools::class)->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    expect($result->isError)->toBeFalse();
+    expect(collect($result->content)->where('type', 'audio')->count())->toBe($inline ? 4 : 0);
+    expect(collect($result->content)->where('type', 'resource_link')->count())->toBe(4);
+    expect(array_column($result->structuredContent['result']['files'], 'kind'))->toBe(['vocals', 'drums', 'bass', 'other']);
+    expect(array_unique(array_column($result->structuredContent['result']['files'], 'id')))->toHaveCount(4);
+    if (! $inline) {
+        mcpDeliveryExample('stem-fallback', $result);
+    }
+})->with([[262144, true], [262145, false]]);
+
+it('never inlines inaccessible or unavailable artifacts', function ($case) {
+    [$job, $files] = mcpDeliveryFixture($this, 'speech', [['audio', 'audio/wav', mcpDeliveryWav()]]);
+    $file = $files[0];
+    match ($case) {
+        'expired' => $file->update(['expires_at' => now()->subSecond()]),
+        'deleted' => $file->update(['deleted_at' => now()]),
+        'inactive' => $file->update(['status' => 'deleted']),
+        'link_deleted' => App\Models\ApiResultFile::query()->update(['deleted_at' => now()]),
+        'job_expired' => $job->update(['meta' => array_replace($job->meta, ['expires_at' => now()->subSecond()->toIso8601String()])]),
+        'not_completed' => $job->update(['status' => 'processing']),
+        'ml_not_done' => $job->mlJob->update(['status' => 'processing']),
+        'ml_expired' => $job->mlJob->update(['expires_at' => now()->subSecond()]),
+        'invalid_disk' => $file->update(['disk' => 'missing-fixture-disk']),
+        'invalid_path' => $file->update(['path' => 'https://untrusted.example.test/object']),
+        'wrong_job' => $file->update(['meta' => ['job_id' => 'other-job']]),
+        'cross_customer' => $file->update(['customer_id' => Customer::create(['username' => 'delivery-other', 'email' => 'delivery-other@example.test', 'password' => 'fixture'])->id]),
+        'scope' => $this->connection->update(['scopes' => ['v2:speech', 'v2:jobs:read']]),
+        'revoked' => $this->connection->update(['status' => 'revoked']),
+    };
+    Storage::shouldReceive('disk')->never();
+    $result = app(App\Services\Mcp\Tools::class)->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    expect(collect($result->content)->whereIn('type', ['audio', 'resource']))->toHaveCount(0);
+    try {
+        app(App\Services\Mcp\ResultDelivery::class)->resource($this->principal, 'file_delivery_0', 1);
+        test()->fail('Inaccessible artifact must not return bytes');
+    } catch (Mcp\Exception\ResourceReadException) {
+        expect(true)->toBeTrue();
+    }
+})->with(['expired', 'deleted', 'inactive', 'link_deleted', 'job_expired', 'not_completed', 'ml_not_done', 'ml_expired', 'invalid_disk', 'invalid_path', 'wrong_job', 'cross_customer', 'scope', 'revoked']);
+
+it('delivers subtitle text and leaves binary OCR documents as typed protected files', function () {
+    $srt = "1\n00:00:00,000 --> 00:00:01,000\nHello world\n";
+    [$job] = mcpDeliveryFixture($this, 'captions', [['srt', 'application/x-subrip', $srt]], ['text' => 'Hello world', 'srt' => $srt]);
+    $tools = app(App\Services\Mcp\Tools::class);
+    $result = $tools->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    $resource = collect($result->content)->firstWhere('type', 'resource');
+    expect($result->isError)->toBeFalse()->and($resource)->not->toBeNull();
+    expect($resource->resource->text)->toBe($srt)->and($resource->resource->mimeType)->toBe('application/x-subrip');
+    mcpDeliveryExample('srt', $result);
+    $job->update(['meta' => array_replace($job->meta, ['service' => 'ocr'])]);
+    CustomerFile::query()->update(['mime' => 'application/pdf']);
+    $pdf = $tools->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    expect(collect($pdf->content)->where('type', 'resource'))->toHaveCount(0);
+    expect(collect($pdf->content)->firstWhere('type', 'resource_link')->mimeType)->toBe('application/pdf');
+    $docxMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    CustomerFile::query()->update(['mime' => $docxMime]);
+    $docx = $tools->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    expect(collect($docx->content)->where('type', 'resource'))->toHaveCount(0);
+    expect(collect($docx->content)->firstWhere('type', 'resource_link')->mimeType)->toBe($docxMime);
+});
+
+it('surfaces readable Leo Harakat and OCR text with structured results', function ($service) {
+    $text = 'A readable transcript';
+    [$job] = mcpDeliveryFixture($this, $service, [['text', 'text/plain', $text]], $service === 'ocr' ? ['text' => ['inline' => $text]] : ['text' => $text]);
+    $result = app(App\Services\Mcp\Tools::class)->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    expect($result->content[0]->text)->toBe($text)->and($result->structuredContent['result']['text'])->toBe($text);
+})->with(['transcriptions', 'harakat', 'ocr']);
+
+it('rejects MIME mismatches and active document types for inline rendering', function ($mime, $bytes) {
+    [$job] = mcpDeliveryFixture($this, str_starts_with($mime, 'audio/') ? 'speech' : 'ocr', [['result', $mime, $bytes]]);
+    $result = app(App\Services\Mcp\Tools::class)->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    expect($result->isError)->toBeFalse();
+    expect(collect($result->content)->whereIn('type', ['audio', 'resource']))->toHaveCount(0);
+    expect(json_encode($result))->not->toContain('alert(1)');
+})->with([['audio/wav', '<html><script>alert(1)</script></html>'], ['audio/mpeg', mcpDeliveryWav()],
+    ['text/plain', "\0\xff\x01"], ['text/html', '<script>alert(1)</script>'], ['text/plain', '<html><script>alert(1)</script></html>'],
+    ['application/json', '{"path":"PRIVATE_WORKER_OBJECT","url":"https://storage.example.test/output"}']]);
+
+it('replays completed audio without financial writes or new jobs through both MCP protocols', function ($version) {
+    [$job, $files, $args] = mcpDeliveryFixture($this, 'speech', [['audio', 'audio/wav', mcpDeliveryWav()]]);
+    $tables = ['credit_wallets', 'credit_ledgers', 'api_credit_reservations', 'api_jobs', 'ml_jobs', 'customer_files', 'api_result_files', 'api_usage_logs'];
+    $snapshot = fn () => collect($tables)->mapWithKeys(fn ($table) => [$table => Illuminate\Support\Facades\DB::table($table)->orderBy('id')->get()->toJson()])->all();
+    $before = $snapshot();
+    $writes = [];
+    Illuminate\Support\Facades\DB::listen(function ($query) use (&$writes, $tables) {
+        if (preg_match('/^\s*(insert|update|delete|replace)/i', $query->sql) && collect($tables)->contains(fn ($table) => str_contains($query->sql, $table))) {
+            $writes[] = $query->sql;
+        }
+    });
+    $client = mcpTestClient($this, Mcp\Schema\Enum\ProtocolVersion::from($version));
+    $list = $client->listTools();
+    expect($list->tools)->toHaveCount(14);
+    foreach ($list->tools as $tool) {
+        expect($tool->title)->not->toBeNull()->and($tool->outputSchema)->not->toBeNull();
+        expect($tool->annotations->readOnlyHint)->toBe(in_array($tool->name, ['metkurd_list_services', 'metkurd_list_voices', 'metkurd_get_job', 'metkurd_list_recent_files'], true));
+        expect($tool->annotations->destructiveHint)->toBeFalse()->and($tool->annotations->openWorldHint)->toBeFalse();
+    }
+    $first = $client->callTool('metkurd_get_job', ['job_id' => $job->id]);
+    $again = $client->callTool('metkurd_get_job', ['job_id' => $job->id]);
+    $replay = $client->callTool('metkurd_speak', $args);
+    expect(json_encode($again))->toBe(json_encode($first))->and(json_encode($replay))->toBe(json_encode($first));
+    expect(collect($first->content)->where('type', 'audio'))->toHaveCount(1);
+    $artifact = $client->readResource('metkurd://artifacts/file_delivery_0');
+    expect($artifact->contents[0]->mimeType)->toBe('audio/wav')->and(base64_decode($artifact->contents[0]->blob))->toBe(mcpDeliveryWav());
+    expect($client->readResource('metkurd://files/file_delivery_0')->contents[0]->mimeType)->toBe('application/json');
+    expect($writes)->toBe([])->and($snapshot())->toBe($before);
+    expect(ApiJob::count())->toBe(1)->and(MlJob::count())->toBe(1)->and(ApiCreditReservation::sole()->status)->toBe('reserved');
+    Illuminate\Support\Facades\Http::assertNothingSent();
+    Illuminate\Support\Facades\Queue::assertNothingPushed();
+})->with(['2025-11-25', '2026-07-28']);
+
+it('validates every advertised output schema against real success and error envelopes', function () {
+    [$job] = mcpDeliveryFixture($this, 'speech', [['audio', 'audio/wav', mcpDeliveryWav()]]);
+    mcpAllScopes($this);
+    $tools = app(App\Services\Mcp\Tools::class);
+    $jobResult = $tools->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    $validator = new Mcp\Capability\Discovery\SchemaValidator;
+    foreach (app(App\Services\Mcp\ToolCatalog::class)->definitions() as $name => $definition) {
+        $result = match ($name) {
+            'list_services', 'list_voices', 'list_recent_files' => $tools->call($this->principal, $name, []),
+            'create_upload_session' => $tools->call($this->principal, $name, ['request_id' => (string) Illuminate\Support\Str::uuid(), 'purpose' => 'ocr']),
+            default => $jobResult,
+        };
+        expect($result->isError)->toBeFalse();
+        expect($validator->validateAgainstJsonSchema($result->structuredContent, $definition['outputSchema']))->toBe([]);
+        expect($validator->validateAgainstJsonSchema(['error' => ['code' => 'scope_not_allowed']], $definition['outputSchema']))->toBe([]);
+    }
+    $schemas = app(App\Services\Mcp\ToolOutputSchemas::class);
+    expect($validator->validateAgainstJsonSchema(['job_id' => 42], $schemas->forTool('get_job')))->not->toBe([]);
+});
+
+it('supports native MPEG and VTT and respects reduced or disabled inline configuration', function () {
+    $mp3 = str_repeat(hex2bin('fffb9064').str_repeat("\0", 413), 3);
+    [$job, $files] = mcpDeliveryFixture($this, 'speech', [['audio', 'audio/mpeg', $mp3]]);
+    $tools = app(App\Services\Mcp\Tools::class);
+    $result = $tools->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    expect(collect($result->content)->firstWhere('type', 'audio')->mimeType)->toBe('audio/mpeg');
+    config(['mcp.inline_file_bytes' => strlen($mp3) - 1]);
+    expect(collect($tools->call($this->principal, 'get_job', ['job_id' => $job->id])->content)->where('type', 'audio'))->toHaveCount(0);
+    config(['mcp.inline_file_bytes' => 1048576, 'mcp.inline_total_bytes' => 0]);
+    expect(collect($tools->call($this->principal, 'get_job', ['job_id' => $job->id])->content)->where('type', 'audio'))->toHaveCount(0);
+    config(['mcp.inline_total_bytes' => 1048576]);
+    $vtt = "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n";
+    $files[0]->update(['mime' => 'text/vtt']);
+    Storage::disk('s3')->put($files[0]->path, $vtt);
+    $job->update(['meta' => array_replace($job->meta, ['service' => 'captions'])]);
+    $result = $tools->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    $resource = collect($result->content)->firstWhere('type', 'resource');
+    expect($resource->resource->mimeType)->toBe('text/vtt')->and($resource->resource->text)->toBe($vtt);
+});
+
+it('bounds configured wire responses and rejects an RPC ID too large for that ceiling', function () {
+    [$job] = mcpDeliveryFixture($this, 'speech', [['audio', 'audio/wav', mcpDeliveryWav(8192)]]);
+    config(['mcp.response_bytes' => 8192]);
+    $result = app(App\Services\Mcp\Tools::class)->call($this->principal, 'get_job', ['job_id' => $job->id], 'rpc-fixture');
+    expect($result->isError)->toBeFalse()->and(collect($result->content)->where('type', 'audio'))->toHaveCount(0);
+    expect(strlen(json_encode(new Mcp\Schema\JsonRpc\Response('rpc-fixture', $result))))->toBeLessThanOrEqual(8192);
+    config(['mcp.response_bytes' => 4096]);
+    $this->postJson('https://metkurd.test/mcp', ['jsonrpc' => '2.0', 'id' => str_repeat('x', 5000), 'method' => 'tools/list'],
+        ['Authorization' => 'Bearer '.$this->token])->assertStatus(413);
+});
+
+it('uses the persisted requested STEM mode rather than guessing from remaining artifacts', function ($mode, $inline) {
+    [$job] = mcpDeliveryFixture($this, 'stem', [['vocals', 'audio/wav', mcpDeliveryWav()], ['instrumental', 'audio/wav', mcpDeliveryWav()]]);
+    $job->mlJob->update(['input' => array_replace($job->mlJob->input, ['stems' => $mode])]);
+    $result = app(App\Services\Mcp\Tools::class)->call($this->principal, 'get_job', ['job_id' => $job->id]);
+    expect($result->isError)->toBeFalse();
+    expect(collect($result->content)->where('type', 'audio'))->toHaveCount($inline ? 2 : 0);
+    expect($result->structuredContent['result']['files'])->toHaveCount(2);
+})->with([[2, true], [4, false], [0, false]]);

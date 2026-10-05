@@ -81,6 +81,7 @@ class Files
     public function owned(McpConnectionPrincipal $principal, int $id): CustomerFile
     {
         $file = CustomerFile::where('customer_id', $principal->customer()->id)->where('status', 'active')
+            ->whereNull('deleted_at')
             ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))->find($id);
         if (! $file) {
             throw new ApiProblem('invalid_file', 404);
@@ -140,11 +141,23 @@ class Files
         $customer = $principal->customer();
         $principal->authorize($customer, 'v2:files:download');
         $link = ApiResultFile::where('customer_id', $customer->id)->whereNull('deleted_at')
+            ->whereIn('result_kind', ['artifact', 'primary'])
             ->whereHas('apiJob', fn ($q) => $q->where('customer_id', $customer->id)->where('meta->api_version', 2)->where('status', 'completed'))->find($id);
         if (! $link || (data_get($link->apiJob->meta, 'expires_at') && now()->greaterThanOrEqualTo(data_get($link->apiJob->meta, 'expires_at')))) {
             throw new ApiProblem('invalid_file', 404);
         }
 
-        return $this->owned($principal, $link->storage_file_id);
+        $file = $this->owned($principal, $link->storage_file_id);
+        $job = $link->apiJob;
+        if (! $job->mlJob || (int) $job->mlJob->customer_id !== (int) $customer->id || $job->mlJob->status !== 'done'
+            || ($job->mlJob->expires_at && $job->mlJob->expires_at->lessThanOrEqualTo(now()))
+            || (string) data_get($file->meta, 'job_id') !== (string) $job->ml_job_id
+            || ! in_array($file->purpose, ['render', 'transcription', 'caption'], true)
+            || ! config('filesystems.disks.'.$file->disk) || ! is_string($file->path) || $file->path === ''
+            || preg_match('~(^[/\\\\]|[a-z]+:|(^|[/\\\\])\.\.([/\\\\]|$)|\x00)~i', $file->path)) {
+            throw new ApiProblem('invalid_file', 404);
+        }
+
+        return $file;
     }
 }

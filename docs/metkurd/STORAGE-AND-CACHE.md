@@ -1,5 +1,16 @@
 # Storage, cache and history
 
+## MCP native artifact delivery — 2026-10-05
+
+Completed MCP reads may open bounded streams from persisted owned result links
+after fresh connection/scope/customer/status/deletion/expiry checks. They never
+link files, reconcile, settle/release reservations, alter wallets, poll providers
+or create jobs. Defaults are 1 MiB raw per file and aggregate, 2 MiB serialized.
+MIME validation gates native audio/text embedding; STEM is all-or-nothing within
+the aggregate budget. Protected downloads remain available without exposing
+storage URLs/keys. Metadata resources stay JSON; artifact resources use actual
+MIME. See [MCP delivery](MCP.md#bounded-native-result-delivery--2026-10-05).
+
 ## Unified V2 owned-result visibility — 2026-10-03
 
 V2 My Storage includes active unexpired API results in both retention modes,

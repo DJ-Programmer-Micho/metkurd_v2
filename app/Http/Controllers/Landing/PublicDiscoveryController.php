@@ -45,7 +45,14 @@ class PublicDiscoveryController extends Controller
         if ($catalog->mcpEnabled()) {
             $lines[] = $copy->text('mcp_available', [], 'en');
         }
-        $lines = array_merge($lines, ['', '## Terminology',
+        $lines = array_merge($lines, ['', '## Official developer resources',
+            'GitHub organization: '.PublicWebsiteContent::GITHUB_ORGANIZATION,
+            'REST API V2 documentation and examples: '.PublicWebsiteContent::API_REPOSITORY,
+            '', 'Repository contents:', '- OpenAPI 3.1', '- Postman collection',
+            '- cURL examples', '- Python examples', '- PHP examples', '- Node.js / JavaScript examples',
+            '', 'The public repository documents and demonstrates the MetKurd API. It is not the source repository for the hosted MetKurd platform or models.',
+            'The hosted platform, models and internal application source remain proprietary.',
+            '', '## Terminology',
             $copy->text('home_faq.terminology.copy', [], 'en'),
             'Source: '.PublicWebsiteContent::TERMINOLOGY_SOURCE_URL,
             '', '## Privacy', $copy->text('privacy', [], 'en'), '', '## Public pages']);

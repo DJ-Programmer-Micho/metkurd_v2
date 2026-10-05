@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'github_documentation' => 'Official GitHub documentation',
     'ocr_multipart' => 'Multipart Upload',
     'ocr_upload_intro' => 'Upload a local PDF or image directly using multipart/form-data. You do not need to host the file or provide a file URL.',
     'ocr_quick' => 'First OCR request — quick example',

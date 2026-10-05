@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'github_documentation' => 'التوثيق الرسمي على ⁦GitHub⁩',
     'ocr_multipart' => 'رفع متعدد الأجزاء',
     'ocr_upload_intro' => 'ارفع ملف PDF أو صورة من جهازك مباشرة باستخدام multipart/form-data. لا تحتاج إلى استضافة الملف أو توفير رابط له.',
     'ocr_quick' => 'أول طلب OCR — مثال سريع',

@@ -17,7 +17,7 @@ class ToolCatalog
             'list_voices' => ['scope' => 'v2:speech', 'description' => 'List public voice IDs and names. Call this before speech when the user has not selected a valid voice ID.', 'properties' => [], 'required' => []],
             'speak' => ['service' => 'speech', 'scope' => 'v2:speech', 'description' => 'Generate Apollo speech. Discover a valid public voice ID with metkurd_list_voices first.',
                 'properties' => ['request_id' => $call, 'text' => $string, 'voice' => $string, 'language' => $language, 'model' => $model], 'required' => ['request_id', 'text', 'voice']],
-            'get_job' => ['scope' => 'v2:jobs:read', 'description' => 'Read a persisted job and its results. Long jobs finish asynchronously.', 'properties' => ['job_id' => $string], 'required' => ['job_id']],
+            'get_job' => ['scope' => 'v2:jobs:read', 'description' => 'Continue an asynchronous job without creating or charging another job. Return persisted status and, when completed, readable text, bounded native audio/text artifacts and authenticated file fallbacks. Surface final content to the user. File bytes require v2:files:download.', 'properties' => ['job_id' => $string], 'required' => ['job_id']],
         ];
         $definitions['clone_voice'] = ['service' => 'voice-clone', 'scope' => 'v2:voice-clone', 'description' => 'Generate Vector speech using an owned saved voice reference.',
             'properties' => ['request_id' => $call, 'text' => $string, 'reference_id' => $file, 'reference_text' => $string + ['maxLength' => 4000], 'language' => $language, 'model' => $model],
@@ -40,7 +40,11 @@ class ToolCatalog
                 'stem' => ['mode' => ['type' => 'integer', 'enum' => [2, 4]]],
                 default => ['language' => $language, 'intelligent' => $boolean],
             };
-            $definitions[$name] = ['service' => $service, 'scope' => 'v2:'.$service, 'description' => 'Process an owned uploaded file with '.ucfirst($name).'.',
+            $descriptions = ['transcribe' => 'Transcribe an owned audio file with Leo into readable text.',
+                'caption' => 'Create timestamped captions/subtitle artifacts from owned audio.',
+                'ocr' => 'Extract text and requested document exports from an owned document.',
+                'stem' => 'Separate owned audio into two or four labelled stems; retain every stem as a distinct artifact.'];
+            $definitions[$name] = ['service' => $service, 'scope' => 'v2:'.$service, 'description' => $descriptions[$name],
                 'properties' => $properties, 'required' => $service === 'stem' ? ['request_id', 'file_id', 'mode'] : ['request_id', 'file_id']];
         }
         $definitions['harakat'] = ['service' => 'harakat', 'scope' => 'v2:harakat', 'description' => 'Add Arabic diacritics with Harakat 1.0.',
@@ -50,6 +54,15 @@ class ToolCatalog
             'properties' => ['request_id' => $call, 'purpose' => ['type' => 'string', 'enum' => ['ocr', 'transcription', 'caption', 'stem', 'voice_reference']]], 'required' => ['request_id', 'purpose']];
         foreach ($definitions as $name => &$definition) {
             $definition['name'] = 'metkurd_'.$name;
+            $definition['title'] = match ($name) {
+                'list_services' => 'List available MetKurd services', 'list_voices' => 'Discover public voices',
+                'speak' => 'Generate Apollo speech', 'clone_voice' => 'Generate Vector voice-cloned speech',
+                'zeta' => 'Generate Zeta multi-speaker speech', 'theta' => 'Generate Theta multi-speaker voice cloning',
+                'transcribe' => 'Transcribe audio with Leo', 'caption' => 'Create subtitles', 'ocr' => 'Extract document text',
+                'harakat' => 'Add Arabic diacritics', 'stem' => 'Separate audio stems', 'get_job' => 'Get job status and final artifacts',
+                'list_recent_files' => 'List recent uploaded files', 'create_upload_session' => 'Create a secure upload session',
+            };
+            $definition['outputSchema'] = app(ToolOutputSchemas::class)->forTool($name);
             $definition['paid'] = isset($definition['service']);
             if ($definition['paid']) {
                 $definition['description'] .= ' This tool creates a paid MetKurd processing job and consumes API credits. Returns a job ID; use metkurd_get_job later.';
