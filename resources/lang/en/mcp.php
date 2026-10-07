@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'requesting_app' => 'Requesting application',
+    'client_identity' => 'Application identifier',
     'yes' => 'Yes',
     'no' => 'No',
     'authorization_error' => 'Authorization could not be completed. Return to the MCP page and check the connection settings.',

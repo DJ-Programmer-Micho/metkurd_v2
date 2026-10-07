@@ -465,11 +465,41 @@ function mcpTestClient($test, \Mcp\Schema\Enum\ProtocolVersion $version = \Mcp\S
     return $client;
 }
 
+it('advertises descriptive multi-speaker names and dispatches unchanged internal arguments', function ($internal, $external, $version) {
+    $args = ['request_id' => (string) Illuminate\Support\Str::uuid(),
+        'segments' => [['text' => 'Hello', 'language' => 'en', 'pause_after_ms' => 0]
+            + ($internal === 'zeta' ? ['voice' => 'api-v2-voice'] : ['reference_id' => 123, 'reference_text' => 'Reference transcript'])]];
+    // Stop at dispatch: native processing, ownership and replay have separate coverage below.
+    $this->mock(App\Services\Mcp\Tools::class)->shouldReceive('call')->once()
+        ->with(Mockery::on(fn ($principal) => $principal->connectionId === $this->connection->id), $internal, $args, Mockery::any())
+        ->andReturn(new Mcp\Schema\Result\CallToolResult([], true, ['error' => ['code' => 'dispatch_fixture']]));
+    $client = mcpTestClient($this, Mcp\Schema\Enum\ProtocolVersion::from($version));
+    $tools = collect($client->listTools()->tools)->keyBy('name');
+    expect($tools)->toHaveCount(14)
+        ->and($tools->keys()->all())->toContain('metkurd_generate_multi_speaker_speech', 'metkurd_generate_multi_speaker_cloned_speech', 'metkurd_clone_voice')
+        ->not->toContain('metkurd_zeta', 'metkurd_theta');
+    $tool = $tools[$external];
+    expect($tool->description)->toContain('asynchronous job', 'paid MetKurd processing job', 'API credits', 'metkurd_get_job',
+        '1 to 25 segments', '500 characters each', '5000 characters total', 'final pause is ignored');
+    expect($tool->description)->toContain(...($internal === 'zeta'
+        ? ['public MetKurd voice IDs', 'metkurd_list_voices']
+        : ['owned, active saved voice reference IDs', '20 MiB', '100 MiB', '4000 characters']));
+    expect($tool->annotations->readOnlyHint)->toBeFalse()
+        ->and($tool->annotations->idempotentHint)->toBeTrue();
+    $definition = app(App\Services\Mcp\ToolCatalog::class)->definitions()[$internal];
+    expect($definition['service'])->toBe($internal)
+        ->and($definition['scope'])->toBe($internal === 'zeta' ? 'v2:speech' : 'v2:voice-clone');
+    $result = $client->callTool($external, $args);
+    expect($result->isError)->toBeTrue()->and($result->structuredContent['error']['code'])->toBe('dispatch_fixture');
+})->with([['zeta', 'metkurd_generate_multi_speaker_speech'], ['theta', 'metkurd_generate_multi_speaker_cloned_speech']])
+    ->with(['2025-11-25', '2026-07-28']);
+
 it('renders the localized MCP portal and handles owned revocation', function ($locale) {
     config(['metkurd_v2.enabled' => true]);
     $this->customer->forceFill(['phone_verified_at' => now()])->save();
     $this->actingAs($this->customer, 'app')->get('/'.$locale.'/app-v2/mcp')->assertOk()
-        ->assertSee('metkurd_theta')->assertSee('Test MCP')->assertSee('data-v2-confirm', false)
+        ->assertSee('metkurd_generate_multi_speaker_speech')->assertSee('metkurd_generate_multi_speaker_cloned_speech')
+        ->assertDontSee('metkurd_zeta')->assertDontSee('metkurd_theta')->assertSee('Test MCP')->assertSee('data-v2-confirm', false)
         ->assertSee('dir="'.($locale === 'en' ? 'ltr' : 'rtl').'"', false)->assertDontSee($this->token)->assertDontSee('mcp.paid_only');
     Livewire\Livewire::actingAs($this->customer, 'app')->test('app::v2.pages.mcp.app-mcp')->call('revoke', $this->connection->id)->assertDispatched('alert');
     expect($this->connection->fresh()->status)->toBe('revoked');

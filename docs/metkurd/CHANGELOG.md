@@ -1,5 +1,15 @@
 # Architectural and behavioral decisions
 
+## 2026-10-07 — Descriptive MCP multi-speaker tool names
+
+Rename only the advertised MCP names for Zeta and Theta to
+`metkurd_generate_multi_speaker_speech` and
+`metkurd_generate_multi_speaker_cloned_speech`. Clarify voice sources, paid async
+jobs and existing segment/reference limits. Preserve internal identities, native
+routes, schemas, scopes, billing and processing; `metkurd_clone_voice` is unchanged.
+MCP discovery/dispatch and localized portal tests cover the new names. No deployment
+or OpenAI review approval is implied. See [MCP](MCP.md#descriptive-public-tool-names--2026-10-07).
+
 ## 2026-10-05 — Bounded native MCP result delivery
 
 Deliver persisted small audio as native AudioContent and safe text as embedded

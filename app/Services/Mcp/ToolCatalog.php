@@ -29,7 +29,11 @@ class ToolCatalog
                     'language' => $language, 'pause_after_ms' => ['type' => 'integer', 'enum' => [0, 500, 1000, 2000]]] + $reference,
                 'required' => ['text', 'language', 'pause_after_ms', $service === 'theta' ? 'reference_id' : 'voice']];
             $definitions[$service] = ['service' => $service, 'scope' => $service === 'theta' ? 'v2:voice-clone' : 'v2:speech',
-                'description' => 'Generate one ordered multi-speaker project. No trailing pause. '.($service === 'theta' ? 'Use owned reference IDs.' : 'Discover public voice IDs first.'),
+                'description' => 'Generate one final multi-speaker speech audio from ordered text segments in an asynchronous job. '
+                    .($service === 'theta'
+                        ? 'Clone voices using owned, active saved voice reference IDs, not public voice IDs. References must be available and unexpired; each is limited to 20 MiB, with at most '.(config('metkurd_v2.multi_speaker.max_reference_bytes') / 1048576).' MiB across distinct reference objects per project. Optional reference_text is limited to 4000 characters per segment. '
+                        : 'Use public MetKurd voice IDs discovered with metkurd_list_voices, not owned voice references. ')
+                    .'Provide 1 to '.config('metkurd_v2.multi_speaker.max_segments').' segments, at most '.config('metkurd_v2.multi_speaker.max_segment_chars').' characters each and '.config('metkurd_v2.multi_speaker.max_total_chars').' characters total. Each segment requires language (ckb, ar or en) and pause_after_ms (0, 500, 1000 or 2000); the final pause is ignored.',
                 'properties' => ['request_id' => $call, 'segments' => ['type' => 'array', 'items' => $segment, 'minItems' => 1, 'maxItems' => (int) config('metkurd_v2.multi_speaker.max_segments')]],
                 'required' => ['request_id', 'segments']];
         }
@@ -53,7 +57,11 @@ class ToolCatalog
         $definitions['create_upload_session'] = ['scope' => 'mcp:uploads', 'description' => 'Create an expiring browser upload page. Sign in as the same MetKurd customer. Upload creates no processing charge; storage quota applies.',
             'properties' => ['request_id' => $call, 'purpose' => ['type' => 'string', 'enum' => ['ocr', 'transcription', 'caption', 'stem', 'voice_reference']]], 'required' => ['request_id', 'purpose']];
         foreach ($definitions as $name => &$definition) {
-            $definition['name'] = 'metkurd_'.$name;
+            $definition['name'] = match ($name) {
+                'zeta' => 'metkurd_generate_multi_speaker_speech',
+                'theta' => 'metkurd_generate_multi_speaker_cloned_speech',
+                default => 'metkurd_'.$name,
+            };
             $definition['title'] = match ($name) {
                 'list_services' => 'List available MetKurd services', 'list_voices' => 'Discover public voices',
                 'speak' => 'Generate Apollo speech', 'clone_voice' => 'Generate Vector voice-cloned speech',

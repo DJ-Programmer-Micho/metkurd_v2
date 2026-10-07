@@ -1,5 +1,24 @@
 # MetKurd MCP V2
 
+## Descriptive public tool names — 2026-10-07
+
+MCP advertises `metkurd_generate_multi_speaker_speech` for Zeta and
+`metkurd_generate_multi_speaker_cloned_speech` for Theta. These replace
+`metkurd_zeta` and `metkurd_theta`; no old-name aliases are registered. Clients
+must refresh tool discovery after deployment. The catalog still has 14 tools.
+Internal `zeta`/`theta` dispatch keys, Tool/ToolAction identities, `/api/v2/zeta`
+and `/api/v2/theta`, scopes, schemas, billing and processing remain unchanged.
+`metkurd_clone_voice` is unchanged. An OpenAI further-review hold is not itself
+evidence of a metadata/schema defect, and this source change does not resolve
+or bypass that review or authorize deployment.
+
+Both descriptions identify paid asynchronous generation of one final speech audio
+output. Zeta uses public MetKurd voices; Theta uses owned, active, unexpired saved
+references. The descriptions expose existing configured limits: currently 1–25
+segments, 500 characters per segment and 5,000 total, permitted pauses with no
+trailing pause; Theta references are at most 20 MiB each and 100 MiB across distinct
+objects, with optional reference text limited to 4,000 characters per segment.
+
 ## Production acceptance lessons — 2026-10-05
 
 **CURRENT production acceptance — 2026-10-05 (operator-reported):** ChatGPT
@@ -345,8 +364,8 @@ The portal renders the actual schemas, localized descriptions and examples.
 | list_voices | none; no request_id | speech | OmniSpeakerCatalog public `id,name`; no charge |
 | speak | text, voice; optional language, model | speech | OmniSubmissionService / Apollo; characters |
 | clone_voice | text, reference_id; optional reference_text, language, model | voice-clone | CloneOmniSubmissionService / Vector; characters |
-| zeta | ordered segments: text, voice, language, pause_after_ms | speech | MultiSpeakerSubmissionService / Zeta 1.0; total characters |
-| theta | ordered segments: text, reference_id, language, pause_after_ms; optional reference_text | voice-clone | MultiSpeakerSubmissionService / Theta 1.0; total characters |
+| generate_multi_speaker_speech | ordered segments: text, voice, language, pause_after_ms | speech | MultiSpeakerSubmissionService / Zeta 1.0; total characters |
+| generate_multi_speaker_cloned_speech | ordered segments: text, reference_id, language, pause_after_ms; optional reference_text | voice-clone | MultiSpeakerSubmissionService / Theta 1.0; total characters |
 | transcribe | file_id; optional language, intelligent | transcriptions | LeoSubmissionService; inspected audio minutes |
 | caption | file_id; optional language, intelligent | captions | CaptionSubmissionService; inspected audio minutes |
 | ocr | file_id; optional pages, exports, intelligent | ocr | OcrV2SubmissionService; inspected selected pages |

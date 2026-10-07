@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'requesting_app' => 'التطبيق الذي يطلب الوصول',
+    'client_identity' => 'معرّف التطبيق',
     'yes' => 'نعم',
     'no' => 'لا',
     'authorization_error' => 'تعذر إكمال التفويض. عُد إلى صفحة MCP وتحقق من إعدادات الاتصال.',
