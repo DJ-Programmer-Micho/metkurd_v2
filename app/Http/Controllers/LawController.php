@@ -2,25 +2,29 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+
 class LawController extends Controller
 {
-    public function termsCondition()
+    public function termsCondition(Request $request): RedirectResponse
     {
-        $filePath = public_path('landing/law/METKURDTermcondition.html'); // Path to the exported HTML file
-        $htmlContent = file_get_contents($filePath); // Read HTML content
-
-        return view('law.terms-conditions-one', [
-            'terms' => $htmlContent,
-        ]);
+        return $this->canonical($request, 'landing.terms');
     }
 
-    public function privacyPolicy()
+    public function privacyPolicy(Request $request): RedirectResponse
     {
-        $filePath = public_path('landing/law/METKURDPrivacy.html'); // Path to the exported HTML file
-        $htmlContent = file_get_contents($filePath); // Read HTML content
+        return $this->canonical($request, 'landing.privacy');
+    }
 
-        return view('law.privacy-policy-one', [
-            'terms' => $htmlContent,
-        ]);
+    private function canonical(Request $request, string $route): RedirectResponse
+    {
+        $locale = $request->session()->get('applocale', config('app.locale', 'en'));
+        if (! in_array($locale, ['en', 'ar', 'ku'], true)) {
+            $locale = 'en';
+        }
+
+        // Session-dependent locale selection must not be cached as a permanent redirect.
+        return redirect()->route($route, ['locale' => $locale])->header('Cache-Control', 'private, no-store');
     }
 }

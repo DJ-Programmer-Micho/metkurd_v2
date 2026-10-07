@@ -404,7 +404,7 @@ new #[Layout('app::layouts.app-auth')] class extends Component
                                                id="accept_terms"
                                                wire:model="accept_terms">
                                         <label class="form-check-label" for="accept_terms">
-                                            {!! __('I agree to the <a href=\":terms\" target=\"_blank\" rel=\"noopener noreferrer\">Terms &amp; Conditions</a> and <a href=\":privacy\" target=\"_blank\" rel=\"noopener noreferrer\">Privacy Policy</a>.', ['terms' => route('law.terms'), 'privacy' => route('law.privacy')]) !!}
+                                            {!! __('I agree to the <a href=\":terms\" target=\"_blank\" rel=\"noopener noreferrer\">Terms &amp; Conditions</a> and <a href=\":privacy\" target=\"_blank\" rel=\"noopener noreferrer\">Privacy Policy</a>.', ['terms' => route('landing.terms', ['locale' => app()->getLocale()]), 'privacy' => route('landing.privacy', ['locale' => app()->getLocale()])]) !!}
                                         </label>
                                     </div>
                                     @error('accept_terms') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror

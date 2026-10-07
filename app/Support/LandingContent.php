@@ -350,106 +350,6 @@ class LandingContent
                 'Priority customers receive faster routing',
             ],
         ],
-        'privacy_page' => [
-            'meta' => [
-                'title' => 'Privacy Policy',
-                'description' => 'How MetKurd AI collects, uses, shares and retains account information, submitted content and service records, and the controls available to you.',
-                'keywords' => 'MetKurd AI privacy policy, Kurdish AI privacy, user uploads privacy, AI storage policy',
-            ],
-            'badge' => 'Privacy Policy',
-            'title' => 'Privacy and your MetKurd data.',
-            'lead' => 'This policy explains how MetKurd AI handles information when you use our website, account services, API and connected MCP tools.',
-            'cards' => [
-                [
-                    'title' => 'Account and profile information',
-                    'copy' => 'We process your username, email address, password hash, verification details and the profile information you provide, such as name, phone number, avatar, occupation, business name, country, city and address. If you choose Google or GitHub sign-in, we receive account identifiers and available profile information from that provider. We use this information to create and secure your account, verify access, maintain your profile and provide account support.',
-                ],
-                [
-                    'title' => 'Submitted content and processing records',
-                    'copy' => 'We process the text, audio, images, documents and voice references you submit, together with task settings, generated audio, text, subtitles and other outputs. Jobs can retain submitted text, input/output metadata, status, errors, timestamps and usage or credit records. These support processing, result access, history and billing accuracy. Our policy is not to use customer uploads or generated outputs to train MetKurd models. This does not establish a data-use commitment for every external provider.',
-                ],
-                [
-                    'title' => 'Connected accounts and MCP access',
-                    'copy' => 'When you authorize a connection, we store the client identity and name, approved permissions, connection status, creation and last-use times, revocation information and OAuth authorization/token records. We use these to enforce your consent and account access. The connected client sends tool arguments to MetKurd and receives permitted job information and results, including content when requested. The tools do not require your full chat history. Revoking a connection stops further authorized access; it does not erase previous jobs or copies already received by the client.',
-                ],
-                [
-                    'title' => 'Website, analytics and security data',
-                    'copy' => 'The website uses session cookies and browser storage for sign-in and preferences such as theme. Public pages load Google Analytics for website usage measurement. Requests and technical records may include IP addresses, browser/device information, routes, timestamps, status and error details. Human verification sends challenge information and the request IP address to Cloudflare Turnstile. These data support website operation, usage measurement, abuse prevention and troubleshooting. Browser controls can limit cookies or scripts, although blocking essential storage can affect sign-in.',
-                ],
-                [
-                    'title' => 'Support and operational notifications',
-                    'copy' => 'The contact form collects your name, email, subject and message. It sends these to our support channel on Telegram with request IP, browser information and available IP-derived location details, which may include country, region, city, postal code and estimated coordinates. Registration and payment notifications can also send account/contact details, verification or transaction information and request metadata to authorized operational channels. We use these messages to answer requests and manage account and payment operations. Avoid sending passwords, access tokens or unnecessary sensitive content in support messages.',
-                ],
-                [
-                    'title' => 'Billing and payment records',
-                    'copy' => 'For account billing, we retain credit balances, usage, reservations, ledger entries, orders, payment references, amounts, currencies, statuses and related audit records. Where provided by a payment integration, records can include provider customer/method references and masked card details, brand and expiry. Payment providers such as FIB and Areeba process their part of website payments. The plugin itself does not offer purchases or checkout; it uses existing account permissions and API credits.',
-                ],
-                [
-                    'title' => 'Who receives information',
-                    'copy' => 'Authorized personnel and service providers process information to operate the service. Recipient categories include infrastructure hosting, databases, object storage and delivery, compute/inference, email and phone-verification delivery, social authentication, payment processing, security, analytics and support messaging. Processing providers receive the submitted text or access to the media needed for the requested task. Google/GitHub sign-in, Google Analytics, Cloudflare verification, Telegram notifications and payment integrations receive information relevant to their functions. A connected chat service also receives the tool responses you authorize. We do not promise identical retention or data-use terms across these recipients.',
-                ],
-                [
-                    'title' => 'Temporary files and upload links',
-                    'copy' => 'Temporary API/MCP processing files have an expiry recorded for the job or file; the service default is seven days after submission. MCP upload-handoff files, including voice references newly uploaded through that handoff, use a temporary expiry measured from upload. Consult the expiry shown for the specific file. Expiry ends access, while physical removal depends on cleanup completing. MCP upload links expire after 15 minutes. Link expiry does not delete durable upload-session metadata, which currently has no automatic pruning policy.',
-                ],
-                [
-                    'title' => 'Saved files, references and deletion',
-                    'copy' => 'Normal web/customer results, permanent API files and existing saved voice references follow their own retention state; the seven-day temporary-file rule does not apply to all of them. They may remain until customer or service deletion or another applicable retention state. Deleting a generated result does not automatically delete a separately saved voice reference. File deletion removes the stored object when successful and marks its records as deleted. Job inputs, file metadata, account, usage, financial and audit records can remain; deleting a file is not complete erasure of all associated information.',
-                ],
-                [
-                    'title' => 'Retention of account and service records',
-                    'copy' => 'We retain account, job, support, security, billing and audit records for as long as reasonably necessary to provide the service, maintain account and transaction history, protect security, resolve disputes, comply with legal or accounting obligations, and enforce our agreements. Retention periods vary by record type. When information is no longer required for these purposes, it may be deleted or anonymized in accordance with our operational and legal requirements. There is no single fixed deletion period for these records. Financial and audit history is maintained separately from file expiry and deletion.',
-                ],
-                [
-                    'title' => 'Backups and external copies',
-                    'copy' => 'Deleted information may remain temporarily in backup or disaster-recovery systems until those backups are overwritten or expired under the applicable backup cycle. This policy does not specify a backup duration. Revocation or deletion in MetKurd does not automatically remove downloaded copies, chat-service copies or records held by external providers under their own policies.',
-                ],
-                [
-                    'title' => 'Your account and file controls',
-                    'copy' => 'You can edit supported profile fields, change your password, manage API keys and revoke MCP connections through your account. You can view and download available results and use file-deletion controls where available. Some deletion actions may be restricted or fail; contact support if you cannot remove a file. Revocation is an access control, not an account-deletion action. There is no self-service account-erasure workflow in the current account interface. Contact us to request account deletion, access to information or correction; identity checks and retention obligations may affect what can be removed.',
-                ],
-                [
-                    'title' => 'Privacy questions and requests',
-                    'copy' => 'Use the Contact page or email support@metkurd.ai for privacy questions, corrections, access or deletion requests, including questions about retention of a particular record. Identify the request without sharing your password, API key or OAuth token. Third-party chat services, sign-in services and other providers may also offer controls for information held in their own systems.',
-                ],
-            ],
-        ],
-        'terms_page' => [
-            'meta' => [
-                'title' => 'Terms and Conditions',
-                'description' => 'Review the terms for using MetKurd AI services, including content responsibility, safe usage, and billing behavior.',
-                'keywords' => 'MetKurd AI terms, Kurdish AI usage policy, SaaS terms, voice cloning policy, AI content responsibility',
-            ],
-            'badge' => 'Terms and Conditions',
-            'title' => 'Clear terms for responsible Kurdish AI usage.',
-            'lead' => 'Use of MetKurd AI must follow legal rights, safe usage expectations, and platform policies.',
-            'cards' => [
-                [
-                    'title' => 'User agreement',
-                    'copy' => 'Users must access the service lawfully and remain responsible for uploaded content and account security.',
-                ],
-                [
-                    'title' => 'Voice cloning safety',
-                    'copy' => 'Do not clone political figures, famous figures, or any voice in a misleading, harmful, or unauthorized way.',
-                ],
-                [
-                    'title' => 'AI content policy',
-                    'copy' => 'The platform must not be used to generate harmful, deceptive, or unauthorized content.',
-                ],
-                [
-                    'title' => 'Copyright and permission',
-                    'copy' => 'Users are responsible for ensuring they have permission and legal rights for uploaded materials and generated outputs.',
-                ],
-                [
-                    'title' => 'Payment terms',
-                    'copy' => 'Paid subscriptions renew under selected billing cycles, and customers can upgrade or cancel according to plan rules.',
-                ],
-                [
-                    'title' => 'Service limitations',
-                    'copy' => 'AI outputs may contain mistakes and are continuously improved; API access requires eligible configured paid access.',
-                ],
-            ],
-        ],
         'overview_page' => [
             'meta' => [
                 'title' => 'MetKurd AI Overview | Kurdish-first AI Platform',
@@ -864,9 +764,23 @@ class LandingContent
         ],
     ];
 
+    // Legal English defaults and the editable catalog share the landing JSON source.
+    // Localized legal copy remains in the matching AR/KU landing catalogs.
+    private static function rawValue(string $path, mixed $default = null): mixed
+    {
+        [$root] = explode('.', $path, 2);
+        if (in_array($root, ['privacy_page', 'terms_page'], true)) {
+            $document = AreaJsonTranslations::group($root, 'landing', 'en');
+
+            return $path === $root ? $document : Arr::get($document, substr($path, strlen($root) + 1), $default);
+        }
+
+        return Arr::get(self::CONTENT, $path, $default);
+    }
+
     public static function rawText(string $path, ?string $fallback = null): string
     {
-        $value = Arr::get(self::CONTENT, $path);
+        $value = self::rawValue($path);
 
         if (! is_string($value)) {
             return $fallback ?? '';
@@ -877,7 +791,7 @@ class LandingContent
 
     public static function rawSection(string $path): array
     {
-        $value = Arr::get(self::CONTENT, $path, []);
+        $value = self::rawValue($path, []);
 
         return is_array($value) ? $value : [];
     }
@@ -908,7 +822,7 @@ class LandingContent
         ];
 
         foreach ($roots as $root) {
-            $value = Arr::get(self::CONTENT, $root);
+            $value = self::rawValue($root);
 
             if (! is_array($value)) {
                 continue;
@@ -948,7 +862,7 @@ class LandingContent
             return self::interpolate($override, $replace);
         }
 
-        $value = Arr::get(self::CONTENT, $path);
+        $value = self::rawValue($path);
 
         if (! is_string($value)) {
             return $fallback ?? '';
@@ -971,7 +885,7 @@ class LandingContent
         if ($override !== []) {
             $value = $override;
         } else {
-            $value = Arr::get(self::CONTENT, $path, []);
+            $value = self::rawValue($path, []);
             $value = is_array($value) ? self::translate($value) : [];
         }
         if ($path === 'home.hero') {

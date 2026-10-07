@@ -32,4 +32,7 @@ docs/*
 !docs/metkurd/
 docs/metkurd/*
 !docs/metkurd/*.md
+!docs/metkurd/legal-history/
+!docs/metkurd/legal-history/METKURDPrivacy.html
+!docs/metkurd/legal-history/METKURDTermcondition.html
 /.rnd

@@ -52,6 +52,7 @@ new #[Layout('landing::layouts.app')] class extends Component
                 </span>
                 <h1 class="display-hero mb-3">{{ LandingContent::text('privacy_page.title') }}</h1>
                 <p class="lead-soft mx-auto">{{ LandingContent::text('privacy_page.lead') }}</p>
+                <p class="text-muted-soft">{{ LandingContent::text('privacy_page.updated_label') }}: <time datetime="{{ LandingContent::rawText('privacy_page.updated_at') }}" dir="ltr">{{ LandingContent::rawText('privacy_page.updated_at') }}</time></p>
             </div>
         </div>
     </section>
@@ -60,9 +61,9 @@ new #[Layout('landing::layouts.app')] class extends Component
         <div class="container">
             <div class="row g-4">
                 @foreach((array) $cards as $card)
-                    <div class="col-md-6">
+                    <div class="col-12">
                         <div class="policy-card glass-card reveal">
-                            <h3>{{ $card['title'] }}</h3>
+                            <h2 class="h4">{{ $card['title'] }}</h2>
                             <p class="text-muted-soft mb-0">{{ $card['copy'] }}</p>
                         </div>
                     </div>
